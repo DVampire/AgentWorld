@@ -7,6 +7,7 @@ from langchain.prompts import PromptTemplate
 from pathlib import Path
 
 from src.utils import Singleton
+from src.utils import assemble_project_path
 
 
 class PromptManager(metaclass=Singleton):
@@ -19,7 +20,7 @@ class PromptManager(metaclass=Singleton):
     
     def _load_templates(self):
         """Load all prompt templates from the templates directory."""
-        templates_dir = Path(__file__).parent / "templates"
+        templates_dir = Path(assemble_project_path("src/prompts/templates"))
         
         if not templates_dir.exists():
             print(f"Warning: Templates directory {templates_dir} does not exist")
@@ -32,7 +33,7 @@ class PromptManager(metaclass=Singleton):
             
             try:
                 # Import the template module
-                module_name = f"src.agents.prompts.templates.{template_file.stem}"
+                module_name = f"src.prompts.templates.{template_file.stem}"
                 module = importlib.import_module(module_name)
                 
                 # Look for PROMPT_TEMPLATES in the module
@@ -180,3 +181,5 @@ class PromptManager(metaclass=Singleton):
             self.templates[name] = template
         
         self.template_configs.update(import_data.get("configs", {}))
+        
+prompt_manager = PromptManager()

@@ -7,16 +7,20 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
+import json
 
 root = str(Path(__file__).parent)
 sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
+from src.registry import AGENTS
+from src.models import model_manager
+from src.tools import tool_manager
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -32,12 +36,80 @@ def parse_args():
     return args
 
 
+async def test_standard_mode(agent):
+    """Test standard execution mode."""
+    logger.info("="*60)
+    logger.info("Testing standard execution mode")
+    logger.info("="*60)
+    
+    task = "Calculate 15 * 23 and get the current time."
+    logger.info(f"| Task: {task}")
+    
+    result = await agent.run(task)
+    
+    logger.info(f"| Final Result: {result['final_response']}")
+    logger.info(f"| Iterations: {result['iterations']}")
+    logger.info(f"| Tool Results: {len(result['tool_results'])}")
+    logger.info(f"| Success: {result['success']}")
+    logger.info(f"| Execution Mode: {result['execution_mode']}")
+
+
+async def test_streaming_mode(agent):
+    """Test streaming execution mode."""
+    logger.info("\n" + "="*60)
+    logger.info("Testing streaming execution mode")
+    logger.info("="*60)
+    
+    task = "Calculate 10 + 5 and then multiply by 3 and then search the web for information about the weather in Beijing."
+    logger.info(f"| Task: {task}")
+    
+    logger.info("\n🔄 Streaming execution process:")
+    logger.info("-" * 50)
+    
+    async for update in agent.run_streaming(task):
+        # Print the update in a user-friendly format
+        if update["type"] == "task_start":
+            logger.info(f"🚀 Task started: {update['task']}")
+            logger.info(f"   Agent: {update['agent_name']}")
+            
+        elif update["type"] == "tool_calling":
+            logger.info(f"   🔧 Agent calling tool: {update['tool_name']}")
+            logger.info(f"      Input: {update['tool_input']}")
+            
+        elif update["type"] == "tool_result":
+            logger.info(f"   ✅ Tool {update['tool_name']} succeeded")
+            logger.info(f"      Result: {update['result'][:100]}...")
+            
+        elif update["type"] == "final_response":
+            logger.info(f"\n🏁 Final Response:")
+            logger.info(f"   Final Response: {update['final_response']}")
+            
+        # Simulate some delay for demonstration
+        await asyncio.sleep(0.5)
+    
+    logger.info("-" * 50)
+    logger.info("| Streaming execution completed")
+
+
 async def main():
     args = parse_args()
     
     config.init_config(args.config, args)
     logger.init_logger(config)
     logger.info(f"| Config: {config}")
+    
+    model_manager.init_models(use_local_proxy=True)
+    logger.info(f"| Model: {model_manager.list_models()}")
+    
+    agent = AGENTS.build(config.agent)
+    logger.info(f"| Agent: {agent}")
+    
+    # Test standard mode
+    # await test_standard_mode(agent)
+    
+    # Test streaming mode
+    await test_streaming_mode(agent)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -17,6 +17,7 @@ PLACEHOLDER = "PLACEHOLDER"
 class ModelManager(metaclass=Singleton):
     def __init__(self):
         self.registed_models: Dict[str, Any] = {}
+        self.registed_models_info: Dict[str, Any] = {}
         
     def init_models(self, use_local_proxy: bool = False):
         self._register_openai_models(use_local_proxy=use_local_proxy)
@@ -25,6 +26,9 @@ class ModelManager(metaclass=Singleton):
         
     def get_model(self, model_name: str) -> Any:
         return self.registed_models[model_name]
+    
+    def get_model_info(self, model_name: str) -> Any:
+        return self.registed_models_info[model_name]
     
     def list_models(self) -> List[str]:
         return list(self.registed_models.keys())
@@ -59,6 +63,11 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="OPENAI_API_BASE"),
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
             # gpt-4.1
             model_name = "gpt-4.1"
@@ -70,6 +79,11 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="OPENAI_API_BASE"),
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
             # gpt-5
             model_name = "gpt-5"
@@ -83,7 +97,11 @@ class ModelManager(metaclass=Singleton):
                 output_version="responses/v1"
             )
             self.registed_models[model_name] = model
-
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
             # o1
             model_name = "o1"
@@ -95,7 +113,12 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="OPENAI_API_BASE"),
             )
             self.registed_models[model_name] = model
-
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
             # o3
             model_name = "o3"
             model_id = "o3"
@@ -107,6 +130,11 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="OPENAI_API_BASE"),
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
             # gpt-4o-search-preview
             model_name = "gpt-4o-search-preview"
@@ -118,6 +146,11 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="OPENAI_API_BASE"),
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
             # # deep research
             model_name = "o3-deep-research"
@@ -131,6 +164,11 @@ class ModelManager(metaclass=Singleton):
                 model=model_id,
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
             # o4-mini-deep-research
             model_name = "o4-mini-deep-research"
@@ -144,7 +182,11 @@ class ModelManager(metaclass=Singleton):
                 model=model_id,
             )
             self.registed_models[model_name] = model
-            
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
         else:
             logger.info("Using remote API for OpenAI models")
             api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
@@ -188,6 +230,11 @@ class ModelManager(metaclass=Singleton):
                     base_url=api_base,
                 )
                 self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "openai",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
                 
             
     def _register_anthropic_models(self, use_local_proxy: bool = False):
@@ -207,6 +254,11 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="ANTHROPIC_API_BASE"),
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
 
             # claude-4-sonnet
             model_name = "claude-4-sonnet"
@@ -218,7 +270,12 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="ANTHROPIC_API_BASE"),
             )
             self.registed_models[model_name] = model
-
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
         else:
             logger.info("Using remote API for Anthropic models")
             api_key = self._check_local_api_key(local_api_key_name="ANTHROPIC_API_KEY", 
@@ -246,6 +303,11 @@ class ModelManager(metaclass=Singleton):
                     base_url=api_base,
                 )
                 self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "anthropic",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
             
     def _register_google_models(self, use_local_proxy: bool = False):
         # gemini-2.5-pro
@@ -264,6 +326,11 @@ class ModelManager(metaclass=Singleton):
                                                     remote_api_base_name="GOOGLE_API_BASE"),
             )
             self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "google",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
         else:
             logger.info("Using remote API for Google models")
@@ -288,6 +355,10 @@ class ModelManager(metaclass=Singleton):
                     base_url=api_base,
                 )
                 self.registed_models[model_name] = model
-            
+                self.registed_models_info[model_name] = {
+                    "type": "google",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
             
 model_manager = ModelManager()

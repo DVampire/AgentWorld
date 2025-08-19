@@ -7,8 +7,8 @@ from langchain.tools import BaseTool
 from pathlib import Path
 
 from src.utils import Singleton
-from .custom_tools import CustomToolSet
-from .mcp_tools import MCPToolManager, MCPToolLoader, EXAMPLE_MCP_TOOLS
+from src.tools.custom_tools import CustomToolSet
+from src.tools.mcp_tools import MCPToolManager, MCPToolLoader, EXAMPLE_MCP_TOOLS
 
 
 class ToolManager(metaclass=Singleton):
@@ -67,7 +67,14 @@ class ToolManager(metaclass=Singleton):
         """Get tool configuration by name."""
         return self.tool_configs.get(name)
     
-    def list_tools(self) -> List[str]:
+    def list_tools(self, tools_name: List[str] = None) -> List[BaseTool]:
+        """List all available tools."""
+        if tools_name is None:
+            return list(self.tools.values())
+        else:
+            return [self.tools[name] for name in tools_name if name in self.tools]
+    
+    def list_tool_names(self) -> List[str]:
         """List all available tool names."""
         return list(self.tools.keys())
     
@@ -261,3 +268,5 @@ class ToolManager(metaclass=Singleton):
                 matching_tools.append(name)
         
         return matching_tools
+    
+tool_manager = ToolManager()

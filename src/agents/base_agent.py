@@ -12,9 +12,10 @@ import json
 import asyncio
 
 from src.utils import Singleton
-from src.agents.prompts import PromptManager
-from src.models import ModelManager
-from src.tools import ToolManager
+from src.prompts import prompt_manager
+from src.models import model_manager
+from src.tools import tool_manager
+from src.logger import logger
 
 
 class BaseAgent(ABC):
@@ -32,9 +33,11 @@ class BaseAgent(ABC):
         **kwargs
     ):
         self.name = name
-        self.prompt_manager = PromptManager()
-        self.model_manager = ModelManager()
-        self.tool_manager = ToolManager()
+        self.model_name = model_name
+        
+        self.prompt_manager = prompt_manager
+        self.model_manager = model_manager
+        self.tool_manager = tool_manager
         
         # Setup model
         self.model = self._setup_model(model_name, llm)
@@ -58,14 +61,14 @@ class BaseAgent(ABC):
             # Get model from ModelManager
             model = self.model_manager.get_model(model_name)
             if model:
-                return model.llm
+                return model
             else:
-                print(f"Warning: Model '{model_name}' not found in ModelManager")
+                logger.warning(f"Warning: Model '{model_name}' not found in ModelManager")
         
         # Fallback to default model
-        default_model = self.model_manager.get_model("gpt-4")
+        default_model = self.model_manager.get_model("gpt-4.1")
         if default_model:
-            return default_model.llm
+            return default_model
         else:
             raise RuntimeError("No model available")
     
@@ -77,7 +80,7 @@ class BaseAgent(ABC):
             if template:
                 return template
             else:
-                print(f"Warning: Prompt template '{prompt_name}' not found, using fallback")
+                logger.warning(f"Warning: Prompt template '{prompt_name}' not found, using fallback")
         
         # If prompt_template is provided directly
         if isinstance(prompt_template, str):
@@ -110,7 +113,7 @@ class BaseAgent(ABC):
                 if tool_obj:
                     self.tools.append(tool_obj)
                 else:
-                    print(f"Warning: Tool '{tool}' not found in ToolManager")
+                    logger.warning(f"Warning: Tool '{tool}' not found in ToolManager")
             elif isinstance(tool, BaseTool):
                 # Add tool directly
                 self.tools.append(tool)
@@ -172,7 +175,7 @@ class BaseAgent(ABC):
         """Set the agent's model by name."""
         model = self.model_manager.get_model(name)
         if model:
-            self.model = model.llm
+            self.model = model
         else:
             print(f"Warning: Model '{name}' not found")
     
@@ -202,16 +205,6 @@ class BaseAgent(ABC):
     def list_available_tools(self) -> List[str]:
         """List all available tools."""
         return self.tool_manager.list_tools()
-    
-    @abstractmethod
-    async def create_graph(self) -> StateGraph:
-        """Create the agent's state graph."""
-        pass
-    
-    @abstractmethod
-    async def process_message(self, message: str, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a message and return updated state."""
-        pass
     
     def get_tools(self) -> List[BaseTool]:
         """Get all tools available to this agent."""
@@ -248,11 +241,17 @@ class BaseAgent(ABC):
         """Get comprehensive information about the agent."""
         return {
             "name": self.name,
-            "model": self.model_manager.get_model_info("gpt-4") if self.model else None,
-            "prompt_template": self.prompt_template.template if self.prompt_template else None,
+            "model": self.model_manager.get_model_info(self.model_name),
+            "prompt_template": self.prompt_template.template,
             "tools": [tool.name for tool in self.tools],
             "mcp_tools": [tool.get('name') for tool in self.mcp_tools],
             "available_prompts": len(self.list_available_prompts()),
             "available_models": len(self.list_available_models()),
             "available_tools": len(self.list_available_tools())
         }
+        
+    def __str__(self):
+        return json.dumps(self.get_agent_info(), indent=4)
+    
+    def __repr__(self):
+        return self.__str__()
