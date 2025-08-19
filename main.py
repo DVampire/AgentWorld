@@ -42,7 +42,7 @@ async def test_standard_mode(agent):
     logger.info("Testing standard execution mode")
     logger.info("="*60)
     
-    task = "Calculate 15 * 23 and get the current time."
+    task = "List all files in the current directory."
     logger.info(f"| Task: {task}")
     
     result = await agent.run(task)
@@ -98,17 +98,20 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config}")
     
-    model_manager.init_models(use_local_proxy=True)
+    await model_manager.init_models()
     logger.info(f"| Model: {model_manager.list_models()}")
+    
+    await tool_manager.init_tools()
+    logger.info(f"| Tool: {tool_manager.list_tools()}")
     
     agent = AGENTS.build(config.agent)
     logger.info(f"| Agent: {agent}")
     
     # Test standard mode
-    # await test_standard_mode(agent)
+    await test_standard_mode(agent)
     
     # Test streaming mode
-    await test_streaming_mode(agent)
+    # await test_streaming_mode(agent)
 
 
 if __name__ == "__main__":

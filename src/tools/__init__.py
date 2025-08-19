@@ -1,5 +1,8 @@
-from .tool_manager import tool_manager
+"""Tools package for AgentWorld."""
+
+from .tool_manager import ToolManager, tool_manager
 
 __all__ = [
-    "tool_manager",
+    'ToolManager',
+    'tool_manager',
 ]

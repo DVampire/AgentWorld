@@ -12,13 +12,10 @@ agent = dict(
     model_name = "gpt-4o",
     prompt_name = "tool_calling_explicit",  # Use explicit tool usage template
     tools = [
-        "get_current_time",
-        "search_web",
-        "calculate",
-        "weather_lookup",
-        "file_operations",
-        "async_web_request",
-        "batch_calculation"
+        "bash",
+        "file",
+        "weather",
+        "project",
     ],
     max_iterations = 10,
     verbose = True

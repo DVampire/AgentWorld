@@ -19,7 +19,7 @@ class ModelManager(metaclass=Singleton):
         self.registed_models: Dict[str, Any] = {}
         self.registed_models_info: Dict[str, Any] = {}
         
-    def init_models(self, use_local_proxy: bool = False):
+    async def initialize(self, use_local_proxy: bool = False):
         self._register_openai_models(use_local_proxy=use_local_proxy)
         self._register_anthropic_models(use_local_proxy=use_local_proxy)
         self._register_google_models(use_local_proxy=use_local_proxy)
@@ -360,5 +360,8 @@ class ModelManager(metaclass=Singleton):
                     "model_name": model_name,
                     "model_id": model_id,
                 }
+                
+    async def init_models(self, use_local_proxy: bool = False):
+        await self.initialize(use_local_proxy=use_local_proxy)
             
 model_manager = ModelManager()

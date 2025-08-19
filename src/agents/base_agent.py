@@ -1,17 +1,12 @@
 """Base agent class for multi-agent system."""
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Dict, List, Any, Optional, Union
-from langchain.schema import BaseMessage, HumanMessage, AIMessage
 from langchain.prompts import PromptTemplate
 from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
 import json
-import asyncio
 
-from src.utils import Singleton
 from src.prompts import prompt_manager
 from src.models import model_manager
 from src.tools import tool_manager
@@ -29,7 +24,6 @@ class BaseAgent(ABC):
         prompt_template: Optional[Union[str, PromptTemplate]] = None,
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
-        mcp_tools: Optional[List[Dict]] = None,
         **kwargs
     ):
         self.name = name
@@ -47,7 +41,6 @@ class BaseAgent(ABC):
         
         # Setup tools
         self.tools = []
-        self.mcp_tools = mcp_tools or []
         self._setup_tools(tools)
         
         self.state_graph = None
@@ -117,35 +110,6 @@ class BaseAgent(ABC):
             elif isinstance(tool, BaseTool):
                 # Add tool directly
                 self.tools.append(tool)
-        
-        # Add MCP tools if provided
-        if self.mcp_tools:
-            for mcp_tool in self.mcp_tools:
-                # Convert MCP tool to LangChain tool
-                langchain_tool = self._create_mcp_tool(mcp_tool)
-                if langchain_tool:
-                    self.tools.append(langchain_tool)
-    
-    def _create_mcp_tool(self, mcp_tool: Dict) -> Optional[BaseTool]:
-        """Convert MCP tool definition to LangChain tool."""
-        try:
-            from langchain.tools import tool
-            
-            @tool
-            async def mcp_tool_wrapper(**kwargs):
-                """MCP tool wrapper."""
-                # Here you would implement the actual MCP tool call
-                # For now, we'll return a placeholder
-                return f"MCP tool {mcp_tool.get('name', 'unknown')} called with {kwargs}"
-            
-            # Set tool metadata
-            mcp_tool_wrapper.name = mcp_tool.get('name', 'mcp_tool')
-            mcp_tool_wrapper.description = mcp_tool.get('description', 'MCP tool')
-            
-            return mcp_tool_wrapper
-        except Exception as e:
-            print(f"Failed to create MCP tool: {e}")
-            return None
     
     def get_prompt_template(self, name: str) -> Optional[PromptTemplate]:
         """Get a prompt template by name."""
@@ -210,13 +174,6 @@ class BaseAgent(ABC):
         """Get all tools available to this agent."""
         return self.tools
     
-    def add_mcp_tool(self, mcp_tool: Dict):
-        """Add an MCP tool to the agent."""
-        langchain_tool = self._create_mcp_tool(mcp_tool)
-        if langchain_tool:
-            self.tools.append(langchain_tool)
-            self.mcp_tools.append(mcp_tool)
-    
     def get_prompt_variables(self) -> Dict[str, Any]:
         """Get variables for prompt template."""
         # Get tool descriptions
@@ -224,17 +181,9 @@ class BaseAgent(ABC):
         for tool in self.tools:
             tool_descriptions.append(f"- {tool.name}: {tool.description}")
         
-        # Get MCP tool descriptions
-        mcp_tool_descriptions = []
-        for mcp_tool in self.mcp_tools:
-            mcp_tool_descriptions.append(f"- {mcp_tool.get('name', 'unknown')}: {mcp_tool.get('description', 'MCP tool')}")
-        
         return {
             "agent_name": self.name,
             "tools": "\n".join(tool_descriptions) if tool_descriptions else "No tools available",
-            "mcp_tools": "\n".join(mcp_tool_descriptions) if mcp_tool_descriptions else "No MCP tools available",
-            "file_tools": "\n".join([f"- {tool.name}: {tool.description}" for tool in self.tools if "file" in tool.name.lower()]),
-            "web_tools": "\n".join([f"- {tool.name}: {tool.description}" for tool in self.tools if "web" in tool.name.lower() or "search" in tool.name.lower()])
         }
     
     def get_agent_info(self) -> Dict[str, Any]:
@@ -244,7 +193,6 @@ class BaseAgent(ABC):
             "model": self.model_manager.get_model_info(self.model_name),
             "prompt_template": self.prompt_template.template,
             "tools": [tool.name for tool in self.tools],
-            "mcp_tools": [tool.get('name') for tool in self.mcp_tools],
             "available_prompts": len(self.list_available_prompts()),
             "available_models": len(self.list_available_models()),
             "available_tools": len(self.list_available_tools())

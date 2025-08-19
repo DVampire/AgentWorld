@@ -27,7 +27,6 @@ class ToolCallingAgent(BaseAgent):
         prompt_template: Optional[str] = None,
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
-        mcp_tools: Optional[List[Dict]] = None,
         max_iterations: int = 10,
         verbose: bool = True,
         **kwargs
@@ -36,7 +35,7 @@ class ToolCallingAgent(BaseAgent):
         if not prompt_name:
             prompt_name = "tool_calling"
         
-        super().__init__(name, model_name, llm, prompt_template, prompt_name, tools, mcp_tools, **kwargs)
+        super().__init__(name, model_name, llm, prompt_template, prompt_name, tools, **kwargs)
         self.max_iterations = max_iterations
         self.verbose = verbose
         self.agent_executor = None
