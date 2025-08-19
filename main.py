@@ -42,7 +42,7 @@ async def test_standard_mode(agent):
     logger.info("Testing standard execution mode")
     logger.info("="*60)
     
-    task = "List all files in the current directory."
+    task = "List all files in the current directory and then get the weather in Beijing."
     logger.info(f"| Task: {task}")
     
     result = await agent.run(task)

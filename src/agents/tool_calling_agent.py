@@ -182,7 +182,7 @@ class ToolCallingAgent(BaseAgent):
                     tools_used = len(intermediate_steps) > 0
             
             # Extract final answer
-            final_response = await self._extract_final_answer(result["output"])
+            final_response = await self._extract_final_answer(task, result["output"])
             self.conversation_history.append(f"Assistant: {final_response}")
             
             return {
@@ -306,7 +306,7 @@ class ToolCallingAgent(BaseAgent):
                 
                 elif "output" in chunk:
                     # Final output received
-                    final_response = await self._extract_final_answer(chunk["output"])
+                    final_response = await self._extract_final_answer(task, chunk["output"])
                     self.conversation_history.append(f"Assistant: {final_response}")
                     
                     # Send final response
@@ -372,13 +372,16 @@ class ToolCallingAgent(BaseAgent):
         
         return False
     
-    async def _extract_final_answer(self, output: str) -> str:
+    async def _extract_final_answer(self, task: str, output: str) -> str:
         """Extract the final answer from a response using LLM."""
         
         # Use LLM to extract the final answer
         try:
             extract_prompt = f"""
-Extract only the final answer or conclusion from this agent response. Ignore any intermediate reasoning, tool calls, or observations.
+According to the task, extract the final answer from the agent response.
+
+Task:
+{task}
 
 Agent Response:
 {output}
