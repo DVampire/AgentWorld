@@ -14,8 +14,8 @@ agent = dict(
     tools = [
         "bash",
         "file",
-        "weather",
         "project",
+        "python_interpreter",
         "browser",
     ],
     max_iterations = 10,

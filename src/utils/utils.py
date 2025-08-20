@@ -42,21 +42,6 @@ def _is_package_available(package_name: str) -> bool:
         return False
 
 
-BASE_BUILTIN_MODULES = [
-    "collections",
-    "datetime",
-    "itertools",
-    "math",
-    "queue",
-    "random",
-    "re",
-    "stat",
-    "statistics",
-    "time",
-    "unicodedata",
-]
-
-
 def escape_code_brackets(text: str) -> str:
     """Escapes square brackets in code segments while preserving Rich styling tags."""
 
