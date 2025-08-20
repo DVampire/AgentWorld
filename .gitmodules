@@ -1,0 +1,3 @@
+[submodule "libs/browser-use"]
+	path = libs/browser-use
+	url = git@github.com:DVampire/browser-use.git

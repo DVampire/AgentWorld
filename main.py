@@ -42,7 +42,32 @@ async def test_standard_mode(agent):
     logger.info("Testing standard execution mode")
     logger.info("="*60)
     
-    task = "List all files in the current directory and then get the weather in Beijing."
+    url = "https://skyagent-artifacts.tiangong.cn/page/52c3eff4-4870-4880-9067-d169efa0f108/index.html"
+    task = f"""You are a professional website testing specialist. Your mission is to conduct a comprehensive evaluation of the target webpage and provide a detailed completion assessment.
+
+INSTRUCTIONS:
+- You should interact with every interactive element on the page.
+- You should first define all interactions as a list of test cases.
+- For each test case, determine pass/fail based on the following rules:
+    1. Button click: When a button is clicked, it must cause the expected page change, modal, or action; otherwise, the test case fails.
+    2. Hyperlink (text or image): When a hyperlink is clicked, it must navigate to the correct destination page; otherwise, the test case fails.
+    3. Form submission: When a form is submitted, it must cause the expected page change or feedback; otherwise, the test case fails.
+- Record the number of passed and failed test cases after execution.
+- If the page changes after an action in the actions list, you should continue to interact with the new page and DO NOT interrupt the process.
+
+REQUIRED OUTPUT FORMAT:
+- Total Test Cases: [number]
+- Passed Test Cases: [number]
+- Failed Test Cases: [number]
+- Success Rate: [percentage]%
+- Overall Test Case Success Score: [0-100]%
+
+TARGET URL: {url}
+
+Please execute the testing and provide your assessment in the exact format specified above.
+IMPORTANT: You should give the above complete task text to the browser tool, DO NOT modify the task.
+"""
+
     logger.info(f"| Task: {task}")
     
     result = await agent.run(task)

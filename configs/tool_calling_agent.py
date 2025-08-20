@@ -16,6 +16,7 @@ agent = dict(
         "file",
         "weather",
         "project",
+        "browser",
     ],
     max_iterations = 10,
     verbose = True
