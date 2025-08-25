@@ -4,8 +4,7 @@ from .utils import (_is_package_available,
                     encode_image_base64, 
                     make_image_url, 
                     parse_json_blob,
-                    truncate_content,
-                    format_actions)
+                    truncate_content)
 
 __all__ = [
     "get_project_root",
@@ -16,5 +15,4 @@ __all__ = [
     "make_image_url",
     "parse_json_blob",
     "truncate_content",
-    "format_actions",
 ]

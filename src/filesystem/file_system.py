@@ -10,7 +10,6 @@ from markdown_pdf import MarkdownPdf, Section
 from pydantic import BaseModel, Field
 
 INVALID_FILENAME_ERROR_MESSAGE = 'Error: Invalid filename format. Must be alphanumeric with supported extension.'
-DEFAULT_FILE_SYSTEM_PATH = 'browseruse_agent_data'
 
 
 class FileSystemError(Exception):
@@ -146,9 +145,10 @@ class FileSystem:
 		# Handle the Path conversion before calling super().__init__
 		self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
 		self.base_dir.mkdir(parents=True, exist_ok=True)
+  
+		self.data_dir = self.base_dir / 'data'
 
 		# Create and use a dedicated subfolder for all operations
-		self.data_dir = self.base_dir / DEFAULT_FILE_SYSTEM_PATH
 		if self.data_dir.exists():
 			# clean the data directory
 			shutil.rmtree(self.data_dir)
@@ -356,7 +356,7 @@ class FileSystem:
 	def describe(self) -> str:
 		"""List all files with their content information using file-specific display methods"""
 		DISPLAY_CHARS = 400
-		description = ''
+		description = f"Workdir: {self.base_dir}\n Data dir: {self.data_dir}\n"
 
 		for file_obj in self.files.values():
 			# Skip todo.md from description

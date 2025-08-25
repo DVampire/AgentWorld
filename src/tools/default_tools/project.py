@@ -4,9 +4,9 @@ import asyncio
 import os
 import re
 import json
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Type
 from langchain.tools import BaseTool
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
 _PROJECT_TOOL_DESCRIPTION = """Project management tool that provides comprehensive project structure and file management capabilities.
@@ -45,32 +45,48 @@ Input format: JSON string with 'operation' and operation-specific parameters.
 Example: {"operation": "list_dir", "path": "/path/to/directory", "show_hidden": false}
 """
 
+class ProjectToolArgs(BaseModel):
+    operation: str = Field(description="The operation to perform")
+    path: Optional[str] = Field(description="The path to the file or directory")
+    show_hidden: Optional[bool] = Field(description="Whether to show hidden files")
+    max_depth: Optional[int] = Field(description="The maximum depth for recursive listing")
+    file_types: Optional[List[str]] = Field(description="The file types to filter by")
+    root_path: Optional[str] = Field(description="The root directory path")
+    exclude_patterns: Optional[List[str]] = Field(description="The patterns to exclude")
+    search_path: Optional[str] = Field(description="The directory to search in")
+    query: Optional[str] = Field(description="The search query")
+    search_type: Optional[str] = Field(description="The search type")
+    case_sensitive: Optional[bool] = Field(description="Whether search is case sensitive")
+    max_results: Optional[int] = Field(description="The maximum number of results")
+    include_stats: Optional[bool] = Field(description="Whether to include file statistics")
+    check_content: Optional[bool] = Field(description="Whether to check file content")
+
 
 class ProjectTool(BaseTool):
     """Project management tool for directory structure and file operations."""
     
     name: str = "project"
     description: str = _PROJECT_TOOL_DESCRIPTION
+    args_schema: Type[ProjectToolArgs] = ProjectToolArgs
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
-    async def _arun(self, input_json: str) -> str:
+    async def _arun(self, args: ProjectToolArgs) -> str:
         """Execute project management operation asynchronously based on input JSON."""
         try:
-            params = json.loads(input_json)
-            operation = params.get("operation", "").upper()
+            operation = args.operation.upper()
             
             if operation == "LIST_DIR":
-                return await self._list_directory(params)
+                return await self._list_directory(args)
             elif operation == "TREE_STRUCTURE":
-                return await self._tree_structure(params)
+                return await self._tree_structure(args)
             elif operation == "SEARCH_FILES":
-                return await self._search_files(params)
+                return await self._search_files(args)
             elif operation == "GET_FILE_INFO":
-                return await self._get_file_info(params)
+                return await self._get_file_info(args)
             elif operation == "FIND_DUPLICATES":
-                return await self._find_duplicates(params)
+                return await self._find_duplicates(args)
             else:
                 return f"Error: Unknown operation '{operation}'. Supported operations: LIST_DIR, TREE_STRUCTURE, SEARCH_FILES, GET_FILE_INFO, FIND_DUPLICATES"
                 
@@ -79,14 +95,13 @@ class ProjectTool(BaseTool):
         except Exception as e:
             return f"Error executing project operation: {str(e)}"
     
-    async def _list_directory(self, params: Dict[str, Any]) -> str:
+    async def _list_directory(self, 
+                              path: str, 
+                              show_hidden: Optional[bool] = False, 
+                              max_depth: Optional[int] = 1, 
+                              file_types: Optional[List[str]] = None) -> str:
         """List files and directories in a specified path."""
         try:
-            path = params.get("path", ".")
-            show_hidden = params.get("show_hidden", False)
-            max_depth = params.get("max_depth", 1)
-            file_types = params.get("file_types", [])
-            
             if not os.path.exists(path):
                 return f"Error: Path does not exist: {path}"
             
@@ -99,8 +114,12 @@ class ProjectTool(BaseTool):
         except Exception as e:
             return f"Error listing directory: {str(e)}"
     
-    async def _list_directory_recursive(self, path: str, show_hidden: bool, max_depth: int, 
-                                      file_types: List[str], current_depth: int) -> str:
+    async def _list_directory_recursive(self, 
+                                        path: str, 
+                                        show_hidden: Optional[bool] = False, 
+                                        max_depth: Optional[int] = 1, 
+                                        file_types: Optional[List[str]] = None, 
+                                        current_depth: int = 0) -> str:
         """Recursively list directory contents."""
         if current_depth > max_depth:
             return ""
@@ -148,14 +167,13 @@ class ProjectTool(BaseTool):
         except Exception as e:
             return f"Error reading directory {path}: {str(e)}"
     
-    async def _tree_structure(self, params: Dict[str, Any]) -> str:
+    async def _tree_structure(self, 
+                              root_path: str, 
+                              max_depth: Optional[int] = 3, 
+                              show_hidden: Optional[bool] = False, 
+                              exclude_patterns: Optional[List[str]] = None) -> str:
         """Show directory tree structure."""
         try:
-            root_path = params.get("root_path", ".")
-            max_depth = params.get("max_depth", 3)
-            show_hidden = params.get("show_hidden", False)
-            exclude_patterns = params.get("exclude_patterns", [])
-            
             if not os.path.exists(root_path):
                 return f"Error: Path does not exist: {root_path}"
             
@@ -222,17 +240,16 @@ class ProjectTool(BaseTool):
             
         except Exception as e:
             return f"Error building tree for {path}: {str(e)}"
-    
-    async def _search_files(self, params: Dict[str, Any]) -> str:
+
+    async def _search_files(self, 
+                            search_path: str, 
+                            query: str, 
+                            search_type: Optional[str] = "name", 
+                            file_types: Optional[List[str]] = None, 
+                            case_sensitive: Optional[bool] = False, 
+                            max_results: Optional[int] = 50) -> str:
         """Search for files by name or content."""
         try:
-            search_path = params.get("search_path", ".")
-            query = params.get("query", "")
-            search_type = params.get("search_type", "name")
-            file_types = params.get("file_types", [])
-            case_sensitive = params.get("case_sensitive", False)
-            max_results = params.get("max_results", 50)
-            
             if not query:
                 return "Error: 'query' is required for SEARCH_FILES operation"
             
@@ -304,12 +321,11 @@ class ProjectTool(BaseTool):
             # Skip directories that can't be accessed
             pass
     
-    async def _get_file_info(self, params: Dict[str, Any]) -> str:
+    async def _get_file_info(self, 
+                             path: str, 
+                             include_stats: Optional[bool] = True) -> str:
         """Get detailed information about a file or directory."""
         try:
-            path = params.get("path", ".")
-            include_stats = params.get("include_stats", True)
-            
             if not os.path.exists(path):
                 return f"Error: Path does not exist: {path}"
             
@@ -341,13 +357,12 @@ class ProjectTool(BaseTool):
         except Exception as e:
             return f"Error getting file info: {str(e)}"
     
-    async def _find_duplicates(self, params: Dict[str, Any]) -> str:
+    async def _find_duplicates(self, 
+                               search_path: str, 
+                               file_types: Optional[List[str]] = None, 
+                               check_content: Optional[bool] = True) -> str:
         """Find duplicate files in a directory."""
         try:
-            search_path = params.get("search_path", ".")
-            file_types = params.get("file_types", [])
-            check_content = params.get("check_content", True)
-            
             if not os.path.exists(search_path):
                 return f"Error: Search path does not exist: {search_path}"
             
@@ -376,7 +391,10 @@ class ProjectTool(BaseTool):
         except Exception as e:
             return f"Error finding duplicates: {str(e)}"
     
-    async def _collect_files_info(self, path: str, file_types: List[str], files_info: List[Dict]):
+    async def _collect_files_info(self, 
+                                  path: str, 
+                                  file_types: Optional[List[str]] = None, 
+                                  files_info: Optional[List[Dict]] = None):
         """Collect information about all files in the directory."""
         try:
             for entry in os.listdir(path):
@@ -403,7 +421,9 @@ class ProjectTool(BaseTool):
         except Exception:
             pass
     
-    async def _find_duplicate_files(self, files_info: List[Dict], check_content: bool) -> List[List[str]]:
+    async def _find_duplicate_files(self, 
+                                    files_info: List[Dict], 
+                                    check_content: Optional[bool] = True) -> List[List[str]]:
         """Find duplicate files based on size and optionally content."""
         # Group by size first
         size_groups = {}
@@ -455,13 +475,40 @@ class ProjectTool(BaseTool):
         
         return f"{size_bytes:.1f} {size_names[i]}"
     
-    def _run(self, input_json: str) -> str:
+    def _run(self, 
+             operation: str, 
+             path: Optional[str] = None, 
+             show_hidden: Optional[bool] = False, 
+             max_depth: Optional[int] = 1, 
+             file_types: Optional[List[str]] = None, 
+             root_path: Optional[str] = None, 
+             exclude_patterns: Optional[List[str]] = None, 
+             search_path: Optional[str] = None, 
+             query: Optional[str] = None, 
+             search_type: Optional[str] = "name", 
+             case_sensitive: Optional[bool] = False, 
+             max_results: Optional[int] = 50, 
+             include_stats: Optional[bool] = True, 
+             check_content: Optional[bool] = True) -> str:
         """Execute project management operation synchronously."""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(self._arun(input_json))
+                return loop.run_until_complete(self._arun(operation, 
+                                                          path, 
+                                                          show_hidden, 
+                                                          max_depth, 
+                                                          file_types, 
+                                                          root_path, 
+                                                          exclude_patterns, 
+                                                          search_path, 
+                                                          query, 
+                                                          search_type, 
+                                                          case_sensitive, 
+                                                          max_results, 
+                                                          include_stats, 
+                                                          check_content))
             finally:
                 loop.close()
         except Exception as e:

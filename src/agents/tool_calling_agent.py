@@ -54,19 +54,20 @@ class ToolCallingAgent(BaseAgent):
         """Think and action."""
         structured_llm = self.no_fc_model.with_structured_output(
             ThinkOutput,
-            method="json_schema",
+            method="function_calling",
             include_raw=False
         )
-        response = structured_llm.invoke(messages)
-        print(response)
-        exit()
-        
-        # Action
-        
+        think_output = structured_llm.invoke(messages)
 
+        action = think_output.action
+        for item in action:
+            tool_name = item.name
+            tool_args = item.args
+            tool_args = tool_args.model_dump()
+            
+            results = await self.tool_manager.execute_tool(tool_name, args=tool_args)
         
-        return think_output
-        
+    
           
     async def run(self, 
                   task: str,
@@ -93,5 +94,3 @@ class ToolCallingAgent(BaseAgent):
         messages = self._get_messages(task)
         
         await self._think_and_action(messages)
-        
-        exit()

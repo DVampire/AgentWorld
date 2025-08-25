@@ -6,16 +6,18 @@ from browser_use import Agent, ChatOpenAI
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
-from src.tools.mcp_tools.server import mcp_server
+from src.tools.mcp_tools.server import mcp_server, MCP_TOOL_ARGS
 from src.utils import assemble_project_path
 
 _BROWSER_TOOL_DESCRIPTION = """
 Use the browser to interact with the internet to complete the task.
 """
 
-class BrowserToolInput(BaseModel):
+class BrowserToolArgs(BaseModel):
     task: str = Field(description="The task to complete.")
-    file_system_path: str = Field(description="The file system path to save the files. ")
+    data_dir: str = Field(description="The directory to save the files. ")
+
+MCP_TOOL_ARGS["browser"] = BrowserToolArgs
 
 @mcp_server.tool(
     name="browser",
@@ -30,15 +32,16 @@ class BrowserToolInput(BaseModel):
                 "label": "Task",
                 "placeholder": "Enter a task",
             },
-            "file_system_path": {
+            "data_dir": {
                 "type": "text",
-                "label": "File System Path",
-                "placeholder": "Enter a file system path",
+                "label": "Data Directory",
+                "placeholder": "Enter a data directory",
             }
         },
     ),  
 )
-async def browser(args: BrowserToolInput,
+async def browser(task: str,
+                  data_dir: str,
                   ctx: Context) -> str:
     """
     Use the browser to interact with the internet to complete the task.
@@ -49,13 +52,13 @@ async def browser(args: BrowserToolInput,
     Returns:
         dict: The result of the task.
     """
-    await ctx.info(f"Completing task: {args.task}")
+    await ctx.info(f"Completing task: {task}")
     
-    file_system_path = assemble_project_path(args.file_system_path)
-    os.makedirs(file_system_path, exist_ok=True)
+    data_dir = assemble_project_path(data_dir)
+    os.makedirs(data_dir, exist_ok=True)    
     
     agent = Agent(
-        task=args.task,
+        task=task,
         llm=ChatOpenAI(model="gpt-4.1", 
                        api_key=os.getenv("OPENAI_API_KEY"), 
                        base_url=os.getenv("OPENAI_API_BASE")),
@@ -63,7 +66,7 @@ async def browser(args: BrowserToolInput,
         page_extraction_llm=ChatOpenAI(model="gpt-4.1", 
                                        api_key=os.getenv("OPENAI_API_KEY"), 
                                        base_url=os.getenv("OPENAI_API_BASE")),
-        file_system_path=file_system_path
+        file_system_path=data_dir
     )
     
     

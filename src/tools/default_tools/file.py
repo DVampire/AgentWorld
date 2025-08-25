@@ -3,9 +3,9 @@
 import asyncio
 import os
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Type
 from langchain.tools import BaseTool
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
 _FILE_TOOL_DESCRIPTION = """Unified file operation tool that supports multiple file operations.
@@ -39,33 +39,51 @@ Input format: JSON string with 'operation' and operation-specific parameters.
 Example: {"operation": "read", "file_path": "/path/to/file.txt", "start_line": 1, "end_line": 10}
 """
 
+class FileToolArgs(BaseModel):
+    operation: str = Field(description="The operation to perform")
+    file_path: str = Field(description="The path to the file")
+    start_line: Optional[int] = Field(description="The starting line number")
+    end_line: Optional[int] = Field(description="The ending line number")
+    content: Optional[str] = Field(description="The content to write")
+    mode: Optional[str] = Field(description="The mode to write")
+    pattern: Optional[str] = Field(description="The pattern to search")
+    case_sensitive: Optional[bool] = Field(description="Whether search is case sensitive")
+
 
 class FileTool(BaseTool):
     """Unified tool for all file operations."""
     
     name: str = "file"
     description: str = _FILE_TOOL_DESCRIPTION
+    args_schema: Type[FileToolArgs] = FileToolArgs
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
-    async def _arun(self, input_json: str) -> str:
+    async def _arun(self, 
+                    operation: str, 
+                    file_path: str, 
+                    start_line: Optional[int] = None, 
+                    end_line: Optional[int] = None,
+                    content: Optional[str] = None,
+                    mode: Optional[str] = None,
+                    pattern: Optional[str] = None,
+                    case_sensitive: Optional[bool] = True) -> str:
         """Execute file operation asynchronously based on input JSON."""
         try:
             import json
-            params = json.loads(input_json)
-            operation = params.get("operation", "").upper()
+            operation = operation.upper()
             
             if operation == "READ":
-                return await self._read_file(params)
+                return await self._read_file(file_path, start_line, end_line)
             elif operation == "WRITE":
-                return await self._write_file(params)
+                return await self._write_file(file_path, content, mode)
             elif operation == "DELETE":
-                return await self._delete_file(params)
+                return await self._delete_file(file_path)
             elif operation == "MODIFY":
-                return await self._modify_file(params)
+                return await self._modify_file(file_path, start_line, end_line, content, mode)
             elif operation == "GREP":
-                return await self._grep_file(params)
+                return await self._grep_file(file_path, pattern, case_sensitive)
             else:
                 return f"Error: Unknown operation '{operation}'. Supported operations: READ, WRITE, DELETE, MODIFY, GREP"
                 
@@ -74,13 +92,12 @@ class FileTool(BaseTool):
         except Exception as e:
             return f"Error executing file operation: {str(e)}"
     
-    async def _read_file(self, params: Dict[str, Any]) -> str:
+    async def _read_file(self, 
+                         file_path: str, 
+                         start_line: Optional[int] = None, 
+                         end_line: Optional[int] = None) -> str:
         """Read file content with line numbers."""
         try:
-            file_path = params.get("file_path")
-            start_line = params.get("start_line")
-            end_line = params.get("end_line")
-            
             if not file_path:
                 return "Error: 'file_path' is required for READ operation"
             
@@ -119,13 +136,12 @@ class FileTool(BaseTool):
         except Exception as e:
             return f"Error reading file: {str(e)}"
     
-    async def _write_file(self, params: Dict[str, Any]) -> str:
+    async def _write_file(self, 
+                          file_path:str, 
+                          content: Optional[str] = None, 
+                          mode: Optional[str] = "w") -> str:
         """Write content to file."""
         try:
-            file_path = params.get("file_path")
-            content = params.get("content")
-            mode = params.get("mode", "w")
-            
             if not file_path:
                 return "Error: 'file_path' is required for WRITE operation"
             if content is None:
@@ -150,11 +166,9 @@ class FileTool(BaseTool):
         except Exception as e:
             return f"Error writing file: {str(e)}"
     
-    async def _delete_file(self, params: Dict[str, Any]) -> str:
+    async def _delete_file(self, file_path: str) -> str:
         """Delete a file."""
         try:
-            file_path = params.get("file_path")
-            
             if not file_path:
                 return "Error: 'file_path' is required for DELETE operation"
             
@@ -171,13 +185,12 @@ class FileTool(BaseTool):
         except Exception as e:
             return f"Error deleting file: {str(e)}"
     
-    async def _modify_file(self, params: Dict[str, Any]) -> str:
+    async def _modify_file(self, 
+                           file_path: str, 
+                           line_number: Optional[int] = None, 
+                           new_content: Optional[str] = None) -> str:
         """Modify a specific line in file."""
         try:
-            file_path = params.get("file_path")
-            line_number = params.get("line_number")
-            new_content = params.get("new_content")
-            
             if not file_path:
                 return "Error: 'file_path' is required for MODIFY operation"
             if line_number is None:
@@ -213,13 +226,12 @@ class FileTool(BaseTool):
         except Exception as e:
             return f"Error modifying file: {str(e)}"
     
-    async def _grep_file(self, params: Dict[str, Any]) -> str:
+    async def _grep_file(self, 
+                         file_path: str, 
+                         pattern: Optional[str] = None, 
+                         case_sensitive: Optional[bool] = True) -> str:
         """Search for patterns in file."""
         try:
-            file_path = params.get("file_path")
-            pattern = params.get("pattern")
-            case_sensitive = params.get("case_sensitive", True)
-            
             if not file_path:
                 return "Error: 'file_path' is required for GREP operation"
             if not pattern:
@@ -260,13 +272,28 @@ class FileTool(BaseTool):
         except Exception as e:
             return f"Error searching file: {str(e)}"
     
-    def _run(self, input_json: str) -> str:
+    def _run(self, 
+             operation: str, 
+             file_path: str, 
+             start_line: Optional[int] = None, 
+             end_line: Optional[int] = None,
+             content: Optional[str] = None,
+             mode: Optional[str] = None,
+             pattern: Optional[str] = None,
+             case_sensitive: Optional[bool] = True) -> str:
         """Execute file operation synchronously."""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(self._arun(input_json))
+                return loop.run_until_complete(self._arun(operation, 
+                                                          file_path, 
+                                                          start_line, 
+                                                          end_line, 
+                                                          content,
+                                                          mode,
+                                                          pattern, 
+                                                          case_sensitive))
             finally:
                 loop.close()
         except Exception as e:

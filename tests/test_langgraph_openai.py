@@ -1,10 +1,9 @@
 from langchain_openai import ChatOpenAI
-from langchain_core.tools import tool
-from langchain_core.utils.function_calling import format_tool_to_openai_function
+from langchain_core.tools import BaseTool
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from langchain_core.tools import BaseTool
 from typing import Type
+import asyncio
 
 load_dotenv()
 
@@ -18,18 +17,26 @@ class AddNumbersTool(BaseTool):
     description: str = "两个数相加"
     args_schema: Type[AddNumbersArgs] = AddNumbersArgs
 
-    def _run(self, args: AddNumbersArgs) -> int:
-        """两个数相加"""
-        return args.a + args.b
+    def _run(self, a: int, b: int) -> int:
+        return a + b
+
+    async def _arun(self, a: int, b: int) -> int:
+        return a + b
     
 
-llm = ChatOpenAI(model="gpt-4o")  # 或者 gpt-4o, gpt-3.5-turbo 等
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
-print(format_tool_to_openai_function(AddNumbersTool()))
-exit()
+# 让模型知道有哪些工具
+llm_with_tools = llm.bind_tools([AddNumbersTool()])
 
-# 把工具传进去
-llm_with_tools = llm.bind_tools([add_numbers])
-
+# 第一步：问模型
 response = llm_with_tools.invoke("帮我把 3 和 5 加起来")
-print(response)
+print("模型输出:", response)
+
+# 第二步：解析模型请求
+tool_call = response.tool_calls[0]
+tool_args = tool_call["args"]
+
+# 第三步：执行工具
+result = asyncio.run(AddNumbersTool().ainvoke(input=tool_args))
+print("工具执行结果:", result)

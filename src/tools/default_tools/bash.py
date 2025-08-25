@@ -3,9 +3,9 @@
 import asyncio
 import subprocess
 import shlex
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Type
 from langchain.tools import BaseTool
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
 Use this tool to run system commands, scripts, or any bash operations. 
@@ -14,12 +14,15 @@ For file operations, ALWAYS use absolute paths to avoid path-related issues.
 Input should be a valid bash command string.
 """
 
+class BashToolArgs(BaseModel):
+    command: str = Field(description="The command to execute")
 
 class BashTool(BaseTool):
     """A tool for executing bash commands asynchronously."""
     
     name: str = "bash"
     description: str = _BASH_TOOL_DESCRIPTION
+    args_schema: Type[BashToolArgs] = BashToolArgs
     
     timeout: int = Field(
         default=30,
@@ -37,13 +40,13 @@ class BashTool(BaseTool):
                 return "Error: Empty command provided"
             
             # Parse command and arguments
-            args = shlex.split(command)
-            if not args:
+            command = shlex.split(command)
+            if not command:
                 return "Error: Invalid command format"
             
             # Create process with timeout
             process = await asyncio.create_subprocess_exec(
-                *args,
+                *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )

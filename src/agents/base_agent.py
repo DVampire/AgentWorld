@@ -10,6 +10,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 from regex import D
+from langchain_core.utils.function_calling import convert_to_openai_function
 
 from src.models import model_manager
 from src.tools import tool_manager
@@ -18,7 +19,15 @@ from src.logger import logger
 from src.memory import MemoryManager, SessionInfo, EventType
 from src.filesystem import FileSystem
 from src.config import config
-from src.utils import format_actions
+
+class Action(BaseModel):
+    """Action."""
+    name: str = Field(description="The name of the action.")
+    args: Union[*tool_manager.list_tool_args_schemas()] = Field(description="The arguments of the action.")
+    
+def format_actions(actions: List[Action]) -> str:
+    """Format actions."""
+    return json.dumps([action.model_dump() for action in actions], ensure_ascii=False)
     
 class ThinkOutput(BaseModel):
     """Think output."""
@@ -26,7 +35,7 @@ class ThinkOutput(BaseModel):
     evaluation_previous_goal: str = Field(description="One-sentence analysis of your last action. Clearly state success, failure, or uncertain.")
     memory: str = Field(description="1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps.")
     next_goal: str = Field(description="State the next immediate goals and actions to achieve it, in one clear sentence.")
-    action: List[Dict[str, Any]] = Field(description='[{"name": "action_name", "args": {// action-specific parameters}}, // ... more actions in sequence], the action should be in the <available_actions>.')
+    action: List[Action] = Field(description='[{"name": "action_name", "args": {// action-specific parameters}}, // ... more actions in sequence], the action should be in the <available_actions>.')
     
     def __str__(self):
         """String representation of the think output."""
@@ -39,8 +48,6 @@ class ThinkOutput(BaseModel):
     
     def __repr__(self):
         return self.__str__()
-    
-    
 
 class BaseAgent(ABC):
     """Base class for all agents in the multi-agent system."""
@@ -209,7 +216,7 @@ class BaseAgent(ABC):
         file_system_contents = self.file_system.describe() if self.file_system else 'No file system available'
         
         available_actions_description = [
-            tool.get_input_jsonschema() for tool in self.tools
+            convert_to_openai_function(tool) for tool in self.tools
         ]
         available_actions_description = json.dumps(available_actions_description)
         
@@ -225,6 +232,7 @@ class BaseAgent(ABC):
         input_variables = {}
         agent_history = self._get_agent_history()
         agent_state = self._get_agent_state(task)
+        
         input_variables.update(agent_history)
         input_variables.update(agent_state)
         

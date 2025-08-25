@@ -1,10 +1,12 @@
 """MCP tool set for managing local and remote MCP tools."""
 
 from typing import Dict, Any, List, Optional, Union
-from langchain.tools import BaseTool
+from langchain.tools import BaseTool, Tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain.tools import StructuredTool
 
 from src.utils import assemble_project_path
+from src.tools.mcp_tools.server import MCP_TOOL_ARGS
 
 class MCPToolSet:
     """Tool set for managing local and remote MCP tools."""
@@ -32,6 +34,15 @@ class MCPToolSet:
         """Load all default tools."""
         tools = await self.client.get_tools()
         for tool in tools:
+            
+            tool = StructuredTool.from_function(
+                name=tool.name,
+                description=tool.description,
+                func=tool.func,
+                coroutine=tool.coroutine,
+                args_schema=MCP_TOOL_ARGS[tool.name]
+            )
+            
             self._tools[tool.name] = tool
             # Set default config for MCP tools
             self._tool_configs[tool.name] = {

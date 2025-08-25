@@ -87,6 +87,14 @@ class ToolManager(metaclass=Singleton):
             raise RuntimeError("Tool manager not initialized. Call initialize() first.")
         return list(self._all_tools.keys())
     
+    def list_tool_args_schemas(self) -> Dict[str, Any]:
+        """List all available tool argument schemas."""
+        if not self._initialized:
+            raise RuntimeError("Tool manager not initialized. Call initialize() first.")
+        return [
+            tool.args_schema for tool in self._all_tools.values()
+        ]
+    
     def get_tool_config(self, name: str) -> Optional[Dict[str, Any]]:
         """Get tool configuration by name."""
         if not self._initialized:
@@ -145,7 +153,7 @@ class ToolManager(metaclass=Singleton):
             return True
         return False
     
-    async def execute_tool(self, name: str, *args, **kwargs) -> Any:
+    async def execute_tool(self, name: str, args: Any, **kwargs) -> Any:
         """Execute a tool by name."""
         if not self._initialized:
             raise RuntimeError("Tool manager not initialized. Call initialize() first.")
@@ -154,10 +162,10 @@ class ToolManager(metaclass=Singleton):
         if not tool:
             raise ValueError(f"Tool '{name}' not found")
         
-        if hasattr(tool, '_arun'):
-            return await tool._arun(*args, **kwargs)
+        if hasattr(tool, 'ainvoke'):
+            return await tool.ainvoke(input=args)
         else:
-            return tool._run(*args, **kwargs)
+            return tool.invoke(input=args)
     
     async def execute_multiple_tools(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute multiple tools concurrently."""

@@ -16,7 +16,7 @@ Input format: JSON string with 'code' parameter.
 Example: {"code": "print('Hello, world!')"}
 """
 
-class PythonInterpreterInput(BaseModel):
+class PythonInterpreterArgs(BaseModel):
     code: str = Field(..., description="Python code to execute")
 
 class PythonInterpreterTool(BaseTool):
@@ -24,7 +24,7 @@ class PythonInterpreterTool(BaseTool):
     
     name: str = "python_interpreter"
     description: str = _PYTHON_INTERPRETER_TOOL_DESCRIPTION
-    args_schema: Type[BaseModel] = PythonInterpreterInput
+    args_schema: Type[PythonInterpreterArgs] = PythonInterpreterArgs
 
     authorized_imports: Optional[List[str]] = None
     base_python_tools: Optional[List[str]] = None
