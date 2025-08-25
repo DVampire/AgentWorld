@@ -184,7 +184,7 @@ class RestfulSearchClient():
         return None
 
 
-class RestfulModel():
+class ChatRestful():
     """This model connects to an OpenAI-compatible API server.
 
     Parameters:
@@ -225,7 +225,7 @@ class RestfulModel():
         self.client = self.create_client()
         self.message_manager = MessageManager(api_type=api_type, model=model)
 
-        super(RestfulModel, self).__init__(**kwargs)
+        super(ChatRestful, self).__init__(**kwargs)
 
     def create_client(self):
         return RestfulClient(base_url=self.base_url,
@@ -286,7 +286,7 @@ class RestfulModel():
     async def ainvoke(self, *args, **kwargs) -> AIMessage:
         return await self.generate(*args, **kwargs)
 
-class RestfulSearchModel(): 
+class ChatRestfulSearch(): 
     """This model connects to an OpenAI-compatible API server.
 
     Parameters:
@@ -327,7 +327,7 @@ class RestfulSearchModel():
         self.client = self.create_client()
         self.message_manager = MessageManager(api_type=api_type, model=model)
         
-        super(RestfulSearchModel, self).__init__(**kwargs)
+        super(ChatRestfulSearch, self).__init__(**kwargs)
 
 
     def create_client(self):

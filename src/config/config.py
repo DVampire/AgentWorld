@@ -6,10 +6,10 @@ from src.utils import assemble_project_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
 
-    config.exp_path = assemble_project_path(os.path.join(config.workdir, config.tag))
-    os.makedirs(config.exp_path, exist_ok=True)
+    config.workdir = assemble_project_path(config.workdir)
+    os.makedirs(config.workdir, exist_ok=True)
 
-    config.log_path = os.path.join(config.exp_path, getattr(config, 'log_path', 'agent.log'))
+    config.log_path = os.path.join(config.workdir, getattr(config, 'log_path', 'agent.log'))
 
     return config
 

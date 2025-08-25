@@ -5,9 +5,10 @@ import asyncio
 import sys
 import os
 from datetime import datetime
+from pathlib import Path
 
-# Add the src directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+root = str(Path(__file__).resolve().parents[1])
+sys.path.append(root)
 
 from src.memory import MemoryManager, InMemoryStore, ChatEvent, EventType
 from src.logger import logger
@@ -37,7 +38,7 @@ async def test_llm_controlled_memory():
     print(f"LLM determined task_id: {task_id1}")
     
     # Create session and create first task
-    memory_manager.create_session(session_id, "Programming Help Session")
+    memory_manager.create_session(session_id)
     memory_manager.create_task(user_task1, task_id1)
     
     # Add events for this task (note: create_task already added the human message)

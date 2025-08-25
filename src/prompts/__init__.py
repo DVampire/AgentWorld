@@ -1,7 +1,7 @@
 """Prompts module for agent prompt management."""
 
-from .prompt_manager import prompt_manager
+from .prompt_manager import PromptManager
 
 __all__ = [
-    "prompt_manager",
+    "PromptManager",
 ]

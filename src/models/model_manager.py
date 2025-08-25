@@ -1,17 +1,15 @@
 import os
-from openai import AsyncOpenAI
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
-from browser_use import ChatOpenAI
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-from src.logger import logger
-from src.models.langchain_openai import LangchainOpenAIModel
-from src.models.langchain_anthropic import LangchainAnthropicModel
-from src.models.langchain_google import LangchainGoogleModel
-from src.models.restful import RestfulModel, RestfulSearchModel
+from src.models.restful.chat import ChatRestfulSearch
 from src.utils import Singleton
+from src.logger import logger
 
 PLACEHOLDER = "PLACEHOLDER"
 
@@ -25,7 +23,6 @@ class ModelManager(metaclass=Singleton):
         self._register_openai_models(use_local_proxy=use_local_proxy)
         self._register_anthropic_models(use_local_proxy=use_local_proxy)
         self._register_google_models(use_local_proxy=use_local_proxy)
-        self._register_browser_use_models(use_local_proxy=use_local_proxy)
         
     def get_model(self, model_name: str) -> Any:
         return self.registed_models[model_name]
@@ -59,7 +56,7 @@ class ModelManager(metaclass=Singleton):
             # gpt-4o
             model_name = "gpt-4o"
             model_id = "gpt-4o"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
@@ -75,7 +72,7 @@ class ModelManager(metaclass=Singleton):
             # gpt-4.1
             model_name = "gpt-4.1"
             model_id = "gpt-4.1"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
@@ -91,7 +88,7 @@ class ModelManager(metaclass=Singleton):
             # gpt-5
             model_name = "gpt-5"
             model_id = "gpt-5"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
@@ -109,7 +106,7 @@ class ModelManager(metaclass=Singleton):
             # o1
             model_name = "o1"
             model_id = "o1"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
@@ -126,7 +123,7 @@ class ModelManager(metaclass=Singleton):
             model_name = "o3"
             model_id = "o3"
 
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE",
@@ -142,7 +139,7 @@ class ModelManager(metaclass=Singleton):
             # gpt-4o-search-preview
             model_name = "gpt-4o-search-preview"
             model_id = "gpt-4o-search-preview"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
@@ -159,7 +156,7 @@ class ModelManager(metaclass=Singleton):
             model_name = "o3-deep-research"
             model_id = "o3-deep-research"
 
-            model = RestfulSearchModel(
+            model = ChatRestfulSearch(
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_API_BASE",
                                                     remote_api_base_name="OPENAI_API_BASE"),
                 api_key=api_key,
@@ -177,7 +174,7 @@ class ModelManager(metaclass=Singleton):
             model_name = "o4-mini-deep-research"
             model_id = "o4-mini-deep-research"
 
-            model = RestfulSearchModel(
+            model = ChatRestfulSearch(
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_SHUBIAOBIAO_API_BASE",
                                                     remote_api_base_name="OPENAI_API_BASE"),
                 api_key=api_key,
@@ -227,7 +224,7 @@ class ModelManager(metaclass=Singleton):
             for model in models:
                 model_name = model["model_name"]
                 model_id = model["model_id"]
-                model = LangchainOpenAIModel(
+                model = ChatOpenAI(
                     model=model_id,
                     api_key=api_key,
                     base_url=api_base,
@@ -250,7 +247,7 @@ class ModelManager(metaclass=Singleton):
             # claude37-sonnet
             model_name = "claude-3.7-sonnet"
             model_id = "claude37-sonnet"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
@@ -266,12 +263,12 @@ class ModelManager(metaclass=Singleton):
             # claude-4-sonnet
             model_name = "claude-4-sonnet"
             model_id = "claude-4-sonnet"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
                                                     remote_api_base_name="ANTHROPIC_API_BASE"),
-            )
+            )   
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
                 "type": "openai",
@@ -300,7 +297,7 @@ class ModelManager(metaclass=Singleton):
             for model in models:
                 model_name = model["model_name"]
                 model_id = model["model_id"]
-                model = LangchainAnthropicModel(
+                model = ChatAnthropic(
                     model=model_id,
                     api_key=api_key,
                     base_url=api_base,
@@ -322,7 +319,7 @@ class ModelManager(metaclass=Singleton):
             # gemini-2.5-pro
             model_name = "gemini-2.5-pro"
             model_id = "gemini-2.5-pro"
-            model = LangchainOpenAIModel(
+            model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
@@ -352,68 +349,13 @@ class ModelManager(metaclass=Singleton):
             for model in models:
                 model_name = model["model_name"]
                 model_id = model["model_id"]
-                model = LangchainGoogleModel(
+                model = ChatGoogleGenerativeAI(
                     model=model_id,
                     api_key=api_key,
-                    base_url=api_base,
                 )
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {
                     "type": "google",
-                    "model_name": model_name,
-                    "model_id": model_id,
-                }
-                
-                
-    def _register_browser_use_models(self, use_local_proxy: bool = False):
-        if use_local_proxy:
-            logger.info("Using local proxy for Browser Use models")
-            api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
-                                                remote_api_key_name="SKYWORK_API_KEY")
-            
-            
-            # gpt-4.1
-            model_name = "browser_use_gpt-4.1"
-            model_id = "gpt-4.1"
-            model = ChatOpenAI(
-                model=model_id,
-                api_key=api_key,
-                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
-                                                    remote_api_base_name="SKYWORK_API_BASE"),
-            )
-            self.registed_models[model_name] = model
-            self.registed_models_info[model_name] = {
-                "type": "browser_use",
-                "model_name": model_name,
-                "model_id": model_id,
-            }
-            
-        else:
-            logger.info("Using remote API for Browser Use models")
-                
-            api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
-                                                remote_api_key_name="OPENAI_API_KEY")
-            api_base = self._check_local_api_base(local_api_base_name="OPENAI_API_BASE", 
-                                                    remote_api_base_name="OPENAI_API_BASE")
-            
-            models = [
-                {
-                    "model_name": "browser_use_gpt-4.1",
-                    "model_id": "gpt-4.1",
-                },
-            ]
-            
-            for model in models:
-                model_name = model["model_name"]
-                model_id = model["model_id"]
-                model = ChatOpenAI(
-                    model=model_id,
-                    api_key=api_key,
-                    base_url=api_base,
-                )
-                self.registed_models[model_name] = model
-                self.registed_models_info[model_name] = {
-                    "type": "browser_use",
                     "model_name": model_name,
                     "model_id": model_id,
                 }

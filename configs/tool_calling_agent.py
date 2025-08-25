@@ -1,6 +1,5 @@
-workdir = "workdir"
-tag = "agent"
-exp_path = f"{workdir}/{tag}"
+tag = "tool_calling_agent"
+workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
 model_id = "gpt-4.1"
@@ -10,7 +9,7 @@ agent = dict(
     type = "ToolCallingAgent",
     name = "tool_calling_agent",
     model_name = "gpt-4o",
-    prompt_name = "tool_calling_explicit",  # Use explicit tool usage template
+    prompt_name = "tool_calling",  # Use explicit tool usage template
     tools = [
         "bash",
         "file",

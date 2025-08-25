@@ -31,8 +31,6 @@ from pathlib import Path
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
-
-
 @lru_cache
 def _is_package_available(package_name: str) -> bool:
     try:
@@ -397,3 +395,30 @@ def make_init_file(folder: str | Path):
 
 def is_valid_name(name: str) -> bool:
     return name.isidentifier() and not keyword.iskeyword(name) if isinstance(name, str) else False
+
+def format_actions(actions: List[Dict[str, Any]]) -> str:
+    """Format actions."""
+    results = []
+    for action in actions:
+        
+        name = action["name"]
+        action_str = f"{name}"
+
+        args = action.get("args", {})
+        if args:
+            arg_str = ", ".join(
+                f'{k}={json.dumps(v, ensure_ascii=False)}'
+                for k, v in args.items()
+            )
+            action_str += f"({arg_str})"
+        else:
+            arg_str = "()"
+            action_str += arg_str
+        
+        if "result" in action:
+            result_str = f"result={action['result']}"
+            action_str += f" -> {result_str}"
+            
+        results.append(action_str)
+
+    return json.dumps(results, ensure_ascii=False)

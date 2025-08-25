@@ -1,14 +1,12 @@
 """Memory module for managing agent execution history."""
 
 from .memory_manager import MemoryManager
-from .memory_store import MemoryStore, InMemoryStore, FileMemoryStore
-from .memory_types import ChatEvent, EventType
+from .memory_store import SessionInfo, EventType, ChatEvent, Session
 
 __all__ = [
     "MemoryManager",
-    "MemoryStore", 
-    "InMemoryStore",
-    "FileMemoryStore",
+    "SessionInfo",
+    "EventType",
     "ChatEvent",
-    "EventType"
+    "Session",
 ]

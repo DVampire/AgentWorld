@@ -12,18 +12,20 @@ class MCPToolSet:
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
-        self.client = MultiServerMCPClient(
-            {
-                "local_mcp_server": {
-                    "command": "python",
-                    "args": [assemble_project_path("src/tools/mcp_tools/run.py")],
-                    "transport": "stdio",
-                },
-            }
-        )
+        self.client = None
     
     async def initialize(self):
         """Initialize the tool set by loading all MCP tools asynchronously."""
+        if self.client is None:
+            self.client = MultiServerMCPClient(
+                {
+                    "local_mcp_server": {
+                        "command": "python",
+                        "args": [assemble_project_path("src/tools/mcp_tools/run.py")],
+                        "transport": "stdio",
+                    },
+                }
+            )
         await self._load_default_tools()
     
     async def _load_default_tools(self):

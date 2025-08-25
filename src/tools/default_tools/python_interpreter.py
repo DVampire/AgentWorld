@@ -42,19 +42,19 @@ class PythonInterpreterTool(BaseTool):
             self.authorized_imports = list(set(BASE_BUILTIN_MODULES) | set(self.authorized_imports))
 
         if self.base_python_tools is None:
-            self.base_python_tools = list(BASE_PYTHON_TOOLS)
+            self.base_python_tools = dict(BASE_PYTHON_TOOLS)
 
         if self.python_evaluator is None:
             self.python_evaluator = LocalPythonExecutor(
                 additional_authorized_imports=self.authorized_imports,
-                static_tools=self.base_python_tools,
             )
+            self.python_evaluator.send_tools(self.base_python_tools)
         
     async def _arun(self, code: str) -> str:
         try:
             self.python_evaluator.state = {}
-            output, logs, is_final_answer = self.python_evaluator(code)
-            output = f"Stdout:\n{logs}\nOutput: {str(output)}"
+            code_output = self.python_evaluator(code)
+            output = f"Stdout:\n{code_output.logs}\nOutput: {str(code_output.output)}"
             return output
         
         except Exception as e:

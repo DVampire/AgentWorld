@@ -8,6 +8,7 @@ from src.tools.default_tools.default_tool_set import DefaultToolSet
 from src.tools.mcp_tools.mcp_tool_set import MCPToolSet
 from src.logger import logger
 from src.utils import Singleton
+from src.config import config
 
 
 class ToolManager(metaclass=Singleton):
