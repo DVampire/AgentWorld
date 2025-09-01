@@ -23,6 +23,8 @@ class ModelManager(metaclass=Singleton):
         self._register_openai_models(use_local_proxy=use_local_proxy)
         self._register_anthropic_models(use_local_proxy=use_local_proxy)
         self._register_google_models(use_local_proxy=use_local_proxy)
+        # browser-use
+        self._register_browser_models(use_local_proxy=use_local_proxy)
         
     def get_model(self, model_name: str) -> Any:
         return self.registed_models[model_name]
@@ -356,6 +358,140 @@ class ModelManager(metaclass=Singleton):
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {
                     "type": "google",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
+                
+    def _register_browser_models(self, use_local_proxy: bool = False):
+        # browser-use
+        from browser_use import ChatOpenAI
+        from browser_use import ChatAnthropic
+        
+        if use_local_proxy:
+            logger.info("Using local proxy for Browser models")
+            api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
+                                                remote_api_key_name="OPENAI_API_KEY")
+            
+            # gpt-4.1
+            model_name = "bs-gpt-4.1"
+            model_id = "gpt-4.1"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE"),
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # gpt-5
+            model_name = "bs-gpt-5"
+            model_id = "gpt-5"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE"),
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # claude-3.7-sonnet
+            model_name = "bs-claude-3.7-sonnet"
+            model_id = "claude37-sonnet"
+            model = ChatAnthropic(
+                model=model_id,
+                api_key=api_key,
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "anthropic",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # claude-4-sonnet
+            model_name = "bs-claude-4-sonnet"
+            model_id = "claude-4-sonnet"
+            model = ChatAnthropic(
+                model=model_id,
+                api_key=api_key,
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "anthropic",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+        else:
+            logger.info("Using remote API for Browser models")
+            
+            # OpenAI
+            api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
+                                                remote_api_key_name="OPENAI_API_KEY")
+            api_base = self._check_local_api_base(local_api_base_name="OPENAI_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE")
+            
+            models = [
+                {
+                    "model_name": "bs-gpt-4.1",
+                    "model_id": "gpt-4.1",
+                },
+                {
+                    "model_name": "bs-gpt-5",
+                    "model_id": "gpt-5",
+                },
+            ]
+                
+            for model in models:
+                model_name = model["model_name"]
+                model_id = model["model_id"]
+                model = ChatOpenAI(
+                    model=model_id,
+                    api_key=api_key,
+                    base_url=api_base,
+                )
+                self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "openai",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
+                
+            # Anthropic
+            api_base = self._check_local_api_base(local_api_base_name="ANTHROPIC_API_BASE", 
+                                                    remote_api_base_name="ANTHROPIC_API_BASE")
+            
+            models = [
+                {
+                    "model_name": "bs-claude-3.7-sonnet",
+                    "model_id": "claude37-sonnet",
+                },
+                {
+                    "model_name": "bs-claude-4-sonnet",
+                    "model_id": "claude-4-sonnet",
+                },
+            ]
+            
+            for model in models:
+                model_name = model["model_name"]
+                model_id = model["model_id"]
+                model = ChatAnthropic(
+                    model=model_id,
+                    api_key=api_key,
+                    base_url=api_base,
+                )
+                self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "anthropic",
                     "model_name": model_name,
                     "model_id": model_id,
                 }

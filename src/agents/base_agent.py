@@ -1,6 +1,7 @@
 """Base agent class for multi-agent system."""
 
 from abc import ABC
+import pandas as pd
 import json
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
@@ -24,10 +25,41 @@ class Action(BaseModel):
     """Action."""
     name: str = Field(description="The name of the action.")
     args: Union[*tool_manager.list_tool_args_schemas()] = Field(description="The arguments of the action.")
+    output: Optional[str] = Field(description="The output of the action. This is only provided if the action is completed.", default=None)
+
+    def __str__(self):
+        """String representation of the action."""
+        str = f"Action: {self.name}\n"
+        str += f"Args: {self.args}\n"
+        str += f"Output: {self.output}\n"
+        return str
+    
+    def __repr__(self):
+        return self.__str__()
     
 def format_actions(actions: List[Action]) -> str:
-    """Format actions."""
-    return json.dumps([action.model_dump() for action in actions], ensure_ascii=False)
+    """Format actions as a Markdown table using pandas."""
+    rows = []
+    for action in actions:
+        if isinstance(action.args, dict):
+            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
+        else:
+            args_str = str(action.args)
+
+        rows.append({
+            "Action": action.name,
+            "Args": args_str,
+            "Output": action.output if action.output is not None else None
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    if df["Output"].isna().all():
+        df = df.drop(columns=["Output"])
+    else:
+        df["Output"] = df["Output"].fillna("None")
+    
+    return df.to_markdown(index=True)
     
 class ThinkOutput(BaseModel):
     """Think output."""
@@ -43,7 +75,7 @@ class ThinkOutput(BaseModel):
         str += f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
         str += f"Memory: {self.memory}\n"
         str += f"Next Goal: {self.next_goal}\n"
-        str += f"Action: {format_actions(self.action)}\n"
+        str += f"Action: \n{format_actions(self.action)}\n"
         return str
     
     def __repr__(self):

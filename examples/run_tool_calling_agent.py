@@ -53,7 +53,7 @@ async def main():
     """Test streaming execution mode."""
     logger.info("| Testing streaming execution mode")
     
-    task = "使用browser工具打开google.com, 并搜索python"
+    task = "使用python代码计算2+3, 并返回结果"
     logger.info(f"| Task: {task}")
     
     await agent.run(task)

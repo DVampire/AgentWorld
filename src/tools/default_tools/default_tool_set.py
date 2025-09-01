@@ -9,6 +9,7 @@ from .bash import BashTool
 from .file import FileTool
 from .project import ProjectTool
 from .python_interpreter import PythonInterpreterTool
+from .done import DoneTool
 
 
 class DefaultToolSet:
@@ -45,6 +46,11 @@ class DefaultToolSet:
         python_interpreter_tool = PythonInterpreterTool()
         self._tools["python_interpreter"] = python_interpreter_tool
         self._tool_configs["python_interpreter"] = python_interpreter_tool.get_tool_config()
+
+        # Load done tool
+        done_tool = DoneTool()
+        self._tools["done"] = done_tool
+        self._tool_configs["done"] = done_tool.get_tool_config()
     
     def list_tools(self) -> List[str]:
         """Get all default tools."""

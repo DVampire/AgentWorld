@@ -8,6 +8,7 @@ load_dotenv(verbose=True)
 
 from src.tools.mcp_tools.server import mcp_server, MCP_TOOL_ARGS
 from src.utils import assemble_project_path
+from src.models import model_manager
 
 _BROWSER_TOOL_DESCRIPTION = """
 Use the browser to interact with the internet to complete the task.
@@ -47,32 +48,68 @@ async def browser(task: str,
     Use the browser to interact with the internet to complete the task.
 
     Args:
-        args: BrowserToolInput, The input of the browser tool.
+        task: The task to complete.
+        data_dir: The directory to save the files.
 
     Returns:
-        dict: The result of the task.
+        str: The result of the task.
     """
-    await ctx.info(f"Completing task: {task}")
-    
-    data_dir = assemble_project_path(data_dir)
-    os.makedirs(data_dir, exist_ok=True)    
-    
-    agent = Agent(
-        task=task,
-        llm=ChatOpenAI(model="gpt-4.1", 
-                       api_key=os.getenv("OPENAI_API_KEY"), 
-                       base_url=os.getenv("OPENAI_API_BASE")),
-        enable_memory=False,
-        page_extraction_llm=ChatOpenAI(model="gpt-4.1", 
-                                       api_key=os.getenv("OPENAI_API_KEY"), 
-                                       base_url=os.getenv("OPENAI_API_BASE")),
-        file_system_path=data_dir
-    )
-    
-    
-    history = await agent.run(max_steps=50)
-    contents = history.extracted_content()
-    res = "\n".join(contents)
-    await agent.close()
-    
-    return res
+    try:
+        await ctx.info(f"Starting browser task: {task}")
+        
+        data_dir = assemble_project_path(data_dir)
+        os.makedirs(data_dir, exist_ok=True)    
+        
+        # Create browser-use agent
+        agent = Agent(
+            task=task,
+            llm=model_manager.get_model("bs-gpt-5"),
+            page_extraction_llm=model_manager.get_model("bs-gpt-5"),
+            file_system_path=data_dir,
+            max_steps=20,  # Limit steps to avoid long running tasks
+            verbose=True
+        )
+        
+        await ctx.info("Running browser agent...")
+        
+        # Run the agent
+        history = await agent.run()
+        
+        await ctx.info("Browser agent completed, extracting results...")
+        
+        # Try to get results from history
+        try:
+            # Try different methods to extract content
+            if hasattr(history, 'extracted_content'):
+                contents = history.extracted_content()
+                if contents:
+                    res = "\n".join(contents)
+                else:
+                    res = "No extracted content found"
+            elif hasattr(history, 'final_result'):
+                res = history.final_result() or "No final result available"
+            elif hasattr(history, 'history') and history.history:
+                # Get the last step result
+                last_step = history.history[-1]
+                if hasattr(last_step, 'action_results'):
+                    res = str(last_step.action_results)
+                else:
+                    res = str(last_step)
+            else:
+                res = "Task completed but no specific results available"
+                
+        except Exception as e:
+            await ctx.warning(f"Error extracting content: {e}")
+            res = f"Task completed but error extracting results: {str(e)}"
+        
+        # Close the agent
+        await agent.close()
+        
+        await ctx.info("Browser tool completed successfully")
+        
+        return res
+        
+    except Exception as e:
+        error_msg = f"Error in browser tool: {str(e)}"
+        await ctx.error(error_msg)
+        return error_msg

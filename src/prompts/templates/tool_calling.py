@@ -70,6 +70,7 @@ The `done` action is your opportunity to terminate and share your findings with 
 <action_rules>
 - You MUST use the actions in the <available_actions> to solve the task and do not hallucinate.
 - You are allowed to use a maximum of {{ max_actions }} actions per step.
+- DO NOT provide the `output` field in action, because the action has not been executed yet.
 
 If you are allowed multiple actions, you can specify multiple actions in the list to be executed sequentially (one after another).
 </action_rules>
