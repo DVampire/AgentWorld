@@ -38,20 +38,20 @@ class ModelManager(metaclass=Singleton):
     def _check_local_api_key(self, local_api_key_name: str, remote_api_key_name: str) -> str:
         api_key = os.getenv(local_api_key_name, PLACEHOLDER)
         if api_key == PLACEHOLDER:
-            logger.warning(f"Local API key {local_api_key_name} is not set, using remote API key {remote_api_key_name}")
+            logger.warning(f"| Local API key {local_api_key_name} is not set, using remote API key {remote_api_key_name}")
             api_key = os.getenv(remote_api_key_name, PLACEHOLDER)
         return api_key
     
     def _check_local_api_base(self, local_api_base_name: str, remote_api_base_name: str) -> str:
         api_base = os.getenv(local_api_base_name, PLACEHOLDER)
         if api_base == PLACEHOLDER:
-            logger.warning(f"Local API base {local_api_base_name} is not set, using remote API base {remote_api_base_name}")
+            logger.warning(f"| Local API base {local_api_base_name} is not set, using remote API base {remote_api_base_name}")
             api_base = os.getenv(remote_api_base_name, PLACEHOLDER)
         return api_base
     
     def _register_openai_models(self, use_local_proxy: bool = False):
         if use_local_proxy:
-            logger.info("Using local proxy for OpenAI models")
+            logger.info("| Using local proxy for OpenAI models")
             api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
                                                 remote_api_key_name="OPENAI_API_KEY")
             
@@ -190,7 +190,7 @@ class ModelManager(metaclass=Singleton):
                 "model_id": model_id,
             }
         else:
-            logger.info("Using remote API for OpenAI models")
+            logger.info("| Using remote API for OpenAI models")
             api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
                                                 remote_api_key_name="OPENAI_API_KEY")
             api_base = self._check_local_api_base(local_api_base_name="OPENAI_API_BASE", 
@@ -242,7 +242,7 @@ class ModelManager(metaclass=Singleton):
     def _register_anthropic_models(self, use_local_proxy: bool = False):
         # claude37-sonnet, claude-4-sonnet
         if use_local_proxy:
-            logger.info("Using local proxy for Anthropic models")
+            logger.info("| Using local proxy for Anthropic models")
             api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
                                                 remote_api_key_name="ANTHROPIC_API_KEY")
             
@@ -279,7 +279,7 @@ class ModelManager(metaclass=Singleton):
             }
             
         else:
-            logger.info("Using remote API for Anthropic models")
+            logger.info("| Using remote API for Anthropic models")
             api_key = self._check_local_api_key(local_api_key_name="ANTHROPIC_API_KEY", 
                                                 remote_api_key_name="ANTHROPIC_API_KEY")
             api_base = self._check_local_api_base(local_api_base_name="ANTHROPIC_API_BASE", 
@@ -314,7 +314,7 @@ class ModelManager(metaclass=Singleton):
     def _register_google_models(self, use_local_proxy: bool = False):
         # gemini-2.5-pro
         if use_local_proxy:
-            logger.info("Using local proxy for Google models")
+            logger.info("| Using local proxy for Google models")
             api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
                                                 remote_api_key_name="GOOGLE_API_KEY")
             
@@ -335,7 +335,7 @@ class ModelManager(metaclass=Singleton):
             }
             
         else:
-            logger.info("Using remote API for Google models")
+            logger.info("| Using remote API for Google models")
             api_key = self._check_local_api_key(local_api_key_name="GOOGLE_API_KEY", 
                                                 remote_api_key_name="GOOGLE_API_KEY")
             api_base = self._check_local_api_base(local_api_base_name="GOOGLE_API_BASE", 
@@ -368,7 +368,7 @@ class ModelManager(metaclass=Singleton):
         from browser_use import ChatAnthropic
         
         if use_local_proxy:
-            logger.info("Using local proxy for Browser models")
+            logger.info("| Using local proxy for Browser models")
             api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
                                                 remote_api_key_name="OPENAI_API_KEY")
             
@@ -432,7 +432,7 @@ class ModelManager(metaclass=Singleton):
                 "model_id": model_id,
             }
         else:
-            logger.info("Using remote API for Browser models")
+            logger.info("| Using remote API for Browser models")
             
             # OpenAI
             api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 

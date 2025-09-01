@@ -31,9 +31,9 @@ class ToolManager(metaclass=Singleton):
             default_tool_set = DefaultToolSet()
             await default_tool_set.init_tools()
             self._default_tool_set = default_tool_set
-            logger.info("✅ Default tool set initialized successfully")
+            logger.info("| ✅ Default tool set initialized successfully")
         except Exception as e:
-            logger.error(f"⚠️ Failed to initialize default tool set: {e}")
+            logger.error(f"| ⚠️ Failed to initialize default tool set: {e}")
             self._default_tool_set = None
         
         # Initialize MCP tool set
@@ -41,16 +41,16 @@ class ToolManager(metaclass=Singleton):
             mcp_tool_set = MCPToolSet()
             await mcp_tool_set.init_tools()
             self._mcp_tool_set = mcp_tool_set
-            logger.info("✅ MCP tool set initialized successfully")
+            logger.info("| ✅ MCP tool set initialized successfully")
         except Exception as e:
-            logger.error(f"⚠️ Failed to initialize MCP tool set: {e}")
+            logger.error(f"| ⚠️ Failed to initialize MCP tool set: {e}")
             self._mcp_tool_set = None
         
         # Merge all tools
         await self._merge_tools()
         
         self._initialized = True
-        logger.info(f"🎉 Tool manager initialized with {len(self._all_tools)} tools")
+        logger.info(f"| 🎉 Tool manager initialized with {len(self._all_tools)} tools")
     
     async def _merge_tools(self):
         """Merge tools from both tool sets."""
