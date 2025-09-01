@@ -24,7 +24,6 @@ class ToolCallingAgent(BaseAgent):
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
         max_iterations: int = 10,
-        verbose: bool = True,
         memory_manager: Optional[MemoryManager] = None,
         file_system: Optional[FileSystem] = None,
         **kwargs

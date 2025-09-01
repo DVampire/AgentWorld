@@ -17,6 +17,5 @@ agent = dict(
         "python_interpreter",
         "browser",
     ],
-    max_iterations = 10,
-    verbose = True
+    max_iterations = 10
 )
