@@ -41,7 +41,7 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=True)
+    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
     logger.info(f"| Model: {model_manager.list_models()}")
     
     await tool_manager.init_tools()
@@ -53,7 +53,7 @@ async def main():
     """Test streaming execution mode."""
     logger.info("| Testing streaming execution mode")
     
-    task = "使用python代码计算2+3, 并返回结果"
+    task = "北京今天天气怎么样?"
     logger.info(f"| Task: {task}")
     
     await agent.run(task)

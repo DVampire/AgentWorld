@@ -1,12 +1,13 @@
 """MCP tool set for managing local and remote MCP tools."""
 
-from typing import Dict, Any, List, Optional, Union
-from langchain.tools import BaseTool, Tool
+from typing import Dict, Any, List, Optional
+from langchain.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain.tools import StructuredTool
 
 from src.utils import assemble_project_path
 from src.tools.mcp_tools.server import MCP_TOOL_ARGS
+import os
 
 class MCPToolSet:
     """Tool set for managing local and remote MCP tools."""
@@ -19,18 +20,34 @@ class MCPToolSet:
     async def initialize(self):
         """Initialize the tool set by loading all MCP tools asynchronously."""
         if self.client is None:
+            # Pass environment variables and configuration to MCP server
+            env = os.environ.copy()
+            
+            # Add any additional environment variables needed by MCP tools
+            env.update({
+                'PYTHONPATH': os.pathsep.join([
+                    os.getcwd(),
+                    os.path.join(os.getcwd(), 'src'),
+                    env.get('PYTHONPATH', '')
+                ])
+            })
+            
             self.client = MultiServerMCPClient(
                 {
                     "local_mcp_server": {
-                        "command": "python",
-                        "args": [assemble_project_path("src/tools/mcp_tools/run.py")],
                         "transport": "stdio",
+                        "command": "python",
+                        "args": [
+                            assemble_project_path("src/tools/mcp_tools/server.py"),
+                        ],
+                        "env": env,  # Pass environment variables
+                        "cwd": os.getcwd(),  # Set working directory
                     },
                 }
             )
-        await self._load_default_tools()
+        await self._load_mcp_tools()
     
-    async def _load_default_tools(self):
+    async def _load_mcp_tools(self):
         """Load all default tools."""
         tools = await self.client.get_tools()
         for tool in tools:

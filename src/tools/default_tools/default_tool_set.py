@@ -1,15 +1,14 @@
 """Default tool set for managing built-in tools."""
-
-import asyncio
 from typing import List, Dict, Any, Optional
 from langchain.tools import BaseTool
 
-
-from .bash import BashTool
-from .file import FileTool
-from .project import ProjectTool
-from .python_interpreter import PythonInterpreterTool
-from .done import DoneTool
+from src.tools.default_tools.bash import BashTool
+from src.tools.default_tools.file import FileTool
+from src.tools.default_tools.project import ProjectTool
+from src.tools.default_tools.python_interpreter import PythonInterpreterTool
+from src.tools.default_tools.done import DoneTool
+from src.tools.default_tools.browser import BrowserTool
+from src.config import config
 
 
 class DefaultToolSet:
@@ -51,6 +50,13 @@ class DefaultToolSet:
         done_tool = DoneTool()
         self._tools["done"] = done_tool
         self._tool_configs["done"] = done_tool.get_tool_config()
+
+        # Load browser tool
+        browser_tool = BrowserTool(
+            model_name=config.browser_tool.model_name,
+        )
+        self._tools["browser"] = browser_tool
+        self._tool_configs["browser"] = browser_tool.get_tool_config()
     
     def list_tools(self) -> List[str]:
         """Get all default tools."""

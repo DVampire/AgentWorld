@@ -59,7 +59,7 @@ async def test_general_models():
         # "o3",
         # "claude-3.7-sonnet",
         # "claude-4-sonnet",
-        # "gemini-2.5-pro",   
+        # "gemini-2.5-pro",  
     ]:
         model = model_manager.get_model(model_name)
         response = await model.ainvoke(messages)

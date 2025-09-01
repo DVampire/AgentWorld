@@ -10,7 +10,6 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
-from regex import D
 from langchain_core.utils.function_calling import convert_to_openai_function
 
 from src.models import model_manager

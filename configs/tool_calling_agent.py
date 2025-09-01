@@ -1,7 +1,10 @@
+_base_ = './base.py'
+
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
+use_local_proxy = False
 model_id = "gpt-4.1"
 version = "0.1.0"
 
@@ -16,6 +19,8 @@ agent = dict(
         "project",
         "python_interpreter",
         "browser",
+        "done",
+        "weather",
     ],
     max_iterations = 10
 )

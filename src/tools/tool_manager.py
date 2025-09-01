@@ -37,14 +37,14 @@ class ToolManager(metaclass=Singleton):
             self._default_tool_set = None
         
         # Initialize MCP tool set
-        try:
-            mcp_tool_set = MCPToolSet()
-            await mcp_tool_set.init_tools()
-            self._mcp_tool_set = mcp_tool_set
-            logger.info("| ✅ MCP tool set initialized successfully")
-        except Exception as e:
-            logger.error(f"| ⚠️ Failed to initialize MCP tool set: {e}")
-            self._mcp_tool_set = None
+        # try:
+        mcp_tool_set = MCPToolSet()
+        await mcp_tool_set.init_tools()
+        self._mcp_tool_set = mcp_tool_set
+        logger.info("| ✅ MCP tool set initialized successfully")
+        # except Exception as e:
+        #     logger.error(f"| ⚠️ Failed to initialize MCP tool set: {e}")
+        #     self._mcp_tool_set = None
         
         # Merge all tools
         await self._merge_tools()
@@ -162,8 +162,11 @@ class ToolManager(metaclass=Singleton):
         if not tool:
             raise ValueError(f"Tool '{name}' not found")
         
+        print(args)
+        
         if hasattr(tool, 'ainvoke'):
-            return await tool.ainvoke(input=args)
+            res = await tool.ainvoke(input=args)
+            return res
         else:
             return tool.invoke(input=args)
     

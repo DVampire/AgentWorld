@@ -57,7 +57,7 @@ class ToolCallingAgent(BaseAgent):
         final_result = None
         
         try:
-            think_output = structured_llm.invoke(messages)
+            think_output = await structured_llm.ainvoke(messages)
             
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal
@@ -124,7 +124,6 @@ class ToolCallingAgent(BaseAgent):
         
         return done, final_result
         
-          
     async def run(self, task: str):
         """Run the tool calling agent with loop."""
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
@@ -179,6 +178,9 @@ class ToolCallingAgent(BaseAgent):
             agent_name=self.name,
             task_id=task_id
         )
+        
+        # End session
+        self.memory_manager.end_session()
         
         logger.info(f"| ✅ Agent completed after {iteration}/{self.max_iterations} iterations")
         

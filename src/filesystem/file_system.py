@@ -146,13 +146,7 @@ class FileSystem:
 		self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
 		self.base_dir.mkdir(parents=True, exist_ok=True)
   
-		self.data_dir = self.base_dir / 'data'
-
-		# Create and use a dedicated subfolder for all operations
-		if self.data_dir.exists():
-			# clean the data directory
-			shutil.rmtree(self.data_dir)
-		self.data_dir.mkdir(exist_ok=True)
+		self.data_dir = self.base_dir
 
 		self._file_types: dict[str, type[BaseFile]] = {
 			'md': MarkdownFile,

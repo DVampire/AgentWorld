@@ -15,7 +15,7 @@ sys.path.append(root)
 from src.config import config
 from src.logger import logger
 from src.models import model_manager
-from src.tools.mcp_tools.browser import browser
+from src.tools import tool_manager
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -37,37 +37,29 @@ def parse_args():
 async def test_browser_tool():
     """Test the browser tool directly."""
     
-    # Mock context for testing
-    class MockContext:
-        async def info(self, msg):
-            print(f"INFO: {msg}")
-        
-        async def warning(self, msg):
-            print(f"WARNING: {msg}")
-        
-        async def error(self, msg):
-            print(f"ERROR: {msg}")
-    
-    ctx = MockContext()
-    
     # Test parameters
     task = "Go to google.com and search for 'python programming' get the first result."
-    data_dir = "workdir/test_browser_tool"
+    base_dir = "workdir/test_browser_tool"
     
     print("🧪 Testing browser tool...")
     print(f"Task: {task}")
-    print(f"Data directory: {data_dir}")
+    print(f"Data directory: {base_dir}")
     
     try:
         # Call the browser tool
-        result = await browser(task, data_dir, ctx)
+        browser = tool_manager.get_tool("browser")
+        print(f"Browser tool: {browser}")
+        print(f"Browser tool args schema: {browser.args_schema}")
+        
+        # Use the correct parameter name
+        result = await browser.ainvoke(input={"task": task, "base_dir": base_dir})
         
         print("\n📋 Browser tool result:")
         print("=" * 50)
         print(result)
         print("=" * 50)
         
-        if result and "Error" not in result:
+        if result and "Error" not in str(result):
             print("✅ Browser tool test successful!")
         else:
             print("❌ Browser tool test failed!")
@@ -86,6 +78,9 @@ async def main():
     
     await model_manager.init_models(use_local_proxy=False)
     logger.info(f"| Models: {model_manager.list_models()}")
+    
+    await tool_manager.init_tools()
+    logger.info(f"| Tools: {tool_manager.list_tools()}")
     
     await test_browser_tool()
     
