@@ -5,13 +5,12 @@ workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
 use_local_proxy = False
-model_id = "gpt-4.1"
 version = "0.1.0"
 
 agent = dict(
     type = "ToolCallingAgent",
     name = "tool_calling_agent",
-    model_name = "gpt-4o",
+    model_name = "gpt-4.1",
     prompt_name = "tool_calling",  # Use explicit tool usage template
     tools = [
         "bash",
