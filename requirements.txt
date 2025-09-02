@@ -36,4 +36,6 @@ scikit-learn>=1.7.1
 torchmetrics>=1.8.1
 pandas_market_calendars>=5.1.0
 akshare>=1.16.98
-dotenv>=0.9.9
+json5>=0.12.1
+python-dotenv>=1.1.1
+iopath>=0.1.10
