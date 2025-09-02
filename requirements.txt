@@ -2,6 +2,7 @@
 langchain>=0.1.0
 langchain-openai>=0.0.5
 langchain-anthropic>=0.1.0
+langchain_google_genai>=2.1.10
 langgraph>=0.0.20
 mmengine>=0.10.0
 
@@ -31,3 +32,8 @@ gym>=0.26.2
 pandas>=2.3.2
 datasets>=4.0.0
 joblib>=1.5.2
+scikit-learn>=1.7.1
+torchmetrics>=1.8.1
+pandas_market_calendars>=5.1.0
+akshare>=1.16.98
+dotenv>=0.9.9
