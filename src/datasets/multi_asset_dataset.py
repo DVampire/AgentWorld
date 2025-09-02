@@ -15,9 +15,9 @@ from src.utils import get_tag_name
 from src.registry import DATASETS
 from src.registry import SCALER
 from src.utils import assemble_project_path
-from src.data.collate_fn import MultiAssetPriceTextCollateFn
+from src.datasets.collate_fn import MultiAssetPriceTextCollateFn
 from torch.utils.data.sampler import SequentialSampler
-from src.data.dataloader import DataLoader
+from src.datasets.dataloader import DataLoader
 
 @DATASETS.register_module(force=True)
 class MultiAssetDataset(Dataset):
@@ -200,7 +200,7 @@ class MultiAssetDataset(Dataset):
         else:
             raise ValueError("Enabled_info must be a Dict or List of Dicts.")
 
-        asset_df["timestamp"] = pd.to_datetime(asset_df["timestamp"])
+        asset_df["timestamp"] = pd.to_datetime(asset_df["timestamp"], format='%Y-%m-%d %H:%M:%S', errors='coerce')
         asset_df = asset_df.drop_duplicates(subset=["timestamp"], keep="first")
         asset_df = asset_df.sort_values(by="timestamp")
         asset_df.set_index("timestamp", inplace=True)

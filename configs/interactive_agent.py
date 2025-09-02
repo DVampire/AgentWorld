@@ -1,5 +1,6 @@
-# Interactive agent configuration
-_base_ = './base.py'
+from mmengine.config import read_base
+with read_base():
+    from .base import browser_tool
 
 # System settings
 tag = "interactive_agent"

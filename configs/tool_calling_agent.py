@@ -1,4 +1,6 @@
-_base_ = './base.py'
+from mmengine.config import read_base
+with read_base():
+    from .base import browser_tool
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"

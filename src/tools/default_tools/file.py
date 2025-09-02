@@ -13,27 +13,27 @@ Use absolute paths for all file operations to avoid path-related issues.
 
 Available operations:
 1. READ: Read file content with line numbers
-   - file_path: absolute path to file
-   - start_line: starting line number (optional, 1-indexed)
-   - end_line: ending line number (optional, 1-indexed)
+    - file_path: absolute path to file
+    - start_line: starting line number (optional, 1-indexed)
+    - end_line: ending line number (optional, 1-indexed)
 
 2. WRITE: Write content to file
-   - file_path: absolute path to file
-   - content: content to write
-   - mode: 'w' for overwrite, 'a' for append (default: 'w')
+    - file_path: absolute path to file
+    - content: content to write
+    - mode: 'w' for overwrite, 'a' for append (default: 'w')
 
 3. DELETE: Delete a file
-   - file_path: absolute path to file to delete
+    - file_path: absolute path to file to delete
 
 4. MODIFY: Modify a specific line in file
-   - file_path: absolute path to file
-   - line_number: line number to modify (1-indexed)
-   - new_content: new content for the line
+    - file_path: absolute path to file
+    - line_number: line number to modify (1-indexed)
+    - new_content: new content for the line
 
 5. GREP: Search for patterns in file
-   - file_path: absolute path to file
-   - pattern: search pattern (regex supported)
-   - case_sensitive: whether search is case sensitive (default: True)
+    - file_path: absolute path to file
+    - pattern: search pattern (regex supported)
+    - case_sensitive: whether search is case sensitive (default: True)
 
 Input format: JSON string with 'operation' and operation-specific parameters.
 Example: {"operation": "read", "file_path": "/path/to/file.txt", "start_line": 1, "end_line": 10}

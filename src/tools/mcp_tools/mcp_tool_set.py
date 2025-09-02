@@ -8,6 +8,7 @@ from langchain.tools import StructuredTool
 from src.utils import assemble_project_path
 from src.tools.mcp_tools.server import MCP_TOOL_ARGS
 import os
+import logging
 
 class MCPToolSet:
     """Tool set for managing local and remote MCP tools."""
@@ -19,6 +20,10 @@ class MCPToolSet:
     
     async def initialize(self):
         """Initialize the tool set by loading all MCP tools asynchronously."""
+        # Suppress MCP warnings before initialization
+        logging.getLogger("mcp.os.posix.utilities").setLevel(logging.ERROR)
+        logging.getLogger("mcp").setLevel(logging.ERROR)
+        
         if self.client is None:
             # Pass environment variables and configuration to MCP server
             env = os.environ.copy()
@@ -29,7 +34,15 @@ class MCPToolSet:
                     os.getcwd(),
                     os.path.join(os.getcwd(), 'src'),
                     env.get('PYTHONPATH', '')
-                ])
+                ]),
+                # Add process management environment variables
+                'MCP_PROCESS_GROUP_MANAGEMENT': '1',
+                'MCP_TERMINATE_TIMEOUT': '5.0',
+                'MCP_KILL_TIMEOUT': '2.0',
+                # Add signal handling preferences
+                'MCP_SIGNAL_HANDLING': 'graceful',
+                # Reduce warning verbosity
+                'MCP_LOG_LEVEL': 'WARNING'
             })
             
             self.client = MultiServerMCPClient(

@@ -13,33 +13,33 @@ _PROJECT_TOOL_DESCRIPTION = """Project management tool that provides comprehensi
 
 Available operations:
 1. LIST_DIR: List files and directories in a specified path
-   - path: directory path to list (absolute or relative)
-   - show_hidden: whether to show hidden files (default: False)
-   - max_depth: maximum depth for recursive listing (default: 1)
-   - file_types: filter by file extensions (optional, e.g., [".py", ".js"])
+    - path: directory path to list (absolute or relative)
+    - show_hidden: whether to show hidden files (default: False)
+    - max_depth: maximum depth for recursive listing (default: 1)
+    - file_types: filter by file extensions (optional, e.g., [".py", ".js"])
 
 2. TREE_STRUCTURE: Show directory tree structure
-   - root_path: root directory path
-   - max_depth: maximum depth for tree (default: 3)
-   - show_hidden: whether to show hidden files (default: False)
-   - exclude_patterns: patterns to exclude (optional, e.g., ["__pycache__", ".git"])
+    - root_path: root directory path
+    - max_depth: maximum depth for tree (default: 3)
+    - show_hidden: whether to show hidden files (default: False)
+    - exclude_patterns: patterns to exclude (optional, e.g., ["__pycache__", ".git"])
 
 3. SEARCH_FILES: Search for files by name or content
-   - search_path: directory to search in
-   - query: search query (filename or content)
-   - search_type: "name" for filename search, "content" for content search (default: "name")
-   - file_types: filter by file extensions (optional)
-   - case_sensitive: whether search is case sensitive (default: False)
-   - max_results: maximum number of results (default: 50)
+    - search_path: directory to search in
+    - query: search query (filename or content)
+    - search_type: "name" for filename search, "content" for content search (default: "name")
+    - file_types: filter by file extensions (optional)
+    - case_sensitive: whether search is case sensitive (default: False)
+    - max_results: maximum number of results (default: 50)
 
 4. GET_FILE_INFO: Get detailed information about a file or directory
-   - path: file or directory path
-   - include_stats: whether to include file statistics (default: True)
+    - path: file or directory path
+    - include_stats: whether to include file statistics (default: True)
 
 5. FIND_DUPLICATES: Find duplicate files in a directory
-   - search_path: directory to search for duplicates
-   - file_types: filter by file extensions (optional)
-   - check_content: whether to check file content (default: True)
+    - search_path: directory to search for duplicates
+    - file_types: filter by file extensions (optional)
+    - check_content: whether to check file content (default: True)
 
 Input format: JSON string with 'operation' and operation-specific parameters.
 Example: {"operation": "list_dir", "path": "/path/to/directory", "show_hidden": false}

@@ -6,10 +6,10 @@ from langchain.tools import BaseTool
 
 from src.tools.default_tools.default_tool_set import DefaultToolSet
 from src.tools.mcp_tools.mcp_tool_set import MCPToolSet
+from src.tools.environment_tools.environment_tool_set import EnvironmentToolSet
 from src.logger import logger
 from src.utils import Singleton
 from src.config import config
-
 
 class ToolManager(metaclass=Singleton):
     """Unified tool manager for managing default tools and MCP tools."""
@@ -17,6 +17,7 @@ class ToolManager(metaclass=Singleton):
     def __init__(self):
         self._default_tool_set: Optional[DefaultToolSet] = None
         self._mcp_tool_set: Optional[MCPToolSet] = None
+        self._environment_tool_set: Optional[EnvironmentToolSet] = None
         self._all_tools: Dict[str, BaseTool] = {}
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
@@ -36,15 +37,25 @@ class ToolManager(metaclass=Singleton):
             logger.error(f"| ⚠️ Failed to initialize default tool set: {e}")
             self._default_tool_set = None
         
+        # Initialize environment tool set
+        try:
+            environment_tool_set = EnvironmentToolSet()
+            await environment_tool_set.init_tools()
+            self._environment_tool_set = environment_tool_set
+            logger.info("| ✅ Environment tool set initialized successfully")
+        except Exception as e:
+            logger.error(f"| ⚠️ Failed to initialize environment tool set: {e}")
+            self._environment_tool_set = None
+        
         # Initialize MCP tool set
-        # try:
-        mcp_tool_set = MCPToolSet()
-        await mcp_tool_set.init_tools()
-        self._mcp_tool_set = mcp_tool_set
-        logger.info("| ✅ MCP tool set initialized successfully")
-        # except Exception as e:
-        #     logger.error(f"| ⚠️ Failed to initialize MCP tool set: {e}")
-        #     self._mcp_tool_set = None
+        try:
+            mcp_tool_set = MCPToolSet()
+            await mcp_tool_set.init_tools()
+            self._mcp_tool_set = mcp_tool_set
+            logger.info("| ✅ MCP tool set initialized successfully")
+        except Exception as e:
+            logger.error(f"| ⚠️ Failed to initialize MCP tool set: {e}")
+            self._mcp_tool_set = None
         
         # Merge all tools
         await self._merge_tools()
@@ -63,6 +74,15 @@ class ToolManager(metaclass=Singleton):
             for tool in default_tools:
                 self._all_tools[tool] = self._default_tool_set.get_tool(tool)
                 config = self._default_tool_set.get_tool_config(tool)
+                if config:
+                    self._tool_configs[tool] = config
+                    
+        # Add environment tools
+        if self._environment_tool_set:
+            environment_tools = self._environment_tool_set.list_tools()
+            for tool in environment_tools:
+                self._all_tools[tool] = self._environment_tool_set.get_tool(tool)
+                config = self._environment_tool_set.get_tool_config(tool)
                 if config:
                     self._tool_configs[tool] = config
         

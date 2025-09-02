@@ -4,7 +4,7 @@ from dataclasses import dataclass, asdict
 from pandas import DataFrame
 from typing import Any, Optional
 import random
-import gym
+import gymnasium as gym
 import numpy as np
 import pandas as pd
 
@@ -695,7 +695,7 @@ class EnvironmentAgentTrading(gym.Env):
 if __name__ == '__main__':
     symbol = "AAPL"
     history_timestamps = 5
-    future_timestamps = 0
+    future_timestamps = 1
     start_timestamp = "2015-05-01"
     end_timestamp = "2025-05-01"
 
@@ -761,7 +761,7 @@ if __name__ == '__main__':
         daily_sample_texts=2,
     )
 
-    dataset = DATASET.build(dataset)
+    dataset = DATASETS.build(dataset)
 
     env_cfg.update(
         dict(
@@ -771,7 +771,7 @@ if __name__ == '__main__':
 
     record = TradingRecords()
 
-    environment = ENVIRONMENT.build(env_cfg)
+    environment = ENVIRONMENTS.build(env_cfg)
 
     state, info = environment.reset()
 

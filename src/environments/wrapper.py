@@ -1,11 +1,12 @@
-from gym import Wrapper, spaces
 import random
 import numpy as np
-import gym
-from gym.envs.registration import register
+import gymnasium as gym
+from gymnasium.envs.registration import register
+from gymnasium import Wrapper, spaces
 from typing import Any
 
 register(id = "EnvironmentAgentTrading", entry_point = "src.environments.wrapper:EnvironmentAgentTradingWrapper")
+
 class EnvironmentAgentTradingWrapper(Wrapper):
     def __init__(self,
                  env: Any,
@@ -42,3 +43,9 @@ class EnvironmentAgentTradingWrapper(Wrapper):
     def step(self, action):
         next_state, reward, done, truncted, info = self.env.step(action)
         return next_state, reward, done, truncted, info
+
+def make_env(env_id, env_params):
+    def thunk():
+        env = gym.make(env_id, **env_params)
+        return env
+    return thunk

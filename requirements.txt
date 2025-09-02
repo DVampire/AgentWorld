@@ -3,6 +3,7 @@ langchain>=0.1.0
 langchain-openai>=0.0.5
 langchain-anthropic>=0.1.0
 langchain_google_genai>=2.1.10
+langchain_mcp_adapters>=0.1.9
 langgraph>=0.0.20
 mmengine>=0.10.0
 
@@ -28,7 +29,6 @@ pytest-asyncio>=0.21.0
 black>=23.0.0
 flake8>=6.0.0
 
-gym>=0.26.2
 pandas>=2.3.2
 datasets>=4.0.0
 joblib>=1.5.2
@@ -39,3 +39,5 @@ akshare>=1.16.98
 json5>=0.12.1
 python-dotenv>=1.1.1
 iopath>=0.1.10
+gymnasium>=1.2.0
+numpy>=2.3.2
