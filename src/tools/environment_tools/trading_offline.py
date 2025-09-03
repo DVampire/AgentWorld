@@ -24,7 +24,10 @@ Example: {"operation": "step", "action": "BUY"}
 
 class TradingOfflineToolArgs(BaseModel):
     operation: str = Field(description="The operation to execute")
-    action: Optional[str] = Field(description="The action to take. Should be `BUY` or `SELL` or `HOLD`")
+    action: Optional[str] = Field(
+        default=None,
+        description="The action to take. Should be `BUY` or `SELL` or `HOLD`"
+    )
 
 class TradingOfflineTool(BaseTool):
     """Trading offline tool for trading offline environment."""
@@ -39,7 +42,8 @@ class TradingOfflineTool(BaseTool):
     info: Any = Field(description="The info of the trading environment")
     done: bool = Field(description="The done flag of the trading environment")
 
-    def __init__(self, dataset: Optional[Any] = None, 
+    def __init__(self, 
+                 dataset: Optional[Any] = None, 
                  environment: Optional[Any] = None, 
                  state: Optional[Any] = None, 
                  info: Optional[Any] = None,

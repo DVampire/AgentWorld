@@ -7,6 +7,7 @@ from langchain.tools import BaseTool
 from src.tools.default_tools.default_tool_set import DefaultToolSet
 from src.tools.mcp_tools.mcp_tool_set import MCPToolSet
 from src.tools.environment_tools.environment_tool_set import EnvironmentToolSet
+from src.tools.agent_tools.agent_tool_set import AgentToolSet
 from src.logger import logger
 from src.utils import Singleton
 from src.config import config
@@ -18,6 +19,7 @@ class ToolManager(metaclass=Singleton):
         self._default_tool_set: Optional[DefaultToolSet] = None
         self._mcp_tool_set: Optional[MCPToolSet] = None
         self._environment_tool_set: Optional[EnvironmentToolSet] = None
+        self._agent_tool_set: Optional[AgentToolSet] = None
         self._all_tools: Dict[str, BaseTool] = {}
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
@@ -57,6 +59,16 @@ class ToolManager(metaclass=Singleton):
             logger.error(f"| ⚠️ Failed to initialize MCP tool set: {e}")
             self._mcp_tool_set = None
         
+        # Initialize agent tool set
+        try:
+            agent_tool_set = AgentToolSet()
+            await agent_tool_set.init_tools()
+            self._agent_tool_set = agent_tool_set
+            logger.info("| ✅ Agent tool set initialized successfully")
+        except Exception as e:
+            logger.error(f"| ⚠️ Failed to initialize agent tool set: {e}")
+            self._agent_tool_set = None
+        
         # Merge all tools
         await self._merge_tools()
         
@@ -92,6 +104,15 @@ class ToolManager(metaclass=Singleton):
             for tool in mcp_tools:
                 self._all_tools[tool] = self._mcp_tool_set.get_tool(tool)
                 config = self._mcp_tool_set.get_tool_config(tool)
+                if config:
+                    self._tool_configs[tool] = config
+        
+        # Add agent tools
+        if self._agent_tool_set:
+            agent_tools = self._agent_tool_set.list_tools()
+            for tool in agent_tools:
+                self._all_tools[tool] = self._agent_tool_set.get_tool(tool)
+                config = self._agent_tool_set.get_tool_config(tool)
                 if config:
                     self._tool_configs[tool] = config
     

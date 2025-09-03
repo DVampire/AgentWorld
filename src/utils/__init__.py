@@ -11,6 +11,7 @@ from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp,
 from .string_utils import extract_boxed_content
 from .misc import get_world_size, get_rank
 from .name_utils import get_tag_name, get_newspage_name
+from .url_utils import fetch_url
 
 __all__ = [
     "get_project_root",

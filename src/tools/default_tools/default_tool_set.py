@@ -7,7 +7,8 @@ from src.tools.default_tools.file import FileTool
 from src.tools.default_tools.project import ProjectTool
 from src.tools.default_tools.python_interpreter import PythonInterpreterTool
 from src.tools.default_tools.done import DoneTool
-from src.tools.default_tools.browser import BrowserTool
+from src.tools.default_tools.web_fetcher import WebFetcherTool
+from src.tools.default_tools.web_searcher import WebSearcherTool
 from src.config import config
 
 
@@ -50,14 +51,17 @@ class DefaultToolSet:
         done_tool = DoneTool()
         self._tools["done"] = done_tool
         self._tool_configs["done"] = done_tool.get_tool_config()
+        
+        # Load web fetcher tool
+        web_fetcher_tool = WebFetcherTool()
+        self._tools["web_fetcher"] = web_fetcher_tool
+        self._tool_configs["web_fetcher"] = web_fetcher_tool.get_tool_config()
 
-        # Load browser tool
-        browser_tool = BrowserTool(
-            model_name=config.browser_tool.model_name,
-        )
-        self._tools["browser"] = browser_tool
-        self._tool_configs["browser"] = browser_tool.get_tool_config()
-    
+        # Load web searcher tool
+        web_searcher_tool = WebSearcherTool()
+        self._tools["web_searcher"] = web_searcher_tool
+        self._tool_configs["web_searcher"] = web_searcher_tool.get_tool_config()
+
     def list_tools(self) -> List[str]:
         """Get all default tools."""
         return list(self._tools.keys())
