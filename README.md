@@ -12,6 +12,8 @@ A flexible **asynchronous** multi-agent system built with LangGraph, supporting 
 - **🛣️ Flexible Routing**: Multiple routing strategies (keyword-based, round-robin, LLM-based)
 - **⚡ Concurrent Processing**: Process multiple messages and tools concurrently
 - **🔌 Extensible Design**: Easy to add new agents, tools, models, and routing strategies
+- **🔍 Advanced Research Tools**: Multi-round research workflow with DeepResearcherTool
+- **🖼️ Multimodal Support**: Image and text analysis capabilities in research tools
 
 ## Architecture
 
@@ -20,30 +22,44 @@ AgentWorld/
 ├── src/
 │   ├── agents/
 │   │   ├── base_agent.py      # Async base agent class
-│   │   ├── simple_agent.py    # Async simple agent implementation
-│   │   ├── multi_agent_system.py  # Async multi-agent coordination
-│   │   ├── prompts/
-│   │   │   ├── prompt_manager.py  # Centralized prompt management
-│   │   │   └── templates/
-│   │   │       ├── base_templates.py      # Basic prompt templates
-│   │   │       ├── specialized_templates.py  # Specialized agent templates
-│   │   │       └── tool_templates.py      # Tool-aware templates
+│   │   ├── interactive_agent.py    # Interactive agent implementation
+│   │   ├── tool_calling_agent.py   # Tool calling agent implementation
 │   │   └── __init__.py
 │   ├── models/
 │   │   ├── model_manager.py   # Model management system
-│   │   ├── base_model.py      # Base model class
-│   │   ├── openai_model.py    # OpenAI async model
-│   │   ├── anthropic_model.py # Anthropic async model
+│   │   ├── message_manager.py # Message management
 │   │   └── __init__.py
 │   ├── tools/
-│   │   ├── tool_manager.py    # Tool management system
-│   │   ├── custom_tools.py    # Async custom LangChain tools
-│   │   ├── mcp_tools.py       # Async MCP tool integration
+│   │   ├── tool_manager.py    # Central tool management system
+│   │   ├── default_tools/     # Basic utility tools
+│   │   │   ├── web_searcher.py    # Web search functionality
+│   │   │   ├── web_fetcher.py     # Web content fetching
+│   │   │   └── default_tool_set.py # Default tool collection
+│   │   ├── environment_tools/ # Environment-specific tools
+│   │   │   └── environment_tool_set.py # Environment tool collection
+│   │   ├── agent_tools/       # Workflow and agent-specific tools
+│   │   │   ├── browser.py         # Browser automation tool
+│   │   │   ├── deep_researcher.py # Multi-round research workflow
+│   │   │   └── agent_tool_set.py  # Agent tool collection
+│   │   ├── mcp_tools/         # MCP protocol tools
+│   │   │   └── mcp_tool_set.py    # MCP tool collection
 │   │   └── __init__.py
+│   ├── prompts/
+│   │   ├── prompt_manager.py  # Centralized prompt management
+│   │   ├── system_prompt.py   # System prompt templates
+│   │   ├── agent_message_prompt.py # Agent message prompts
+│   │   └── templates/         # Prompt template files
 │   ├── config/                # Configuration management
+│   ├── datasets/              # Data loading and processing
+│   ├── environments/          # Trading and simulation environments
+│   ├── memory/                # Memory management system
+│   ├── metric/                # Performance metrics
+│   ├── logger/                # Logging system
+│   ├── filesystem/            # File system utilities
 │   └── utils/                 # Utility functions
 ├── configs/                   # Configuration files
 ├── examples/                  # Usage examples
+├── datasets/                  # Data files
 └── requirements.txt
 ```
 
@@ -68,29 +84,47 @@ export OPENAI_API_KEY="your-openai-key-here"
 export ANTHROPIC_API_KEY="your-anthropic-key-here"
 ```
 
+**Important**: The `use_local_proxy` parameter in configuration files determines whether to use local proxy services:
+- Set to `False` when using official OpenAI/Anthropic APIs directly
+- Set to `True` when using local proxy services (like localhost:8000)
+
 ### Basic Usage
 
 ```python
 import asyncio
-from src.agents import SimpleAgent, MultiAgentSystem, keyword_based_routing
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(verbose=True)
+
+# Add project root to path
+root = str(Path(__file__).resolve().parents[1])
+sys.path.append(root)
+
+from src.config import config
+from src.logger import logger
+from src.registry import AGENTS
+from src.models import model_manager
+from src.tools import tool_manager
 
 async def main():
-    # Create agent with ModelManager and ToolManager
-    agent = SimpleAgent(
-        name="assistant",
-        model_name="gpt-4",  # Use model from ModelManager
-        prompt_name="researcher",  # Use prompt from PromptManager
-        tools=["get_current_time", "calculate"]  # Use tools from ToolManager
-    )
+    # Initialize configuration
+    config.init_config("configs/tool_calling_agent.py")
+    logger.init_logger(config)
     
-    # Create multi-agent system
-    mas = MultiAgentSystem()
-    mas.add_agent(agent)
-    mas.set_routing_function(keyword_based_routing)
+    # Initialize models and tools
+    # Note: use_local_proxy is read from config file
+    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
+    await tool_manager.init_tools()
     
-    # Process a message asynchronously
-    result = await mas.process_message("What time is it?")
-    print(result["messages"][-1].content)
+    # Create agent using registry
+    agent = AGENTS.build(config.agent)
+    
+    # Run the agent
+    task = "Search for information about AI"
+    await agent.run(task)
 
 # Run the async function
 asyncio.run(main())
@@ -147,19 +181,17 @@ claude_model = model_manager.create_anthropic_model(
 
 ```python
 # Create agent with specific model
-agent = SimpleAgent(
+agent = ToolCallingAgent(
     name="researcher",
     model_name="gpt-4",  # Use OpenAI model
-    prompt_name="researcher",
-    tools=["search_web"]
+    tools=["web_searcher_tool", "web_fetcher_tool"]
 )
 
 # Create agent with Anthropic model
-agent = SimpleAgent(
+agent = ToolCallingAgent(
     name="writer",
     model_name="claude-3-sonnet",  # Use Anthropic model
-    prompt_name="writer",
-    tools=["file_operations"]
+    tools=["web_searcher_tool", "web_fetcher_tool"]
 )
 
 # Change model dynamically
@@ -174,7 +206,7 @@ print(f"Current model: {model_info['model_name']}")
 
 ### ToolManager
 
-The `ToolManager` provides comprehensive management of all tools:
+The `ToolManager` provides comprehensive management of all tools organized into specialized categories:
 
 ```python
 from src.tools import ToolManager
@@ -187,55 +219,82 @@ tools = tool_manager.list_tools()
 print(f"Available tools: {tools}")
 
 # Get a specific tool
-tool = tool_manager.get_tool("get_current_time")
+tool = tool_manager.get_tool("web_searcher_tool")
 
 # Execute tools asynchronously
-result = await tool_manager.execute_tool("calculate", "2 + 2")
+result = await tool_manager.execute_tool("web_fetcher_tool", "https://example.com")
 
 # Execute multiple tools concurrently
 tool_calls = [
-    {"name": "get_current_time", "args": [], "kwargs": {}},
-    {"name": "calculate", "args": ["3 * 4"], "kwargs": {}},
+    {"name": "web_searcher_tool", "args": ["AI research"], "kwargs": {}},
+    {"name": "web_fetcher_tool", "args": ["https://example.com"], "kwargs": {}},
 ]
 results = await tool_manager.execute_multiple_tools(tool_calls)
 ```
 
-### Available Tools
+### Tool Categories
 
-#### Custom Tools
-- `get_current_time`: Get current time
-- `search_web`: Web search functionality
-- `calculate`: Mathematical calculations
-- `weather_lookup`: Weather information
-- `file_operations`: File system operations
-- `async_web_request`: Async HTTP requests
-- `batch_calculation`: Batch mathematical operations
+#### Default Tools (`default_tools/`)
+Basic utility tools for common operations:
+- `web_searcher`: Web search using multiple search engines (Firecrawl, Google, DuckDuckGo, Baidu, Bing)
+- `web_fetcher`: Fetch and extract content from web pages
+- `bash`: Execute bash commands
+- `file`: File operations
+- `project`: Project management
+- `python_interpreter`: Python code execution
+- `weather`: Weather information lookup
+- `done`: Task completion marker
 
-#### MCP Tools
-- MCP tool integration for external services
-- File system operations via MCP
-- Database operations via MCP
+#### Environment Tools (`environment_tools/`)
+Tools specific to trading and simulation environments:
+- `environment_tool_set.py`: Collection and management of environment-specific tools
+
+#### Agent Tools (`agent_tools/`)
+Advanced workflow and agent-specific tools:
+- `browser`: Browser automation for web interactions
+- `deep_researcher`: Multi-round research workflow agent that:
+  - Generates optimized search queries using LLM
+  - Performs multi-round web searches
+  - Extracts insights from web content
+  - Provides comprehensive research summaries
+  - Supports multimodal input (text + image)
+
+#### MCP Tools (`mcp_tools/`)
+Model Context Protocol tools for external service integration:
+- `mcp_tool_set.py`: Collection and management of MCP protocol tools
 
 ### Using Tools with Agents
 
 ```python
 # Create agent with specific tools
-agent = SimpleAgent(
+agent = AGENTS.build(dict(
+    type="ToolCallingAgent",
     name="researcher",
     model_name="gpt-4",
-    prompt_name="researcher",
-    tools=["get_current_time", "search_web"]  # Use tools by name
+    tools=["web_searcher", "web_fetcher", "browser", "deep_researcher"]
+))
+
+# Tools are configured in the config file and loaded automatically
+available_tools = agent.list_available_tools()
+print(f"Available tools: {available_tools}")
+```
+
+### Deep Researcher Tool Example
+
+```python
+from src.tools.agent_tools import DeepResearcherTool
+
+# Initialize the deep researcher tool
+researcher = DeepResearcherTool(model_name="o3")
+
+# Perform multi-round research
+result = await researcher.arun(
+    task="What are the latest developments in quantum computing?",
+    image=None,  # Optional: path to image for multimodal analysis
+    filter_year=2024  # Optional: filter results by year
 )
 
-# Add tools dynamically
-agent.add_tool("calculate")
-agent.add_tool("file_operations")
-
-# Remove tools
-agent.remove_tool("get_current_time")
-
-# Get available tools
-available_tools = agent.list_available_tools()
+print(result)  # Comprehensive research summary
 ```
 
 ## Prompt Management System
@@ -293,53 +352,53 @@ prompt_manager.add_template("custom_agent", {
 ### Using Prompt Templates with Agents
 
 ```python
-# Create agent with specific prompt template
-agent = SimpleAgent(
+# Create agent with specific tools
+agent = ToolCallingAgent(
     name="researcher",
     model_name="gpt-4",
-    prompt_name="researcher",  # Use predefined template
-    tools=["search_web"]
+    tools=["web_searcher_tool", "web_fetcher_tool"]
 )
 
-# Switch prompt template dynamically
-agent.change_prompt_template("writer")
+# Add new tools dynamically
+agent.add_tool("browser_tool")
+agent.add_tool("deep_researcher_tool")
 
-# Get prompt information
-prompt_info = agent.get_prompt_info()
-print(f"Current prompt: {prompt_info['specialization']}")
+# Get agent information
+agent_info = agent.get_agent_info()
+print(f"Agent tools: {agent_info['tools']}")
 ```
 
 ## Advanced Usage
 
-### Multi-Agent System with Different Models
+### Advanced Tool Usage with Different Models
 
 ```python
-from src.agents import SimpleAgent, MultiAgentSystem, keyword_based_routing
+from src.registry import AGENTS
+from src.tools.agent_tools import DeepResearcherTool
 
-# Create multi-agent system with diverse models
-mas = MultiAgentSystem(name="diverse_system")
+# Create specialized agents with different models
+researcher_agent = AGENTS.build(dict(
+    type="ToolCallingAgent",
+    name="researcher",
+    model_name="gpt-4",
+    tools=["web_searcher", "web_fetcher", "deep_researcher"]
+))
 
-# Add agents with different models
-agent_configs = [
-    ("researcher", "gpt-4", "researcher", ["get_current_time", "search_web"]),
-    ("writer", "claude-3-sonnet", "writer", ["file_operations"]),
-    ("coder", "gpt-4-turbo", "coder", ["calculate", "file_operations"]),
-    ("analyst", "gpt-3.5-turbo", "analyst", ["calculate", "batch_calculation"]),
-]
+writer_agent = AGENTS.build(dict(
+    type="ToolCallingAgent",
+    name="writer",
+    model_name="claude-3-sonnet",
+    tools=["web_searcher", "web_fetcher"]
+))
 
-for agent_name, model_name, prompt_name, tool_names in agent_configs:
-    agent = SimpleAgent(
-        name=agent_name,
-        model_name=model_name,
-        prompt_name=prompt_name,
-        tools=tool_names
-    )
-    mas.add_agent(agent)
+# Use deep researcher tool directly
+deep_researcher = DeepResearcherTool(model_name="o3")
+research_result = await deep_researcher.arun(
+    task="Research the latest AI developments",
+    filter_year=2024
+)
 
-mas.set_routing_function(keyword_based_routing)
-
-# Process messages
-result = await mas.process_message("Research the latest AI developments")
+print(f"Research completed: {research_result}")
 ```
 
 ### Concurrent Tool Execution
@@ -351,9 +410,9 @@ tool_manager = ToolManager()
 
 # Execute multiple tools concurrently
 tool_calls = [
-    {"name": "get_current_time", "args": [], "kwargs": {}},
-    {"name": "calculate", "args": ["2 + 2"], "kwargs": {}},
-    {"name": "weather_lookup", "args": ["New York"], "kwargs": {}},
+    {"name": "web_searcher_tool", "args": ["AI research"], "kwargs": {}},
+    {"name": "web_fetcher_tool", "args": ["https://example.com"], "kwargs": {}},
+    {"name": "deep_researcher_tool", "args": ["Quantum computing"], "kwargs": {}},
 ]
 
 results = await tool_manager.execute_multiple_tools(tool_calls)
@@ -367,11 +426,12 @@ for i, result in enumerate(results):
 # Change model dynamically
 agent.change_model("claude-3-opus")
 
-# Change prompt template dynamically
-agent.change_prompt_template("creative")
-
 # Add new tools dynamically
-agent.add_tool("weather_lookup")
+agent.add_tool("browser_tool")
+agent.add_tool("deep_researcher_tool")
+
+# Remove tools
+agent.remove_tool("web_searcher_tool")
 
 # Get comprehensive agent information
 agent_info = agent.get_agent_info()
@@ -383,17 +443,17 @@ print(f"Agent info: {agent_info}")
 ### Concurrent Message Processing
 ```python
 # Process multiple messages concurrently
-messages = ["What time is it?", "Calculate 2+2", "Write a story"]
-results = await mas.process_messages_concurrently(messages)
+messages = ["Search for AI news", "Fetch content from example.com", "Research quantum computing"]
+results = await agent.process_messages_concurrently(messages)
 ```
 
 ### Concurrent Tool Execution
 ```python
 # Execute multiple tools concurrently
 tool_calls = [
-    {"name": "get_current_time", "args": [], "kwargs": {}},
-    {"name": "calculate", "args": ["2 + 2"], "kwargs": {}},
-    {"name": "weather_lookup", "args": ["New York"], "kwargs": {}},
+    {"name": "web_searcher_tool", "args": ["AI research"], "kwargs": {}},
+    {"name": "web_fetcher_tool", "args": ["https://example.com"], "kwargs": {}},
+    {"name": "deep_researcher_tool", "args": ["Quantum computing"], "kwargs": {}},
 ]
 
 results = await tool_manager.execute_multiple_tools(tool_calls)
@@ -412,23 +472,23 @@ responses = await model.agenerate(messages)
 
 ## Agent Types
 
-### SimpleAgent (Async)
-A basic async agent implementation that supports:
+### InteractiveAgent (Async)
+An interactive agent implementation that supports:
 - Model management via ModelManager
 - Prompt templates via PromptManager
 - Tool management via ToolManager
 - Async tool usage (LangChain and MCP tools)
-- State management
-- Graph-based workflow
-- Dynamic model, prompt, and tool changes
+- Interactive conversation capabilities
+- State management and memory
 
-### MultiAgentSystem (Async)
-Coordinates multiple agents with:
-- Intelligent routing between agents
-- Conversation state management
-- Flexible workflow graphs
-- Concurrent message processing
-- Support for diverse models and tools
+### ToolCallingAgent (Async)
+A specialized agent for tool execution that supports:
+- Model management via ModelManager
+- Tool management via ToolManager
+- Async tool usage with proper error handling
+- Structured tool calling and response processing
+- Integration with all tool categories (default, environment, agent, MCP)
+- Support for complex workflow tools like DeepResearcherTool
 
 ## Tool Integration
 
@@ -438,8 +498,8 @@ from src.tools import ToolManager
 
 tool_manager = ToolManager()
 available_tools = tool_manager.list_tools()
-# Includes: get_current_time, search_web, calculate, weather_lookup, 
-#          file_operations, async_web_request, batch_calculation
+# Includes: web_searcher_tool, web_fetcher_tool, browser_tool, 
+#          deep_researcher_tool, and MCP tools
 ```
 
 ### Async MCP Tools
@@ -461,49 +521,109 @@ tool = tool_manager.add_mcp_tool("file_server", "file_operations", {
 })
 ```
 
-## Routing Strategies
+## Tool Integration Examples
 
-### Keyword-Based Routing
-Routes messages based on keyword matching:
+### Web Search and Content Fetching
 ```python
-from src.agents import keyword_based_routing
+from src.tools.default_tools import WebSearcherTool, WebFetcherTool
 
-mas.set_routing_function(keyword_based_routing)
+# Initialize tools
+searcher = WebSearcherTool()
+fetcher = WebFetcherTool()
+
+# Search for information
+search_results = await searcher.arun("AI research papers 2024")
+print(f"Found {len(search_results)} results")
+
+# Fetch content from a specific URL
+content = await fetcher.arun("https://example.com")
+print(f"Content length: {len(content)}")
 ```
 
-### Round-Robin Routing
-Routes messages in a round-robin fashion:
+### Browser Automation
 ```python
-from src.agents import round_robin_routing
+from src.tools.agent_tools import BrowserTool
 
-mas.set_routing_function(round_robin_routing)
-```
+# Initialize browser tool
+browser = BrowserTool(model_name="gpt-4")
 
-### LLM-Based Routing (Async)
-Uses an LLM to intelligently route messages:
-```python
-from src.agents import llm_based_routing
-
-routing_func = llm_based_routing(llm, agents)
-mas.set_routing_function(routing_func)
+# Perform browser automation
+result = await browser.arun("Navigate to example.com and take a screenshot")
+print(result)
 ```
 
 ## Configuration
 
-Configuration files are stored in `configs/`:
+Configuration files are stored in `configs/`. **Important**: Pay attention to the `use_local_proxy` parameter which affects API connectivity.
+
+### Proxy Configuration
+
+The `use_local_proxy` parameter is crucial for proper API connectivity:
+
+- **`use_local_proxy = False`**: Use official OpenAI/Anthropic APIs directly
+  - Requires valid API keys in environment variables
+  - Direct connection to OpenAI/Anthropic servers
+  - Suitable for production environments
+
+- **`use_local_proxy = True`**: Use local proxy services
+  - Requires local proxy server running (e.g., localhost:8000)
+  - Useful for development/testing with local models
+  - Can help with rate limiting and cost management
+
+### Configuration Files
 
 ```python
-# configs/multi_agent.py
-agents = {
-    "researcher": {
-        "name": "researcher",
-        "type": "SimpleAgent",
-        "model_name": "gpt-4",  # Use ModelManager
-        "prompt_name": "researcher",  # Use PromptManager
-        "tools": ["search_web", "get_current_time"],  # Use ToolManager
-        "mcp_tools": []
-    }
-}
+# configs/tool_calling_agent.py
+from mmengine.config import read_base
+with read_base():
+    from .base import browser_tool, deep_researcher_tool
+
+tag = "tool_calling_agent"
+workdir = f"workdir/{tag}"
+log_path = "agent.log"
+
+# IMPORTANT: Set use_local_proxy based on your API setup
+use_local_proxy = False  # Set to False for official OpenAI/Anthropic APIs
+# use_local_proxy = True   # Set to True for local proxy services (localhost:8000)
+version = "0.1.0"
+
+agent = dict(
+    type = "ToolCallingAgent",
+    name = "tool_calling_agent",
+    model_name = "gpt-4.1",
+    prompt_name = "tool_calling",  # Use explicit tool usage template
+    tools = [
+        "bash",
+        "file",
+        "project",
+        "python_interpreter",
+        "browser",
+        "done",
+        "weather",
+        "web_fetcher",
+        "web_searcher",
+        "deep_researcher",
+    ],
+    max_iterations = 10
+)
+```
+
+### Base Configuration
+
+```python
+# configs/base.py
+from mmengine.config import read_base
+with read_base():
+    from .environments.trading_offline import dataset, environment, metric
+
+# Tool-specific configurations
+browser_tool = dict(
+    model_name = "bs-gpt-4.1",  # Browser-specific model
+)
+
+deep_researcher_tool = dict(
+    model_name = "o3",  # Research-specific model
+)
 ```
 
 ## Running Demos
@@ -539,13 +659,14 @@ The async architecture provides several performance benefits:
 
 ### Adding New Async Models
 1. Inherit from `BaseModel`
-2. Implement required async methods (`ainvoke`, `agenerate`)
+2. Implement required async methods (`ainvoke`)
 3. Register with `ModelManager`
 
 ### Adding New Async Tools
-1. Create async LangChain tool using `@tool` decorator
-2. Add to `ToolManager`
-3. Assign to agents as needed
+1. Inherit from `langchain.tools.BaseTool`
+2. Implement required async methods (`_arun`, `_run`)
+3. Add to appropriate tool set (`default_tools`, `environment_tools`, `agent_tools`, or `mcp_tools`)
+4. Register with `ToolManager`
 
 ### Adding New Prompt Templates
 1. Create Python file in `src/agents/prompts/templates/`
@@ -554,14 +675,46 @@ The async architecture provides several performance benefits:
 
 ### Adding New Routing Strategies
 1. Create async routing function that takes `(message, state)` and returns agent name
-2. Set as routing function in `MultiAgentSystem`
+2. Set as routing function in your custom agent system
 
 ## Testing
 
-Run the async tests:
+Run the tests:
 ```bash
-pytest tests/test_async_multi_agent.py -v
+# Test agents
+pytest tests/test_agent.py -v
+
+# Test tools
+pytest tests/test_browser_tool.py -v
+
+# Test models
+pytest tests/test_models.py -v
+
+# Test prompt management
+pytest tests/test_prompt_management.py -v
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+#### API Connection Problems
+- **Error**: "Failed to connect to OpenAI API"
+  - **Solution**: Check if `use_local_proxy` is set correctly in your config file
+  - For official APIs: `use_local_proxy = False`
+  - For local proxy: `use_local_proxy = True` (ensure proxy server is running)
+
+#### Model Initialization Failures
+- **Error**: "Model initialization failed"
+  - **Solution**: Verify your API keys are set correctly in environment variables
+  - Check if the model name exists in your ModelManager
+  - Ensure network connectivity to API endpoints
+
+#### Tool Loading Issues
+- **Error**: "Tool not found" or "Tool initialization failed"
+  - **Solution**: Check if the tool is properly registered in the appropriate tool set
+  - Verify tool dependencies are installed
+  - Check tool configuration in base.py
 
 ## Contributing
 
