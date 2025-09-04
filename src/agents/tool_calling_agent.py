@@ -10,7 +10,7 @@ from src.agents.base_agent import BaseAgent, ThinkOutput
 from src.registry import AGENTS
 from src.logger import logger
 from src.memory import MemoryManager
-from src.filesystem import FileSystem
+from src.controller import BaseController
 
 @AGENTS.register_module(force=True)
 class ToolCallingAgent(BaseAgent):
@@ -23,9 +23,8 @@ class ToolCallingAgent(BaseAgent):
         model: Optional[BaseLanguageModel] = None,
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
-        max_iterations: int = 10,
         memory_manager: Optional[MemoryManager] = None,
-        file_system: Optional[FileSystem] = None,
+        controllers: Optional[List[BaseController]] = None,
         **kwargs
     ):
         # Set default prompt name for tool calling
@@ -39,10 +38,8 @@ class ToolCallingAgent(BaseAgent):
             prompt_name=prompt_name,
             tools=tools,
             memory_manager=memory_manager,
-            file_system=file_system,
+            controllers=controllers,
             **kwargs)
-        
-        self.max_iterations = max_iterations
         
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
         """Think and action for one step."""
@@ -78,6 +75,8 @@ class ToolCallingAgent(BaseAgent):
                 # Execute the tool
                 tool_name = action.name
                 tool_args = action.args.model_dump()
+                
+                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
                 
                 tool_result = await self.tool_manager.execute_tool(tool_name, args=tool_args)
                 
@@ -128,7 +127,7 @@ class ToolCallingAgent(BaseAgent):
         """Run the tool calling agent with loop."""
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
-        session_info = self._generate_session_info(task)
+        session_info = await self._generate_session_info(task)
         session_id = session_info.session_id
         description = session_info.description
         
@@ -145,30 +144,30 @@ class ToolCallingAgent(BaseAgent):
                                       )
         
         # Initialize messages
-        messages = self._get_messages(task)
+        messages = await self._get_messages(task)
         
         # Main loop
-        iteration = 0
+        step_number = 0
         done = False
         final_result = None
         
-        while iteration < self.max_iterations:
-            iteration += 1
-            logger.info(f"| 🔄 Iteration {iteration}/{self.max_iterations}")
+        while step_number < self.max_steps:
+            step_number += 1
+            logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
             
             # Execute one step
             done, final_result = await self._think_and_action(messages, task_id)
             self.step_number += 1
             
-            messages = self._get_messages(task)
+            messages = await self._get_messages(task)
             
             if done:
                 break
         
-        # Handle max iterations reached
-        if iteration >= self.max_iterations:
-            logger.warning(f"| 🛑 Reached max iterations ({self.max_iterations}), stopping...")
-            final_result = "Reached maximum number of iterations"
+        # Handle max steps reached
+        if step_number >= self.max_steps:
+            logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
+            final_result = "Reached maximum number of steps"
         
         # Add task end event
         self.memory_manager.add_event(
@@ -182,6 +181,6 @@ class ToolCallingAgent(BaseAgent):
         # End session
         self.memory_manager.end_session()
         
-        logger.info(f"| ✅ Agent completed after {iteration}/{self.max_iterations} iterations")
+        logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         
         return final_result

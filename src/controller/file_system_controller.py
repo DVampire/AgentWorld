@@ -1,57 +1,132 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 from inspect import cleandoc
-from langchain.tools import Tool, BaseTool
+from langchain.tools import BaseTool, StructuredTool
 
 from src.tools.base import ToolResponse
 from src.controller.base import BaseController
 from src.registry import CONTROLLERS
 from src.registry import ENVIRONMENTS
 
-_FILE_SYSTEM_ACTION_DESCRIPTION = """File system tool for file system environment.
-Use this tool to manage files in the file system environment.
+# File Operations
+_FILE_OPERATIONS_DESCRIPTION = """File operations tool for managing individual files.
 
 Available operations:
-1. RESET: Reset the file system environment.
-2. READ: Read a file from the file system.
-    - filename: The name of the file to read.
-3. WRITE: Write content to a file.
-    - filename: The name of the file to write.
+1. read: Read a file from the file system.
+    - file_path: The absolute path of the file to read.
+    - start_line: (optional) Start line number for reading a range.
+    - end_line: (optional) End line number for reading a range.
+2. write: Write content to a file.
+    - file_path: The absolute path of the file to write.
     - content: The content to write to the file.
-4. APPEND: Append content to a file.
-    - filename: The name of the file to append to.
-    - content: The content to append to the file.
-5. REPLACE: Replace a string in a file.
-    - filename: The name of the file to modify.
+    - mode: (optional) Write mode, 'w' for overwrite (default) or 'a' for append.
+3. replace: Replace a string in a file.
+    - file_path: The absolute path of the file to modify.
     - old_string: The string to replace.
     - new_string: The new string to replace with.
+    - start_line: (optional) Start line number for range replacement.
+    - end_line: (optional) End line number for range replacement.
+4. delete: Delete a file.
+    - file_path: The absolute path of the file to delete.
+5. copy: Copy a file from source to destination.
+    - src_path: The absolute path of the source file.
+    - dst_path: The absolute path of the destination file.
+6. move: Move a file from source to destination.
+    - src_path: The absolute path of the source file.
+    - dst_path: The absolute path of the destination file.
+7. rename: Rename a file or directory.
+    - old_path: The absolute path of the file/directory to rename.
+    - new_path: The absolute path of the new name.
+8. get_info: Get detailed information about a file.
+    - file_path: The absolute path of the file.
+    - include_stats: (optional) Whether to include file statistics (default: True).
 
 Input format: JSON string with 'operation' and operation-specific parameters.
-Example: {"operation": "reset"}
-Example: {"operation": "read", "filename": "example.txt"}
-Example: {"operation": "write", "filename": "example.txt", "content": "Hello World"}
-Example: {"operation": "append", "filename": "example.txt", "content": "More content"}
-Example: {"operation": "replace", "filename": "example.txt", "old_string": "Hello", "new_string": "Hi"}
 """
 
-class FileSystemActionArgs(BaseModel):
-    operation: str = Field(description="The operation to execute")
-    filename: Optional[str] = Field(
-        default=None,
-        description="The name of the file to operate on"
-    )
-    content: Optional[str] = Field(
-        default=None,
-        description="The content to write or append to the file"
-    )
-    old_string: Optional[str] = Field(
-        default=None,
-        description="The string to replace in the file"
-    )
-    new_string: Optional[str] = Field(
-        default=None,
-        description="The new string to replace with"
-    )
+# Directory Operations
+_DIRECTORY_OPERATIONS_DESCRIPTION = """Directory operations tool for managing directories.
+
+Available operations:
+1. create_dir: Create a directory.
+    - dir_path: The absolute path of the directory to create.
+2. delete_dir: Delete a directory.
+    - dir_path: The absolute path of the directory to delete.
+3. tree: Show directory tree structure.
+    - dir_path: The absolute path of the directory to show.
+    - max_depth: (optional) Maximum depth to show (default: 3).
+    - show_hidden: (optional) Whether to show hidden files (default: False).
+    - exclude_patterns: (optional) List of patterns to exclude.
+    - file_types: (optional) List of file extensions to include.
+4. describe: Describe the file system with directory structure and file information.
+    - No parameters required.
+
+Input format: JSON string with 'operation' and operation-specific parameters.
+"""
+
+# Search Operations
+_SEARCH_OPERATIONS_DESCRIPTION = """Search operations tool for finding files and content.
+
+Available operations:
+1. search: Search for files by name or content.
+    - search_path: The absolute path of the directory to search in, or file path for single file search.
+    - query: The search query string.
+    - search_type: Search type, 'name' for filename search or 'content' for content search (default: 'name').
+    - file_types: (optional) List of file extensions to filter by.
+    - case_sensitive: (optional) Whether search is case sensitive (default: False).
+    - max_results: (optional) Maximum number of results to return (default: 50).
+
+Input format: JSON string with 'operation' and operation-specific parameters.
+"""
+
+# Permission Operations
+_PERMISSION_OPERATIONS_DESCRIPTION = """Permission operations tool for managing file and directory permissions.
+
+Available operations:
+1. change_permissions: Change file or directory permissions.
+    - file_path: The absolute path of the file or directory.
+    - permissions: The new permissions in octal format (e.g., '755', '644').
+
+Input format: JSON string with 'operation' and operation-specific parameters.
+"""
+
+# Pydantic models for each operation type
+class FileOperationArgs(BaseModel):
+    operation: str = Field(description="The file operation to execute")
+    file_path: Optional[str] = Field(default=None, description="The absolute path of the file")
+    src_path: Optional[str] = Field(default=None, description="The absolute path of the source file")
+    dst_path: Optional[str] = Field(default=None, description="The absolute path of the destination file")
+    old_path: Optional[str] = Field(default=None, description="The absolute path of the file to rename")
+    new_path: Optional[str] = Field(default=None, description="The absolute path of the new name")
+    content: Optional[str] = Field(default=None, description="The content to write or append")
+    old_string: Optional[str] = Field(default=None, description="The string to replace")
+    new_string: Optional[str] = Field(default=None, description="The new string to replace with")
+    mode: Optional[str] = Field(default="w", description="Write mode: 'w' for overwrite, 'a' for append")
+    start_line: Optional[int] = Field(default=None, description="Start line number for range operations")
+    end_line: Optional[int] = Field(default=None, description="End line number for range operations")
+    include_stats: Optional[bool] = Field(default=True, description="Whether to include file statistics")
+
+class DirectoryOperationArgs(BaseModel):
+    operation: str = Field(description="The directory operation to execute")
+    dir_path: Optional[str] = Field(default=None, description="The absolute path of the directory")
+    max_depth: Optional[int] = Field(default=3, description="Maximum depth for tree display")
+    show_hidden: Optional[bool] = Field(default=False, description="Whether to show hidden files")
+    exclude_patterns: Optional[List[str]] = Field(default=None, description="List of patterns to exclude")
+    file_types: Optional[List[str]] = Field(default=None, description="List of file extensions to include")
+
+class SearchOperationArgs(BaseModel):
+    operation: str = Field(description="The search operation to execute")
+    search_path: str = Field(description="The absolute path to search in")
+    query: str = Field(description="The search query string")
+    search_type: Optional[str] = Field(default="name", description="Search type: 'name' or 'content'")
+    file_types: Optional[List[str]] = Field(default=None, description="List of file extensions to filter by")
+    case_sensitive: Optional[bool] = Field(default=False, description="Whether search is case sensitive")
+    max_results: Optional[int] = Field(default=50, description="Maximum number of results to return")
+
+class PermissionOperationArgs(BaseModel):
+    operation: str = Field(description="The permission operation to execute")
+    file_path: str = Field(description="The absolute path of the file or directory")
+    permissions: str = Field(description="The new permissions in octal format (e.g., '755', '644')")
 
 @CONTROLLERS.register_module(force=True)
 class FileSystemController(BaseController):
@@ -70,198 +145,193 @@ class FileSystemController(BaseController):
     def _build_environment(self, environment: Any):
         environment = ENVIRONMENTS.build(environment)
         return environment
+    
+    async def get_state(self) -> str:
+        """Get the state of the file system controller."""
+        state = cleandoc(f"""<environment_file_system_state>
+                         Current state: {self.state['prompt']}
+                         </environment_file_system_state>""")
+        return state
 
     async def initialize(self):
         """Initialize the file system controller."""
+        self.state, self.info = await self.environment.reset()
         await self._register_tools()
     
-    async def _action_tool(
-        self, 
-        operation: str, 
-        filename: Optional[str] = None,
-        content: Optional[str] = None,
-        old_string: Optional[str] = None,
-        new_string: Optional[str] = None
-    ) -> ToolResponse:
+    async def _file_operation_tool(self, **kwargs) -> ToolResponse:
+        """Handle file operations through environment."""
+        operation = kwargs.get('operation')
         
-        if operation == "reset":
-            try:
-                state, info = self.environment.reset()
-            except Exception as e:
-                return ToolResponse(content=f"Error in resetting the file system environment: {str(e)}")
+        try:
+            # Create action for environment
+            action = {
+                "type": "file_operations",
+                "operation": operation,
+                "params": {k: v for k, v in kwargs.items() if k != 'operation' and v is not None}
+            }
             
-            done = info["done"]
+            # Execute through environment
+            state, reward, done, truncated, info = await self.environment.step(action)
             
-            state_description = cleandoc(f"""Reset the file system environment successfully.
-            The state is:
-            {state['description']}
+            # Extract result from info
+            result = info.get('result', 'No result available')
+            success = info.get('success', False)
             
-            Todo contents:
-            {state.get('todo_contents', 'No todo contents')}
-            
-            The environment is {'done' if done else 'not done'}.
-            """)
-            
+            # Update controller state
             self.state = state
             self.info = info
             self.done = done
             
-            return ToolResponse(content=state_description)
+            return ToolResponse(content=result)
+                
+        except Exception as e:
+            return ToolResponse(content=f"Error in file operation '{operation}': {str(e)}")
+    
+    async def _directory_operation_tool(self, **kwargs) -> ToolResponse:
+        """Handle directory operations through environment."""
+        operation = kwargs.get('operation')
         
-        elif operation == "read":
-            if not filename:
-                return ToolResponse(content="Error: filename is required for read operation")
+        try:
+            # Create action for environment
+            action = {
+                "type": "directory_operations",
+                "operation": operation,
+                "params": {k: v for k, v in kwargs.items() if k != 'operation' and v is not None}
+            }
             
-            try:
-                state, reward, done, truncated, info = self.environment.step(
-                    operation="read",
-                    filename=filename
-                )
-            except Exception as e:
-                return ToolResponse(content=f"Error in reading file: {str(e)}")
+            # Execute through environment
+            state, reward, done, truncated, info = await self.environment.step(action)
             
-            state_description = cleandoc(f"""Read file '{filename}' successfully.
-            The state is:
-            {state['description']}
+            # Extract result from info
+            result = info.get('result', 'No result available')
+            success = info.get('success', False)
             
-            Todo contents:
-            {state.get('todo_contents', 'No todo contents')}
-            
-            Operation result:
-            {state.get('state', 'No operation result')}
-            
-            The environment is {'done' if done else 'not done'}.
-            """)
-            
+            # Update controller state
             self.state = state
             self.info = info
             self.done = done
             
-            return ToolResponse(content=state_description)
+            return ToolResponse(content=result)
+                
+        except Exception as e:
+            return ToolResponse(content=f"Error in directory operation '{operation}': {str(e)}")
+    
+    async def _search_operation_tool(self, **kwargs) -> ToolResponse:
+        """Handle search operations through environment."""
+        operation = kwargs.get('operation')
         
-        elif operation == "write":
-            if not filename:
-                return ToolResponse(content="Error: filename is required for write operation")
-            if content is None:
-                return ToolResponse(content="Error: content is required for write operation")
+        try:
+            # Create action for environment
+            action = {
+                "type": "search_operations",
+                "operation": operation,
+                "params": {k: v for k, v in kwargs.items() if k != 'operation' and v is not None}
+            }
             
-            try:
-                state, reward, done, truncated, info = self.environment.step(
-                    operation="write",
-                    filename=filename,
-                    content=content
-                )
-            except Exception as e:
-                return ToolResponse(content=f"Error in writing file: {str(e)}")
+            # Execute through environment
+            state, reward, done, truncated, info = await self.environment.step(action)
             
-            state_description = cleandoc(f"""Write to file '{filename}' successfully.
-            The state is:
-            {state['description']}
+            # Extract result from info
+            result = info.get('result', 'No result available')
+            success = info.get('success', False)
             
-            Todo contents:
-            {state.get('todo_contents', 'No todo contents')}
-            
-            Operation result:
-            {state.get('state', 'No operation result')}
-            
-            The environment is {'done' if done else 'not done'}.
-            """)
-            
+            # Update controller state
             self.state = state
             self.info = info
             self.done = done
             
-            return ToolResponse(content=state_description)
+            return ToolResponse(content=result)
+                
+        except Exception as e:
+            return ToolResponse(content=f"Error in search operation '{operation}': {str(e)}")
+    
+    async def _permission_operation_tool(self, **kwargs) -> ToolResponse:
+        """Handle permission operations through environment."""
+        operation = kwargs.get('operation')
         
-        elif operation == "append":
-            if not filename:
-                return ToolResponse(content="Error: filename is required for append operation")
-            if content is None:
-                return ToolResponse(content="Error: content is required for append operation")
+        try:
+            # Create action for environment
+            action = {
+                "type": "permission_operations",
+                "operation": operation,
+                "params": {k: v for k, v in kwargs.items() if k != 'operation' and v is not None}
+            }
             
-            try:
-                state, reward, done, truncated, info = self.environment.step(
-                    operation="append",
-                    filename=filename,
-                    content=content
-                )
-            except Exception as e:
-                return ToolResponse(content=f"Error in appending to file: {str(e)}")
+            # Execute through environment
+            state, reward, done, truncated, info = await self.environment.step(action)
             
-            state_description = cleandoc(f"""Append to file '{filename}' successfully.
-            The state is:
-            {state['description']}
+            # Extract result from info
+            result = info.get('result', 'No result available')
+            success = info.get('success', False)
             
-            Todo contents:
-            {state.get('todo_contents', 'No todo contents')}
-            
-            Operation result:
-            {state.get('state', 'No operation result')}
-            
-            The environment is {'done' if done else 'not done'}.
-            """)
-            
+            # Update controller state
             self.state = state
             self.info = info
             self.done = done
             
-            return ToolResponse(content=state_description)
-        
-        elif operation == "replace":
-            if not filename:
-                return ToolResponse(content="Error: filename is required for replace operation")
-            if old_string is None:
-                return ToolResponse(content="Error: old_string is required for replace operation")
-            if new_string is None:
-                return ToolResponse(content="Error: new_string is required for replace operation")
-            
-            try:
-                state, reward, done, truncated, info = self.environment.step(
-                    operation="replace",
-                    filename=filename,
-                    old_string=old_string,
-                    new_string=new_string
-                )
-            except Exception as e:
-                return ToolResponse(content=f"Error in replacing string in file: {str(e)}")
-            
-            state_description = cleandoc(f"""Replace string in file '{filename}' successfully.
-            The state is:
-            {state['description']}
-            
-            Todo contents:
-            {state.get('todo_contents', 'No todo contents')}
-            
-            Operation result:
-            {state.get('state', 'No operation result')}
-            
-            The environment is {'done' if done else 'not done'}.
-            """)
-            
-            self.state = state
-            self.info = info
-            self.done = done
-            
-            return ToolResponse(content=state_description)
-        else:
-            return ToolResponse(content=f"Invalid operation: {operation}")
+            return ToolResponse(content=result)
+                
+        except Exception as e:
+            return ToolResponse(content=f"Error in permission operation '{operation}': {str(e)}")
     
     async def _register_tools(self):
+        """Register all file system tools."""
         
-        # register action tool
-        action_tool = Tool(
-            name="file_system_action",
-            description=_FILE_SYSTEM_ACTION_DESCRIPTION,
-            func=self._action_tool,
-            args_schema=FileSystemActionArgs
+        # File operations tool
+        file_operation_tool = StructuredTool.from_function(
+            name="file_operations",
+            description=_FILE_OPERATIONS_DESCRIPTION,
+            coroutine=self._file_operation_tool,
+            args_schema=FileOperationArgs
         )
-        action_tool_config = {
-            "name": action_tool.name,
-            "description": action_tool.description,
-            "args_schema": action_tool.args_schema
+        self._tools["file_operations"] = file_operation_tool
+        self._tool_configs["file_operations"] = {
+            "name": file_operation_tool.name,
+            "description": file_operation_tool.description,
+            "args_schema": file_operation_tool.args_schema
         }
-        self._tools["file_system_action"] = action_tool
-        self._tool_configs["file_system_action"] = action_tool_config
+        
+        # Directory operations tool
+        directory_operation_tool = StructuredTool.from_function(
+            name="directory_operations",
+            description=_DIRECTORY_OPERATIONS_DESCRIPTION,
+            coroutine=self._directory_operation_tool,
+            args_schema=DirectoryOperationArgs
+        )
+        self._tools["directory_operations"] = directory_operation_tool
+        self._tool_configs["directory_operations"] = {
+            "name": directory_operation_tool.name,
+            "description": directory_operation_tool.description,
+            "args_schema": directory_operation_tool.args_schema
+        }
+        
+        # Search operations tool
+        search_operation_tool = StructuredTool.from_function(
+            name="search_operations",
+            description=_SEARCH_OPERATIONS_DESCRIPTION,
+            coroutine=self._search_operation_tool,
+            args_schema=SearchOperationArgs
+        )
+        self._tools["search_operations"] = search_operation_tool
+        self._tool_configs["search_operations"] = {
+            "name": search_operation_tool.name,
+            "description": search_operation_tool.description,
+            "args_schema": search_operation_tool.args_schema
+        }
+        
+        # Permission operations tool
+        permission_operation_tool = StructuredTool.from_function(
+            name="permission_operations",
+            description=_PERMISSION_OPERATIONS_DESCRIPTION,
+            coroutine=self._permission_operation_tool,
+            args_schema=PermissionOperationArgs
+        )
+        self._tools["permission_operations"] = permission_operation_tool
+        self._tool_configs["permission_operations"] = {
+            "name": permission_operation_tool.name,
+            "description": permission_operation_tool.description,
+            "args_schema": permission_operation_tool.args_schema
+        }
         
     def list_tools(self) -> List[str]:
         """List all tools."""

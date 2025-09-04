@@ -13,8 +13,8 @@ from src.filesystem.exceptions import (
     NotFoundError,
 )
 from src.filesystem.handlers import (
-    BinaryHandler, CsvHandler, HandlerRegistry, JsonHandler, 
-    MarkdownHandler, PythonHandler, TextHandler
+    BinaryHandler, CsvHandler, DocxHandler, HandlerRegistry, JsonHandler, 
+    MarkdownHandler, PdfHandler, PythonHandler, TextHandler, XlsxHandler
 )
 from src.filesystem.lock_manager import AsyncLockManager
 from src.filesystem.path_policy import PathPolicy
@@ -46,6 +46,9 @@ class FileSystemService:
 
         self._handlers = HandlerRegistry()
         # Register all handlers with priority order (more specific first)
+        self._handlers.register(XlsxHandler())
+        self._handlers.register(DocxHandler())
+        self._handlers.register(PdfHandler())
         self._handlers.register(PythonHandler())
         self._handlers.register(MarkdownHandler())
         self._handlers.register(JsonHandler())
@@ -241,16 +244,24 @@ class FileSystemService:
             if len(all_files) >= max_files:
                 return
             try:
-                items = await self._storage.listdir(current_path)
+                items = await self.listdir(current_path)
                 for item in items:
                     if len(all_files) >= max_files:
                         return
                     item_path = current_path / item
+                    # Check if it's a file by using the storage backend
                     absolute_path = self._policy.resolve_relative(item_path)
-                    if absolute_path.is_file():
-                        all_files.append(item_path)
-                    elif absolute_path.is_dir():
-                        await _collect_files(item_path)
+                    if await self._storage.exists(absolute_path):
+                        # Use stat to check if it's a file
+                        try:
+                            stat = await self._storage.stat(absolute_path)
+                            if stat.st_mode & 0o170000 == 0o100000:  # Check if it's a regular file
+                                all_files.append(item_path)
+                            elif stat.st_mode & 0o170000 == 0o040000:  # Check if it's a directory
+                                await _collect_files(item_path)
+                        except Exception:
+                            # Fallback: assume it's a file if we can't stat it
+                            all_files.append(item_path)
             except Exception:
                 pass
         

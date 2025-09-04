@@ -163,6 +163,10 @@ class TradingOfflineEnvironment(gym.Env):
 
         self.record_df = pd.DataFrame() # record the trading history
         self.valid_action_df = pd.DataFrame() # record the valid action
+        
+        self.state = None
+        self.info = None
+        self.done = None
 
     def _filter_news(self, df: pd.DataFrame, text_name: str):
         assert text_name in df.columns, f"news_df must have {text_name} column"
@@ -521,7 +525,7 @@ class TradingOfflineEnvironment(gym.Env):
         valid_action_max_len = min(self.valid_action_max_len, len(self.valid_action_df))
         self.valid_action_df = self.valid_action_df[-valid_action_max_len:]
 
-    def reset(self, **kwargs):
+    async def reset(self, **kwargs):
         self.timestamp_index = self._init_timestamp_index()
         self.timestamp_string = self.get_timestamp_string(timestamp_index=self.timestamp_index)
         self.price = self.get_price(timestamp_index=self.timestamp_index)
@@ -571,7 +575,7 @@ class TradingOfflineEnvironment(gym.Env):
         action = self.action_labels.index(action)
         return action
 
-    def step(self, action: Any):
+    async def step(self, action: Any):
 
         if isinstance(action, np.ndarray):
             action = int(action.item())
@@ -673,133 +677,3 @@ class TradingOfflineEnvironment(gym.Env):
         self.pre_value = self.value
 
         return self.state, reward, self.done, self.truncted, info
-
-
-if __name__ == '__main__':
-    symbol = "AAPL"
-    history_timestamps = 5
-    future_timestamps = 1
-    start_timestamp = "2015-05-01"
-    end_timestamp = "2025-05-01"
-
-    dataset = dict(
-        type="SingleAssetDataset",
-        symbol=symbol,
-        data_path="datasets/exp",
-        enabled_data_configs=[
-            {
-                "asset_name": "exp",
-                "source": "fmp",
-                "data_type": "price",
-                "level": "1day",
-            },
-            {
-                "asset_name": "exp",
-                "source": "fmp",
-                "data_type": "feature",
-                "level": "1day",
-            },
-            {
-                "asset_name": "exp",
-                "source": "fmp",
-                "data_type": "news",
-                "level": "1day",
-            },
-            {
-                "asset_name": "exp",
-                "source": "alpaca",
-                "data_type": "news",
-                "level": "1day",
-            }
-        ],
-        if_norm=False,
-        if_use_future=False,
-        if_use_temporal=True,
-        if_norm_temporal=False,
-        scaler_cfg=dict(
-            type="WindowedScaler"
-        ),
-        history_timestamps=history_timestamps,
-        future_timestamps=future_timestamps,
-        start_timestamp="2015-05-01",
-        end_timestamp="2025-05-01",
-    )
-
-    env_cfg: dict[str, Any] = dict(
-        type='TradingOfflineEnvironment',
-        mode = "test",
-        dataset=None,
-        initial_amount=float(1e5),
-        transaction_cost_pct=float(1e-4),
-        history_timestamps=history_timestamps,
-        step_timestamps=1,
-        future_timestamps=future_timestamps,
-        start_timestamp="2023-05-01",
-        end_timestamp="2025-05-01",
-        gamma=0.99,
-        record_max_len=32,
-        valid_action_max_len=8,
-        single_text_max_tokens=1024,
-        single_text_min_tokens=256,
-        daily_sample_texts=2,
-    )
-
-    dataset = DATASETS.build(dataset)
-
-    env_cfg.update(
-        dict(
-            dataset=dataset,
-        )
-    )
-
-    record = TradingRecords()
-
-    environment = ENVIRONMENTS.build(env_cfg)
-
-    state, info = environment.reset()
-
-    record.add(
-        dict(
-            timestamp=info["timestamp"],
-            price=info["price"],
-            cash=info["cash"],
-            position=info["position"],
-            value=info["value"],
-        ),
-    )
-
-    for step in range(500):
-        action = np.random.choice([0, 1, 2])
-        next_state, reward, done, truncted, info = environment.step(action)
-
-        if step == 10:
-            print(next_state['prompt'])
-            exit()
-
-        record.add(
-            dict(
-                action=info["action"],
-                action_label=info["action_label"],
-                ret=info["ret"],
-                total_profit=info["total_profit"],
-                timestamp=info["timestamp"],  # next timestamp
-                price=info["price"],  # next price
-                cash=info["cash"],  # next cash
-                position=info["position"],  # next position
-                value=info["value"],  # next value
-            ),
-        )
-
-        if "final_info" in info:
-            break
-
-    record.add(
-        dict(
-            action=info["action"],
-            action_label=info["action_label"],
-            ret=info["ret"],
-            total_profit=info["total_profit"],
-        )
-    )
-
-    print(record.to_dataframe())

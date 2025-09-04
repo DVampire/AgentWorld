@@ -3,8 +3,6 @@ from typing import List, Dict, Any, Optional
 from langchain.tools import BaseTool
 
 from src.tools.default_tools.bash import BashTool
-from src.tools.default_tools.file import FileTool
-from src.tools.default_tools.project import ProjectTool
 from src.tools.default_tools.python_interpreter import PythonInterpreterTool
 from src.tools.default_tools.done import DoneTool
 from src.tools.default_tools.web_fetcher import WebFetcherTool
@@ -31,17 +29,7 @@ class DefaultToolSet:
         bash_tool = BashTool()
         self._tools["bash"] = bash_tool
         self._tool_configs["bash"] = bash_tool.get_tool_config()
-
-        # Load file tool
-        file_tool = FileTool()
-        self._tools["file"] = file_tool
-        self._tool_configs["file"] = file_tool.get_tool_config()
-
-        # Load project tool
-        project_tool = ProjectTool()
-        self._tools["project"] = project_tool
-        self._tool_configs["project"] = project_tool.get_tool_config()
-
+        
         # Load python interpreter tool
         python_interpreter_tool = PythonInterpreterTool()
         self._tools["python_interpreter"] = python_interpreter_tool

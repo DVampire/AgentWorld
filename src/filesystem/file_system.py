@@ -1,4 +1,5 @@
 import os
+from re import S
 import shutil
 from pathlib import Path
 from typing import Any, List, Optional, Dict, Union
@@ -6,7 +7,6 @@ from typing import Any, List, Optional, Dict, Union
 from src.filesystem.service import FileSystemService
 from src.filesystem.types import FileReadRequest
 from src.filesystem.exceptions import FileSystemError, InvalidPathError, PathTraversalError
-
 
 class FileSystem:
 	"""Enhanced file system with in-memory storage and multiple file type support"""
@@ -25,6 +25,24 @@ class FileSystem:
 		self._service = FileSystemService(self.base_dir)
 
 		self.extracted_content_count = 0
+  
+		if create_default_files:
+			default_files = ['todo.md']
+			self._create_default_files(default_files)
+   
+	def _create_default_files(self, default_files: List[str]) -> None:
+		"""Create default files"""
+		for file in default_files:
+			file_path = Path(self.base_dir) / file
+			file_path.touch()
+    
+	def get_todo_contents(self) -> str:
+		"""Get contents of todo.md"""
+		file_path = os.path.join(self.base_dir, 'todo.md')
+		if not os.path.exists(file_path):
+			return ''
+		with open(file_path, 'r') as f:
+			return f.read()
 
 	def _validate_absolute_path(self, file_path: str) -> tuple[Path, Path]:
 		"""Validate and convert absolute path to relative path within base directory.
@@ -50,31 +68,6 @@ class FileSystem:
 			raise PathTraversalError(f"Path is outside base directory: {file_path}")
 		
 		return abs_path, rel_path
-
-	def _handle_pdf_content(self, abs_path: Path) -> str:
-		"""Extract content from PDF files with page limit.
-		
-		Args:
-			abs_path: Absolute path to PDF file
-			
-		Returns:
-			Extracted text content from PDF
-		"""
-		try:
-			import pypdf
-			reader = pypdf.PdfReader(str(abs_path))
-			num_pages = len(reader.pages)
-			MAX_PDF_PAGES = 10
-			extra_pages = num_pages - MAX_PDF_PAGES
-			
-			extracted_text = ''
-			for page in reader.pages[:MAX_PDF_PAGES]:
-				extracted_text += page.extract_text()
-			
-			extra_pages_text = f"{extra_pages} more pages..." if extra_pages > 0 else ''
-			return f"Read from file {abs_path} (disk).\n<content>\n{extracted_text}\n{extra_pages_text}</content>"
-		except Exception as e:
-			raise FileSystemError(f"Could not read PDF file '{abs_path}': {str(e)}")
 
 	def _format_line_range_result(self, file_path: str, content: str, start_line: int, end_line: int, total_lines: int) -> str:
 		"""Format result for line range operations.
@@ -108,10 +101,6 @@ class FileSystem:
 		"""Read file content with optional line range support, prioritizing memory over disk"""
 		try:
 			abs_path, rel_path = self._validate_absolute_path(file_path)
-			
-			# PDF special handling
-			if abs_path.suffix.lower() == '.pdf':
-				return self._handle_pdf_content(abs_path)
 			
 			# Delegate to async service
 			req = FileReadRequest(path=rel_path, start_line=start_line, end_line=end_line)

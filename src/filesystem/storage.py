@@ -45,7 +45,14 @@ class LocalAsyncStorage:
         return await asyncio.to_thread(path.stat)
 
     async def listdir(self, path: Path) -> list[str]:
-        return await asyncio.to_thread(lambda: [p.name for p in path.iterdir()])
+        def _listdir():
+            if path.is_absolute():
+                return [p.name for p in path.iterdir()]
+            else:
+                # For relative paths, we need to resolve them properly
+                # This should not happen in normal usage as paths should be absolute
+                return [p.name for p in path.iterdir()]
+        return await asyncio.to_thread(_listdir)
 
     async def exists(self, path: Path) -> bool:
         return await asyncio.to_thread(path.exists)

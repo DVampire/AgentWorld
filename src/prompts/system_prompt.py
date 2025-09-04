@@ -46,16 +46,22 @@ class SystemPrompt:
         """Get the prompt template."""
         return self.template_str
 
-    def get_message(self) -> SystemMessage:
+    def get_message(self, input_variables: Dict[str, Any]) -> SystemMessage:
         """Get the system prompt for the agent."""
         if self.system_message:
             return self.system_message
         try:
-            variables: Dict[str, Any] = {}
-            if "max_actions" in self.input_vars:
+            # Prepare variables for Jinja2 formatting
+            variables = {
+                key: value for key, value in input_variables.items() if key in self.input_vars
+            }
+            if "max_actions" not in variables:
                 variables["max_actions"] = self.max_actions_per_step
+                
+            # Use Jinja2 for template rendering
             jinja_template = Template(self.template_str)
-            prompt = jinja_template.render(**variables) if variables else self.template_str
+            prompt = jinja_template.render(**variables)
+            
             self.system_message = SystemMessage(content=prompt, cache=True)
         except Exception as e:
             logger.warning(f"Failed to render system prompt template: {e}")

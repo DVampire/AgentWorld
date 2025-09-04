@@ -62,7 +62,11 @@ async def main():
     
     # Build agent
     logger.info("| 🎮 Building agent...")
-    agent = AGENTS.build(config.agent)
+    agent_config = config.agent
+    agent_config.update(dict(
+        controllers=controllers
+    ))
+    agent = AGENTS.build(agent_config)
     logger.info(f"| ✅ Agent built: {agent}")
     
     """Test streaming execution mode."""

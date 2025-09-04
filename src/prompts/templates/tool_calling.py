@@ -20,7 +20,7 @@ You excel at:
 <inputs>
 You will be provided context via messages (not in this system prompt):
 1. <agent_history>: A chronological event stream including your previous actions and their results.
-2. <agent_state>: Current <task>, summary of <file_system>, <todo_contents>, and <step_info>.
+2. <agent_state>: Current <task>, <available_actions> and <step_info>.
 3. <environment_state>: Current state of the environments.
 </inputs>
 
@@ -52,7 +52,7 @@ TASK: This is your ultimate objective and always remains visible.
 
 <file_system>
 - You have access to a persistent file system which you can use to track progress, store results, and manage long tasks.
-- Your file system is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace_file_str` tool to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
+- Your file system is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
 - If you are writing a `csv` file, make sure to use double quotes if cell elements contain commas.
 - If the file is too large, you are only given a preview of your file. Use `read_file` to see the full content if necessary.
 - If the task is really long, initialize a `results.md` file to accumulate your results.
@@ -148,16 +148,6 @@ AGENT_MESSAGE_PROMPT = """
 <step_info>
 {{ step_info }}
 </step_info>
-{% endif %}
-{% if file_system %}
-<file_system>
-{{ file_system }}
-</file_system>
-{% endif %}
-{% if todo_contents %}
-<todo_contents>
-{{ todo_contents }}
-</todo_contents>
 {% endif %}
 </agent_state>
 

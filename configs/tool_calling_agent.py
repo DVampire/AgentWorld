@@ -7,7 +7,7 @@ tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
-use_local_proxy = True
+use_local_proxy = False
 version = "0.1.0"
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
@@ -26,8 +26,6 @@ agent = dict(
     prompt_name = "tool_calling",  # Use explicit tool usage template
     tools = [
         "bash",
-        "file",
-        "project",
         "python_interpreter",
         "browser",
         "done",
@@ -35,7 +33,13 @@ agent = dict(
         "web_fetcher",
         "web_searcher",
         "deep_researcher",
-        "file_system_action"
+        
+        # file system tools
+        "file_operations",
+        "directory_operations",
+        "search_operations",
+        "permission_operations",
     ],
-    max_iterations = 10
+    max_steps = 10,
+    controllers = None,
 )

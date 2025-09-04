@@ -207,9 +207,16 @@ class ToolManager(metaclass=Singleton):
         
         if hasattr(tool, 'ainvoke'):
             res = await tool.ainvoke(input=args)
+            # Check if the result is a ToolResponse instance
+            if hasattr(res, 'content'):
+                return res.content
             return res
         else:
-            return tool.invoke(input=args)
+            res = tool.invoke(input=args)
+            # Check if the result is a ToolResponse instance
+            if hasattr(res, 'content'):
+                return res.content
+            return res
     
     async def execute_multiple_tools(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute multiple tools concurrently."""

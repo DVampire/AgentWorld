@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import csv
 import io
+import tempfile
+import os
 from typing import Optional, Protocol, Union, List, Dict, Any
+import markitdown
+from markitdown import MarkItDown
 
 from src.filesystem.types import FileReadRequest, FileReadResult
 
@@ -206,6 +210,165 @@ class PythonHandler(TextHandler):
         return base
 
 
+class XlsxHandler:
+    """Handler for Excel XLSX files using markitdown."""
+    extensions: set[str] = {".xlsx"}
+
+    async def decode(self, data: bytes, request: FileReadRequest) -> FileReadResult:
+        """Decode XLSX content using markitdown."""
+        temp_file_path = None
+        try:
+            # Create a temporary file and write the data
+            with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+                temp_file.write(data)
+                temp_file_path = temp_file.name
+            
+            # Use markitdown to convert XLSX to markdown
+            md = MarkItDown()
+            result = md.convert(temp_file_path)
+            
+            # Get the markdown content
+            markdown_content = result.text_content
+            
+            # Generate preview from the first few lines
+            preview_lines = markdown_content.splitlines()[:5]
+            preview = f"XLSX converted to Markdown:\n" + "\n".join(preview_lines)
+            
+            return FileReadResult(
+                path=request.path,
+                source="disk",
+                content_bytes=None,
+                content_text=markdown_content,
+                total_lines=len(markdown_content.splitlines()),
+                preview=preview,
+            )
+        except Exception as e:
+            # Fallback to binary handler if conversion fails
+            preview = f"XLSX file ({len(data)} bytes) - conversion failed: {str(e)}"
+            return FileReadResult(
+                path=request.path,
+                source="disk",
+                content_bytes=data,
+                content_text=None,
+                total_lines=None,
+                preview=preview,
+            )
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
+    async def encode(self, text: Union[str, bytes], *, mode: str, encoding: str) -> bytes:
+        """Encode content - not supported for XLSX files."""
+        raise NotImplementedError("XLSX encoding not supported")
+
+
+class DocxHandler:
+    """Handler for Word DOCX files using markitdown."""
+    extensions: set[str] = {".docx"}
+
+    async def decode(self, data: bytes, request: FileReadRequest) -> FileReadResult:
+        """Decode DOCX content using markitdown."""
+        temp_file_path = None
+        try:
+            # Create a temporary file and write the data
+            with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as temp_file:
+                temp_file.write(data)
+                temp_file_path = temp_file.name
+            
+            # Use markitdown to convert DOCX to markdown
+            md = MarkItDown()
+            result = md.convert(temp_file_path)
+            
+            # Get the markdown content
+            markdown_content = result.text_content
+            
+            # Generate preview from the first few lines
+            preview_lines = markdown_content.splitlines()[:5]
+            preview = f"DOCX converted to Markdown:\n" + "\n".join(preview_lines)
+            
+            return FileReadResult(
+                path=request.path,
+                source="disk",
+                content_bytes=None,
+                content_text=markdown_content,
+                total_lines=len(markdown_content.splitlines()),
+                preview=preview,
+            )
+        except Exception as e:
+            # Fallback to binary handler if conversion fails
+            preview = f"DOCX file ({len(data)} bytes) - conversion failed: {str(e)}"
+            return FileReadResult(
+                path=request.path,
+                source="disk",
+                content_bytes=data,
+                content_text=None,
+                total_lines=None,
+                preview=preview,
+            )
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
+    async def encode(self, text: Union[str, bytes], *, mode: str, encoding: str) -> bytes:
+        """Encode content - not supported for DOCX files."""
+        raise NotImplementedError("DOCX encoding not supported")
+
+
+class PdfHandler:
+    """Handler for PDF files using markitdown."""
+    extensions: set[str] = {".pdf"}
+
+    async def decode(self, data: bytes, request: FileReadRequest) -> FileReadResult:
+        """Decode PDF content using markitdown."""
+        temp_file_path = None
+        try:
+            # Create a temporary file and write the data
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
+                temp_file.write(data)
+                temp_file_path = temp_file.name
+            
+            # Use markitdown to convert PDF to markdown
+            md = MarkItDown()
+            result = md.convert(temp_file_path)
+            
+            # Get the markdown content
+            markdown_content = result.text_content
+            
+            # Generate preview from the first few lines
+            preview_lines = markdown_content.splitlines()[:5]
+            preview = f"PDF converted to Markdown:\n" + "\n".join(preview_lines)
+            
+            return FileReadResult(
+                path=request.path,
+                source="disk",
+                content_bytes=None,
+                content_text=markdown_content,
+                total_lines=len(markdown_content.splitlines()),
+                preview=preview,
+            )
+        except Exception as e:
+            # Fallback to binary handler if conversion fails
+            preview = f"PDF file ({len(data)} bytes) - conversion failed: {str(e)}"
+            return FileReadResult(
+                path=request.path,
+                source="disk",
+                content_bytes=data,
+                content_text=None,
+                total_lines=None,
+                preview=preview,
+            )
+        finally:
+            # Clean up temporary file
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
+    async def encode(self, text: Union[str, bytes], *, mode: str, encoding: str) -> bytes:
+        """Encode content - not supported for PDF files."""
+        raise NotImplementedError("PDF encoding not supported")
+
+
 class HandlerRegistry:
     """Registry for content handlers with priority-based selection."""
     
@@ -231,5 +394,3 @@ class HandlerRegistry:
     def get_supported_extensions(self) -> set[str]:
         """Get all supported file extensions."""
         return set(self._extension_map.keys())
-
-

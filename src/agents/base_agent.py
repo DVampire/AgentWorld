@@ -11,14 +11,15 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 from langchain_core.utils.function_calling import convert_to_openai_function
+from inspect import cleandoc
 
 from src.models import model_manager
 from src.tools import tool_manager
 from src.prompts import PromptManager
 from src.logger import logger
 from src.memory import MemoryManager, SessionInfo, EventType
-from src.filesystem import FileSystem
 from src.config import config
+from src.controller import BaseController
 
 class Action(BaseModel):
     """Action."""
@@ -91,7 +92,7 @@ class BaseAgent(ABC):
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
         memory_manager: Optional[MemoryManager] = None,
-        file_system: Optional[FileSystem] = None,
+        controllers: Optional[List[BaseController]] = None,
         max_steps: int = 20,
         review_steps: int = 5,
         **kwargs
@@ -107,7 +108,7 @@ class BaseAgent(ABC):
         self.tool_manager = tool_manager
         self.prompt_manager = PromptManager(prompt_name=prompt_name)
         self.memory_manager = memory_manager or MemoryManager()
-        self.file_system = file_system or FileSystem(base_dir=self.workdir)
+        self.controllers = controllers or []
         
         # Setup model
         self.model = self._setup_model(model_name, model)
@@ -180,7 +181,7 @@ class BaseAgent(ABC):
     def __repr__(self):
         return self.__str__()
     
-    def _generate_session_info(self, task: str) -> SessionInfo:
+    async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
         structured_llm = self.model.with_structured_output(
             SessionInfo,
@@ -190,13 +191,13 @@ class BaseAgent(ABC):
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", f"You are a helpful assistant that generates a session info for agent {self.name}."),
-            ("user", """<intro>
-1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-2. The session description should provide a concise description of the task.
-</intro>
-<task>
-{task}
-</task>""")
+            ("user", cleandoc("""<intro>
+            1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
+            2. The session description should provide a concise description of the task.
+            </intro>
+            <task>
+            {task}
+            </task>"""))
         ])
 
         chain = prompt | structured_llm
@@ -209,7 +210,7 @@ class BaseAgent(ABC):
         
         return SessionInfo(session_id=session_id, description=description)
     
-    def _get_agent_history(self) -> Dict[str, Any]:
+    async def _get_agent_history(self) -> Dict[str, Any]:
         """Get the agent history."""
         events = self.memory_manager.get_events(
             num = self.review_steps
@@ -234,17 +235,11 @@ class BaseAgent(ABC):
             "agent_history": agent_history,
         }
         
-    def _get_agent_state(self, task: str) -> Dict[str, Any]:
+    async def _get_agent_state(self, task: str) -> Dict[str, Any]:
         """Get the agent state."""
         step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
         time_str = datetime.now().isoformat()
         step_info_description += f'Current date and time: {time_str}'
-        
-        todo_contents = self.file_system.get_todo_contents() if self.file_system else ''
-        if not len(todo_contents):
-            todo_contents = '[Current todo.md is empty, fill it with your plan when applicable]'
-        
-        file_system_contents = self.file_system.describe() if self.file_system else 'No file system available'
         
         available_actions_description = [
             convert_to_openai_function(tool) for tool in self.tools
@@ -254,22 +249,42 @@ class BaseAgent(ABC):
         return {
             "task": task,
             "step_info": step_info_description,
-            "todo_contents": todo_contents,
-            "file_system": file_system_contents,
             "available_actions": available_actions_description,
         }
         
-    def _get_messages(self, task: str) -> List[BaseMessage]:
-        input_variables = {}
-        agent_history = self._get_agent_history()
-        agent_state = self._get_agent_state(task)
+    async def _get_environment_state(self) -> Dict[str, Any]:
+        """Get the environment state."""
+        environment_state = ""
+        for controller in self.controllers:
+            environment_state += f"{await controller.get_state()}\n"
+        return {
+            "environment_state": environment_state,
+        }
         
-        input_variables.update(agent_history)
-        input_variables.update(agent_state)
+    async def _get_messages(self, task: str) -> List[BaseMessage]:
         
-        messages = []
-        messages.append(self.prompt_manager.get_system_message())
-        messages.append(self.prompt_manager.get_agent_message(input_variables))
+        system_input_variables = {}
+        environment_rules = ""
+        for controller in self.controllers:
+            environment_rules += f"{controller.environment_rules}\n"
+        system_input_variables.update(dict(
+            environment_rules=environment_rules,
+        ))
+        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        
+        agent_input_variables = {}
+        agent_history = await self._get_agent_history()
+        agent_state = await self._get_agent_state(task)
+        environment_state = await self._get_environment_state()
+        agent_input_variables.update(agent_history)
+        agent_input_variables.update(agent_state)
+        agent_input_variables.update(environment_state)
+        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        
+        messages = [
+            system_message,
+            agent_message,
+        ]
         
         return messages
     

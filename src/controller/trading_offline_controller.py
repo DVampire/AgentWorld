@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from inspect import cleandoc
-from langchain.tools import Tool, BaseTool
+from langchain.tools import BaseTool, StructuredTool
 
 from src.tools.base import ToolResponse
 from src.controller.base import BaseController
@@ -11,8 +11,8 @@ _TRADING_OFFLINE_ACTION_DESCRIPTION = """Trading offline tool for trading offlin
 Use this tool to trade offline.
 
 Available operations:
-1. RESET: Reset the trading environment.
-2. STEP: Step the trading environment.
+1. reset: Reset the trading environment.
+2. step: Step the trading environment.
     - action: The action to take. Should be `BUY` or `SELL` or `HOLD`.
 
 Input format: JSON string with 'operation' and operation-specific parameters.
@@ -42,21 +42,25 @@ class TradingOfflineController(BaseController):
     async def initialize(self):
         """Initialize the trading offline controller."""
         await self._register_tools()
+        
+    async def get_state(self) -> str:
+        """Get the state of the trading offline controller."""
+        state = cleandoc(f"""<environment_trading_offline_state>
+                         Current state: {self.state['prompt']}
+                         </environment_trading_offline_state>""")
+        return state
     
     async def _action_tool(self, operation: str, action: Optional[str] = None) -> ToolResponse:
         
         if operation == "reset":
             try:
-                state, info = self.environment.reset()
+                state, info = await self.environment.reset()
             except Exception as e:
                 return f"Error in resetting the trading environment: {str(e)}"
             
             done = info["done"]
             
-            state_description = cleandoc(f"""Reset the trading environment successfully.
-            The state is:
-            {state['prompt']}
-            
+            result = cleandoc(f"""Reset the trading environment successfully.
             The environment is {'done' if done else 'not done'}.
             """)
             
@@ -64,14 +68,13 @@ class TradingOfflineController(BaseController):
             self.info = info
             self.done = done
             
-            return ToolResponse(content=state_description)
+            return ToolResponse(content=result)
         
         elif operation == "step":
-            state, reward, done, truncted, info = self.environment.step(action)
-            state_description = cleandoc(f"""Step the trading environment successfully.
-            The state is:
-            {state['prompt']}
-            
+            state, reward, done, truncted, info = await self.environment.step(action)
+            result = cleandoc(f"""Step the trading environment successfully.
+            Action: {action}
+            Reward: {reward}
             The environment is {'done' if done else 'not done'}.
             """)
             
@@ -79,17 +82,17 @@ class TradingOfflineController(BaseController):
             self.info = info
             self.done = done
             
-            return ToolResponse(content=state_description)
+            return ToolResponse(content=result)
         else:
             raise ValueError(f"Invalid operation: {operation}")
     
     async def _register_tools(self):
         
         # register action tool
-        action_tool = Tool(
+        action_tool = StructuredTool.from_function(
             name="trading_offline_action",
             description=_TRADING_OFFLINE_ACTION_DESCRIPTION,
-            func=self._action_tool,
+            coroutine=self._action_tool,
             args_schema=TradingOfflineActionArgs
         )
         action_tool_config = {

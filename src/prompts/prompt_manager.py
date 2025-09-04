@@ -19,9 +19,9 @@ class PromptManager():
         self.system_prompt = SystemPrompt(prompt_name=self.system_prompt_name, **kwargs)
         self.agent_message_prompt = AgentMessagePrompt(prompt_name=self.agent_message_prompt_name, **kwargs)
     
-    def get_system_message(self, **kwargs) -> SystemMessage:
+    def get_system_message(self, input_variables: Dict[str, Any], **kwargs) -> SystemMessage:
         """Get a system message using SystemPrompt."""
-        return self.system_prompt.get_message(**kwargs)
+        return self.system_prompt.get_message(input_variables, **kwargs)
     
     def get_agent_message(self, input_variables: Dict[str, Any], **kwargs) -> HumanMessage:
         """Get a system message using AgentMessagePrompt."""
