@@ -6,11 +6,13 @@ from langchain.tools import BaseTool
 
 from src.tools.default_tools.default_tool_set import DefaultToolSet
 from src.tools.mcp_tools.mcp_tool_set import MCPToolSet
-from src.tools.environment_tools.environment_tool_set import EnvironmentToolSet
 from src.tools.agent_tools.agent_tool_set import AgentToolSet
+from src.tools.environment_tools.environment_tool_set import EnvironmentToolSet
 from src.logger import logger
 from src.utils import Singleton
 from src.config import config
+from src.controller.base import BaseController
+
 
 class ToolManager(metaclass=Singleton):
     """Unified tool manager for managing default tools and MCP tools."""
@@ -18,13 +20,13 @@ class ToolManager(metaclass=Singleton):
     def __init__(self):
         self._default_tool_set: Optional[DefaultToolSet] = None
         self._mcp_tool_set: Optional[MCPToolSet] = None
-        self._environment_tool_set: Optional[EnvironmentToolSet] = None
         self._agent_tool_set: Optional[AgentToolSet] = None
+        self._environment_tool_set: Optional[EnvironmentToolSet] = None
         self._all_tools: Dict[str, BaseTool] = {}
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
     
-    async def initialize(self):
+    async def initialize(self, controllers: Optional[List[BaseController]] = None):
         """Initialize both default tool set and MCP tool set asynchronously."""
         if self._initialized:
             return
@@ -38,16 +40,6 @@ class ToolManager(metaclass=Singleton):
         except Exception as e:
             logger.error(f"| ⚠️ Failed to initialize default tool set: {e}")
             self._default_tool_set = None
-        
-        # Initialize environment tool set
-        try:
-            environment_tool_set = EnvironmentToolSet()
-            await environment_tool_set.init_tools()
-            self._environment_tool_set = environment_tool_set
-            logger.info("| ✅ Environment tool set initialized successfully")
-        except Exception as e:
-            logger.error(f"| ⚠️ Failed to initialize environment tool set: {e}")
-            self._environment_tool_set = None
         
         # Initialize MCP tool set
         try:
@@ -68,6 +60,16 @@ class ToolManager(metaclass=Singleton):
         except Exception as e:
             logger.error(f"| ⚠️ Failed to initialize agent tool set: {e}")
             self._agent_tool_set = None
+            
+        # Initialize environment tool set
+        try:
+            environment_tool_set = EnvironmentToolSet()
+            await environment_tool_set.init_tools(controllers)
+            self._environment_tool_set = environment_tool_set
+            logger.info("| ✅ Environment tool set initialized successfully")
+        except Exception as e:
+            logger.error(f"| ⚠️ Failed to initialize environment tool set: {e}")
+            self._environment_tool_set = None
         
         # Merge all tools
         await self._merge_tools()
@@ -88,15 +90,6 @@ class ToolManager(metaclass=Singleton):
                 config = self._default_tool_set.get_tool_config(tool)
                 if config:
                     self._tool_configs[tool] = config
-                    
-        # Add environment tools
-        if self._environment_tool_set:
-            environment_tools = self._environment_tool_set.list_tools()
-            for tool in environment_tools:
-                self._all_tools[tool] = self._environment_tool_set.get_tool(tool)
-                config = self._environment_tool_set.get_tool_config(tool)
-                if config:
-                    self._tool_configs[tool] = config
         
         # Add MCP tools
         if self._mcp_tool_set:
@@ -113,6 +106,15 @@ class ToolManager(metaclass=Singleton):
             for tool in agent_tools:
                 self._all_tools[tool] = self._agent_tool_set.get_tool(tool)
                 config = self._agent_tool_set.get_tool_config(tool)
+                if config:
+                    self._tool_configs[tool] = config
+                    
+        # Add environment tools
+        if self._environment_tool_set:
+            environment_tools = self._environment_tool_set.list_tools()
+            for tool in environment_tools:
+                self._all_tools[tool] = self._environment_tool_set.get_tool(tool)
+                config = self._environment_tool_set.get_tool_config(tool)
                 if config:
                     self._tool_configs[tool] = config
     
@@ -203,8 +205,6 @@ class ToolManager(metaclass=Singleton):
         if not tool:
             raise ValueError(f"Tool '{name}' not found")
         
-        print(args)
-        
         if hasattr(tool, 'ainvoke'):
             res = await tool.ainvoke(input=args)
             return res
@@ -258,9 +258,9 @@ class ToolManager(metaclass=Singleton):
         """Check if the tool manager is initialized."""
         return self._initialized
     
-    async def init_tools(self):
+    async def init_tools(self, controllers: Optional[List[BaseController]] = None):
         """Factory method to create and initialize a ToolManager asynchronously."""
-        await self.initialize()
+        await self.initialize(controllers)
 
 
 # Global tool manager instance

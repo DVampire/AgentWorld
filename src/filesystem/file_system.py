@@ -1,473 +1,491 @@
-import asyncio
-import re
+import os
 import shutil
-from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional, Dict, Union
 
-from markdown_pdf import MarkdownPdf, Section
-from pydantic import BaseModel, Field
-
-INVALID_FILENAME_ERROR_MESSAGE = 'Error: Invalid filename format. Must be alphanumeric with supported extension.'
-
-
-class FileSystemError(Exception):
-	"""Custom exception for file system operations that should be shown to LLM"""
-
-	pass
-
-
-class BaseFile(BaseModel, ABC):
-	"""Base class for all file types"""
-
-	name: str
-	content: str = ''
-
-	# --- Subclass must define this ---
-	@property
-	@abstractmethod
-	def extension(self) -> str:
-		"""File extension (e.g. 'txt', 'md')"""
-		pass
-
-	def write_file_content(self, content: str) -> None:
-		"""Update internal content (formatted)"""
-		self.update_content(content)
-
-	def append_file_content(self, content: str) -> None:
-		"""Append content to internal content"""
-		self.update_content(self.content + content)
-
-	# --- These are shared and implemented here ---
-
-	def update_content(self, content: str) -> None:
-		self.content = content
-
-	def sync_to_disk_sync(self, path: Path) -> None:
-		file_path = path / self.full_name
-		file_path.write_text(self.content)
-
-	async def sync_to_disk(self, path: Path) -> None:
-		file_path = path / self.full_name
-		with ThreadPoolExecutor() as executor:
-			await asyncio.get_event_loop().run_in_executor(executor, lambda: file_path.write_text(self.content))
-
-	async def write(self, content: str, path: Path) -> None:
-		self.write_file_content(content)
-		await self.sync_to_disk(path)
-
-	async def append(self, content: str, path: Path) -> None:
-		self.append_file_content(content)
-		await self.sync_to_disk(path)
-
-	def read(self) -> str:
-		return self.content
-
-	@property
-	def full_name(self) -> str:
-		return f'{self.name}.{self.extension}'
-
-	@property
-	def get_size(self) -> int:
-		return len(self.content)
-
-	@property
-	def get_line_count(self) -> int:
-		return len(self.content.splitlines())
-
-
-class MarkdownFile(BaseFile):
-	"""Markdown file implementation"""
-
-	@property
-	def extension(self) -> str:
-		return 'md'
-
-
-class TxtFile(BaseFile):
-	"""Plain text file implementation"""
-
-	@property
-	def extension(self) -> str:
-		return 'txt'
-
-
-class JsonFile(BaseFile):
-	"""JSON file implementation"""
-
-	@property
-	def extension(self) -> str:
-		return 'json'
-
-
-class CsvFile(BaseFile):
-	"""CSV file implementation"""
-
-	@property
-	def extension(self) -> str:
-		return 'csv'
-
-
-class PdfFile(BaseFile):
-	"""PDF file implementation"""
-
-	@property
-	def extension(self) -> str:
-		return 'pdf'
-
-	def sync_to_disk_sync(self, path: Path) -> None:
-		file_path = path / self.full_name
-		try:
-			md_pdf = MarkdownPdf()
-			md_pdf.add_section(Section(self.content))
-			md_pdf.save(file_path)
-		except Exception as e:
-			raise FileSystemError(f"Error: Could not write to file '{self.full_name}'. {str(e)}")
-
-	async def sync_to_disk(self, path: Path) -> None:
-		with ThreadPoolExecutor() as executor:
-			await asyncio.get_event_loop().run_in_executor(executor, lambda: self.sync_to_disk_sync(path))
-
-
-class FileSystemState(BaseModel):
-	"""Serializable state of the file system"""
-
-	files: dict[str, dict[str, Any]] = Field(default_factory=dict)  # full filename -> file data
-	base_dir: str
-	extracted_content_count: int = 0
+from src.filesystem.service import FileSystemService
+from src.filesystem.types import FileReadRequest
+from src.filesystem.exceptions import FileSystemError, InvalidPathError, PathTraversalError
 
 
 class FileSystem:
 	"""Enhanced file system with in-memory storage and multiple file type support"""
 
-	def __init__(self, base_dir: str | Path, create_default_files: bool = True):
-		# Handle the Path conversion before calling super().__init__
+	def __init__(self, base_dir: Union[str, Path], create_default_files: bool = True):
+		"""Initialize the file system with a base directory.
+		
+		Args:
+			base_dir: Base directory for file operations
+			create_default_files: Whether to create default files (unused, kept for compatibility)
+		"""
 		self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
 		self.base_dir.mkdir(parents=True, exist_ok=True)
   
-		self.data_dir = self.base_dir
-
-		self._file_types: dict[str, type[BaseFile]] = {
-			'md': MarkdownFile,
-			'txt': TxtFile,
-			'json': JsonFile,
-			'csv': CsvFile,
-			'pdf': PdfFile,
-		}
-
-		self.files = {}
-		if create_default_files:
-			self.default_files = ['todo.md']
-			self._create_default_files()
+		# New async service for actual IO; this class stays as adapter for compatibility
+		self._service = FileSystemService(self.base_dir)
 
 		self.extracted_content_count = 0
 
-	def get_allowed_extensions(self) -> list[str]:
-		"""Get allowed extensions"""
-		return list(self._file_types.keys())
+	def _validate_absolute_path(self, file_path: str) -> tuple[Path, Path]:
+		"""Validate and convert absolute path to relative path within base directory.
+		
+		Args:
+			file_path: Absolute file path to validate
+			
+		Returns:
+			Tuple of (absolute_path, relative_path)
+			
+		Raises:
+			InvalidPathError: If path is invalid or outside base directory
+		"""
+		if not file_path:
+			raise InvalidPathError("File path is required")
+		if not os.path.isabs(file_path):
+			raise InvalidPathError("File path must be absolute")
+		
+		abs_path = Path(file_path).resolve()
+		try:
+			rel_path = abs_path.relative_to(self.base_dir.resolve())
+		except ValueError:
+			raise PathTraversalError(f"Path is outside base directory: {file_path}")
+		
+		return abs_path, rel_path
 
-	def _get_file_type_class(self, extension: str) -> type[BaseFile] | None:
-		"""Get the appropriate file class for an extension."""
-		return self._file_types.get(extension.lower(), None)
+	def _handle_pdf_content(self, abs_path: Path) -> str:
+		"""Extract content from PDF files with page limit.
+		
+		Args:
+			abs_path: Absolute path to PDF file
+			
+		Returns:
+			Extracted text content from PDF
+		"""
+		try:
+			import pypdf
+			reader = pypdf.PdfReader(str(abs_path))
+			num_pages = len(reader.pages)
+			MAX_PDF_PAGES = 10
+			extra_pages = num_pages - MAX_PDF_PAGES
+			
+			extracted_text = ''
+			for page in reader.pages[:MAX_PDF_PAGES]:
+				extracted_text += page.extract_text()
+			
+			extra_pages_text = f"{extra_pages} more pages..." if extra_pages > 0 else ''
+			return f"Read from file {abs_path} (disk).\n<content>\n{extracted_text}\n{extra_pages_text}</content>"
+		except Exception as e:
+			raise FileSystemError(f"Could not read PDF file '{abs_path}': {str(e)}")
 
-	def _create_default_files(self) -> None:
-		"""Create default results and todo files"""
-		for full_filename in self.default_files:
-			name_without_ext, extension = self._parse_filename(full_filename)
-			file_class = self._get_file_type_class(extension)
-			if not file_class:
-				raise ValueError(f"Error: Invalid file extension '{extension}' for file '{full_filename}'.")
+	def _format_line_range_result(self, file_path: str, content: str, start_line: int, end_line: int, total_lines: int) -> str:
+		"""Format result for line range operations.
+		
+		Args:
+			file_path: Path to the file
+			content: File content
+			start_line: Start line number
+			end_line: End line number
+			total_lines: Total number of lines in file
+			
+		Returns:
+			Formatted string with line numbers
+		"""
+		lines = content.splitlines()
+		start = start_line - 1 if start_line else 0
+		end = end_line if end_line else total_lines
+		
+		if start < 0 or end > total_lines or start >= end:
+			return f"Error: Invalid line range. File has {total_lines} lines."
+		
+		slice_lines = lines[start:end]
+		result_lines = []
+		for i, line in enumerate(slice_lines, start=start + 1):
+			result_lines.append(f"{i:4d}: {line}")
+		
+		return f"File: {file_path} (disk)\nLines {start + 1}-{end} of {total_lines}:\n" + "\n".join(result_lines)
 
-			file_obj = file_class(name=name_without_ext)
-			self.files[full_filename] = file_obj  # Use full filename as key
-			file_obj.sync_to_disk_sync(self.data_dir)
 
-	def _is_valid_filename(self, file_name: str) -> bool:
-		"""Check if filename matches the required pattern: name.extension"""
-		# Build extensions pattern from _file_types
-		extensions = '|'.join(self._file_types.keys())
-		pattern = rf'^[a-zA-Z0-9_\-]+\.({extensions})$'
-		return bool(re.match(pattern, file_name))
+	async def read_file(self, file_path: str, start_line: Optional[int] = None, end_line: Optional[int] = None) -> str:
+		"""Read file content with optional line range support, prioritizing memory over disk"""
+		try:
+			abs_path, rel_path = self._validate_absolute_path(file_path)
+			
+			# PDF special handling
+			if abs_path.suffix.lower() == '.pdf':
+				return self._handle_pdf_content(abs_path)
+			
+			# Delegate to async service
+			req = FileReadRequest(path=rel_path, start_line=start_line, end_line=end_line)
+			result = await self._service.read(req)
+			
+			if start_line is not None or end_line is not None:
+				content = result.content_text or ''
+				total_lines = result.total_lines if result.total_lines is not None else len(content.splitlines())
+				return self._format_line_range_result(file_path, content, start_line, end_line, total_lines)
+			
+			return f"Read from file {file_path} (disk).\n<content>\n{result.content_text or ''}\n</content>"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except FileNotFoundError:
+			return f"Error: File '{file_path}' not found."
+		except PermissionError:
+			return f"Error: Permission denied to read file '{file_path}'."
+		except Exception as e:
+			return f"Error: Could not read file '{file_path}': {str(e)}"
 
-	def _parse_filename(self, filename: str) -> tuple[str, str]:
-		"""Parse filename into name and extension. Always check _is_valid_filename first."""
-		name, extension = filename.rsplit('.', 1)
-		return name, extension.lower()
+	async def write_file(self, file_path: str, content: str, mode: str = "w") -> str:
+		"""Write content to file with mode support (w=overwrite, a=append) and sync to memory"""
+		try:
+			if content is None:
+				raise InvalidPathError("Content is required for WRITE operation")
+			if mode not in ["w", "a"]:
+				raise InvalidPathError("Mode must be 'w' (overwrite) or 'a' (append)")
+			
+			abs_path, rel_path = self._validate_absolute_path(file_path)
+			await self._service.write_text(rel_path, content, mode=mode)
+			
+			action = "overwritten" if mode == "w" else "appended to"
+			return f"Successfully {action} file: {file_path}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error writing file: {str(e)}"
 
-	def get_dir(self) -> Path:
-		"""Get the file system directory"""
-		return self.data_dir
 
-	def get_file(self, full_filename: str) -> BaseFile | None:
-		"""Get a file object by full filename"""
-		if not self._is_valid_filename(full_filename):
-			return None
+	async def replace_file_str(self, file_path: str, old_str: str, new_str: str, start_line: Optional[int] = None, end_line: Optional[int] = None) -> str:
+		"""Replace old_str with new_str in file, optionally within a line range, and sync to memory"""
+		try:
+			if not old_str:
+				raise InvalidPathError("Cannot replace empty string. Please provide a non-empty string to replace.")
+			
+			abs_path, rel_path = self._validate_absolute_path(file_path)
+			replaced = await self._service.replace(rel_path, old_str, new_str, start_line=start_line, end_line=end_line)
+			
+			# Format range info
+			if start_line is not None and end_line is not None:
+				range_info = f" in lines {start_line}-{end_line}"
+			elif start_line is not None:
+				range_info = f" from line {start_line}"
+			elif end_line is not None:
+				range_info = f" up to line {end_line}"
+			else:
+				range_info = ""
+			
+			return f"Successfully replaced {replaced} occurrences of \"{old_str}\" with \"{new_str}\" in file {file_path} (disk){range_info}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error: Could not replace string in file '{file_path}': {str(e)}"
 
-		# Use full filename as key
-		return self.files.get(full_filename)
+	async def delete_file(self, file_path: str) -> str:
+		"""Delete a file from both memory and disk"""
+		try:
+			abs_path, rel_path = self._validate_absolute_path(file_path)
+			
+			# Remove on disk via service (if exists)
+			if os.path.exists(file_path):
+				await self._service.remove(rel_path)
+				return f"Successfully deleted file: {file_path}"
+			else:
+				return f"Successfully deleted file from memory: {file_path}"
+				
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error deleting file: {str(e)}"
 
-	def list_files(self) -> list[str]:
-		"""List all files in the system"""
-		return [file_obj.full_name for file_obj in self.files.values()]
+	async def copy_file(self, src_path: str, dst_path: str) -> str:
+		"""Copy a file from source to destination"""
+		try:
+			a_src, r_src = self._validate_absolute_path(src_path)
+			a_dst, r_dst = self._validate_absolute_path(dst_path)
+			
+			if not os.path.exists(a_src):
+				return f"Error: Source file not found: {src_path}"
+			if os.path.exists(a_dst):
+				return f"Error: Destination file already exists: {dst_path}"
+			
+			# Perform direct filesystem copy to preserve binary fidelity
+			os.makedirs(os.path.dirname(a_dst), exist_ok=True)
+			shutil.copy2(a_src, a_dst)
+			return f"Successfully copied file from {src_path} to {dst_path}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error copying file: {str(e)}"
 
-	def display_file(self, full_filename: str) -> str | None:
-		"""Display file content using file-specific display method"""
-		if not self._is_valid_filename(full_filename):
-			return None
+	async def move_file(self, src_path: str, dst_path: str) -> str:
+		"""Move a file from source to destination"""
+		try:
+			a_src, r_src = self._validate_absolute_path(src_path)
+			a_dst, r_dst = self._validate_absolute_path(dst_path)
+			
+			if not os.path.exists(a_src):
+				return f"Error: Source file not found: {src_path}"
+			if os.path.exists(a_dst):
+				return f"Error: Destination file already exists: {dst_path}"
+			
+			await self._service.rename(r_src, r_dst)
+			return f"Successfully moved file from {src_path} to {dst_path}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error moving file: {str(e)}"
 
-		file_obj = self.get_file(full_filename)
-		if not file_obj:
-			return None
+	async def rename_file(self, old_path: str, new_path: str) -> str:
+		"""Rename a file or directory"""
+		try:
+			a_old, r_old = self._validate_absolute_path(old_path)
+			a_new, r_new = self._validate_absolute_path(new_path)
+			
+			if not os.path.exists(a_old):
+				return f"Error: Source not found: {old_path}"
+			if os.path.exists(a_new):
+				return f"Error: Destination already exists: {new_path}"
+			
+			await self._service.rename(r_old, r_new)
+			return f"Successfully renamed from {old_path} to {new_path}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error renaming file: {str(e)}"
 
-		return file_obj.read()
+	async def create_directory(self, dir_path: str) -> str:
+		"""Create a directory"""
+		try:
+			abs_dir, rel = self._validate_absolute_path(dir_path)
+			
+			if os.path.exists(abs_dir):
+				return f"Error: Directory already exists: {dir_path}"
+			
+			await self._service.mkdir(rel)
+			return f"Successfully created directory: {dir_path}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error creating directory: {str(e)}"
 
-	async def read_file(self, full_filename: str, external_file: bool = False) -> str:
-		"""Read file content using file-specific read method and return appropriate message to LLM"""
-		if external_file:
+	async def delete_directory(self, dir_path: str) -> str:
+		"""Delete a directory"""
+		try:
+			abs_dir, rel = self._validate_absolute_path(dir_path)
+			
+			if not os.path.exists(abs_dir):
+				return f"Error: Directory not found: {dir_path}"
+			if not os.path.isdir(abs_dir):
+				return f"Error: Path is not a directory: {dir_path}"
+			
+			await self._service.rmtree(rel)
+			return f"Successfully deleted directory: {dir_path}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error deleting directory: {str(e)}"
+
+	async def change_permissions(self, file_path: str, permissions: str) -> str:
+		"""Change file or directory permissions"""
+		try:
+			if not permissions:
+				raise InvalidPathError("Permissions are required for CHANGE_PERMISSIONS operation")
+			
+			abs_path, _ = self._validate_absolute_path(file_path)
+			
+			if not os.path.exists(abs_path):
+				return f"Error: File not found: {file_path}"
+			
 			try:
+				perm_octal = int(permissions, 8)
+			except ValueError:
+				return f"Error: Invalid permissions format '{permissions}'. Use octal format (e.g., '755', '644')"
+			
+			# Direct OS call (service does not wrap chmod). Retain behavior.
+			os.chmod(abs_path, perm_octal)
+			return f"Successfully changed permissions of {file_path} to {permissions}"
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error changing permissions: {str(e)}"
+  
+
+	async def tree_structure(self, file_path: str, max_depth: int = 3, show_hidden: bool = False, exclude_patterns: Optional[List[str]] = None, file_types: Optional[List[str]] = None) -> str:
+		"""Show directory tree structure with optional filtering"""
+		try:
+			abs_dir, rel = self._validate_absolute_path(file_path)
+			
+			if not os.path.exists(file_path):
+				return f"Error: Path does not exist: {file_path}"
+			if not os.path.isdir(file_path):
+				return f"Error: Path is not a directory: {file_path}"
+			
+			lines = await self._service.tree(rel, max_depth=max_depth, show_hidden=show_hidden, exclude_patterns=exclude_patterns or [], file_types=file_types)
+			return f"Directory Tree Structure:\n{file_path}\n" + "\n".join(lines)
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error building tree structure: {str(e)}"
+	
+	
+	async def search_files(self, file_path: str, query: str, search_type: str = "name", file_types: Optional[List[str]] = None, case_sensitive: bool = False, max_results: int = 50) -> str:
+		"""Search for files by name or content, or search content within a single file"""
+		try:
+			if not query:
+				raise InvalidPathError("Query is required for SEARCH operation")
+			if search_type not in ["name", "content"]:
+				raise InvalidPathError("Search type must be 'name' or 'content'")
+			
+			abs_input, rel = self._validate_absolute_path(file_path)
+			
+			if not os.path.exists(file_path):
+				return f"Error: Path does not exist: {file_path}"
+			
+			by = "name" if search_type == "name" else "content"
+			results = await self._service.search(rel, query=query, by=by, file_types=file_types, case_sensitive=case_sensitive, max_results=max_results)
+			
+			if not results:
+				return f"No files found matching '{query}' in {file_path}"
+			
+			# If a single file content search, print matches with line numbers
+			if abs_input.is_file() and by == "content" and len(results) == 1:
+				matches = results[0].matches
+				if not matches:
+					return f"No matches found for '{query}' in file: {file_path}"
+				result = f"Found {len(matches)} matches for '{query}' in file: {file_path}:\n"
+				for m in matches:
+					result += f"{m.line:4d}: {m.text}\n"
+				return result.rstrip('\n')
+			
+			# Otherwise, list matching files
+			result_text = f"Found {len(results)} files matching '{query}' in {file_path}:\n\n"
+			for idx, item in enumerate(results, 1):
+				abs_item = str(self.base_dir.joinpath(item.path).resolve())
+				result_text += f"{idx}. {abs_item}\n"
+			return result_text
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error searching files: {str(e)}"
+	
+	# Removed legacy search helpers; service-based search is used for all cases
+	async def get_file_info(self, file_path: str, include_stats: bool = True) -> str:
+		"""Get detailed information about a file or directory (from project.py)."""
+		try:
+			abs_path, rel = self._validate_absolute_path(file_path)
+			
+			if not os.path.exists(file_path):
+				return f"Error: Path does not exist: {file_path}"
+			
+			info = []
+			info.append(f"Path: {file_path}")
+			info.append(f"Type: {'Directory' if abs_path.is_dir() else 'File'}")
+			
+			if include_stats:
 				try:
-					_, extension = self._parse_filename(full_filename)
-				except Exception:
-					return f'Error: Invalid filename format {full_filename}. Must be alphanumeric with a supported extension.'
-				if extension in ['md', 'txt', 'json', 'csv']:
-					import anyio
-
-					async with await anyio.open_file(full_filename, 'r') as f:
-						content = await f.read()
-						return f'Read from file {full_filename}.\n<content>\n{content}\n</content>'
-				elif extension == 'pdf':
-					import pypdf
-
-					reader = pypdf.PdfReader(full_filename)
-					num_pages = len(reader.pages)
-					MAX_PDF_PAGES = 10
-					extra_pages = num_pages - MAX_PDF_PAGES
-					extracted_text = ''
-					for page in reader.pages[:MAX_PDF_PAGES]:
-						extracted_text += page.extract_text()
-					extra_pages_text = f'{extra_pages} more pages...' if extra_pages > 0 else ''
-					return f'Read from file {full_filename}.\n<content>\n{extracted_text}\n{extra_pages_text}</content>'
+					stat = await self._service.stat(rel)
+					info.append(f"Size: {self._format_size(stat.st_size)}")
+					info.append(f"Created: {stat.st_ctime}")
+					info.append(f"Modified: {stat.st_mtime}")
+					info.append(f"Permissions: {oct(stat.st_mode)[-3:]}")
+				except Exception as e:
+					info.append(f"Stats error: {str(e)}")
+			
+			if abs_path.is_dir():
+				try:
+					items = await self._service.listdir(rel)
+					files = [item for item in items if (abs_path / item).is_file()]
+					dirs = [item for item in items if (abs_path / item).is_dir()]
+					info.append(f"Contents: {len(files)} files, {len(dirs)} directories")
+				except Exception as e:
+					info.append(f"Contents error: {str(e)}")
+			
+			return "\n".join(info)
+			
+		except (InvalidPathError, PathTraversalError, FileSystemError) as e:
+			return f"Error: {str(e)}"
+		except Exception as e:
+			return f"Error getting file info: {str(e)}"
+	
+	async def _collect_files_info(self, path: str, file_types: Optional[List[str]], files_info: List[Dict]):
+		"""Collect information about all files in the directory (from project.py)."""
+		try:
+			for entry in os.listdir(path):
+				entry_path = os.path.join(path, entry)
+				
+				if os.path.isdir(entry_path):
+					await self._collect_files_info(entry_path, file_types, files_info)
 				else:
-					return f'Error: Cannot read file {full_filename} as {extension} extension is not supported.'
-			except FileNotFoundError:
-				return f"Error: File '{full_filename}' not found."
-			except PermissionError:
-				return f"Error: Permission denied to read file '{full_filename}'."
-			except Exception as e:
-				return f"Error: Could not read file '{full_filename}'."
-
-		if not self._is_valid_filename(full_filename):
-			return INVALID_FILENAME_ERROR_MESSAGE
-
-		file_obj = self.get_file(full_filename)
-		if not file_obj:
-			return f"File '{full_filename}' not found."
-
-		try:
-			content = file_obj.read()
-			return f'Read from file {full_filename}.\n<content>\n{content}\n</content>'
-		except FileSystemError as e:
-			return str(e)
+					# Check file type filter
+					if file_types:
+						file_ext = os.path.splitext(entry)[1].lower()
+						if file_ext not in file_types:
+							continue
+					
+					try:
+						stat = os.stat(entry_path)
+						files_info.append({
+							'path': entry_path,
+							'size': stat.st_size,
+							'mtime': stat.st_mtime
+						})
+					except:
+						continue
 		except Exception:
-			return f"Error: Could not read file '{full_filename}'."
+			pass
+	
+	def _format_size(self, size_bytes: int) -> str:
+		"""Format file size in human readable format (from project.py)."""
+		if size_bytes == 0:
+			return "0 B"
+		
+		size_names = ["B", "KB", "MB", "GB", "TB"]
+		i = 0
+		while size_bytes >= 1024 and i < len(size_names) - 1:
+			size_bytes /= 1024.0
+			i += 1
+		
+		return f"{size_bytes:.1f} {size_names[i]}"
 
-	async def write_file(self, full_filename: str, content: str) -> str:
-		"""Write content to file using file-specific write method"""
-		if not self._is_valid_filename(full_filename):
-			return INVALID_FILENAME_ERROR_MESSAGE
-
+	async def describe(self) -> str:
+		"""Describe the file system with directory structure and file information"""
+		description = f"File System Overview:\n"
+		description += f"Workdir: {self.base_dir}\n\n"
+		
+		# Get directory tree structure
 		try:
-			name_without_ext, extension = self._parse_filename(full_filename)
-			file_class = self._get_file_type_class(extension)
-			if not file_class:
-				raise ValueError(f"Error: Invalid file extension '{extension}' for file '{full_filename}'.")
-
-			# Create or get existing file using full filename as key
-			if full_filename in self.files:
-				file_obj = self.files[full_filename]
+			tree_lines = await self._service.tree(Path("."), max_depth=3, show_hidden=False)
+			if tree_lines:
+				description += "Directory Structure:\n"
+				description += f"{self.base_dir}\n"
+				description += "\n".join(tree_lines)
+				description += "\n\n"
+		except Exception as e:
+			description += f"Error building tree: {str(e)}\n\n"
+		
+		# Get file information summary
+		try:
+			all_files = await self._service.collect_all_files(Path("."), max_files=20)
+			
+			if all_files:
+				description += "Files Summary:\n"
+				for file_path in sorted(all_files):
+					try:
+						stat = await self._service.stat(file_path)
+						size_str = self._format_size(stat.st_size)
+						description += f"  📄 {file_path} ({size_str})\n"
+					except Exception:
+						description += f"  📄 {file_path}\n"
 			else:
-				file_obj = file_class(name=name_without_ext)
-				self.files[full_filename] = file_obj  # Use full filename as key
-
-			# Use file-specific write method
-			await file_obj.write(content, self.data_dir)
-			return f'Data written to file {full_filename} successfully.'
-		except FileSystemError as e:
-			return str(e)
+				description += "No files found.\n"
 		except Exception as e:
-			return f"Error: Could not write to file '{full_filename}'. {str(e)}"
-
-	async def append_file(self, full_filename: str, content: str) -> str:
-		"""Append content to file using file-specific append method"""
-		if not self._is_valid_filename(full_filename):
-			return INVALID_FILENAME_ERROR_MESSAGE
-
-		file_obj = self.get_file(full_filename)
-		if not file_obj:
-			return f"File '{full_filename}' not found."
-
-		try:
-			await file_obj.append(content, self.data_dir)
-			return f'Data appended to file {full_filename} successfully.'
-		except FileSystemError as e:
-			return str(e)
-		except Exception as e:
-			return f"Error: Could not append to file '{full_filename}'. {str(e)}"
-
-	async def replace_file_str(self, full_filename: str, old_str: str, new_str: str) -> str:
-		"""Replace old_str with new_str in file_name"""
-		if not self._is_valid_filename(full_filename):
-			return INVALID_FILENAME_ERROR_MESSAGE
-
-		if not old_str:
-			return 'Error: Cannot replace empty string. Please provide a non-empty string to replace.'
-
-		file_obj = self.get_file(full_filename)
-		if not file_obj:
-			return f"File '{full_filename}' not found."
-
-		try:
-			content = file_obj.read()
-			content = content.replace(old_str, new_str)
-			await file_obj.write(content, self.data_dir)
-			return f'Successfully replaced all occurrences of "{old_str}" with "{new_str}" in file {full_filename}'
-		except FileSystemError as e:
-			return str(e)
-		except Exception as e:
-			return f"Error: Could not replace string in file '{full_filename}'. {str(e)}"
-
-	async def save_extracted_content(self, content: str) -> str:
-		"""Save extracted content to a numbered file"""
-		initial_filename = f'extracted_content_{self.extracted_content_count}'
-		extracted_filename = f'{initial_filename}.md'
-		file_obj = MarkdownFile(name=initial_filename)
-		await file_obj.write(content, self.data_dir)
-		self.files[extracted_filename] = file_obj
-		self.extracted_content_count += 1
-		return f'Extracted content saved to file {extracted_filename} successfully.'
-
-	def describe(self) -> str:
-		"""List all files with their content information using file-specific display methods"""
-		DISPLAY_CHARS = 400
-		description = f"Workdir: {self.base_dir}\n Data dir: {self.data_dir}\n"
-
-		for file_obj in self.files.values():
-			# Skip todo.md from description
-			if file_obj.full_name == 'todo.md':
-				continue
-
-			content = file_obj.read()
-
-			# Handle empty files
-			if not content:
-				description += f'<file>\n{file_obj.full_name} - [empty file]\n</file>\n'
-				continue
-
-			lines = content.splitlines()
-			line_count = len(lines)
-
-			# For small files, display the entire content
-			whole_file_description = (
-				f'<file>\n{file_obj.full_name} - {line_count} lines\n<content>\n{content}\n</content>\n</file>\n'
-			)
-			if len(content) < int(1.5 * DISPLAY_CHARS):
-				description += whole_file_description
-				continue
-
-			# For larger files, display start and end previews
-			half_display_chars = DISPLAY_CHARS // 2
-
-			# Get start preview
-			start_preview = ''
-			start_line_count = 0
-			chars_count = 0
-			for line in lines:
-				if chars_count + len(line) + 1 > half_display_chars:
-					break
-				start_preview += line + '\n'
-				chars_count += len(line) + 1
-				start_line_count += 1
-
-			# Get end preview
-			end_preview = ''
-			end_line_count = 0
-			chars_count = 0
-			for line in reversed(lines):
-				if chars_count + len(line) + 1 > half_display_chars:
-					break
-				end_preview = line + '\n' + end_preview
-				chars_count += len(line) + 1
-				end_line_count += 1
-
-			# Calculate lines in between
-			middle_line_count = line_count - start_line_count - end_line_count
-			if middle_line_count <= 0:
-				description += whole_file_description
-				continue
-
-			start_preview = start_preview.strip('\n').rstrip()
-			end_preview = end_preview.strip('\n').rstrip()
-
-			# Format output
-			if not (start_preview or end_preview):
-				description += f'<file>\n{file_obj.full_name} - {line_count} lines\n<content>\n{middle_line_count} lines...\n</content>\n</file>\n'
-			else:
-				description += f'<file>\n{file_obj.full_name} - {line_count} lines\n<content>\n{start_preview}\n'
-				description += f'... {middle_line_count} more lines ...\n'
-				description += f'{end_preview}\n'
-				description += '</content>\n</file>\n'
-
+			description += f"Error collecting file info: {str(e)}\n"
+		
 		return description.strip('\n')
-
-	def get_todo_contents(self) -> str:
-		"""Get todo file contents"""
-		todo_file = self.get_file('todo.md')
-		return todo_file.read() if todo_file else ''
-
-	def get_state(self) -> FileSystemState:
-		"""Get serializable state of the file system"""
-		files_data = {}
-		for full_filename, file_obj in self.files.items():
-			files_data[full_filename] = {'type': file_obj.__class__.__name__, 'data': file_obj.model_dump()}
-
-		return FileSystemState(
-			files=files_data, base_dir=str(self.base_dir), extracted_content_count=self.extracted_content_count
-		)
-
-	def nuke(self) -> None:
-		"""Delete the file system directory"""
-		shutil.rmtree(self.data_dir)
-
-	@classmethod
-	def from_state(cls, state: FileSystemState) -> 'FileSystem':
-		"""Restore file system from serializable state at the exact same location"""
-		# Create file system without default files
-		fs = cls(base_dir=Path(state.base_dir), create_default_files=False)
-		fs.extracted_content_count = state.extracted_content_count
-
-		# Restore all files
-		for full_filename, file_data in state.files.items():
-			file_type = file_data['type']
-			file_info = file_data['data']
-
-			# Create the appropriate file object based on type
-			if file_type == 'MarkdownFile':
-				file_obj = MarkdownFile(**file_info)
-			elif file_type == 'TxtFile':
-				file_obj = TxtFile(**file_info)
-			elif file_type == 'JsonFile':
-				file_obj = JsonFile(**file_info)
-			elif file_type == 'CsvFile':
-				file_obj = CsvFile(**file_info)
-			elif file_type == 'PdfFile':
-				file_obj = PdfFile(**file_info)
-			else:
-				# Skip unknown file types
-				continue
-
-			# Add to files dict and sync to disk
-			fs.files[full_filename] = file_obj
-			file_obj.sync_to_disk_sync(fs.data_dir)
-
-		return fs

@@ -1,9 +1,11 @@
-from .environment_agent_trading import EnvironmentAgentTrading
+from .trading_offline_environment import TradingOfflineEnvironment
+from .file_system_environment import FileSystemEnvironment
 from .wrapper import EnvironmentAgentTradingWrapper
 from .wrapper import make_env
 
 __all__ = [
-    "EnvironmentAgentTrading",
+    "TradingOfflineEnvironment",
+    "FileSystemEnvironment",
     "EnvironmentAgentTradingWrapper",
     "make_env",
 ]

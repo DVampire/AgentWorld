@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from langchain.tools import BaseTool
 
 from src.config import config
-from src.tools.environment_tools.trading_offline import TradingOfflineTool
+from src.controller.base import BaseController
 
 class EnvironmentToolSet:
     """Environment tool set containing environment tools."""
@@ -14,17 +14,20 @@ class EnvironmentToolSet:
         # Note: _load_environment_tools is now async, so it should be called separately
         # or the class should be used with an async factory method
     
-    async def initialize(self):
+    async def initialize(self, controllers: Optional[List[BaseController]] = None):
         """Initialize the tool set by loading all environment tools asynchronously."""
-        await self._load_environment_tools()
+        await self._load_environment_tools(controllers)
     
-    async def _load_environment_tools(self):
+    async def _load_environment_tools(self, controllers: Optional[List[BaseController]] = None):
         """Load all environment tools asynchronously."""
-        
-        if "trading_offline_tool" in config:
-            trading_offline_tool = TradingOfflineTool()
-            self._tools["trading_offline"] = trading_offline_tool
-            self._tool_configs["trading_offline"] = trading_offline_tool.get_tool_config()
+        if controllers is None:
+            return
+        for controller in controllers:
+            await controller.init_tools()
+            tools = controller.list_tools()
+            for tool in tools:
+                self._tools[tool] = controller.get_tool(tool)
+                self._tool_configs[tool] = controller.get_tool_config(tool)
     
     def list_tools(self) -> List[str]:
         """Get all environment tools."""
@@ -82,6 +85,6 @@ class EnvironmentToolSet:
             tools_info[name] = config
         return tools_info
 
-    async def init_tools(self):
+    async def init_tools(self, controllers: Optional[List[BaseController]] = None):
         """Factory method to create and initialize an EnvironmentToolSet asynchronously."""
-        await self.initialize()
+        await self.initialize(controllers)

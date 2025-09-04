@@ -1,11 +1,12 @@
 """Bash tool for executing shell commands."""
 
 import asyncio
-import subprocess
 import shlex
-from typing import Optional, Dict, Any, Type
+from typing import Dict, Any, Type
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
+
+from src.tools.base import ToolResponse
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
 Use this tool to run system commands, scripts, or any bash operations. 
@@ -32,17 +33,17 @@ class BashTool(BaseTool):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
-    async def _arun(self, command: str) -> str:
+    async def _arun(self, command: str) -> ToolResponse:
         """Execute a bash command asynchronously."""
         try:
             # Sanitize the command
             if not command.strip():
-                return "Error: Empty command provided"
+                return ToolResponse(content="Error: Empty command provided")
             
             # Parse command and arguments
             command = shlex.split(command)
             if not command:
-                return "Error: Invalid command format"
+                return ToolResponse(content="Error: Invalid command format")
             
             # Create process with timeout
             process = await asyncio.create_subprocess_exec(
@@ -59,7 +60,7 @@ class BashTool(BaseTool):
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                return f"Error: Command timed out after {self.timeout} seconds"
+                return ToolResponse(content=f"Error: Command timed out after {self.timeout} seconds")
             
             # Decode output
             stdout_str = stdout.decode('utf-8', errors='replace').strip()
@@ -76,12 +77,12 @@ class BashTool(BaseTool):
             if exit_code != 0:
                 result.append(f"Exit code: {exit_code}")
             
-            return "\n\n".join(result) if result else f"Command completed with exit code: {exit_code}"
+            return ToolResponse(content="\n\n".join(result) if result else f"Command completed with exit code: {exit_code}")
             
         except Exception as e:
-            return f"Error executing command: {str(e)}"
+            return ToolResponse(content=f"Error executing command: {str(e)}")
     
-    def _run(self, command: str) -> str:
+    def _run(self, command: str) -> ToolResponse:
         """Execute a bash command synchronously (fallback)."""
         try:
             # Run the async version in a new event loop
@@ -92,7 +93,7 @@ class BashTool(BaseTool):
             finally:
                 loop.close()
         except Exception as e:
-            return f"Error in synchronous execution: {str(e)}"
+            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
     
     def get_tool_config(self) -> Dict[str, Any]:
         """Get tool configuration."""

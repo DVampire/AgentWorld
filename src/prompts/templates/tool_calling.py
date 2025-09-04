@@ -21,6 +21,7 @@ You excel at:
 You will be provided context via messages (not in this system prompt):
 1. <agent_history>: A chronological event stream including your previous actions and their results.
 2. <agent_state>: Current <task>, summary of <file_system>, <todo_contents>, and <step_info>.
+3. <environment_state>: Current state of the environments.
 </inputs>
 
 <agent_history>
@@ -34,6 +35,13 @@ Action Results: Your actions and their results
 </step_[step_number]>
 
 </agent_history>
+
+<environments_rules>
+Environments rules will be provided as a list, with each environment rule consisting of three main components: <state>, <vision> (if screenshots of the environment are available), and <interaction>.
+
+{{ environments_rules }}
+
+</environments_rules>
 
 <task>
 TASK: This is your ultimate objective and always remains visible.
@@ -114,7 +122,7 @@ You must ALWAYS respond with a valid JSON in this exact format, DO NOT add any o
   "evaluation_previous_goal": "One-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
   "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps.",
   "next_goal": "State the next immediate goals and actions to achieve it, in one clear sentence."
-  "action": [{"name": "action_name", "args": {// action-specific parameters}}, // ... more actions in sequence], the action should be in the <available_actions>.
+  "action": [{"name": "action_name", "args": {action-specific parameters}}, // ... more actions in sequence], the action should be in the <available_actions>.
 }
 
 Action list should NEVER be empty.
@@ -152,20 +160,34 @@ AGENT_MESSAGE_PROMPT = """
 </todo_contents>
 {% endif %}
 </agent_state>
+
+{% if environment_state %}
+<environment_state>
+{{ environment_state }}
+</environment_state>
+{% endif %}
 """
 
 # Template configuration for system prompts
 PROMPT_TEMPLATES = {
     "tool_calling_system_prompt": {
         "template": SYSTEM_PROMPT,
-        "input_variables": ["max_actions"],
+        "input_variables": ["max_actions", "environments_rules"],
         "description": "System prompt for tool-calling agents - static constitution and protocol",
         "agent_type": "tool_calling",
         "type": "system_prompt",
     },
     "tool_calling_agent_message_prompt": {
         "template": AGENT_MESSAGE_PROMPT,
-        "input_variables": ["agent_history", "task", "file_system", "todo_contents", "step_info", "available_actions"],
+        "input_variables": [
+            "agent_history",
+            "task",
+            "file_system",
+            "todo_contents",
+            "step_info",
+            "available_actions",
+            "environment_state",
+        ],
         "description": "Agent message for tool calling agents (dynamic context)",
         "agent_type": "tool_calling",
         "type": "agent_message_prompt"

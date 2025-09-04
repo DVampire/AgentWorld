@@ -13,6 +13,7 @@ from src.tools.default_tools.search import (
     SearchItem
 )
 from src.logger import logger
+from src.tools.base import ToolResponse
 
 _WEB_SEARCHER_DESCRIPTION = """Search the web for real-time information about any topic.
 This tool returns comprehensive search results with relevant information, URLs, titles, and descriptions.
@@ -154,7 +155,7 @@ class WebSearcherTool(BaseTool):
         }
         self.content_fetcher = WebFetcherTool()
 
-    async def _arun(self, query: str, filter_year: Optional[int] = None) -> str:
+    async def _arun(self, query: str, filter_year: Optional[int] = None) -> ToolResponse:
         """
         Execute a Web search and return detailed search results.
 
@@ -191,7 +192,16 @@ class WebSearcherTool(BaseTool):
                         country=self.country,
                     ),
                 )
-                return response.output
+                return ToolResponse(
+                    content=response.output,
+                    extra={
+                        "query": query,
+                        "total_results": len(results),
+                        "language": self.lang,
+                        "country": self.country,
+                        "search_engines_used": [r.source for r in results]
+                    }
+                )
 
             if retry_count < self.max_retries:
                 # All engines failed, wait and retry
@@ -202,7 +212,14 @@ class WebSearcherTool(BaseTool):
                 res = f"All search engines failed after {self.max_retries} retries. Giving up."
                 logger.error(res)
                 # Return an error response
-                return f"Error: All search engines failed to return results after multiple retries."
+                return ToolResponse(
+                    content=f"Error: All search engines failed to return results after multiple retries.",
+                    extra={
+                        "query": query,
+                        "max_retries": self.max_retries,
+                        "status": "failed"
+                    }
+                )
 
     async def _try_all_engines(
         self, query: str, num_results: int, search_params: Dict[str, Any]

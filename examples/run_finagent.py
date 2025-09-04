@@ -1,3 +1,5 @@
+"""Example of running the InteractiveAgent with Cursor-style interaction."""
+
 import os
 import sys
 from dotenv import load_dotenv
@@ -15,13 +17,15 @@ from src.config import config
 from src.logger import logger
 from src.registry import AGENTS
 from src.registry import CONTROLLERS
+from src.registry import ENVIRONMENTS
+from src.registry import DATASETS
 from src.models import model_manager
 from src.tools import tool_manager
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
-
+    parser = argparse.ArgumentParser(description='FinAgent Example')
+    parser.add_argument("--config", default=os.path.join(root, "configs", "finagent.py"), help="config file path")
+    
     parser.add_argument(
         '--cfg-options',
         nargs='+',
@@ -38,6 +42,7 @@ def parse_args():
 async def main():
     args = parse_args()
     
+    # Initialize configuration
     config.init_config(args.config, args)
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
@@ -50,28 +55,25 @@ async def main():
     # Initialize controllers
     logger.info("| 🎮 Initializing controllers...")
     controllers = []
-    file_system_controller_config = config.file_system_controller
-    file_system_controller = CONTROLLERS.build(file_system_controller_config)
-    controllers.append(file_system_controller)
+    dataset_config = config.dataset
+    dataset = DATASETS.build(dataset_config)
+    environment_config = config.environment
+    environment_config.update(dict(
+        dataset=dataset
+    ))
+    environment = ENVIRONMENTS.build(environment_config)
+    controller_config = config.controller
+    controller_config.update(dict(
+        environment=environment
+    ))
+    controller = CONTROLLERS.build(controller_config)
+    controllers.append(controller)
     logger.info(f"| ✅ Controllers initialized: {controllers}")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
     await tool_manager.init_tools(controllers)
     logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
-    
-    # Build agent
-    logger.info("| 🎮 Building agent...")
-    agent = AGENTS.build(config.agent)
-    logger.info(f"| ✅ Agent built: {agent}")
-    
-    """Test streaming execution mode."""
-    logger.info("| 🚀 Testing streaming execution mode")
-    
-    task = "生成一个Python脚本, 计算斐波那契数列。"
-    logger.info(f"| 📋 Task: {task}")
-    
-    await agent.run(task)
 
 if __name__ == "__main__":
     asyncio.run(main())

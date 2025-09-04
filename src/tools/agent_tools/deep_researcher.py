@@ -214,29 +214,18 @@ class DeepResearcherTool(BaseTool):
             ]
         
         response = await self.model.ainvoke(messages)
-        print(response)
-        exit()
         return response.content.strip()
 
-    async def _execute_search(self, query: str, max_pages: int, filter_year: Optional[int]) -> List[Dict[str, Any]]:
+    async def _execute_search(self, query: str, max_pages: int, filter_year: Optional[int]) -> str:
         """Execute web search and return results."""
         try:
             # Use web searcher to execute search
-            search_response = await self.web_searcher._arun(query, filter_year)
+            search_response = await self.web_searcher.ainvoke(input={"query": query, "filter_year": filter_year})
             
-            # Parse search results (need to adjust based on actual return format)
-            # For now, return mock results
-            return [
-                {
-                    "url": f"https://example.com/result_{i}",
-                    "title": f"Search Result {i}",
-                    "description": f"Description for result {i}"
-                }
-                for i in range(1, min(max_pages + 1, 6))
-            ]
+            return search_response
         except Exception as e:
             logger.error(f"Error executing search: {e}")
-            return []
+            return f"Error executing search: {e}"
 
     async def _fetch_page_contents(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Fetch content from multiple pages concurrently."""

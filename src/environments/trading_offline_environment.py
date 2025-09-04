@@ -14,8 +14,7 @@ from src.utils import get_token_count
 from src.utils import get_start_end_timestamp
 from src.utils import extract_boxed_content
 
-
-__all__ = ['EnvironmentAgentTrading']
+__all__ = ['TradingOfflineEnvironment']
 
 @dataclass
 class Record():
@@ -77,19 +76,6 @@ def convert_dataframe_to_markdown(
             news_string += f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')} | {title} | {content}\n"
 
     record_string = record.to_markdown(index=False)
-    note_string  = "1. `timestamp`: the timestamp of the record\n"
-    note_string += "2. `open`: Open price\n"
-    note_string += "3. `high`: High price\n"
-    note_string += "4. `low`: Low price\n"
-    note_string += "5. `close`: Close price\n"
-    note_string += "6. `volume`: Volume of the asset traded\n"
-    note_string += "7. `price`: Current price (adj_close price)\n"
-    note_string += "8. `cash`: Current cash\n"
-    note_string += "9. `position`: Current position\n"
-    note_string += "10. `pre_value`: Previous total value, `value = cash + position * price`\n"
-    note_string += "11. `action`: Action taken, `BUY`, `SELL`, or `HOLD`\n"
-    note_string += "12. `post_value`: Current total value\n"
-    note_string += "13. `ret`: Return, `ret = (post_value - pre_value) / pre_value`\n"
 
     valid_action_string = valid_action.to_markdown(index=False)
 
@@ -97,7 +83,6 @@ def convert_dataframe_to_markdown(
         price=price_string,
         news=news_string,
         record=record_string,
-        note=note_string,
         valid_action=valid_action_string,
     )
 
@@ -105,7 +90,7 @@ def convert_dataframe_to_markdown(
 
 
 @ENVIRONMENTS.register_module(force=True)
-class EnvironmentAgentTrading(gym.Env):
+class TradingOfflineEnvironment(gym.Env):
     def __init__(
         self,
         *args,
@@ -126,7 +111,7 @@ class EnvironmentAgentTrading(gym.Env):
         daily_sample_texts: int = 2,
         **kwargs,
     ):
-        super(EnvironmentAgentTrading, self).__init__()
+        super(TradingOfflineEnvironment, self).__init__()
 
         self.mode = mode
         self.dataset = dataset
@@ -337,7 +322,6 @@ class EnvironmentAgentTrading(gym.Env):
         price_string = strings['price']
         news_string = strings['news']
         record_string = strings['record']
-        note_string = strings['note']
         valid_action_string = strings['valid_action']
 
         prompt = f"# Name: {self.asset_info['asset_name']}, Symbol: ({self.asset_info['asset_symbol']})\n"
@@ -345,8 +329,7 @@ class EnvironmentAgentTrading(gym.Env):
         prompt += f"## News\n{news_string}\n"
         prompt += f"## Record\n{record_string}\n"
         prompt += f"## History Valid Action\n{valid_action_string}\n"
-        prompt += f"## Note\n{note_string}\n"
-        prompt += f"Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.\n"
+        prompt += f"## Current State: Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.\n"
         prompt_token_nums = get_token_count(prompt)
 
         state = dict(
@@ -743,7 +726,7 @@ if __name__ == '__main__':
     )
 
     env_cfg: dict[str, Any] = dict(
-        type='EnvironmentAgentTrading',
+        type='TradingOfflineEnvironment',
         mode = "test",
         dataset=None,
         initial_amount=float(1e5),

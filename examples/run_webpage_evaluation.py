@@ -43,7 +43,7 @@ async def test_streaming_mode(agent):
     logger.info("="*60)
     
     task = "Calculate 10 + 5 and then multiply by 3 and then search the web for information about the weather in Beijing."
-    logger.info(f"| Task: {task}")
+    logger.info(f"| 📋 Task: {task}")
     
     logger.info("\n🔄 Streaming execution process:")
     logger.info("-" * 50)
@@ -52,10 +52,10 @@ async def test_streaming_mode(agent):
         # Print the update in a user-friendly format
         if update["type"] == "task_start":
             logger.info(f"🚀 Task started: {update['task']}")
-            logger.info(f"   Agent: {update['agent_name']}")
+            logger.info(f"   🎮 Agent: {update['agent_name']}")
             
         elif update["type"] == "tool_calling":
-            logger.info(f"   🔧 Agent calling tool: {update['tool_name']}")
+            logger.info(f"   🛠️ Agent calling tool: {update['tool_name']}")
             logger.info(f"      Input: {update['tool_input']}")
             
         elif update["type"] == "tool_result":
@@ -70,7 +70,7 @@ async def test_streaming_mode(agent):
         await asyncio.sleep(0.5)
     
     logger.info("-" * 50)
-    logger.info("| Streaming execution completed")
+    logger.info("| ✅ Streaming execution completed")
 
 
 async def main():
@@ -80,14 +80,20 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config}")
     
+    # Initialize model manager
+    logger.info("| 🧠 Initializing model manager...")
     await model_manager.init_models()
-    logger.info(f"| Model: {model_manager.list_models()}")
+    logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
     
+    # Initialize tool manager
+    logger.info("| 🛠️ Initializing tool manager...")
     await tool_manager.init_tools()
-    logger.info(f"| Tool: {tool_manager.list_tools()}")
+    logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
     
+    # Build agent
+    logger.info("| 🎮 Building agent...")
     agent = AGENTS.build(config.agent)
-    logger.info(f"| Agent: {agent}")
+    logger.info(f"| ✅ Agent built: {agent}")
     
     """Test standard execution mode."""
     logger.info("="*60)
@@ -120,15 +126,15 @@ Please execute the testing and provide your assessment in the exact format speci
 IMPORTANT: You should give the above complete task text to the browser tool, DO NOT modify the task.
 """
 
-    logger.info(f"| Task: {task}")
+    logger.info(f"| 📋 Task: {task}")
     
     result = await agent.run(task)
     
-    logger.info(f"| Final Result: {result['final_response']}")
-    logger.info(f"| Iterations: {result['iterations']}")
-    logger.info(f"| Tool Results: {len(result['tool_results'])}")
-    logger.info(f"| Success: {result['success']}")
-    logger.info(f"| Execution Mode: {result['execution_mode']}")
+    logger.info(f"| ✅ Final Result: {result['final_response']}")
+    logger.info(f"| 📊 Iterations: {result['iterations']}")
+    logger.info(f"| 🛠️ Tool Results: {len(result['tool_results'])}")
+    logger.info(f"| ✅ Success: {result['success']}")
+    logger.info(f"| 🚀 Execution Mode: {result['execution_mode']}")
 
 
 if __name__ == "__main__":

@@ -45,17 +45,17 @@ async def main():
     logger.info(f"| Config: {config.pretty_text}")
     
     # Initialize model manager
-    logger.info("| 🔧 Initializing model manager...")
+    logger.info("| 🧠 Initializing model manager...")
     await model_manager.init_models(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
     
     # Initialize tool manager
-    logger.info("| 🔧 Initializing tool manager...")
+    logger.info("| 🛠️ Initializing tool manager...")
     await tool_manager.init_tools()
     logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
     
     # Build interactive agent
-    logger.info("| 🔧 Building interactive agent...")
+    logger.info("| 🎮 Building interactive agent...")
     agent = AGENTS.build(config.agent)
     logger.info(f"| ✅ Interactive agent built: {agent}")
     logger.info(f"| 🎮 Interactive mode: {'ON' if agent.interactive_mode else 'OFF'}")

@@ -62,8 +62,48 @@ dataset = dict(
     level=level
 )
 
+environments_rules = """<environment_trading_offline>
+
+<state>
+The environment state includes:
+1. Name: Asset name, Symbol: Asset symbol
+2. Price: Price information of the asset
+3. News: News information of the asset
+4. Record: Trading record of the asset
+5. History Valid Action: Valid action of the asset
+6. Current State: Current price, cash, and position.
+
+Trading record fields:
+1. `timestamp`: the timestamp of the record
+2. `close`: Close price
+3. `high`: High price
+4. `low`: Low price
+5. `open`: Open price
+6. `volume`: Volume of the asset traded
+7. `price`: Current price (adj_close price)
+8. `cash`: Current cash
+9. `position`: Current position
+10. `pre_value`: Previous total value, `value = cash + position * price`
+11. `action`: Action taken, `BUY`, `SELL`, or `HOLD`
+12. `post_value`: Current total value
+13. `ret`: Return, `ret = (post_value - pre_value) / pre_value`
+</state>
+
+<vision>
+No vision available.
+</vision>
+
+<interaction>
+Available trading actions:
+- BUY: Buy shares with all available cash.
+- SELL: Sell existing position shares.  
+- HOLD: Maintain current position.
+</interaction>
+
+</environment_trading_offline>"""
+
 environment = dict(
-    type="EnvironmentAgentTrading",
+    type="TradingOfflineEnvironment",
     mode="test",
     dataset=None,
     initial_amount=initial_amount,
@@ -80,35 +120,9 @@ environment = dict(
     daily_sample_texts=daily_sample_texts,
 )
 
-metric = dict(
-    arr = dict(
-        type="ARR",
-        level=level,
-        symbol_info=None,
-    ),
-    sr=dict(
-        type="SR",
-        level=level,
-        symbol_info=None,
-    ),
-    mdd = dict(
-        type="MDD",
-        level=level,
-        symbol_info=None,
-    ),
-    cr = dict(
-        type="CR",
-        level=level,
-        symbol_info=None,
-    ),
-    sor = dict(
-        type="SOR",
-        level=level,
-        symbol_info=None,
-    ),
-    vol = dict(
-        type="VOL",
-        level=level,
-        symbol_info=None,
-    )
+controller = dict(
+    type="TradingOfflineController",
+    dataset=dataset,
+    environment=environment,
+    environments_rules=environments_rules,
 )
