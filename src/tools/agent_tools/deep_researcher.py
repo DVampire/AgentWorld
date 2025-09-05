@@ -16,6 +16,7 @@ from src.models import model_manager
 from src.utils import make_image_url
 from src.utils import encode_image_base64
 from src.utils import assemble_project_path
+from src.tools.default_tools.web_searcher import SearchResult
 
 
 _DEEP_RESEARCHER_DESCRIPTION = """Deep research tool that performs multi-round web search and content analysis.
@@ -42,8 +43,7 @@ class SearchRound(BaseModel):
     """Represents a single search round."""
     round_number: int
     query: str
-    search_results: List[Dict[str, Any]]
-    page_contents: List[Dict[str, Any]]
+    search_results: List[SearchResult]
     insights: List[str]
     summary: str
 
@@ -55,10 +55,10 @@ class DeepResearcherTool(BaseTool):
     args_schema: Type[DeepResearcherArgs] = DeepResearcherArgs
     
     # Configuration parameters as class attributes
-    max_rounds: int = Field(default=3, description="Maximum search rounds")
+    max_rounds: int = Field(default=10, description="Maximum search rounds")
     max_pages_per_round: int = Field(default=5, description="Max pages per round")
     max_content_length: int = Field(default=4000, description="Max content length to analyze")
-    max_num_reviews_insights: int = Field(default=3, description="Max number of reviews for insights")
+    max_num_reviews_insights: int = Field(default=5, description="Max number of reviews for insights")
     insight_extraction_prompt: str = Field(
         default="Extract 1-3 key insights related to the query from this content. Focus on factual information and direct answers.",
         description="Prompt for extracting insights from content"
@@ -129,27 +129,29 @@ class DeepResearcherTool(BaseTool):
                 
                 # Execute search
                 search_results = await self._execute_search(query, self.max_pages_per_round, filter_year)
+                logger.info(f"| ✅ Search results: {len(search_results)}")
                 if not search_results:
                     logger.warning(f"| ❌ No search results found in round {round_num}")
                     continue
                 
                 # Fetch page contents
-                page_contents = await self._fetch_page_contents(search_results)
+                search_results = await self._fetch_page_contents(search_results)
                 logger.info(f"| ✅ Fetched page contents for round {round_num}")
                 
                 # Extract insights
-                insights = await self._extract_insights(page_contents, query)
+                insights = await self._extract_insights(search_results, query)
+                logger.info(f"| ✅ Extracted insights for round {round_num}: {chr(10).join(insights)}")
                 self.all_insights.extend(insights)
                 
                 # Summarize current round
                 round_summary = await self._summarize_round(insights, query)
+                logger.info(f"| ✅ Summarized round {round_num}: {round_summary}")
                 
                 # Record round information
                 search_round = SearchRound(
                     round_number=round_num,
                     query=query,
                     search_results=search_results,
-                    page_contents=page_contents,
                     insights=insights,
                     summary=round_summary
                 )
@@ -159,13 +161,13 @@ class DeepResearcherTool(BaseTool):
                 final_summary = await self._evaluate_completeness(task)
                 if "ANSWER_FOUND" in final_summary:
                     logger.info(f"Answer found in round {round_num}")
-                    return self._format_final_result(final_summary, round_num)
+                    return await self._format_final_result(final_summary, round_num)
                 
                 logger.info(f"Round {round_num} completed, continuing to next round")
             
             # If all rounds completed without finding answer
             logger.warning("Maximum rounds reached without finding complete answer")
-            return self._format_failure_result(task)
+            return await self._format_failure_result(task)
             
         except Exception as e:
             logger.error(f"Error in deep research: {e}")
@@ -176,7 +178,7 @@ class DeepResearcherTool(BaseTool):
         system_prompt = """You are a helpful assistant that can analyze tasks and images to generate optimized search queries."""
         
         # Build the user prompt based on context
-        previous_insights = "\n".join(self.all_insights[-self.max_num_reviews_insights:]) if self.all_insights else "No previous insights available"
+        previous_insights = chr(10).join(self.all_insights[-self.max_num_reviews_insights:]) if self.all_insights else "No previous insights available"
         image_context = f"And this image: {image}" if image else "No image provided"
         round_context = f"Round: {round_num}" if round_num > 1 else "Round: 1 (initial)"
         
@@ -214,28 +216,41 @@ class DeepResearcherTool(BaseTool):
             ]
         
         response = await self.model.ainvoke(messages)
+        
         return response.content.strip()
 
-    async def _execute_search(self, query: str, max_pages: int, filter_year: Optional[int]) -> str:
+    async def _execute_search(self, query: str, max_pages: int, filter_year: Optional[int]) -> List[SearchResult]:
         """Execute web search and return results."""
         try:
             # Use web searcher to execute search
             search_response = await self.web_searcher.ainvoke(input={"query": query, "filter_year": filter_year})
             
-            return search_response
+            search_results = search_response.extra["results"]
+            
+            return search_results
+        
         except Exception as e:
             logger.error(f"Error executing search: {e}")
-            return f"Error executing search: {e}"
+            return []
 
-    async def _fetch_page_contents(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _fetch_page_contents(self, search_results: List[SearchResult]) -> List[SearchResult]:
         """Fetch content from multiple pages concurrently."""
         if not search_results:
             return []
         
+        async def fetch_single_page(result: SearchResult) -> str:
+            """Fetch content from a single page."""
+            try:
+                response = await self.web_fetcher._arun(result.url)
+                return response.content
+            except Exception as e:
+                logger.warning(f"Failed to fetch page content for {result.url}: {e}")
+                return f"Failed to fetch page content: {e}."
+        
         # Create async tasks
         tasks = []
         for result in search_results:
-            task = self._fetch_single_page(result)
+            task = fetch_single_page(result)
             tasks.append(task)
         
         # Execute concurrently
@@ -243,49 +258,35 @@ class DeepResearcherTool(BaseTool):
             page_contents = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Process results
-            valid_contents = []
             for i, content in enumerate(page_contents):
                 if isinstance(content, Exception):
                     logger.warning(f"Failed to fetch page {i}: {content}")
+                    search_results[i].raw_content = f"Failed to fetch page content for {search_results[i].url}: {content}."
                     continue
                 
-                valid_contents.append({
-                    "url": search_results[i]["url"],
-                    "title": search_results[i]["title"],
-                    "content": content[:self.max_content_length] if content else "",
-                    "description": search_results[i].get("description", "")
-                })
+                search_results[i].raw_content = content[:self.max_content_length] if content else "No content."
             
-            return valid_contents
+            return search_results
+        
         except Exception as e:
             logger.error(f"Error fetching page contents: {e}")
             return []
 
-    async def _fetch_single_page(self, result: Dict[str, Any]) -> str:
-        """Fetch content from a single page."""
-        try:
-            url = result["url"]
-            content = await self.web_fetcher._arun(url)
-            return content if isinstance(content, str) else ""
-        except Exception as e:
-            logger.warning(f"Failed to fetch {url}: {e}")
-            return ""
-
-    async def _extract_insights(self, page_contents: List[Dict[str, Any]], query: str) -> List[str]:
-        """Extract insights from page contents using LLM."""
-        insights = []
+    async def _extract_insights(self, search_results: List[SearchResult], query: str) -> List[str]:
+        """Extract insights from page contents using LLM with parallel processing."""
         
-        for page in page_contents:
-            if not page.get("content"):
-                continue
+        async def extract_insights_from_result(search_result: SearchResult) -> str:
+            """Extract insights from a single search result."""
+            if not search_result.raw_content:
+                return "No content."
             
             # Use LLM to extract insights from page content
-            prompt = textwrap.dedent(f"""Given this search query: "{query}"
+            prompt = cleandoc(f"""Given this search query: "{query}"
             
             And this webpage content:
-            Title: {page['title']}
-            URL: {page['url']}
-            Content: {page['content'][:self.max_content_length]}
+            Title: {search_result.title}
+            URL: {search_result.url}
+            Content: {search_result.raw_content[:self.max_content_length]}
             
             Extract 1-3 key insights that are most relevant to the query.
             Focus on factual information, direct answers, and actionable knowledge.
@@ -295,24 +296,43 @@ class DeepResearcherTool(BaseTool):
             try:
                 message = HumanMessage(content=prompt)
                 response = await self.model.ainvoke([message])
-                if response and response.content.strip():
-                    # Split response into individual insights
-                    page_insights = [insight.strip() for insight in response.content.split('\n') if insight.strip()]
-                    # Add source information to each insight
-                    for insight in page_insights[:3]:  # Limit to 3 insights per page
-                        insights.append(f"From {page['title']}: {insight}")
+                if response:
+                    insights = response.content.strip().split('\n')
+                    return insights
+                else:
+                    return []
             except Exception as e:
-                logger.warning(f"Failed to extract insights from {page['title']}: {e}")
-                continue
+                logger.warning(f"Failed to extract insights from {search_result.title}: {e}")
+                return []
         
-        return insights
+        # Process all search results in parallel
+        tasks = []
+        for result in search_results:
+            task = extract_insights_from_result(result)
+            tasks.append(task)
+        
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Flatten the results and filter out exceptions
+            insights = []
+            for result in results:
+                if isinstance(result, Exception):   
+                    logger.warning(f"Exception during insight extraction: {result}")
+                    continue
+                insights.extend(result)
+            return insights
+        
+        except Exception as e:
+            logger.error(f"Error extracting insights: {e}")
+            return []
 
     async def _summarize_round(self, insights: List[str], query: str) -> str:
         """Summarize the current round using LLM."""
         if not insights:
             return f"No relevant insights found for query: {query}"
         
-        prompt = textwrap.dedent(f"""Summarize the search results for this round.
+        prompt = cleandoc(f"""Summarize the search results for this round.
         
         Query: {query}
         Insights found: {len(insights)}
@@ -326,17 +346,18 @@ class DeepResearcherTool(BaseTool):
         try:
             message = HumanMessage(content=prompt)
             response = await self.model.ainvoke([message])
-            return response.content.strip() if response and response.content else f"Found {len(insights)} insights for query: {query}"
+            return response.content.strip()
+        
         except Exception as e:
             logger.warning(f"Failed to summarize round: {e}")
-            return f"Found {len(insights)} insights for query: {query}. Insights: {'; '.join(insights[:2])}"
+            return f"Failed to summarize round: {e}."
 
     async def _evaluate_completeness(self, task: str) -> str:
         """Evaluate if we have found a complete answer using LLM."""
         if not self.all_insights:
             return "No insights collected yet"
         
-        prompt = textwrap.dedent(f"""Evaluate if we have collected sufficient information to answer the research task.
+        prompt = cleandoc(f"""Evaluate if we have collected sufficient information to answer the research task.
         
         Research Task: {task}
         
@@ -357,11 +378,11 @@ class DeepResearcherTool(BaseTool):
         try:
             message = HumanMessage(content=prompt)
             response = await self.model.ainvoke([message])
-            if response and response.content.strip():
+            if response and response.content.strip():   
                 return response.content.strip()
             else:
-                # Fallback to simple heuristic
                 return self._fallback_completeness_check(task)
+        
         except Exception as e:
             logger.warning(f"Failed to evaluate completeness with LLM: {e}")
             return self._fallback_completeness_check(task)
@@ -384,31 +405,106 @@ class DeepResearcherTool(BaseTool):
         
         return "INCOMPLETE: Need more information to provide a complete answer"
 
-    def _format_final_result(self, summary: str, round_num: int) -> str:
-        """Format the final successful result."""
-        result = f"🎯 Research completed successfully in {round_num} rounds!\n\n"
+    async def _format_final_result(self, summary: str, round_num: int) -> str:
+        """Format the final successful result using LLM."""
+        try:
+            prompt = cleandoc(f"""You are formatting the final research results. Please create a well-structured, comprehensive summary.
+
+            Research completed in {round_num} rounds.
+            
+            Final Summary: {summary}
+            
+            All Insights Collected ({len(self.all_insights)} total):
+            {chr(10).join(self.all_insights)}
+            
+            Research Statistics:
+            - Total rounds: {len(self.research_history)}
+            - Total insights: {len(self.all_insights)}
+            - Pages analyzed: {sum(len(r.search_results) for r in self.research_history)}
+            
+            Please format this into a clear, professional research report that includes:
+            1. A compelling title/header
+            2. Executive summary
+            3. Key findings (prioritize the most important insights)
+            4. Supporting evidence
+            5. Research methodology summary
+            
+            Use appropriate emojis and formatting to make it engaging and easy to read.
+            Focus on the most valuable insights and present them in a logical order.""")
+            
+            message = HumanMessage(content=prompt)
+            response = await self.model.ainvoke([message])
+            
+            if response and response.content.strip():
+                return response.content.strip()
+            else:
+                return self._fallback_format_result(summary, round_num)
+                
+        except Exception as e:
+            logger.warning(f"Failed to format final result with LLM: {e}")
+            # Simple fallback
+            return self._fallback_format_result(summary, round_num)
+    
+    def _fallback_format_result(self, summary: str, round_num: int) -> str:
+        """Basic fallback formatting for successful results."""
+        result = f"🎯 Research completed in {round_num} rounds!\n\n"
         result += "📋 Summary:\n"
         result += summary.replace("ANSWER_FOUND: ", "") + "\n\n"
         
         result += "🔍 Key Insights:\n"
-        for i, insight in enumerate(self.all_insights[-5:], 1):  # 最后5个洞察
+        for i, insight in enumerate(self.all_insights[-5:], 1):
             result += f"{i}. {insight}\n"
         
         result += f"\n📊 Research Statistics:\n"
         result += f"- Total rounds: {len(self.research_history)}\n"
         result += f"- Total insights: {len(self.all_insights)}\n"
-        result += f"- Pages analyzed: {sum(len(r.page_contents) for r in self.research_history)}"
         
         return result
 
-    def _format_failure_result(self, task: str) -> str:
-        """Format the failure result when max rounds are reached."""
+    async def _format_failure_result(self, task: str) -> str:
+        """Format the failure result when max rounds are reached using LLM."""
+        try:
+            prompt = cleandoc(f"""The research task was incomplete after maximum rounds. Please format a helpful failure report.
+
+            Task: {task}
+            
+            Partial insights collected ({len(self.all_insights)} total):
+            {chr(10).join(self.all_insights) if self.all_insights else "No insights collected"}
+            
+            Research Statistics:
+            - Total rounds: {len(self.research_history)}
+            - Total insights: {len(self.all_insights)}
+            - Pages analyzed: {sum(len(r.search_results) for r in self.research_history)}
+            
+            Create a professional failure report that includes:
+            1. Clear explanation of what happened
+            2. Summary of partial findings (if any)
+            3. Specific recommendations for improvement
+            4. Alternative approaches to try
+            
+            Be constructive and helpful, not just negative.""")
+            
+            message = HumanMessage(content=prompt)
+            response = await self.model.ainvoke([message])
+            
+            if response and response.content.strip():
+                return response.content.strip()
+            else:
+                return self._fallback_format_failure_result(task)
+                
+        except Exception as e:
+            logger.warning(f"Failed to format failure result with LLM: {e}")
+            # Simple fallback
+            return self._fallback_format_failure_result(task)
+    
+    def _fallback_format_failure_result(self, task: str) -> str:
+        """Basic fallback formatting for failure results."""
         result = f"❌ Research incomplete after maximum rounds reached.\n\n"
         result += f"📋 Task: {task}\n\n"
         
         if self.all_insights:
             result += "🔍 Partial insights collected:\n"
-            for i, insight in enumerate(self.all_insights[-3:], 1):  # 最后3个洞察
+            for i, insight in enumerate(self.all_insights[-3:], 1):
                 result += f"{i}. {insight}\n"
             
             result += "\n💡 Recommendations:\n"
@@ -439,8 +535,5 @@ class DeepResearcherTool(BaseTool):
         return {
             "name": self.name,
             "description": self.description,
-            "max_rounds": self.max_rounds,
-            "max_pages_per_round": self.max_pages_per_round,
-            "max_content_length": self.max_content_length,
             "type": "deep_researcher"
         }

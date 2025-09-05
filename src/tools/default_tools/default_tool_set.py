@@ -5,6 +5,7 @@ from langchain.tools import BaseTool
 from src.tools.default_tools.bash import BashTool
 from src.tools.default_tools.python_interpreter import PythonInterpreterTool
 from src.tools.default_tools.done import DoneTool
+from src.tools.default_tools.todo import TodoTool
 from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.tools.default_tools.web_searcher import WebSearcherTool
 from src.config import config
@@ -39,6 +40,11 @@ class DefaultToolSet:
         done_tool = DoneTool()
         self._tools["done"] = done_tool
         self._tool_configs["done"] = done_tool.get_tool_config()
+        
+        # Load todo tool
+        todo_tool = TodoTool()
+        self._tools["todo"] = todo_tool
+        self._tool_configs["todo"] = todo_tool.get_tool_config()
         
         # Load web fetcher tool
         web_fetcher_tool = WebFetcherTool()

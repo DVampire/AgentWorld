@@ -27,6 +27,7 @@ class WebFetcherTool(BaseTool):
         """Fetch content from a given URL asynchronously."""
         try:
             res = await fetch_url(url)
+            res = f"Title: {res.title}\nContent: {res.markdown}"
             if not res:
                 logger.error(f"Failed to fetch content from {url}")
                 return ToolResponse(

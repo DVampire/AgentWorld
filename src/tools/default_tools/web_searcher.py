@@ -196,6 +196,8 @@ class WebSearcherTool(BaseTool):
                     content=response.output,
                     extra={
                         "query": query,
+                        "status": "success",
+                        "results": results,
                         "total_results": len(results),
                         "language": self.lang,
                         "country": self.country,
@@ -216,8 +218,12 @@ class WebSearcherTool(BaseTool):
                     content=f"Error: All search engines failed to return results after multiple retries.",
                     extra={
                         "query": query,
-                        "max_retries": self.max_retries,
-                        "status": "failed"
+                        "status": "failed",
+                        "results": [],
+                        "total_results": 0,
+                        "language": self.lang,
+                        "country": self.country,
+                        "search_engines_used": [],
                     }
                 )
 

@@ -172,6 +172,159 @@ async def test_deep_researcher_tool():
         print(f"❌ Error testing deep researcher tool: {e}")
         import traceback
         traceback.print_exc()
+
+async def test_todo_tool():
+    """Test the todo tool directly."""
+    
+    print("🧪 Testing todo tool...")
+    
+    try:
+        # Get the todo tool
+        todo_tool = tool_manager.get_tool("todo")
+        print(f"Todo tool: {todo_tool}")
+        print(f"Todo tool args schema: {todo_tool.args_schema}")
+        
+        # Test 1: Add a high priority task
+        print("\n1. Adding a high priority task...")
+        result1 = await todo_tool.ainvoke(input={
+            "action": "add", 
+            "task": "Implement user authentication", 
+            "priority": "high", 
+            "category": "backend",
+            "parameters": {"framework": "FastAPI", "auth_type": "JWT"}
+        })
+        print(f"Result: {result1.content}")
+        
+        # Test 2: Add a medium priority task
+        print("\n2. Adding a medium priority task...")
+        result2 = await todo_tool.ainvoke(input={
+            "action": "add", 
+            "task": "Write unit tests", 
+            "priority": "medium", 
+            "category": "testing",
+            "parameters": {"coverage": "80%", "framework": "pytest"}
+        })
+        print(f"Result: {result2.content}")
+        
+        # Test 3: Add a low priority task
+        print("\n3. Adding a low priority task...")
+        result3 = await todo_tool.ainvoke(input={
+            "action": "add", 
+            "task": "Update documentation", 
+            "priority": "low"
+        })
+        print(f"Result: {result3.content}")
+        
+        # Test 4: List all tasks
+        print("\n4. Listing all tasks...")
+        result4 = await todo_tool.ainvoke(input={"action": "list"})
+        print(f"Result:\n{result4.content}")
+        
+        # Test 5: Show todo file
+        print("\n5. Showing todo.md content...")
+        result5 = await todo_tool.ainvoke(input={"action": "show"})
+        print(f"Result:\n{result5.content}")
+        
+        # Test 6: List steps to get the actual step IDs
+        print("\n6. Listing steps to get step IDs...")
+        result6 = await todo_tool.ainvoke(input={"action": "list"})
+        print(f"Result:\n{result6.content}")
+        
+        # Extract step IDs from the result (this is a bit hacky for testing)
+        # In real usage, you would know the step IDs from previous operations
+        step_ids = []
+        for line in result6.content.split('\n'):
+            if '**' in line and '_' in line:
+                # Extract step ID from format like "**20241201_143022_a1b2c3d4**"
+                start = line.find('**') + 2
+                end = line.find('**', start)
+                if start < end:
+                    step_ids.append(line[start:end])
+        
+        print(f"Found step IDs: {step_ids}")
+        
+        # Test 7: Complete the first task with success
+        if step_ids:
+            print(f"\n7. Completing {step_ids[0]} with success...")
+            result7 = await todo_tool.ainvoke(input={
+                "action": "complete", 
+                "step_id": step_ids[0],
+                "status": "success",
+                "result": "Successfully implemented JWT authentication with FastAPI. All endpoints are now protected and working correctly."
+            })
+            print(f"Result: {result7.content}")
+        
+        # Test 8: Insert a new step after the first one
+        if step_ids:
+            print(f"\n8. Inserting new step after {step_ids[0]}...")
+            result8 = await todo_tool.ainvoke(input={
+                "action": "add", 
+                "task": "Add rate limiting to API endpoints",
+                "priority": "high",
+                "category": "security",
+                "parameters": {"limit": "100 requests/minute"},
+                "after_step_id": step_ids[0]
+            })
+            print(f"Result: {result8.content}")
+        
+        # Test 9: Update the second task
+        if len(step_ids) > 1:
+            print(f"\n9. Updating {step_ids[1]}...")
+            result9 = await todo_tool.ainvoke(input={
+                "action": "update", 
+                "step_id": step_ids[1], 
+                "task": "Write comprehensive unit tests with 90% coverage"
+            })
+            print(f"Result: {result9.content}")
+        
+        # Test 10: Complete the second task with failure
+        if len(step_ids) > 1:
+            print(f"\n10. Completing {step_ids[1]} with failure...")
+            result10 = await todo_tool.ainvoke(input={
+                "action": "complete", 
+                "step_id": step_ids[1],
+                "status": "failed",
+                "result": "Failed to achieve 90% coverage due to complex integration tests. Only reached 75% coverage."
+            })
+            print(f"Result: {result10.content}")
+        
+        # Test 11: List tasks after updates
+        print("\n11. Listing tasks after updates...")
+        result11 = await todo_tool.ainvoke(input={"action": "list"})
+        print(f"Result:\n{result11.content}")
+        
+        # Test 12: Clear completed tasks
+        print("\n12. Clearing completed tasks...")
+        result12 = await todo_tool.ainvoke(input={"action": "clear"})
+        print(f"Result: {result12.content}")
+        
+        # Test 13: Final list
+        print("\n13. Final task list...")
+        result13 = await todo_tool.ainvoke(input={"action": "list"})
+        print(f"Result:\n{result13.content}")
+        
+        # Test 14: Export todo.md to a specific path
+        print("\n14. Exporting todo.md to /tmp/exported_todo.md...")
+        result14 = await todo_tool.ainvoke(input={
+            "action": "export",
+            "export_path": "/tmp/exported_todo.md"
+        })
+        print(f"Result: {result14.content}")
+        
+        # Test 15: Export to a nested directory
+        print("\n15. Exporting todo.md to a nested directory...")
+        result15 = await todo_tool.ainvoke(input={
+            "action": "export",
+            "export_path": "/tmp/todo_backup/exported_todo.md"
+        })
+        print(f"Result: {result15.content}")
+        
+        print("\n✅ Todo tool test completed!")
+        
+    except Exception as e:
+        print(f"❌ Error testing todo tool: {e}")
+        import traceback
+        traceback.print_exc()
         
 async def main():
     args = parse_args()
@@ -180,7 +333,7 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=False)
+    await model_manager.init_models(use_local_proxy=True)
     logger.info(f"| Models: {model_manager.list_models()}")
     
     await tool_manager.init_tools()
@@ -189,7 +342,8 @@ async def main():
     # await test_browser_tool()
     # await test_web_fetcher_tool()
     # await test_web_searcher_tool()
-    await test_deep_researcher_tool()
+    # await test_deep_researcher_tool()
+    await test_todo_tool()
     
 if __name__ == "__main__":
     asyncio.run(main())

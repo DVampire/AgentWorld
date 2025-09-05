@@ -25,24 +25,6 @@ class FileSystem:
 		self._service = FileSystemService(self.base_dir)
 
 		self.extracted_content_count = 0
-  
-		if create_default_files:
-			default_files = ['todo.md']
-			self._create_default_files(default_files)
-   
-	def _create_default_files(self, default_files: List[str]) -> None:
-		"""Create default files"""
-		for file in default_files:
-			file_path = Path(self.base_dir) / file
-			file_path.touch()
-    
-	def get_todo_contents(self) -> str:
-		"""Get contents of todo.md"""
-		file_path = os.path.join(self.base_dir, 'todo.md')
-		if not os.path.exists(file_path):
-			return ''
-		with open(file_path, 'r') as f:
-			return f.read()
 
 	def _validate_absolute_path(self, file_path: str) -> tuple[Path, Path]:
 		"""Validate and convert absolute path to relative path within base directory.

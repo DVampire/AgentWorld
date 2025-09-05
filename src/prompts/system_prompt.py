@@ -1,13 +1,11 @@
 """System prompt management for agents."""
 
-import importlib
 from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage
 from jinja2 import Template
 
 from src.logger import logger
 from src.prompts.templates import PROMPT_TEMPLATES
-
 
 class SystemPrompt:
     """System prompt manager for tool-calling agents (static constitution).
