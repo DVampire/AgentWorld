@@ -10,6 +10,7 @@ from src.registry import ENVIRONMENTS
 
 # File Operations
 _FILE_OPERATIONS_DESCRIPTION = """File operations tool for managing individual files.
+When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
 
 Available operations:
 1. read: Read a file from the file system.
@@ -42,10 +43,12 @@ Available operations:
     - include_stats: (optional) Whether to include file statistics (default: True).
 
 Input format: JSON string with 'operation' and operation-specific parameters.
+Example: {"operation": "read", "file_path": "/path/to/file.txt"}
 """
 
 # Directory Operations
 _DIRECTORY_OPERATIONS_DESCRIPTION = """Directory operations tool for managing directories.
+When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
 
 Available operations:
 1. create_dir: Create a directory.
@@ -62,10 +65,12 @@ Available operations:
     - No parameters required.
 
 Input format: JSON string with 'operation' and operation-specific parameters.
+Example: {"operation": "create_dir", "dir_path": "/path/to/directory"}
 """
 
 # Search Operations
 _SEARCH_OPERATIONS_DESCRIPTION = """Search operations tool for finding files and content.
+When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
 
 Available operations:
 1. search: Search for files by name or content.
@@ -77,10 +82,12 @@ Available operations:
     - max_results: (optional) Maximum number of results to return (default: 50).
 
 Input format: JSON string with 'operation' and operation-specific parameters.
+Example: {"operation": "search", "search_path": "/path/to/directory", "query": "search query"}
 """
 
 # Permission Operations
 _PERMISSION_OPERATIONS_DESCRIPTION = """Permission operations tool for managing file and directory permissions.
+When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
 
 Available operations:
 1. change_permissions: Change file or directory permissions.
@@ -88,6 +95,7 @@ Available operations:
     - permissions: The new permissions in octal format (e.g., '755', '644').
 
 Input format: JSON string with 'operation' and operation-specific parameters.
+Example: {"operation": "change_permissions", "file_path": "/path/to/file", "permissions": "755"}
 """
 
 # Pydantic models for each operation type

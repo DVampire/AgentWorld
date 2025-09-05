@@ -3,6 +3,7 @@ from typing import Dict, Any, List
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
+from langchain.callbacks.base import BaseCallbackHandler
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -13,6 +14,38 @@ from src.logger import logger
 
 PLACEHOLDER = "PLACEHOLDER"
 
+class TokenUsageCallbackHandler(BaseCallbackHandler):
+    def __init__(self, model_name: str = "unknown"):
+        self.model_name = model_name
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
+        self.total_cost = 0.0
+
+    def on_llm_end(self, response, **kwargs):
+        usage = None
+        
+        # Handle LLMResult
+        if hasattr(response, "llm_output") and response.llm_output:
+            if "token_usage" in response.llm_output:
+                usage = response.llm_output["token_usage"]
+        
+        # Handle direct usage_metadata
+        elif hasattr(response, "usage_metadata"):
+            usage = response.usage_metadata
+            
+        if usage:
+            input_tokens = usage.get("prompt_tokens", 0)
+            output_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+            cost = usage.get("cost", 0.0)
+            
+            self.input_tokens += input_tokens
+            self.output_tokens += output_tokens
+            self.total_tokens += total_tokens
+            self.total_cost += cost
+            
+            logger.info(f"| Model name: {self.model_name}. Tokens: {self.input_tokens} input tokens, {self.output_tokens} output tokens, {self.total_tokens} total tokens. Cost: ${self.total_cost:.6f}")
 
 class ModelManager(metaclass=Singleton):
     def __init__(self):
@@ -63,6 +96,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -79,6 +113,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -96,7 +131,8 @@ class ModelManager(metaclass=Singleton):
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
                 use_responses_api=True,
-                output_version="responses/v1"
+                output_version="responses/v1",
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -113,6 +149,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -130,6 +167,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE",
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -146,6 +184,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -230,6 +269,7 @@ class ModelManager(metaclass=Singleton):
                     model=model_id,
                     api_key=api_key,
                     base_url=api_base,
+                    callbacks=[TokenUsageCallbackHandler(model_name)],
                 )
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {
@@ -254,6 +294,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
                                                     remote_api_base_name="ANTHROPIC_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -270,6 +311,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
                                                     remote_api_base_name="ANTHROPIC_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )   
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -303,6 +345,7 @@ class ModelManager(metaclass=Singleton):
                     model=model_id,
                     api_key=api_key,
                     base_url=api_base,
+                    callbacks=[TokenUsageCallbackHandler(model_name)],
                 )
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {
@@ -326,6 +369,7 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
                                                     remote_api_base_name="GOOGLE_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
@@ -354,6 +398,7 @@ class ModelManager(metaclass=Singleton):
                 model = ChatGoogleGenerativeAI(
                     model=model_id,
                     api_key=api_key,
+                    callbacks=[TokenUsageCallbackHandler(model_name)],
                 )
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {

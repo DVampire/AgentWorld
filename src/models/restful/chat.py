@@ -90,11 +90,13 @@ class RestfulSearchClient():
                  base_url: str,
                  api_key: str,
                  api_type: str = "responses",
-                 model: str = "o3"):
+                 model: str = "o3",
+                 verbose: bool = False):
         self.base_url = base_url
         self.api_key = api_key
         self.api_type = api_type
         self.model = model
+        self.verbose = verbose
 
     def completion(self,
                    model,
@@ -317,12 +319,14 @@ class ChatRestfulSearch():
         base_url: str,
         api_key: str,
         api_type: str = "responses",
+        verbose: bool = False,
         **kwargs,
     ):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
         self.api_type = api_type
+        self.verbose = verbose
         
         self.client = self.create_client()
         self.message_manager = MessageManager(api_type=api_type, model=model)
@@ -334,7 +338,8 @@ class ChatRestfulSearch():
         return RestfulSearchClient(base_url=self.base_url,
                                       api_key=self.api_key,
                                       api_type=self.api_type,
-                                      model=self.model)
+                                      model=self.model,
+                                      verbose=self.verbose)
 
     def _prepare_completion_kwargs(
             self,

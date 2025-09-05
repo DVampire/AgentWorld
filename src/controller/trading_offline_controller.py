@@ -8,7 +8,7 @@ from src.controller.base import BaseController
 from src.registry import CONTROLLERS
 
 _TRADING_OFFLINE_ACTION_DESCRIPTION = """Trading offline tool for trading offline environment.
-Use this tool to trade offline.
+When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
 
 Available operations:
 1. reset: Reset the trading environment.

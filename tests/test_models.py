@@ -89,7 +89,7 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=False)
+    await model_manager.init_models(use_local_proxy=True)
     logger.info(f"| Models: {model_manager.list_models()}")
     
     await test_general_models()
