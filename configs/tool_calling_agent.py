@@ -7,7 +7,7 @@ tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
-use_local_proxy = True
+use_local_proxy = False
 version = "0.1.0"
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------

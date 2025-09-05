@@ -458,6 +458,37 @@ class TodoTool(BaseTool):
         except Exception as e:
             return ToolResponse(content=f"Error exporting todo.md: {str(e)}")
     
+    def get_todo_content(self) -> str:
+        """Get the content of the todo.md file."""
+        todo_contents = self.todo_file.read_text(encoding='utf-8')
+        if not todo_contents:
+            todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
+        return todo_contents
+    
+    def export_todo_file(self, export_path: str):
+        """Export todo.md file to a specified path."""
+        if not export_path:
+            return
+        try:
+            # Ensure the todo.md file is up to date
+            self._sync_to_markdown()
+            
+            if not self.todo_file.exists():
+                return
+            
+            # Convert to Path object
+            export_path_obj = Path(export_path)
+            
+            # Create parent directories if they don't exist
+            export_path_obj.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Read the current todo.md content
+            content = self.todo_file.read_text(encoding='utf-8')
+            
+            # Write to the export path
+            export_path_obj.write_text(content, encoding='utf-8')
+        except Exception as e:
+            return
     
     def get_tool_config(self) -> Dict[str, Any]:
         """Get the tool configuration."""

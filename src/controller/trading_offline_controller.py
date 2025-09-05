@@ -54,7 +54,7 @@ class TradingOfflineController(BaseController):
         
         if operation == "reset":
             try:
-                state, info = await self.environment.reset()
+                state, info = self.environment.reset()
             except Exception as e:
                 return f"Error in resetting the trading environment: {str(e)}"
             
@@ -71,7 +71,7 @@ class TradingOfflineController(BaseController):
             return ToolResponse(content=result)
         
         elif operation == "step":
-            state, reward, done, truncted, info = await self.environment.step(action)
+            state, reward, done, truncted, info = self.environment.step(action)
             result = cleandoc(f"""Step the trading environment successfully.
             Action: {action}
             Reward: {reward}

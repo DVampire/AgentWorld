@@ -234,7 +234,13 @@ class BaseAgent(ABC):
         return {
             "agent_history": agent_history,
         }
-        
+    
+    async def _get_todo_contents(self) -> str:
+        """Get the todo contents."""
+        todo_tool = tool_manager.get_tool("todo")
+        todo_contents = todo_tool.get_todo_content()
+        return todo_contents
+    
     async def _get_agent_state(self, task: str) -> Dict[str, Any]:
         """Get the agent state."""
         step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
@@ -246,10 +252,13 @@ class BaseAgent(ABC):
         ]
         available_actions_description = json.dumps(available_actions_description)
         
+        todo_contents = await self._get_todo_contents()
+        
         return {
             "task": task,
             "step_info": step_info_description,
             "available_actions": available_actions_description,
+            "todo_contents": todo_contents,
         }
         
     async def _get_environment_state(self) -> Dict[str, Any]:

@@ -525,7 +525,7 @@ class TradingOfflineEnvironment(gym.Env):
         valid_action_max_len = min(self.valid_action_max_len, len(self.valid_action_df))
         self.valid_action_df = self.valid_action_df[-valid_action_max_len:]
 
-    async def reset(self, **kwargs):
+    def reset(self, **kwargs):
         self.timestamp_index = self._init_timestamp_index()
         self.timestamp_string = self.get_timestamp_string(timestamp_index=self.timestamp_index)
         self.price = self.get_price(timestamp_index=self.timestamp_index)
@@ -575,7 +575,7 @@ class TradingOfflineEnvironment(gym.Env):
         action = self.action_labels.index(action)
         return action
 
-    async def step(self, action: Any):
+    def step(self, action: Any):
 
         if isinstance(action, np.ndarray):
             action = int(action.item())
