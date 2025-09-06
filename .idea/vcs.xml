@@ -4,5 +4,6 @@
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/datasets/exp" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/libs/browser-use" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/libs/langchain" vcs="Git" />
   </component>
 </project>

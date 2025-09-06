@@ -50,3 +50,5 @@ python-dotenv>=1.1.1
 iopath>=0.1.10
 gymnasium>=1.2.0
 numpy>=2.3.2
+camelot-py>=1.0.0
+librosa>=0.11.0

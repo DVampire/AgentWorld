@@ -9,6 +9,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.models.restful.chat import ChatRestfulSearch
+from src.models.transcribe import TranscribeOpenAI
 from src.utils import Singleton
 from src.logger import logger
 
@@ -35,8 +36,11 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             usage = response.usage_metadata
             
         if usage:
-            input_tokens = usage.get("prompt_tokens", 0)
-            output_tokens = usage.get("completion_tokens", 0)
+            # Handle different usage formats
+            # Standard Chat API format: prompt_tokens, completion_tokens
+            # Transcription API format: input_tokens, output_tokens
+            input_tokens = usage.get("prompt_tokens", usage.get("input_tokens", 0))
+            output_tokens = usage.get("completion_tokens", usage.get("output_tokens", 0))
             total_tokens = usage.get("total_tokens", 0)
             cost = usage.get("cost", 0.0)
             
@@ -45,7 +49,13 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             self.total_tokens += total_tokens
             self.total_cost += cost
             
-            logger.info(f"| Model name: {self.model_name}. Tokens: {self.input_tokens} input tokens, {self.output_tokens} output tokens, {self.total_tokens} total tokens. Cost: ${self.total_cost:.6f}")
+            # Log additional details for transcription API
+            if "input_token_details" in usage:
+                audio_tokens = usage["input_token_details"].get("audio_tokens", 0)
+                text_tokens = usage["input_token_details"].get("text_tokens", 0)
+                logger.info(f"| Model name: {self.model_name}. Tokens: {self.input_tokens} input tokens ({audio_tokens} audio, {text_tokens} text), {self.output_tokens} output tokens, {self.total_tokens} total tokens. Cost: ${self.total_cost:.6f}")
+            else:
+                logger.info(f"| Model name: {self.model_name}. Tokens: {self.input_tokens} input tokens, {self.output_tokens} output tokens, {self.total_tokens} total tokens. Cost: ${self.total_cost:.6f}")
 
 class ModelManager(metaclass=Singleton):
     def __init__(self):
@@ -193,7 +203,7 @@ class ModelManager(metaclass=Singleton):
                 "model_id": model_id,
             }
             
-            # # deep research
+            # deep research
             model_name = "o3-deep-research"
             model_id = "o3-deep-research"
 
@@ -228,6 +238,36 @@ class ModelManager(metaclass=Singleton):
                 "model_name": model_name,
                 "model_id": model_id,
             }
+            
+            # gpt-4o-transcribe
+            model_name = "gpt-4o-transcribe"
+            model_id = "gpt-4o-transcribe"
+            model = TranscribeOpenAI(model=model_id,
+                                     openai_api_key=api_key, 
+                                     openai_api_base=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                                       remote_api_base_name="OPENAI_API_BASE"),
+                                     callbacks=[TokenUsageCallbackHandler(model_name)])
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # gpt-4o-mini-transcribe
+            model_name = "gpt-4o-mini-transcribe"
+            model_id = "gpt-4o-mini-transcribe"
+            model = TranscribeOpenAI(model=model_id,
+                                     openai_api_key=api_key, 
+                                     openai_api_base=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                                       remote_api_base_name="OPENAI_API_BASE"),
+                                     callbacks=[TokenUsageCallbackHandler(model_name)])
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
         else:
             logger.info("| Using remote API for OpenAI models")
             api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
@@ -235,6 +275,7 @@ class ModelManager(metaclass=Singleton):
             api_base = self._check_local_api_base(local_api_base_name="OPENAI_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE")
             
+            # general models
             models = [
                 {
                     "model_name": "gpt-4o",
@@ -266,6 +307,33 @@ class ModelManager(metaclass=Singleton):
                 model_name = model["model_name"]
                 model_id = model["model_id"]
                 model = ChatOpenAI(
+                    model=model_id,
+                    api_key=api_key,
+                    base_url=api_base,
+                    callbacks=[TokenUsageCallbackHandler(model_name)],
+                )
+                self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "openai",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
+                
+            # transcribe models
+            models = [
+                {
+                    "model_name": "gpt-4o-transcribe",
+                    "model_id": "gpt-4o-transcribe",
+                },
+                {
+                    "model_name": "gpt-4o-mini-transcribe",
+                    "model_id": "gpt-4o-mini-transcribe",
+                },
+            ]
+            for model in models:
+                model_name = model["model_name"]
+                model_id = model["model_id"]
+                model = TranscribeOpenAI(
                     model=model_id,
                     api_key=api_key,
                     base_url=api_base,
@@ -540,7 +608,7 @@ class ModelManager(metaclass=Singleton):
                     "model_name": model_name,
                     "model_id": model_id,
                 }
-                
+    
     async def init_models(self, use_local_proxy: bool = False):
         await self.initialize(use_local_proxy=use_local_proxy)
             

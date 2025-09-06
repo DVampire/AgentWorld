@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
@@ -9,7 +9,7 @@ class MessageManager():
         self.api_type = api_type
         self.model = model
         
-    def __call__(self, messages: List[HumanMessage | AIMessage]) -> List[Dict[str, Any]]:
+    def __call__(self, messages: List[Union[HumanMessage, AIMessage]]) -> List[Dict[str, Any]]:
         if self.api_type == "chat/completions":
             result = []
             for m in messages:

@@ -1,3 +1,4 @@
+import imp
 import os
 import sys
 from dotenv import load_dotenv
@@ -45,7 +46,7 @@ async def test_general_models():
             {
                 "type": "image_url",
                 "image_url": {
-                    "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/cat.png"))))
+                    "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/cat.png"))))
                 }
             }
         ]),
@@ -80,8 +81,24 @@ async def test_deep_research_models():
         model = model_manager.get_model(model_name)
         response = await model.ainvoke(messages)
         logger.info(f"| {model_name} Response: {response}")
-    
-
+        
+async def test_transcribe_models():
+    for model_name in [
+        "gpt-4o-transcribe",
+        "gpt-4o-mini-transcribe",
+    ]:
+        model = model_manager.get_model(model_name)
+        
+        # Test with file path
+        audio_path = assemble_project_path("tests/files/audio.mp3")
+        
+        # Test 1: File path (original way)
+        messages = [
+            HumanMessage(content=audio_path),
+        ]
+        response = await model.ainvoke(messages)
+        logger.info(f"| {model_name} (file path) Response: {response}")
+        
 async def main():
     args = parse_args()
     
@@ -89,11 +106,12 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=True)
+    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
     logger.info(f"| Models: {model_manager.list_models()}")
     
-    await test_general_models()
+    # await test_general_models()
     # await test_deep_research_models()
+    await test_transcribe_models()
     
     
 if __name__ == "__main__":
