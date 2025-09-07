@@ -50,7 +50,7 @@ class SearchRound(BaseModel):
 class DeepResearcherTool(BaseTool):
     """A deep research tool that performs multi-round web search and content analysis."""
 
-    name: str = "deep_researcher_tool"
+    name: str = "deep_researcher"
     description: str = _DEEP_RESEARCHER_DESCRIPTION
     args_schema: Type[DeepResearcherArgs] = DeepResearcherArgs
     

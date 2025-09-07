@@ -17,6 +17,7 @@ from src.registry import AGENTS
 from src.registry import CONTROLLERS
 from src.models import model_manager
 from src.tools import tool_manager
+from src.utils import assemble_project_path
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -72,10 +73,12 @@ async def main():
     """Test streaming execution mode."""
     logger.info("| 🚀 Testing streaming execution mode")
     
-    task = "生成一个Python脚本, 计算斐波那契数列。"
+    task = "请找到图片中所有Pokemon的编号，并返回一个列表。"
+    files = [assemble_project_path("tests/files/pokemon.jpg")]
     logger.info(f"| 📋 Task: {task}")
+    logger.info(f"| 📂 Files: {files}")
     
-    await agent.run(task)
+    await agent.run(task, files)
 
 if __name__ == "__main__":
     asyncio.run(main())

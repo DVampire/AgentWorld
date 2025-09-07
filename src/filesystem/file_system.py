@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Dict, Union
 from src.filesystem.service import FileSystemService
 from src.filesystem.types import FileReadRequest
 from src.filesystem.exceptions import FileSystemError, InvalidPathError, PathTraversalError
+from src.utils import get_file_info
 
 class FileSystem:
 	"""Enhanced file system with in-memory storage and multiple file type support"""
@@ -356,16 +357,17 @@ class FileSystem:
 				return f"Error: Path does not exist: {file_path}"
 			
 			info = []
-			info.append(f"Path: {file_path}")
-			info.append(f"Type: {'Directory' if abs_path.is_dir() else 'File'}")
 			
 			if include_stats:
 				try:
-					stat = await self._service.stat(rel)
-					info.append(f"Size: {self._format_size(stat.st_size)}")
-					info.append(f"Created: {stat.st_ctime}")
-					info.append(f"Modified: {stat.st_mtime}")
-					info.append(f"Permissions: {oct(stat.st_mode)[-3:]}")
+					file_info = get_file_info(abs_path)
+					info.append(f"Path: {file_info['path']}")
+					info.append(f"Type: {'Directory' if file_info['is_directory'] else 'File'}")
+					info.append(f"Size: {file_info['size']}")
+					info.append(f"Created: {file_info['created']}")
+					info.append(f"Modified: {file_info['modified']}")
+					info.append(f"Permissions: {file_info['permissions']}")
+     
 				except Exception as e:
 					info.append(f"Stats error: {str(e)}")
 			
@@ -411,19 +413,6 @@ class FileSystem:
 						continue
 		except Exception:
 			pass
-	
-	def _format_size(self, size_bytes: int) -> str:
-		"""Format file size in human readable format (from project.py)."""
-		if size_bytes == 0:
-			return "0 B"
-		
-		size_names = ["B", "KB", "MB", "GB", "TB"]
-		i = 0
-		while size_bytes >= 1024 and i < len(size_names) - 1:
-			size_bytes /= 1024.0
-			i += 1
-		
-		return f"{size_bytes:.1f} {size_names[i]}"
 
 	async def describe(self) -> str:
 		"""Describe the file system with directory structure and file information"""
@@ -449,8 +438,8 @@ class FileSystem:
 				description += "Files Summary:\n"
 				for file_path in sorted(all_files):
 					try:
-						stat = await self._service.stat(file_path)
-						size_str = self._format_size(stat.st_size)
+						file_info = get_file_info(file_path)
+						size_str = file_info['size']
 						description += f"  📄 {file_path} ({size_str})\n"
 					except Exception:
 						description += f"  📄 {file_path}\n"

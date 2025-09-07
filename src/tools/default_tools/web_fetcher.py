@@ -16,7 +16,7 @@ class WebFetcherToolArgs(BaseModel):
 class WebFetcherTool(BaseTool):
     """A tool for fetching web content asynchronously."""
     
-    name: str = "web_fetcher_tool"
+    name: str = "web_fetcher"
     description: str = _WEB_FETCHER_DESCRIPTION
     args_schema: Type[WebFetcherToolArgs] = WebFetcherToolArgs
     

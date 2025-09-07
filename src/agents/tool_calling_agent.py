@@ -1,16 +1,21 @@
 """Tool calling agent implementation with manual agent logic."""
 
 import uuid
+import asyncio
 from typing import List, Optional, Union
 from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage
+from inspect import cleandoc
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from src.agents.base_agent import BaseAgent, ThinkOutput
 from src.registry import AGENTS
 from src.logger import logger
 from src.memory import MemoryManager
 from src.controller import BaseController
+from src.utils import get_file_info
+from src.tools import tool_manager
 
 @AGENTS.register_module(force=True)
 class ToolCallingAgent(BaseAgent):
@@ -122,12 +127,63 @@ class ToolCallingAgent(BaseAgent):
             logger.error(f"| Error in thinking and action step: {e}")
         
         return done, final_result
+    
+    async def _extract_file_content(self, file: str) -> str:
+        """Extract file information."""
         
-    async def run(self, task: str):
+        info = get_file_info(file)
+        
+        # Extract file content
+        file_content = await tool_manager.execute_tool("mdify", args={"file_path": file, "output_format": "markdown"})
+        
+        # Use LLM to summarize the file content
+        system_prompt = "You are a helpful assistant that summarizes file content."
+        
+        user_prompt = cleandoc(f"""
+            Summarize the following file content as 1-3 sentences:
+            {file_content}
+        """)
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        summary = await self.no_fc_model.ainvoke(messages)
+        
+        info["content"] = file_content
+        info["summary"] = summary.content
+        
+        return info
+    
+    async def _generate_enhanced_task(self, task: str, files: List[str]) -> str:
+        """Generate enhanced task."""
+        
+        attach_files_string = "\n".join([f"File: {file['path']}\nSummary: {file['summary']}" for file in files])
+        
+        enhanced_task = cleandoc(f"""
+- Task:
+{task}
+- Attach files:
+{attach_files_string}
+""")
+        return enhanced_task
+        
+    async def run(self, 
+                  task: str, 
+                  files: Optional[List[str]] = None,
+                  ):
         """Run the tool calling agent with loop."""
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
-        session_info = await self._generate_session_info(task)
+        if files:
+            logger.info(f"| 📂 Attached files: {files}")
+            files = await asyncio.gather(*[self._extract_file_content(file) for file in files])
+            enhanced_task = await self._generate_enhanced_task(task, files)
+        else:
+            enhanced_task = task
+        
+        session_info = await self._generate_session_info(enhanced_task)
         session_id = session_info.session_id
         description = session_info.description
         
@@ -138,13 +194,13 @@ class ToolCallingAgent(BaseAgent):
         task_id = str(uuid.uuid4())
         self.memory_manager.add_event(step_number=self.step_number, 
                                       event_type="task_start", 
-                                      data=dict(task=task),
+                                      data=dict(task=enhanced_task),
                                       agent_name=self.name,
                                       task_id=task_id
                                       )
         
         # Initialize messages
-        messages = await self._get_messages(task)
+        messages = await self._get_messages(enhanced_task)
         
         # Main loop
         step_number = 0
@@ -159,7 +215,7 @@ class ToolCallingAgent(BaseAgent):
             done, final_result = await self._think_and_action(messages, task_id)
             self.step_number += 1
             
-            messages = await self._get_messages(task)
+            messages = await self._get_messages(enhanced_task)
             
             if done:
                 break

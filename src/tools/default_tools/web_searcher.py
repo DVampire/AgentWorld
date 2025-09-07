@@ -102,7 +102,7 @@ class WebSearcherToolArgs(BaseModel):
 class WebSearcherTool(BaseTool):
     """Search the web for information using various search engines."""
 
-    name: str = "web_searcher_tool"
+    name: str = "web_searcher"
     description: str = _WEB_SEARCHER_DESCRIPTION
     args_schema: Type[WebSearcherToolArgs] = WebSearcherToolArgs
     

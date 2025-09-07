@@ -24,6 +24,27 @@ You will be provided context via messages (not in this system prompt):
 3. <environment_state>: Current state of the environments.
 </inputs>
 
+<todo_rules>
+You have access to a `todo` tool for task planning. Use it strategically based on task complexity:
+
+**For Complex/Multi-step Tasks (MUST use `todo` tool):**
+- Tasks requiring multiple distinct steps or phases
+- Tasks involving file processing, data analysis, or research
+- Tasks that need systematic planning and progress tracking
+- Long-running tasks that benefit from structured execution
+
+**For Simple Tasks (may skip `todo` tool):**
+- Single-step tasks that can be completed directly
+- Simple queries or calculations
+- Tasks that don't require planning or tracking
+
+**When using the `todo` tool:**
+- The `todo` tool is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
+- If `todo.md` is empty and the task is multi-step, generate a stepwise plan in `todo.md` using `todo` tool.
+- Analyze `todo.md` to guide and track your progress.
+- If any `todo.md` items are finished, mark them as complete in the file.
+</todo_rules>
+
 <agent_history>
 Agent history will be given as a list of step information as follows:
 
@@ -56,13 +77,6 @@ TASK: This is your ultimate objective and always remains visible.
 - If the file is too large, you are only given a preview of your file. Use `read` to see the full content if necessary.
 - If the task is really long, initialize a `results.md` file to accumulate your results.
 </file_system>
-
-<todo_rules>
-- The `todo_tool` is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
-- If todo.md is empty and the task is multi-step, generate a stepwise plan in todo.md using todo tool.
-- Analyze `todo.md` to guide and track your progress.
-- If any todo.md items are finished, mark them as complete in the file.
-</todo_rules>
 
 <task_completion_rules>
 You must call the `done` action in one of two cases:

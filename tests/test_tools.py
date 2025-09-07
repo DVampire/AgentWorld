@@ -19,6 +19,7 @@ from src.logger import logger
 from src.models import model_manager
 from src.tools import tool_manager
 from src.utils import assemble_project_path
+from src.utils import get_file_info
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')

@@ -297,6 +297,9 @@ class BaseAgent(ABC):
         
         return messages
     
-    async def run(self, task: str):
+    async def run(self, 
+                  task: str,
+                  files: Optional[List[str]] = None,
+                  ):
         """Run the agent. This method should be implemented by the child classes."""
         raise NotImplementedError("Run method is not implemented by the child class")

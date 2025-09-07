@@ -12,6 +12,7 @@ from .string_utils import extract_boxed_content
 from .misc import get_world_size, get_rank
 from .name_utils import get_tag_name, get_newspage_name
 from .url_utils import fetch_url
+from .file_utils import get_file_info
 
 __all__ = [
     "get_project_root",
@@ -35,4 +36,6 @@ __all__ = [
     "get_rank",
     "get_tag_name",
     "get_newspage_name",
+    "fetch_url",
+    "get_file_info",
 ]
