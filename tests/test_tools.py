@@ -326,6 +326,40 @@ async def test_todo_tool():
         import traceback
         traceback.print_exc()
         
+async def test_mdify_tool():
+    """Test the mdify tool directly."""
+    
+    print("🧪 Testing mdify tool...")
+    
+    try:
+        # Get the mdify tool
+        mdify_tool = tool_manager.get_tool("mdify")
+        print(f"Mdify tool: {mdify_tool}")
+        print(f"Mdify tool args schema: {mdify_tool.args_schema}")
+        
+        # Test 1: Convert a MP3 file
+        print("\n1. Converting a MP3 file...")
+        result1 = await mdify_tool.ainvoke(input={
+            "file_path": assemble_project_path("tests/files/audio.mp3"),
+            "output_format": "markdown"
+        })
+        print(f"Result: {result1.content}")
+        
+        # Test 2: Convert an Image file
+        print("\n2. Converting an Image file...")
+        result2 = await mdify_tool.ainvoke(input={
+            "file_path": assemble_project_path("tests/files/pokemon.jpg"),
+            "output_format": "markdown"
+        })
+        print(f"Result: {result2.content}")
+        
+        print("\n✅ Mdify tool test completed!")
+        
+    except Exception as e:
+        print(f"❌ Error testing mdify tool: {e}")
+        import traceback
+        traceback.print_exc()
+        
 async def main():
     args = parse_args()
     
@@ -333,7 +367,7 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=True)
+    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
     logger.info(f"| Models: {model_manager.list_models()}")
     
     await tool_manager.init_tools()
@@ -343,7 +377,8 @@ async def main():
     # await test_web_fetcher_tool()
     # await test_web_searcher_tool()
     # await test_deep_researcher_tool()
-    await test_todo_tool()
+    # await test_todo_tool()
+    await test_mdify_tool()
     
 if __name__ == "__main__":
     asyncio.run(main())

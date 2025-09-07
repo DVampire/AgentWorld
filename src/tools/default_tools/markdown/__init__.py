@@ -1,4 +1,4 @@
-from src.tools.markdown.mdconvert import MarkitdownConverter
+from .mdconvert import MarkitdownConverter
 
 __all__ = [
     "MarkitdownConverter",

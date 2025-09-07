@@ -16,11 +16,8 @@ from markitdown._base_converter import DocumentConverterResult
 from markitdown._exceptions import MissingDependencyException, MISSING_DEPENDENCY_MESSAGE
 import pdfminer
 import pdfminer.high_level
-from langchain_community.document_loaders.blob_loaders import FileSystemBlobLoader
-from langchain_community.document_loaders.generic import GenericLoader
-from langchain_community.document_loaders.parsers.audio import OpenAIWhisperParser
 
-from src.models import model_manager
+from src.models import model_manager, HumanMessage
 from src.logger import logger
 
 
@@ -32,18 +29,17 @@ def read_tables_from_stream(file_stream):
         return tables
 
 def transcribe_audio(file_stream, audio_format):
+    
+    file_path = tempfile.NamedTemporaryFile(suffix=f".{audio_format}", delete=True).name
+    with open(file_path, "wb") as f:
+        f.write(file_stream.read())
+        
+    messages = [
+        HumanMessage(content=file_path),
+    ]
+    response = model_manager.get_model("gpt-4o-transcribe").invoke(messages)
 
-    if "whisper" in model_manager.registed_models:
-        # Use the Whisper model for transcription
-        model = model_manager.registed_models["whisper"]
-        result = model(
-            file_stream=file_stream,
-        )
-    else:
-        response = transcription(model="gpt-4o-transcribe", file=file_stream).json()
-        result = response.get("text", "No transcription available.")
-
-    return result
+    return response.content
 
 class AudioWhisperConverter(AudioConverter):
 
@@ -145,26 +141,18 @@ class PdfWithTableConverter(PdfConverter):
             )
 
 class MarkitdownConverter():
-    def __init__(self,
-                 use_llm: bool = False,
-                 model_id: str = None,
-                 timeout: int = 30):
+    def __init__(self, timeout: int = 30):
 
         self.timeout = timeout
-        self.use_llm = use_llm
-        self.model_id = model_id
-
-        if use_llm:
-            client = model_manager.registed_models(model_id).http_client
-            self.client = MarkItDown(
-                enable_plugins=True,
-                llm_client=client,
-                llm_model=model_id,
-            )
-        else:
-            self.client = MarkItDown(
-                enable_plugins=True,
-            )
+        
+        llm_client = model_manager.get_model("gpt-4.1").root_client
+        
+        self.client = MarkItDown(
+            enable_plugins=True,
+            llm_client=llm_client,
+            llm_model="gpt-4.1",
+            llm_prompt="Please describe the content of the image in as much detail as possible."
+        )
 
         removed_converters = [
             PdfConverter, AudioConverter

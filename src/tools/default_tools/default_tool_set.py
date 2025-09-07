@@ -8,6 +8,7 @@ from src.tools.default_tools.done import DoneTool
 from src.tools.default_tools.todo import TodoTool
 from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.tools.default_tools.web_searcher import WebSearcherTool
+from src.tools.default_tools.mdify import MdifyTool
 from src.config import config
 
 
@@ -55,6 +56,11 @@ class DefaultToolSet:
         web_searcher_tool = WebSearcherTool()
         self._tools["web_searcher"] = web_searcher_tool
         self._tool_configs["web_searcher"] = web_searcher_tool.get_tool_config()
+
+        # Load mdify tool
+        mdify_tool = MdifyTool()
+        self._tools["mdify"] = mdify_tool
+        self._tool_configs["mdify"] = mdify_tool.get_tool_config()
 
     def list_tools(self) -> List[str]:
         """Get all default tools."""
