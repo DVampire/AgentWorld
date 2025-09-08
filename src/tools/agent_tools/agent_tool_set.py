@@ -4,6 +4,7 @@ from langchain.tools import BaseTool
 
 from src.tools.agent_tools.browser import BrowserTool
 from src.tools.agent_tools.deep_researcher import DeepResearcherTool
+from src.tools.agent_tools.deep_analyzer import DeepAnalyzerTool
 from src.config import config
 
 
@@ -33,6 +34,13 @@ class AgentToolSet:
         )
         self._tools["deep_researcher"] = deep_researcher_tool
         self._tool_configs["deep_researcher"] = deep_researcher_tool.get_tool_config()
+        
+        # Load deep analyzer tool
+        deep_analyzer_tool = DeepAnalyzerTool(
+            model_name=config.deep_analyzer_tool.model_name if hasattr(config, 'deep_analyzer_tool') else "o3",
+        )
+        self._tools["deep_analyzer"] = deep_analyzer_tool
+        self._tool_configs["deep_analyzer"] = deep_analyzer_tool.get_tool_config()
 
     def list_tools(self) -> List[str]:
         """Get all agent tools."""

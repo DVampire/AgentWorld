@@ -7,8 +7,6 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 from dotenv import load_dotenv
-from inspect import cleandoc
-
 load_dotenv(verbose=True)
 
 root = str(Path(__file__).resolve().parents[1])
@@ -19,7 +17,6 @@ from src.logger import logger
 from src.models import model_manager
 from src.tools import tool_manager
 from src.utils import assemble_project_path
-from src.utils import get_file_info
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -361,6 +358,32 @@ async def test_mdify_tool():
         import traceback
         traceback.print_exc()
         
+async def test_deep_analyzer_tool():
+    """Test the deep analyzer tool directly."""
+    
+    print("🧪 Testing deep analyzer tool...")
+    
+    try:
+        # Get the deep analyzer tool
+        deep_analyzer = tool_manager.get_tool("deep_analyzer")
+        print(f"Deep analyzer tool: {deep_analyzer}")
+        print(f"Deep analyzer tool args schema: {deep_analyzer.args_schema}")
+        
+        # Test 1: Analyze a text file
+        print("\n1. Analyzing a audio file...")
+        result1 = await deep_analyzer.ainvoke(input={
+            "task": "Analyze the provided audio file and extract key insights.",
+            "files": [assemble_project_path("tests/files/audio.mp3")]
+        })
+        print(f"Result: {result1.content}")
+        
+        print("\n✅ Deep analyzer tool test completed!")
+        
+    except Exception as e:
+        print(f"❌ Error testing deep analyzer tool: {e}")
+        import traceback
+        traceback.print_exc()
+        
 async def main():
     args = parse_args()
     
@@ -379,7 +402,8 @@ async def main():
     # await test_web_searcher_tool()
     # await test_deep_researcher_tool()
     # await test_todo_tool()
-    await test_mdify_tool()
+    # await test_mdify_tool()
+    await test_deep_analyzer_tool()
     
 if __name__ == "__main__":
     asyncio.run(main())

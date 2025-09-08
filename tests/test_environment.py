@@ -99,6 +99,8 @@ def test_trading_offline_environment():
     environment = ENVIRONMENTS.build(env_cfg)
 
     state, info = environment.reset()
+    print(state['prompt'])
+    exit()
 
     record.add(
         dict(
@@ -113,10 +115,6 @@ def test_trading_offline_environment():
     for step in range(500):
         action = np.random.choice([0, 1, 2])
         next_state, reward, done, truncted, info = environment.step(action)
-
-        if step == 10:
-            print(next_state['prompt'])
-            exit()
 
         record.add(
             dict(
@@ -169,5 +167,5 @@ def test_file_system_environment():
     print(info)
     
 if __name__ == "__main__":
-    # test_trading_offline_environment()
-    test_file_system_environment()
+    test_trading_offline_environment()
+    # test_file_system_environment()

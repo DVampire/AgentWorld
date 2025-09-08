@@ -12,3 +12,7 @@ browser_tool = dict(
 deep_researcher_tool = dict(
     model_name = "o3",
 )
+
+deep_analyzer_tool = dict(
+    model_name = "o3",
+)

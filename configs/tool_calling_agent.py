@@ -33,6 +33,7 @@ agent = dict(
         "web_fetcher",
         "web_searcher",
         "deep_researcher",
+        "deep_analyzer",
         
         # file system tools
         "file_operations",

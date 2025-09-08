@@ -151,6 +151,40 @@ class ModelManager(metaclass=Singleton):
                 "model_id": model_id,
             }
             
+            # gpt-5-mini
+            model_name = "gpt-5-mini"
+            model_id = "gpt-5-mini"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # gpt-5-nano
+            model_name = "gpt-5-nano"
+            model_id = "gpt-5-nano"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
             # o1
             model_name = "o1"
             model_id = "o1"
