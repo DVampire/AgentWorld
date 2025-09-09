@@ -14,25 +14,11 @@ class SearchItem(BaseModel):
     def __str__(self) -> str:
         """String representation of a search result item."""
         return f"{self.title} - {self.url} - {self.description or 'No description available'}"
-
-class WebSearchEngine(BaseModel):
-    """Base class for web search engines."""
-
-    model_config = {"arbitrary_types_allowed": True}
-
-    async def perform_search(
-        self, query: str, num_results: int = 10, *args, **kwargs
-    ) -> List[SearchItem]:
-        """
-        Perform a web search and return a list of search items.
-
-        Args:
-            query (str): The search query to submit to the search engine.
-            num_results (int, optional): The number of search results to return. Default is 10.
-            args: Additional arguments.
-            kwargs: Additional keyword arguments.
-
-        Returns:
-            List[SearchItem]: A list of SearchItem objects matching the search query.
-        """
-        raise NotImplementedError
+    
+class SearchToolArgs(BaseModel):
+    """Arguments for the search tool."""
+    query: str = Field(description="The query to search for")
+    num_results: int = Field(default=5, description="The number of search results to return, default is 5")
+    country: Optional[str] = Field(default="us", description="The country to search in, default is us")
+    lang: Optional[str] = Field(default="en", description="The language to search in, default is en")
+    filter_year: Optional[int] = Field(default=None, description="The year to filter results by, default is None")

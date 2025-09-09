@@ -495,5 +495,6 @@ class TodoTool(BaseTool):
         return {
             "name": self.name,
             "description": self.description,
-            "args_schema": self.args_schema
+            "args_schema": self.args_schema,
+            "type": "todo"
         }

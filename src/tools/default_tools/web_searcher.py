@@ -6,12 +6,7 @@ import time
 import asyncio
 
 from src.tools.default_tools.web_fetcher import WebFetcherTool
-from src.tools.default_tools.search import (
-    GoogleSearchEngine,
-    FirecrawlSearchEngine,
-    WebSearchEngine,
-    SearchItem
-)
+from src.tools.default_tools.search import FirecrawlSearch, SearchItem
 from src.logger import logger
 from src.tools.base import ToolResponse
 
@@ -107,13 +102,13 @@ class WebSearcherTool(BaseTool):
     args_schema: Type[WebSearcherToolArgs] = WebSearcherToolArgs
     
     # Configure parameters as class attributes
-    engine: str = Field(
-        default="firecrawl", 
-        description="The search engine to use."
+    tool: str = Field(
+        default="firecrawl_search", 
+        description="The search tool to use."
     )
-    fallback_engines: List[str] = Field(
-        default=["duckduckgo", "baidu", "bing"],
-        description="The fallback search engines to use."
+    fallback_tools: List[str] = Field(
+        default=["duckduckgo_search", "baidu_search", "bing_search"],
+        description="The fallback search tools to use."
     )
     max_length: int = Field(
         default=4096,
@@ -143,19 +138,23 @@ class WebSearcherTool(BaseTool):
         default=False,
         description="Whether to fetch content from the search results."
     )
-    search_engines: Dict[str, WebSearchEngine] = Field(default_factory=dict, description="The search engines to use.")
+    search_tools: Dict[str, BaseTool] = Field(default_factory=dict, description="The search engines to use.")
     content_fetcher: WebFetcherTool = Field(default_factory=WebFetcherTool, description="The content fetcher to use.")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
         # Initialize search engines and content fetcher
-        self.search_engines: Dict[str, WebSearchEngine] = {
-            "firecrawl": FirecrawlSearchEngine(),
+        self.search_tools: Dict[str, BaseTool] = {
+            "firecrawl_search": FirecrawlSearch(),
         }
         self.content_fetcher = WebFetcherTool()
 
-    async def _arun(self, query: str, filter_year: Optional[int] = None) -> ToolResponse:
+    async def _arun(self, query: str,
+                    num_results: Optional[int] = 5,
+                    lang: Optional[str] = "en",
+                    country: Optional[str] = "us",
+                    filter_year: Optional[int] = None) -> ToolResponse:
         """
         Execute a Web search and return detailed search results.
 
@@ -169,14 +168,14 @@ class WebSearcherTool(BaseTool):
         Returns:
             A structured response containing search results and metadata
         """
-        search_params = {"lang": self.lang, "country": self.country}
+        search_params = {"lang": lang, "country": country}
 
         if filter_year is not None:
             search_params["filter_year"] = filter_year
 
         # Try searching with retries when all engines fail
         for retry_count in range(self.max_retries + 1):
-            results = await self._try_all_engines(query, self.num_results, search_params)
+            results = await self._try_all_engines(query, num_results, search_params)
             if results:
                 # Fetch content if requested
                 if self.fetch_content:
@@ -188,7 +187,7 @@ class WebSearcherTool(BaseTool):
                     results=results,
                     metadata=SearchMetadata(
                         total_results=len(results),
-                        language=self.lang,
+                        language=lang,
                         country=self.country,
                     ),
                 )
@@ -199,54 +198,54 @@ class WebSearcherTool(BaseTool):
                         "status": "success",
                         "results": results,
                         "total_results": len(results),
-                        "language": self.lang,
-                        "country": self.country,
+                        "language": lang,
+                        "country": country,
                         "search_engines_used": [r.source for r in results]
                     }
                 )
 
             if retry_count < self.max_retries:
-                # All engines failed, wait and retry
-                res = f"All search engines failed. Waiting {self.retry_delay} seconds before retry {retry_count + 1}/{self.max_retries}..."
+                # All tools failed, wait and retry
+                res = f"All search tools failed. Waiting {self.retry_delay} seconds before retry {retry_count + 1}/{self.max_retries}..."
                 logger.warning(res)
                 time.sleep(self.retry_delay)
             else:
-                res = f"All search engines failed after {self.max_retries} retries. Giving up."
+                res = f"All search tools failed after {self.max_retries} retries. Giving up."
                 logger.error(res)
                 # Return an error response
                 return ToolResponse(
-                    content=f"Error: All search engines failed to return results after multiple retries.",
+                    content=f"Error: All search tools failed to return results after multiple retries.",
                     extra={
                         "query": query,
                         "status": "failed",
                         "results": [],
                         "total_results": 0,
-                        "language": self.lang,
-                        "country": self.country,
-                        "search_engines_used": [],
+                        "language": lang,
+                        "country": country,
+                        "search_tools_used": [],
                     }
                 )
 
     async def _try_all_engines(
         self, query: str, num_results: int, search_params: Dict[str, Any]
     ) -> List[SearchResult]:
-        """Try all search engines in the configured order."""
-        engine_order = self._get_engine_order()
-        failed_engines = []
+        """Try all search tools in the configured order."""
+        tool_order = self._get_tool_order()
+        failed_tools = []
 
-        for engine_name in engine_order:
-            engine = self.search_engines[engine_name]
-            logger.info(f"🔎 Attempting search with {engine_name.capitalize()}...")
-            search_items = await self._perform_search_with_engine(
-                engine, query, num_results, search_params
+        for tool_name in tool_order:
+            tool = self.search_tools[tool_name]
+            logger.info(f"🔎 Attempting search with {tool_name.capitalize()}...")
+            search_items = await self._perform_search_with_tool(
+                tool, query, num_results, search_params
             )
 
             if not search_items:
                 continue
 
-            if failed_engines:
+            if failed_tools:
                 logger.info(
-                    f"Search successful with {engine_name.capitalize()} after trying: {', '.join(failed_engines)}"
+                    f"Search successful with {tool_name.capitalize()} after trying: {', '.join(failed_tools)}"
                 )
 
             # Transform search items into structured results
@@ -257,13 +256,13 @@ class WebSearcherTool(BaseTool):
                     title=item.title
                     or f"Result {i+1}",  # Ensure we always have a title
                     description=item.description or "",
-                    source=engine_name,
+                    source=tool_name,
                 )
                 for i, item in enumerate(search_items)
             ]
 
-        if failed_engines:
-            logger.error(f"All search engines failed: {', '.join(failed_engines)}")
+        if failed_tools:
+            logger.error(f"All search tools failed: {', '.join(failed_tools)}")
         return []
 
     async def _fetch_content_for_results(
@@ -300,73 +299,60 @@ class WebSearcherTool(BaseTool):
                 result.raw_content = content
         return result
 
-    def _get_engine_order(self) -> List[str]:
+    def _get_tool_order(self) -> List[str]:
         """Determines the order in which to try search engines."""
         preferred = (
-            self.engine if self.engine else "firecrawl"
+            self.tool if self.tool else "firecrawl"
         )
-        fallbacks = [engine for engine in self.fallback_engines]
+        fallbacks = [tool for tool in self.fallback_tools]
 
         # Start with preferred engine, then fallbacks, then remaining engines
-        engine_order = [preferred] if preferred in self.search_engines else []
-        engine_order.extend(
+        tool_order = [preferred] if preferred in self.search_tools else []
+        tool_order.extend(
             [
                 fb
                 for fb in fallbacks
-                if fb in self.search_engines and fb not in engine_order
+                if fb in self.search_tools and fb not in tool_order
             ]
         )
-        engine_order.extend([e for e in self.search_engines if e not in engine_order])
+        tool_order.extend([t for t in self.search_tools if t not in tool_order])
 
-        return engine_order
+        return tool_order
 
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10)
     )
-    async def _perform_search_with_engine(
+    async def _perform_search_with_tool(
         self,
-        engine: WebSearchEngine,
+        tool: BaseTool,
         query: str,
         num_results: int,
         search_params: Dict[str, Any],
     ) -> List[SearchItem]:
-        """Execute search with the given engine and parameters."""
-
-        results = [result
-            for result in await engine.perform_search(
-                query,
-                num_results=num_results,
-                lang=search_params.get("lang"),
-                country=search_params.get("country"),
-                filter_year=search_params.get("filter_year"),
-            )
-        ]
+        """Execute search with the given tool and parameters."""
+        
+        results = await tool.ainvoke(
+            input={
+                "query": query,
+                "num_results": num_results,
+                "lang": search_params.get("lang"),
+                "country": search_params.get("country"),
+                "filter_year": search_params.get("filter_year"),
+            }
+        )
+        
+        results = results.extra["data"]
+        
         return results
     
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "engine": self.engine,
-            "max_length": self.max_length,
-            "retry_delay": self.retry_delay,
-            "max_retries": self.max_retries,
-            "lang": self.lang,
-            "country": self.country,
-            "num_results": self.num_results,
-            "fetch_content": self.fetch_content,
-            "type": "web_searcher"
-        }
-    
-    def _run(self, query: str, filter_year: Optional[int] = None) -> str:
+    def _run(self, query: str, num_results: Optional[int] = 5, lang: Optional[str] = "en", country: Optional[str] = "us", filter_year: Optional[int] = None) -> str:
         """Execute a Web search synchronously (fallback)."""
         try:
             # Run the async version in a new event loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(self._arun(query, filter_year))
+                return loop.run_until_complete(self._arun(query, num_results, lang, country, filter_year))
             finally:
                 loop.close()
         except Exception as e:
@@ -378,5 +364,6 @@ class WebSearcherTool(BaseTool):
         return {
             "name": self.name,
             "description": self.description,
+            "args_schema": self.args_schema,
             "type": "web_searcher"
         }

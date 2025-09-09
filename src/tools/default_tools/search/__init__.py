@@ -1,18 +1,18 @@
-from .baidu_search import BaiduSearchEngine
-from .bing_search import BingSearchEngine
-from .google_search import GoogleSearchEngine
-from .ddg_search import DuckDuckGoSearchEngine
-from .firecrawl_search import FirecrawlSearchEngine
-from .base import SearchItem, WebSearchEngine
-
+from .base import SearchItem
+from .baidu_search import BaiduSearch
+from .bing_search import BingSearch
+from .brave_search import BraveSearch
+from .ddgo_search import DuckDuckGoSearch
+from .firecrawl_search import FirecrawlSearch
+from .google_search import GoogleSearch
 
 
 __all__ = [
-    "BaiduSearchEngine",
-    "BingSearchEngine",
-    "GoogleSearchEngine",
-    "DuckDuckGoSearchEngine",
     "SearchItem",
-    "WebSearchEngine",
-    "FirecrawlSearchEngine"
+    "BaiduSearch",
+    "BingSearch",
+    "BraveSearch",
+    "DuckDuckGoSearch",
+    "FirecrawlSearch",
+    "GoogleSearch",
 ]

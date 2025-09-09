@@ -123,7 +123,7 @@ async def test_web_searcher_tool():
         
         print("\n📋 Web searcher tool result:")
         print("=" * 50)
-        print(result)
+        print(result.content)
         print("=" * 50)
         
         if result and "Error" not in str(result):
@@ -384,6 +384,34 @@ async def test_deep_analyzer_tool():
         import traceback
         traceback.print_exc()
         
+        
+async def test_search_tool():
+    """Test the brave search tool directly."""
+    
+    print("🧪 Testing brave search tool...")
+    
+    try:
+        # Get the brave search tool
+        from src.tools.default_tools.search.brave_search import BraveSearch
+        tool = BraveSearch()
+        print(f"Brave search tool: {tool}")
+        print(f"Brave search tool args schema: {tool.args_schema}")
+        result = await tool.ainvoke(input={"query": "OpenAI GPT-4"})
+        print(f"Result: {result.extra['data']}")
+        
+        # Get DuckDuckGo search tool
+        from src.tools.default_tools.search.ddgo_search import DuckDuckGoSearch
+        tool = DuckDuckGoSearch()
+        print(f"DuckDuckGo search tool: {tool}")
+        print(f"DuckDuckGo search tool args schema: {tool.args_schema}")
+        result = await tool.ainvoke(input={"query": "OpenAI GPT-4"})
+        print(f"Result: {result.extra['data']}")
+            
+    except Exception as e:
+        print(f"❌ Error testing search tool: {e}")
+        import traceback
+        traceback.print_exc()
+            
 async def main():
     args = parse_args()
     
@@ -403,7 +431,8 @@ async def main():
     # await test_deep_researcher_tool()
     # await test_todo_tool()
     # await test_mdify_tool()
-    await test_deep_analyzer_tool()
+    # await test_deep_analyzer_tool()
+    await test_search_tool()
     
 if __name__ == "__main__":
     asyncio.run(main())

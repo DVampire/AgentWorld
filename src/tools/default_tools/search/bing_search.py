@@ -1,9 +1,16 @@
-from typing import List, Optional, Tuple
-
+from __future__ import annotations
+from typing import Any, Optional, Dict, List, Tuple, Type
+import asyncio
+import json
 import requests
 from bs4 import BeautifulSoup
+from langchain_core.tools import BaseTool
+from pydantic import Field
+from dotenv import load_dotenv
+load_dotenv(verbose=True)
 
-from src.tools.default_tools.search.base import WebSearchEngine, SearchItem
+from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
+from src.tools.base import ToolResponse
 
 
 ABSTRACT_MAX_LENGTH = 300
@@ -34,7 +41,27 @@ BING_HOST_URL = "https://www.bing.com"
 BING_SEARCH_URL = "https://www.bing.com/search?q="
 
 
-class BingSearchEngine(WebSearchEngine):
+class BingSearch(BaseTool):
+    """Tool that queries the Bing search engine.
+
+    Example usages:
+    .. code-block:: python
+        # basic usage
+        tool = BingSearch()
+
+    .. code-block:: python
+        # with custom search kwargs
+        tool = BingSearch.from_search_kwargs({"num_results": 5})
+    """
+
+    name: str = "bing_search"
+    description: str = (
+        "a search engine. "
+        "useful for when you need to answer questions about current events."
+        " input should be a search query."
+    )
+    args_schema: Type[SearchToolArgs] = SearchToolArgs
+    search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     session: Optional[requests.Session] = None
 
     def __init__(self, **data):
@@ -43,7 +70,20 @@ class BingSearchEngine(WebSearchEngine):
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
-    def _search_sync(self, query: str, num_results: int = 10) -> List[SearchItem]:
+    @classmethod
+    def from_search_kwargs(cls, search_kwargs: dict, **kwargs: Any) -> BingSearch:
+        """Create a tool from search kwargs.
+
+        Args:
+            search_kwargs: Any additional kwargs to pass to the search function.
+            **kwargs: Any additional kwargs to pass to the tool.
+
+        Returns:
+            A tool.
+        """
+        return cls(search_kwargs=search_kwargs, **kwargs)
+
+    def _search_sync(self, query: str, num_results: int = 10, country: Optional[str] = "us", lang: Optional[str] = "en", filter_year: Optional[int] = None) -> List[SearchItem]:
         """
         Synchronous Bing search implementation to retrieve search results.
 
@@ -132,12 +172,50 @@ class BingSearchEngine(WebSearchEngine):
             print(f"Error parsing HTML: {e}")
             return [], None
 
-    async def perform_search(
-        self, query: str, num_results: int = 10, *args, **kwargs
-    ) -> List[SearchItem]:
-        """
-        Bing search engine.
+    async def _arun(
+        self,
+        query: str,
+        num_results: Optional[int] = 5,
+        country: Optional[str] = "us",
+        lang: Optional[str] = "en",
+        filter_year: Optional[int] = None,
+    ) -> ToolResponse:
+        """Use the tool asynchronously."""
+        
+        try:
+            # Perform search
+            search_items = self._search_sync(query, num_results=num_results, country=country, lang=lang, filter_year=filter_year)
+            
+            # Format results as JSON string
+            results_json = json.dumps([{
+                "title": item.title,
+                "url": item.url,
+                "description": item.description or ""
+            } for item in search_items], ensure_ascii=False, indent=2)
+            
+            return ToolResponse(content=results_json, extra={"data": search_items})
+            
+        except Exception as e:
+            return ToolResponse(content=f"Error in asynchronous execution: {str(e)}")
 
-        Returns results formatted according to SearchItem model.
-        """
-        return self._search_sync(query, num_results=num_results)
+    def _run(self, query: str, num_results: Optional[int] = 5, country: Optional[str] = "us", lang: Optional[str] = "en", filter_year: Optional[int] = None) -> ToolResponse:
+        """Convert a file to markdown synchronously (fallback)."""
+        try:
+            # Run the async version in a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(self._arun(query, num_results, country, lang, filter_year))
+            finally:
+                loop.close()
+        except Exception as e:
+            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
+    
+    def get_tool_config(self) -> Dict[str, Any]:
+        """Get tool configuration."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "args_schema": self.args_schema,
+            "type": "bing_search"
+        }
