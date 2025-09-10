@@ -4,7 +4,7 @@ from langchain.tools import BaseTool
 from langchain.tools import StructuredTool
 
 from src.config import config
-from src.environments import ecp
+from src.environments.protocol import ecp
 from src.tools.base import ToolResponse
 
 class EnvironmentToolSet:

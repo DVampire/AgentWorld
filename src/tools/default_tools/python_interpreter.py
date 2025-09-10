@@ -13,7 +13,7 @@ from src.tools.default_tools.executor import LocalPythonExecutor, BASE_BUILTIN_M
 _PYTHON_INTERPRETER_TOOL_DESCRIPTION = """It is a tool that can execute python code.
 
 Input format: JSON string with 'code' parameter.
-Example: {"code": "print('Hello, world!')"}
+Example: {"name": "python_interpreter", "args": {"code": "print('Hello, world!')"}}
 """
 
 class PythonInterpreterArgs(BaseModel):

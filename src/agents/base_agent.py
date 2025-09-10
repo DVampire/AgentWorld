@@ -2,7 +2,7 @@
 
 from abc import ABC
 import pandas as pd
-import json
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 from langchain.tools import BaseTool
@@ -19,7 +19,7 @@ from src.prompts import PromptManager
 from src.logger import logger
 from src.memory import MemoryManager, SessionInfo, EventType
 from src.config import config
-from src.environments import ecp
+from src.environments.protocol import ecp
 
 class Action(BaseModel):
     """Action."""
@@ -239,7 +239,7 @@ class BaseAgent(ABC):
         """Get the todo contents."""
         todo_tool = tool_manager.get_tool("todo")
         todo_contents = todo_tool.get_todo_content()
-        return todo_contents
+        return todo_contents   
     
     async def _get_agent_state(self, task: str) -> Dict[str, Any]:
         """Get the agent state."""
@@ -247,10 +247,8 @@ class BaseAgent(ABC):
         time_str = datetime.now().isoformat()
         step_info_description += f'Current date and time: {time_str}'
         
-        available_actions_description = [
-            convert_to_openai_function(tool) for tool in self.tools
-        ]
-        available_actions_description = json.dumps(available_actions_description)
+        available_actions_description = await asyncio.gather(*[self.tool_manager.convert_tool_to_string(tool) for tool in self.tools])
+        available_actions_description = "\n".join(available_actions_description)
         
         todo_contents = await self._get_todo_contents()
         

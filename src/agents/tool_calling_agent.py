@@ -13,7 +13,7 @@ from src.agents.base_agent import BaseAgent, ThinkOutput
 from src.registry import AGENTS
 from src.logger import logger
 from src.memory import MemoryManager
-from src.environments import ecp
+from src.environments.protocol import ecp
 from src.utils import get_file_info
 from src.tools import tool_manager
 

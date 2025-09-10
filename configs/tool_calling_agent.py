@@ -11,6 +11,9 @@ use_local_proxy = False
 version = "0.1.0"
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
+env_names = [
+    "file_system"
+]
 file_system_environment.update(dict(
     base_dir=workdir,
 ))
@@ -49,7 +52,5 @@ agent = dict(
         "change_permissions",
     ],
     max_steps = 10,
-    env_names = [
-        "file_system"
-    ]
+    env_names = env_names
 )

@@ -9,10 +9,17 @@ from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-_FILE_SYSTEM_ENVIRONMENT_RULES = """
-You are a file system environment that can perform file system actions.
-When using this tool, only provide parameters that are relevant to the specific action you are performing. Do not include unnecessary parameters.
+_FILE_SYSTEM_ENVIRONMENT_RULES = """<environment_file_system>
 
+<state>
+The file system description will be provided as a string.
+</state>
+
+<vision>
+No vision available.
+</vision>
+
+<interaction>
 Available actions:
 1. read: Read a file from the file system.
     - file_path: The absolute path of the file to read.
@@ -65,9 +72,10 @@ Available actions:
     - file_path: The absolute path of the file or directory.
     - permissions: The new permissions in octal format (e.g., '755', '644').
 
-Input format: JSON string with 'env_name', 'action_name' and action-specific parameters.
-Example: {"env_name": "file_system", "action_name": "read", "file_path": "/path/to/file.txt"}
-"""
+Input format: JSON string with action-specific parameters.
+Example: {"name": "read", "args": {"file_path": "/path/to/file.txt"}}
+</interaction>
+</environment_file_system>"""
 
 @ecp.environment(name = "file_system",
                  env_type = "file_system",

@@ -115,6 +115,25 @@ class ToolManager(metaclass=Singleton):
                 config = self._environment_tool_set.get_tool_config(tool)
                 if config:
                     self._tool_configs[tool] = config
+                    
+    async def convert_tool_to_string(self, tool: BaseTool) -> str:
+        """Convert a tool to a string in documentation format."""
+        res = f"{tool.name}: {tool.description}"
+        
+        # Add parameter descriptions
+        if hasattr(tool, 'args_schema') and tool.args_schema:
+            for param_name, field_info in tool.args_schema.model_fields.items():
+                param_type = field_info.annotation.__name__ if hasattr(field_info.annotation, '__name__') else "str"
+                param_desc = field_info.description or f"Parameter {param_name}"
+                
+                # Add optional indicator
+                optional_indicator = "(optional)" if field_info.default is None else ""
+                if optional_indicator:
+                    param_desc = f"{optional_indicator} {param_desc}"
+                
+                res += f"\n    - {param_name} ({param_type}): {param_desc}"
+        
+        return res
     
     def get_tool(self, name: str) -> Optional[BaseTool]:
         """Get a specific tool by name."""
@@ -128,7 +147,7 @@ class ToolManager(metaclass=Singleton):
             raise RuntimeError("Tool manager not initialized. Call initialize() first.")
         return list(self._all_tools.keys())
     
-    def list_tool_args_schemas(self) -> Dict[str, Any]:
+    def list_tool_args_schemas(self) -> List[Any]:
         """List all available tool argument schemas."""
         if not self._initialized:
             raise RuntimeError("Tool manager not initialized. Call initialize() first.")
@@ -230,13 +249,13 @@ class ToolManager(metaclass=Singleton):
             kwargs = tool_call.get("kwargs", {})
             
             if name:
-                task = self.execute_tool(name, *args, **kwargs)
+                task = await self.execute_tool(name, *args, **kwargs)
                 tasks.append((name, task))
         
         # Execute all tools concurrently
         for name, task in tasks:
             try:
-                result = await task
+                result = task
                 results.append({
                     "name": name,
                     "success": True,
@@ -250,14 +269,6 @@ class ToolManager(metaclass=Singleton):
                 })
         
         return results
-    
-    def get_default_tool_set(self) -> Optional[DefaultToolSet]:
-        """Get the default tool set."""
-        return self._default_tool_set
-    
-    def get_mcp_tool_set(self) -> Optional[MCPToolSet]:
-        """Get the MCP tool set."""
-        return self._mcp_tool_set
     
     def is_initialized(self) -> bool:
         """Check if the tool manager is initialized."""

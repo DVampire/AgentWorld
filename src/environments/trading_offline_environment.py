@@ -12,21 +12,50 @@ from src.utils import TradingRecords, truncate_content
 from src.utils import get_token_count
 from src.utils import get_start_end_timestamp
 from src.utils import extract_boxed_content
-from src.environments import ecp
+from src.environments.protocol import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-_TRADING_OFFLINE_ENVIRONMENT_RULES = """
-You are a trading offline environment that can perform trading actions.
-When using this tool, only provide parameters that are relevant to the specific action you are performing. Do not include unnecessary parameters.
+_TRADING_OFFLINE_ENVIRONMENT_RULES = """<environment_trading_offline>
 
+<state>
+The environment state includes:
+1. Name: Asset name, Symbol: Asset symbol
+2. Price: Price information of the asset
+3. News: News information of the asset
+4. Record: Trading record of the asset
+5. History Valid Action: Valid action of the asset
+6. Current State: Current price, cash, and position.
+
+Trading record fields:
+1. `timestamp`: the timestamp of the record
+2. `close`: Close price
+3. `high`: High price
+4. `low`: Low price
+5. `open`: Open price
+6. `volume`: Volume of the asset traded
+7. `price`: Current price (adj_close price)
+8. `cash`: Current cash
+9. `position`: Current position
+10. `pre_value`: Previous total value, `value = cash + position * price`
+11. `action`: Action taken, `BUY`, `SELL`, or `HOLD`
+12. `post_value`: Current total value
+13. `ret`: Return, `ret = (post_value - pre_value) / pre_value`
+</state>
+
+<vision>
+No vision available.
+</vision>
+
+<interaction>
 Available actions:
 1. step: Step the trading environment.
     - action: The action to take. Should be `BUY` or `SELL` or `HOLD`.
+    
+Input format: JSON string with action-specific parameters.
+Example: {"name": "step", "args": {"action": "BUY"}}
+</interaction>
 
-Input format: JSON string with 'env_name', 'action_name' and action-specific parameters.
-Example: {"env_name": "trading_offline", "action_name": "step", "action": "BUY"}
-"""
-
+</environment_trading_offline>"""
 
 @dataclass
 class Record():
@@ -314,7 +343,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
 
         return close, high, low, open, volume
 
-    def get_state(self, timestamp_index: int):
+    def get_state_data(self, timestamp_index: int):
         timestamp_info = self.timestamp_info[timestamp_index]
 
         start_timestamp = timestamp_info['start_timestamp']
@@ -558,7 +587,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
         self._init_record()
 
         # after init record, get the state
-        self.state = self.get_state(timestamp_index=self.timestamp_index)
+        self.state = self.get_state_data(timestamp_index=self.timestamp_index)
 
         info = dict(
             timestamp=self.timestamp_string,
@@ -667,7 +696,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
         self._add_record(self.last_record)
 
         # after update record, get the state
-        self.state = self.get_state(timestamp_index=self.timestamp_index)
+        self.state = self.get_state_data(timestamp_index=self.timestamp_index)
 
         info = dict(
             timestamp=self.timestamp_string,

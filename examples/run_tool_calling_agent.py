@@ -49,19 +49,20 @@ async def main():
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
-    ecp.build_environment("file_system", env_config=config.file_system_environment)
-    logger.info(f"| ✅ Environments initialized: {ecp.get_registered_environments()}")
+    for env_name in config.env_names:
+        ecp.build_environment(env_name, env_config=config.get(f"{env_name}_environment"))
+        logger.info(f"| ✅ Environments initialized: {ecp.get_environment_info(env_name)}")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
-    await tool_manager.init_tools(env_names=["file_system"])
+    await tool_manager.init_tools(env_names=config.env_names)
     logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
     
     # Build agent
     logger.info("| 🎮 Building agent...")
     agent_config = config.agent
     agent_config.update(dict(
-        env_names=["file_system"]
+        env_names=config.env_names
     ))
     agent = AGENTS.build(agent_config)
     logger.info(f"| ✅ Agent built: {agent}")

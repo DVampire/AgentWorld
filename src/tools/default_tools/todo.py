@@ -51,7 +51,7 @@ Available operations:
     - export_path: The target path to export the todo.md file.
 
 Input format: JSON string with 'action' and action-specific parameters.
-Example: {"action": "add", "task": "Task description", "priority": "high", "category": "work"}
+Example: {"name": "todo", "args": {"action": "add", "task": "Task description", "priority": "high", "category": "work"}}
 
 The todo.md file is maintained in the current working directory and follows a structured format for task management.
 """
@@ -466,7 +466,7 @@ class TodoTool(BaseTool):
             todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
         return todo_contents
     
-    def export_todo_file(self, export_path: str):
+    async def export_todo_file(self, export_path: str):
         """Export todo.md file to a specified path."""
         if not export_path:
             return

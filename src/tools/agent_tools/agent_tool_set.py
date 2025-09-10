@@ -22,25 +22,28 @@ class AgentToolSet:
     async def _load_agent_tools(self):
         """Load all agent tools asynchronously."""
         # Load browser tool
-        browser_tool = BrowserTool(
-            model_name=config.browser_tool.model_name,
-        )
-        self._tools["browser"] = browser_tool
-        self._tool_configs["browser"] = browser_tool.get_tool_config()
+        if hasattr(config, 'browser_tool'):
+            browser_tool = BrowserTool(
+                model_name=config.browser_tool.model_name,
+            )
+            self._tools["browser"] = browser_tool
+            self._tool_configs["browser"] = browser_tool.get_tool_config()
         
         # Load deep researcher tool
-        deep_researcher_tool = DeepResearcherTool(
-            model_name=config.deep_researcher_tool.model_name,
-        )
-        self._tools["deep_researcher"] = deep_researcher_tool
-        self._tool_configs["deep_researcher"] = deep_researcher_tool.get_tool_config()
+        if hasattr(config, 'deep_researcher_tool'):
+            deep_researcher_tool = DeepResearcherTool(
+                model_name=config.deep_researcher_tool.model_name,
+            )
+            self._tools["deep_researcher"] = deep_researcher_tool
+            self._tool_configs["deep_researcher"] = deep_researcher_tool.get_tool_config()
         
         # Load deep analyzer tool
-        deep_analyzer_tool = DeepAnalyzerTool(
-            model_name=config.deep_analyzer_tool.model_name if hasattr(config, 'deep_analyzer_tool') else "o3",
-        )
-        self._tools["deep_analyzer"] = deep_analyzer_tool
-        self._tool_configs["deep_analyzer"] = deep_analyzer_tool.get_tool_config()
+        if hasattr(config, 'deep_analyzer_tool'):
+            deep_analyzer_tool = DeepAnalyzerTool(
+                model_name=config.deep_analyzer_tool.model_name if hasattr(config, 'deep_analyzer_tool') else "o3",
+            )
+            self._tools["deep_analyzer"] = deep_analyzer_tool
+            self._tool_configs["deep_analyzer"] = deep_analyzer_tool.get_tool_config()
 
     def list_tools(self) -> List[str]:
         """Get all agent tools."""

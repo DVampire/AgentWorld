@@ -16,11 +16,10 @@ sys.path.append(root)
 from src.config import config
 from src.logger import logger
 from src.registry import AGENTS
-from src.registry import CONTROLLERS
-from src.registry import ENVIRONMENTS
 from src.registry import DATASETS
 from src.models import model_manager
 from src.tools import tool_manager
+from src.environments import ecp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='FinAgent Example')
@@ -53,26 +52,20 @@ async def main():
     logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
     
     # Initialize controllers
-    logger.info("| 🎮 Initializing controllers...")
-    controllers = []
-    dataset_config = config.dataset
-    dataset = DATASETS.build(dataset_config)
-    environment_config = config.environment
-    environment_config.update(dict(
-        dataset=dataset
+    logger.info("| 🎮 Initializing environments...")
+    trading_offline_dataset = config.trading_offline_dataset
+    trading_offline_dataset = DATASETS.build(trading_offline_dataset)
+    trading_offline_environment = config.trading_offline_environment
+    trading_offline_environment.update(dict(
+        dataset=trading_offline_dataset
     ))
-    environment = ENVIRONMENTS.build(environment_config)
-    controller_config = config.controller
-    controller_config.update(dict(
-        environment=environment
-    ))
-    controller = CONTROLLERS.build(controller_config)
-    controllers.append(controller)
-    logger.info(f"| ✅ Controllers initialized: {controllers}")
+    for env_name in config.env_names:
+        ecp.build_environment(env_name, env_config=config.get(f"{env_name}_environment"))
+        logger.info(f"| ✅ Environments initialized: {ecp.get_environment_info(env_name)}")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
-    await tool_manager.init_tools(controllers)
+    await tool_manager.init_tools(env_names=config.env_names)
     logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
 
 if __name__ == "__main__":

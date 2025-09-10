@@ -420,9 +420,9 @@ async def test_file_system_tool():
     
     try:
         # Get the file system tool
-        read_tool = tool_manager.get_tool("read")
-        print(f"File system tool: {read_tool}")
-        print(f"File system tool args schema: {read_tool.args_schema}")
+        read_tool = await tool_manager.get_tool("read")
+        read_tool_string = await tool_manager.convert_tool_to_string(read_tool)
+        print(f"File system tool: \n{read_tool_string}")
         result = await read_tool.ainvoke(input={"file_path": assemble_project_path("tests/files/test.txt")})
         print(f"Result: {result.content}")
         
