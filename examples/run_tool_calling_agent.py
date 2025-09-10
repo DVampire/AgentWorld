@@ -16,7 +16,6 @@ from src.logger import logger
 from src.registry import AGENTS
 from src.models import model_manager
 from src.tools import tool_manager
-from src.utils import assemble_project_path
 from src.environments import ecp
 
 def parse_args():
@@ -73,7 +72,7 @@ async def main():
     # task = "请找到图片中所有Pokemon的编号，并返回一个列表。"
     # files = [assemble_project_path("tests/files/pokemon.jpg")]
     
-    task = "帮我生成一个简单的python脚本，实现一个简单的web server，使用flask框架，监听8080端口，返回一个简单的html页面。"
+    task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
     files = []
     
     logger.info(f"| 📋 Task: {task}")

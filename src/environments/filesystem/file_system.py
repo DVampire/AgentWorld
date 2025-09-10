@@ -48,7 +48,9 @@ class FileSystem:
 		try:
 			rel_path = abs_path.relative_to(self.base_dir.resolve())
 		except ValueError:
-			raise PathTraversalError(f"Path is outside base directory: {file_path}")
+			# For absolute paths outside base_dir, use the absolute path itself
+			# This allows access to any location when using absolute paths
+			rel_path = abs_path
 		
 		return abs_path, rel_path
 

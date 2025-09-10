@@ -61,8 +61,6 @@ class ToolCallingAgent(BaseAgent):
         
         try:
             think_output = await structured_llm.ainvoke(messages)
-            print(think_output)
-            exit()
             
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal

@@ -5,6 +5,7 @@ from langchain.tools import StructuredTool
 
 from src.config import config
 from src.environments import ecp
+from src.tools.base import ToolResponse
 
 class EnvironmentToolSet:
     """Environment tool set containing environment tools."""
@@ -27,11 +28,23 @@ class EnvironmentToolSet:
             actions_info = ecp.get_actions(env_name)
             for action_name, action_info in actions_info.items():
                 
+                async def create_wrapper(action_info, env_name):
+                    async def wrapper(**kwargs)->ToolResponse:
+                        try:
+                            env_instance = ecp.get_environment_info(env_name).env_instance
+                            res = await action_info.function(env_instance, **kwargs)
+                            return ToolResponse(content=res)
+                        except Exception as e:
+                            return ToolResponse(content=f"Error in {action_name}: {e}")
+                    return wrapper
+                
+                wrapper_func = await create_wrapper(action_info, env_name)
+                
                 tool = StructuredTool.from_function(
                     name=action_name,
                     description=action_info.description,
-                    func=action_info.function,
-                    coroutine=action_info.function,
+                    func=wrapper_func,
+                    coroutine=wrapper_func,
                     args_schema=action_info.args_schema
                 )
                 

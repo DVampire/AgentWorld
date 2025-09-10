@@ -26,18 +26,22 @@ class PathPolicy:
         try:
             return absolute.relative_to(self._base_dir)
         except ValueError as exc:
-            raise PathTraversalError(
-                f"Path '{absolute}' is outside of base_dir '{self._base_dir}'"
-            ) from exc
+            # For absolute paths outside base_dir, return the absolute path itself
+            # This allows access to any location when using absolute paths
+            return absolute
 
     def resolve_relative(self, relative: str | Path) -> Path:
         if isinstance(relative, str):
             relative = Path(relative)
+        
+        # If absolute path, allow access to any location
         if relative.is_absolute():
-            raise InvalidPathError("Expected relative path under base_dir, got absolute path")
+            return relative.resolve()
+        
+        # For relative paths, resolve within base_dir
         absolute = (self._base_dir / relative).resolve()
         if not str(absolute).startswith(str(self._base_dir)):
-            # Robust check against traversal
+            # Robust check against traversal for relative paths
             raise PathTraversalError(
                 f"Resolved path '{absolute}' escapes base_dir '{self._base_dir}'"
             )

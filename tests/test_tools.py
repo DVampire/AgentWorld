@@ -17,6 +17,7 @@ from src.logger import logger
 from src.models import model_manager
 from src.tools import tool_manager
 from src.utils import assemble_project_path
+from src.environments import ecp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -411,6 +412,24 @@ async def test_search_tool():
         print(f"❌ Error testing search tool: {e}")
         import traceback
         traceback.print_exc()
+        
+async def test_file_system_tool():
+    """Test the file system tool directly."""
+    
+    print("🧪 Testing file system tool...")
+    
+    try:
+        # Get the file system tool
+        read_tool = tool_manager.get_tool("read")
+        print(f"File system tool: {read_tool}")
+        print(f"File system tool args schema: {read_tool.args_schema}")
+        result = await read_tool.ainvoke(input={"file_path": assemble_project_path("tests/files/test.txt")})
+        print(f"Result: {result.content}")
+        
+    except Exception as e:
+        print(f"❌ Error testing file system tool: {e}")
+        import traceback
+        traceback.print_exc()
             
 async def main():
     args = parse_args()
@@ -419,20 +438,30 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
+    # Initialize model manager
+    logger.info("| 🧠 Initializing model manager...")
     await model_manager.init_models(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| Models: {model_manager.list_models()}")
+    logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
     
-    await tool_manager.init_tools()
-    logger.info(f"| Tools: {tool_manager.list_tools()}")
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    ecp.build_environment("file_system", env_config=config.file_system_environment)
+    logger.info(f"| ✅ Environments initialized: {ecp.get_registered_environments()}")
+    
+    # Initialize tool manager
+    logger.info("| 🛠️ Initializing tool manager...")
+    await tool_manager.init_tools(env_names=["file_system"])
+    logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
     
     # await test_browser_tool()
     # await test_web_fetcher_tool()
     # await test_web_searcher_tool()
     # await test_deep_researcher_tool()
-    await test_todo_tool()
+    # await test_todo_tool()
     # await test_mdify_tool()
     # await test_deep_analyzer_tool()
     # await test_search_tool()
+    await test_file_system_tool()
     
 if __name__ == "__main__":
     asyncio.run(main())

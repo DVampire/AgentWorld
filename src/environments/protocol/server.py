@@ -56,26 +56,12 @@ class ECPServer:
                     # Set the environment name for this action
                     attr._env_name = env_name
                     
-                    # Set env_name as the default value for the env_name field
-                    args_schema = getattr(attr, '_args_schema')
-                    # Create a new model with updated env_name default
-                    fields = {}
-                    for field_name, field_info in args_schema.model_fields.items():
-                        if field_name == 'env_name':
-                            fields[field_name] = (field_info.annotation, Field(default=env_name, description=field_info.description))
-                        else:
-                            fields[field_name] = (field_info.annotation, field_info)
-                    
-                    # Recreate the model with the correct default
-                    new_args_schema = create_model(args_schema.__name__, **fields)
-                    attr._args_schema = new_args_schema
-                    
                     # Create ActionInfo from the decorated method
                     action_info = ActionInfo(
                         env_name=env_name,
                         name=getattr(attr, '_action_name'),
                         description=getattr(attr, '_action_description', ''),
-                        args_schema=new_args_schema,
+                        args_schema=getattr(attr, '_args_schema', None),
                         function=getattr(attr, '_action_function', None),
                         metadata=getattr(attr, '_metadata', None)
                     )
@@ -155,8 +141,6 @@ class ECPServer:
         
         # Parse parameters for args schema
         fields = {}
-        fields["env_name"] = (str, Field(default=None, description="The environment name"))
-        fields["action_name"] = (str, Field(default=action_name, description="The action name to execute"))
         for param_name, param in sig.parameters.items():
             if param_name == 'self':
                 continue
