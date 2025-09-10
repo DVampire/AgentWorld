@@ -1,0 +1,55 @@
+"""GitHub service package for AgentWorld environments."""
+
+from .service import GitHubService
+from .types import (
+    GitHubRepository,
+    GitHubIssue,
+    GitHubPullRequest,
+    GitHubCommit,
+    GitHubBranch,
+    GitHubUser,
+    GitHubOrganization,
+    GitHubSearchResult,
+    GitHubFile,
+    GitHubDirectory,
+    GitHubContent,
+    GitHubRequest,
+    GitHubResponse,
+    GitHubAuth,
+    GitHubConfig,
+)
+from .exceptions import (
+    GitHubError,
+    AuthenticationError,
+    RateLimitError,
+    NotFoundError,
+    ConflictError,
+    ValidationError,
+    APIError,
+)
+
+__all__ = [
+    "GitHubService",
+    "GitHubRepository",
+    "GitHubIssue", 
+    "GitHubPullRequest",
+    "GitHubCommit",
+    "GitHubBranch",
+    "GitHubUser",
+    "GitHubOrganization",
+    "GitHubSearchResult",
+    "GitHubFile",
+    "GitHubDirectory",
+    "GitHubContent",
+    "GitHubRequest",
+    "GitHubResponse",
+    "GitHubAuth",
+    "GitHubConfig",
+    "GitHubError",
+    "AuthenticationError",
+    "RateLimitError",
+    "NotFoundError",
+    "ConflictError",
+    "ValidationError",
+    "APIError",
+]

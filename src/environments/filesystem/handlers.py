@@ -9,7 +9,7 @@ from typing import Optional, Protocol, Union, List, Dict, Any
 import markitdown
 from markitdown import MarkItDown
 
-from src.filesystem.types import FileReadRequest, FileReadResult
+from src.environments.filesystem.types import FileReadRequest, FileReadResult
 
 
 class ContentHandler(Protocol):

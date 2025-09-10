@@ -6,20 +6,20 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Optional, Union
 
-from src.filesystem.cache import LRUByteCache
-from src.filesystem.exceptions import (
+from src.environments.filesystem.cache import LRUByteCache
+from src.environments.filesystem.exceptions import (
     ConflictError,
     InvalidArgumentError,
     NotFoundError,
 )
-from src.filesystem.handlers import (
+from src.environments.filesystem.handlers import (
     BinaryHandler, CsvHandler, DocxHandler, HandlerRegistry, JsonHandler, 
     MarkdownHandler, PdfHandler, PythonHandler, TextHandler, XlsxHandler
 )
-from src.filesystem.lock_manager import AsyncLockManager
-from src.filesystem.path_policy import PathPolicy
-from src.filesystem.storage import LocalAsyncStorage, StorageBackend
-from src.filesystem.types import FileReadRequest, FileReadResult, SearchMatch, SearchResult
+from src.environments.filesystem.lock_manager import AsyncLockManager
+from src.environments.filesystem.path_policy import PathPolicy
+from src.environments.filesystem.storage import LocalAsyncStorage, StorageBackend
+from src.environments.filesystem.types import FileReadRequest, FileReadResult, SearchMatch, SearchResult
 
 
 class FileSystemService:

@@ -19,7 +19,7 @@ from src.prompts import PromptManager
 from src.logger import logger
 from src.memory import MemoryManager, SessionInfo, EventType
 from src.config import config
-from src.controller import BaseController
+from src.environments import ecp
 
 class Action(BaseModel):
     """Action."""
@@ -92,7 +92,7 @@ class BaseAgent(ABC):
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
         memory_manager: Optional[MemoryManager] = None,
-        controllers: Optional[List[BaseController]] = None,
+        env_names: Optional[List[str]] = None,
         max_steps: int = 20,
         review_steps: int = 5,
         **kwargs
@@ -108,7 +108,7 @@ class BaseAgent(ABC):
         self.tool_manager = tool_manager
         self.prompt_manager = PromptManager(prompt_name=prompt_name)
         self.memory_manager = memory_manager or MemoryManager()
-        self.controllers = controllers or []
+        self.env_names = env_names or []
         
         # Setup model
         self.model = self._setup_model(model_name, model)
@@ -264,8 +264,8 @@ class BaseAgent(ABC):
     async def _get_environment_state(self) -> Dict[str, Any]:
         """Get the environment state."""
         environment_state = ""
-        for controller in self.controllers:
-            environment_state += f"{await controller.get_state()}\n"
+        for env_name in self.env_names:
+            environment_state += f"{await ecp.get_state(env_name)}\n"
         return {
             "environment_state": environment_state,
         }
@@ -274,8 +274,8 @@ class BaseAgent(ABC):
         
         system_input_variables = {}
         environment_rules = ""
-        for controller in self.controllers:
-            environment_rules += f"{controller.environment_rules}\n"
+        for env_name in self.env_names:
+            environment_rules += f"{ecp.get_environment_info(env_name).rules}\n"
         system_input_variables.update(dict(
             environment_rules=environment_rules,
         ))

@@ -13,7 +13,7 @@ from src.agents.base_agent import BaseAgent, ThinkOutput
 from src.registry import AGENTS
 from src.logger import logger
 from src.memory import MemoryManager
-from src.controller import BaseController
+from src.environments import ecp
 from src.utils import get_file_info
 from src.tools import tool_manager
 
@@ -29,7 +29,7 @@ class ToolCallingAgent(BaseAgent):
         prompt_name: Optional[str] = None,
         tools: Optional[List[Union[str, BaseTool]]] = None,
         memory_manager: Optional[MemoryManager] = None,
-        controllers: Optional[List[BaseController]] = None,
+        env_names: Optional[List[str]] = None,
         **kwargs
     ):
         # Set default prompt name for tool calling
@@ -43,11 +43,12 @@ class ToolCallingAgent(BaseAgent):
             prompt_name=prompt_name,
             tools=tools,
             memory_manager=memory_manager,
-            controllers=controllers,
+            env_names=env_names,
             **kwargs)
         
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
         """Think and action for one step."""
+        
         # Get structured output for thinking
         structured_llm = self.no_fc_model.with_structured_output(
             ThinkOutput,
@@ -60,6 +61,8 @@ class ToolCallingAgent(BaseAgent):
         
         try:
             think_output = await structured_llm.ainvoke(messages)
+            print(think_output)
+            exit()
             
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal

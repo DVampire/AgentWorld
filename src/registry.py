@@ -8,7 +8,3 @@ SCALER = Registry("scaler", locations=["src.datasets"])
 DATASETS = Registry("datasets", locations=["src.datasets"])
 
 METRIC = Registry("metric", locations=["src.metric"])
-
-ENVIRONMENTS = Registry("environments", locations=["src.environments"])
-
-CONTROLLERS = Registry("controllers", locations=["src.controller"])

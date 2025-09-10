@@ -8,13 +8,25 @@ import gymnasium as gym
 import numpy as np
 import pandas as pd
 
-from src.registry import DATASETS, ENVIRONMENTS
 from src.utils import TradingRecords, truncate_content
 from src.utils import get_token_count
 from src.utils import get_start_end_timestamp
 from src.utils import extract_boxed_content
+from src.environments import ecp
+from src.environments.protocol.environment import BaseEnvironment
 
-__all__ = ['TradingOfflineEnvironment']
+_TRADING_OFFLINE_ENVIRONMENT_RULES = """
+You are a trading offline environment that can perform trading actions.
+When using this tool, only provide parameters that are relevant to the specific action you are performing. Do not include unnecessary parameters.
+
+Available actions:
+1. step: Step the trading environment.
+    - action: The action to take. Should be `BUY` or `SELL` or `HOLD`.
+
+Input format: JSON string with 'env_name', 'action_name' and action-specific parameters.
+Example: {"env_name": "trading_offline", "action_name": "step", "action": "BUY"}
+"""
+
 
 @dataclass
 class Record():
@@ -88,9 +100,11 @@ def convert_dataframe_to_markdown(
 
     return res_strings
 
-
-@ENVIRONMENTS.register_module(force=True)
-class TradingOfflineEnvironment(gym.Env):
+@ecp.environment(name = "trading_offline",
+                 env_type = "trading_offline",
+                 description = "Trading offline environment for trading",
+                 rules = _TRADING_OFFLINE_ENVIRONMENT_RULES)
+class TradingOfflineEnvironment(BaseEnvironment):
     def __init__(
         self,
         *args,
@@ -164,9 +178,7 @@ class TradingOfflineEnvironment(gym.Env):
         self.record_df = pd.DataFrame() # record the trading history
         self.valid_action_df = pd.DataFrame() # record the valid action
         
-        self.state = None
-        self.info = None
-        self.done = None
+        self.state, self.info = self.reset()
 
     def _filter_news(self, df: pd.DataFrame, text_name: str):
         assert text_name in df.columns, f"news_df must have {text_name} column"
@@ -677,3 +689,20 @@ class TradingOfflineEnvironment(gym.Env):
         self.pre_value = self.value
 
         return self.state, reward, self.done, self.truncted, info
+    
+    @ecp.action(name = "step",
+                description = "Step the trading environment.")
+    async def _step(self, action: str) -> str:
+        """Step the trading environment.
+        
+        Args:
+            action (str): The action to take. Should be `BUY` or `SELL` or `HOLD`.
+
+        Returns:
+            str: The state of the trading environment.
+        """
+        state, reward, done, truncted, info = self.step(action)
+        return state['prompt']
+    
+    async def get_state(self) -> str:
+        return self.state['prompt']

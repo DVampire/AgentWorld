@@ -1,7 +1,7 @@
 from mmengine.config import read_base
 with read_base():
     from .base import browser_tool, deep_researcher_tool
-    from .environments.file_system import environment as file_system_environment, controller as file_system_controller
+    from .environments.file_system import environment as file_system_environment
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
@@ -13,9 +13,6 @@ version = "0.1.0"
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
 file_system_environment.update(dict(
     base_dir=workdir,
-))
-file_system_controller.update(dict(
-    environment=file_system_environment,
 ))
 
 #-----------------AGENT CONFIG-----------------------------------
@@ -34,13 +31,25 @@ agent = dict(
         "web_searcher",
         "deep_researcher",
         "deep_analyzer",
+        "todo",
         
         # file system tools
-        "file_operations",
-        "directory_operations",
-        "search_operations",
-        "permission_operations",
+        # "read",
+        # "write",
+        # "replace",
+        # "delete",
+        # "copy",
+        # "rename",
+        # "get_info",
+        # "create_dir",
+        # "delete_dir",
+        # "tree",
+        # "describe",
+        # "search",
+        # "change_permissions",
     ],
     max_steps = 10,
-    controllers = None,
+    env_names = [
+        "file_system"
+    ]
 )

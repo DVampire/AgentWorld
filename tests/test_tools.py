@@ -429,10 +429,10 @@ async def main():
     # await test_web_fetcher_tool()
     # await test_web_searcher_tool()
     # await test_deep_researcher_tool()
-    # await test_todo_tool()
+    await test_todo_tool()
     # await test_mdify_tool()
     # await test_deep_analyzer_tool()
-    await test_search_tool()
+    # await test_search_tool()
     
 if __name__ == "__main__":
     asyncio.run(main())

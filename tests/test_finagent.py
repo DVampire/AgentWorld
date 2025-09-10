@@ -15,6 +15,8 @@ from src.config import config
 from src.logger import logger
 from src.models import model_manager
 from src.tools import tool_manager
+from src.environments import ecp
+from src.utils import assemble_project_path
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')

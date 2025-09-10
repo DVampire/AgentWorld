@@ -14,10 +14,10 @@ sys.path.append(root)
 from src.config import config
 from src.logger import logger
 from src.registry import AGENTS
-from src.registry import CONTROLLERS
 from src.models import model_manager
 from src.tools import tool_manager
 from src.utils import assemble_project_path
+from src.environments import ecp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -48,24 +48,21 @@ async def main():
     await model_manager.init_models(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
     
-    # Initialize controllers
-    logger.info("| 🎮 Initializing controllers...")
-    controllers = []
-    file_system_controller_config = config.file_system_controller
-    file_system_controller = CONTROLLERS.build(file_system_controller_config)
-    controllers.append(file_system_controller)
-    logger.info(f"| ✅ Controllers initialized: {controllers}")
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    ecp.build_environment("file_system", env_config=config.file_system_environment)
+    logger.info(f"| ✅ Environments initialized: {ecp.get_registered_environments()}")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
-    await tool_manager.init_tools(controllers)
+    await tool_manager.init_tools(env_names=["file_system"])
     logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
     
     # Build agent
     logger.info("| 🎮 Building agent...")
     agent_config = config.agent
     agent_config.update(dict(
-        controllers=controllers
+        env_names=["file_system"]
     ))
     agent = AGENTS.build(agent_config)
     logger.info(f"| ✅ Agent built: {agent}")
@@ -73,8 +70,12 @@ async def main():
     """Test streaming execution mode."""
     logger.info("| 🚀 Testing streaming execution mode")
     
-    task = "请找到图片中所有Pokemon的编号，并返回一个列表。"
-    files = [assemble_project_path("tests/files/pokemon.jpg")]
+    # task = "请找到图片中所有Pokemon的编号，并返回一个列表。"
+    # files = [assemble_project_path("tests/files/pokemon.jpg")]
+    
+    task = "帮我生成一个简单的python脚本，实现一个简单的web server，使用flask框架，监听8080端口，返回一个简单的html页面。"
+    files = []
+    
     logger.info(f"| 📋 Task: {task}")
     logger.info(f"| 📂 Files: {files}")
     

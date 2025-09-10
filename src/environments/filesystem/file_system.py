@@ -4,9 +4,9 @@ import shutil
 from pathlib import Path
 from typing import Any, List, Optional, Dict, Union
 
-from src.filesystem.service import FileSystemService
-from src.filesystem.types import FileReadRequest
-from src.filesystem.exceptions import FileSystemError, InvalidPathError, PathTraversalError
+from src.environments.filesystem.service import FileSystemService
+from src.environments.filesystem.types import FileReadRequest
+from src.environments.filesystem.exceptions import FileSystemError, InvalidPathError, PathTraversalError
 from src.utils import get_file_info
 
 class FileSystem:

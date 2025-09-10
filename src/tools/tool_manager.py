@@ -10,8 +10,6 @@ from src.tools.agent_tools.agent_tool_set import AgentToolSet
 from src.tools.environment_tools.environment_tool_set import EnvironmentToolSet
 from src.logger import logger
 from src.utils import Singleton
-from src.config import config
-from src.controller.base import BaseController
 
 
 class ToolManager(metaclass=Singleton):
@@ -26,7 +24,7 @@ class ToolManager(metaclass=Singleton):
         self._tool_configs: Dict[str, Dict[str, Any]] = {}
         self._initialized = False
     
-    async def initialize(self, controllers: Optional[List[BaseController]] = None):
+    async def initialize(self, env_names: Optional[List[str]] = None):
         """Initialize both default tool set and MCP tool set asynchronously."""
         if self._initialized:
             return
@@ -64,7 +62,7 @@ class ToolManager(metaclass=Singleton):
         # Initialize environment tool set
         try:
             environment_tool_set = EnvironmentToolSet()
-            await environment_tool_set.init_tools(controllers)
+            await environment_tool_set.init_tools(env_names)
             self._environment_tool_set = environment_tool_set
             logger.info("| ✅ Environment tool set initialized successfully")
         except Exception as e:
@@ -265,9 +263,9 @@ class ToolManager(metaclass=Singleton):
         """Check if the tool manager is initialized."""
         return self._initialized
     
-    async def init_tools(self, controllers: Optional[List[BaseController]] = None):
+    async def init_tools(self, env_names: Optional[List[str]] = None):
         """Factory method to create and initialize a ToolManager asynchronously."""
-        await self.initialize(controllers)
+        await self.initialize(env_names)
 
 
 # Global tool manager instance

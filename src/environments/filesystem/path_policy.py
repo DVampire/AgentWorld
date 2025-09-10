@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.filesystem.exceptions import InvalidPathError, PathTraversalError
+from src.environments.filesystem.exceptions import InvalidPathError, PathTraversalError
 
 
 class PathPolicy:

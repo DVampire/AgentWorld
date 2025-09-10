@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 import tempfile
 
 from src.tools.base import ToolResponse
+from src.utils import assemble_project_path
 
 class Step(BaseModel):
     """Step model for todo management."""
@@ -120,9 +121,9 @@ class TodoTool(BaseTool):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Use temporary file for todo.md
-        temp_dir = Path(tempfile.gettempdir())
-        self.todo_file = temp_dir / "todo.md"
-        self.steps_file = temp_dir / "todo_steps.json"
+        temp_dir = Path(assemble_project_path(tempfile.gettempdir()))
+        self.todo_file = Path(assemble_project_path(temp_dir / "todo.md"))
+        self.steps_file = Path(assemble_project_path(temp_dir / "todo_steps.json"))
         self.steps: List[Step] = []
         self._load_steps()
     

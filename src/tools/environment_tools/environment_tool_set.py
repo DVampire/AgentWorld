@@ -1,9 +1,10 @@
 """Environment tool set for managing environment tools."""
 from typing import List, Dict, Any, Optional
 from langchain.tools import BaseTool
+from langchain.tools import StructuredTool
 
 from src.config import config
-from src.controller.base import BaseController
+from src.environments import ecp
 
 class EnvironmentToolSet:
     """Environment tool set containing environment tools."""
@@ -14,20 +15,35 @@ class EnvironmentToolSet:
         # Note: _load_environment_tools is now async, so it should be called separately
         # or the class should be used with an async factory method
     
-    async def initialize(self, controllers: Optional[List[BaseController]] = None):
+    async def initialize(self, env_names: Optional[List[str]] = None):
         """Initialize the tool set by loading all environment tools asynchronously."""
-        await self._load_environment_tools(controllers)
+        await self._load_environment_tools(env_names)
     
-    async def _load_environment_tools(self, controllers: Optional[List[BaseController]] = None):
+    async def _load_environment_tools(self, env_names: Optional[List[str]] = None):
         """Load all environment tools asynchronously."""
-        if controllers is None:
+        if env_names is None:
             return
-        for controller in controllers:
-            await controller.init_tools()
-            tools = controller.list_tools()
-            for tool in tools:
-                self._tools[tool] = controller.get_tool(tool)
-                self._tool_configs[tool] = controller.get_tool_config(tool)
+        for env_name in env_names:
+            actions_info = ecp.get_actions(env_name)
+            for action_name, action_info in actions_info.items():
+                
+                tool = StructuredTool.from_function(
+                    name=action_name,
+                    description=action_info.description,
+                    func=action_info.function,
+                    coroutine=action_info.function,
+                    args_schema=action_info.args_schema
+                )
+                
+                tool_config = {
+                    "name": action_name,
+                    "description": action_info.description,
+                    "args_schema": action_info.args_schema,
+                    "type": env_name,
+                }
+                
+                self._tools[action_name] = tool
+                self._tool_configs[action_name] = tool_config
     
     def list_tools(self) -> List[str]:
         """Get all environment tools."""
@@ -85,6 +101,6 @@ class EnvironmentToolSet:
             tools_info[name] = config
         return tools_info
 
-    async def init_tools(self, controllers: Optional[List[BaseController]] = None):
+    async def init_tools(self, env_names: Optional[List[str]] = None):
         """Factory method to create and initialize an EnvironmentToolSet asynchronously."""
-        await self.initialize(controllers)
+        await self.initialize(env_names)
