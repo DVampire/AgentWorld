@@ -6,7 +6,7 @@ tag = "finagent"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
-use_local_proxy = False
+use_local_proxy = True
 version = "0.1.0"
 
 #---------------TRADING OFFLINE ENVIRONMENT CONFIG--------
@@ -40,6 +40,6 @@ agent = dict(
         # trading offline tools
         "step",
     ],
-    max_iterations = 10,
+    max_steps = 10,
     env_names = env_names
 )

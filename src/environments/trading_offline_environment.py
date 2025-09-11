@@ -1,19 +1,23 @@
 import warnings
+warnings.filterwarnings("ignore")
 from copy import deepcopy
 from dataclasses import dataclass, asdict
 from pandas import DataFrame
 from typing import Any, Optional
 import random
-import gymnasium as gym
 import numpy as np
 import pandas as pd
+from inspect import cleandoc
 
-from src.utils import TradingRecords, truncate_content
+
+from src.utils import TradingRecords, Record
 from src.utils import get_token_count
 from src.utils import get_start_end_timestamp
-from src.utils import extract_boxed_content
 from src.environments.protocol import ecp
+from src.logger import logger
+
 from src.environments.protocol.environment import BaseEnvironment
+from src.metric import ARR, SR, MDD, SOR, CR, VOL
 
 _TRADING_OFFLINE_ENVIRONMENT_RULES = """<environment_trading_offline>
 
@@ -57,21 +61,7 @@ Example: {"name": "step", "args": {"action": "BUY"}}
 
 </environment_trading_offline>"""
 
-@dataclass
-class Record():
-    timestamp: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    price: float
-    cash: float
-    position: int
-    pre_value: Optional[float]
-    action: Optional[str]
-    post_value: Optional[float]
-    ret: Optional[float]
+
 
 
 def sample_news(df: pd.DataFrame, sample_texts: int = 2):
@@ -109,7 +99,6 @@ def convert_dataframe_to_markdown(
             values = row[1]
 
             content = values["summary"] if "summary" in values else values["content"]
-            content = truncate_content(content, max_length=1024)
 
             if content is not None:
                 content = content.replace('\n', '')
@@ -141,13 +130,13 @@ class TradingOfflineEnvironment(BaseEnvironment):
         dataset: Any = None,
         initial_amount: float = 1e3,
         transaction_cost_pct: float = 1e-3,
-        history_timestamps: int = 32,
+        history_timestamps: int = 5,
         step_timestamps: int = 1,
-        future_timestamps: int = 32,
+        future_timestamps: int = 1,
         start_timestamp='2008-04-01',
         end_timestamp='2021-04-01',
         gamma: float = 0.99,
-        record_max_len: int = 32,
+        record_max_len: int = 5,
         valid_action_max_len: int = 8,
         single_text_max_tokens: int = 1024,
         single_text_min_tokens: int = 256,
@@ -171,6 +160,15 @@ class TradingOfflineEnvironment(BaseEnvironment):
             asset_sector=asset_info['sector'],
             asset_industry=asset_info['industry'],
             asset_description=asset_info['description'],
+        )
+        
+        self.metrics = dict(
+            ARR=ARR(level=self.level.value, symbol_info=self.asset_info),
+            SR=SR(level=self.level.value, symbol_info=self.asset_info),
+            MDD=MDD(level=self.level.value, symbol_info=self.asset_info),
+            SOR=SOR(level=self.level.value, symbol_info=self.asset_info),
+            CR=CR(level=self.level.value, symbol_info=self.asset_info),
+            VOL=VOL(level=self.level.value, symbol_info=self.asset_info),
         )
 
         self.initial_amount = initial_amount
@@ -206,18 +204,19 @@ class TradingOfflineEnvironment(BaseEnvironment):
 
         self.record_df = pd.DataFrame() # record the trading history
         self.valid_action_df = pd.DataFrame() # record the valid action
-        
+        self.trading_records = TradingRecords()
+
         self.state, self.info = self.reset()
-
-    def _filter_news(self, df: pd.DataFrame, text_name: str):
-        assert text_name in df.columns, f"news_df must have {text_name} column"
-
-        df['token_count'] = df[text_name].apply(lambda x: get_token_count(x))
-        df = df[df['token_count'] >= self.single_text_min_tokens]
-        df = df[df['token_count'] <= self.single_text_max_tokens]
-        df.drop(columns=['token_count'], inplace=True)
-
-        return df
+        self.trading_records.add(
+            dict(
+                timestamp=self.info["timestamp"],
+                price=self.info["price"],
+                cash=self.info["cash"],
+                position=self.info["position"],
+                value=self.info["value"],
+            )
+        )
+        
 
     def _init_features(self):
 
@@ -368,13 +367,32 @@ class TradingOfflineEnvironment(BaseEnvironment):
         news_string = strings['news']
         record_string = strings['record']
         valid_action_string = strings['valid_action']
-
-        prompt = f"# Name: {self.asset_info['asset_name']}, Symbol: ({self.asset_info['asset_symbol']})\n"
-        prompt += f"## Price\n{price_string}\n"
-        prompt += f"## News\n{news_string}\n"
-        prompt += f"## Record\n{record_string}\n"
-        prompt += f"## History Valid Action\n{valid_action_string}\n"
-        prompt += f"## Current State: Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.\n"
+        
+        prompt = cleandoc(f"""
+<symbol>
+Name: {self.asset_info['asset_name']}
+Symbol: {self.asset_info['asset_symbol']}
+</symbol>
+<price>
+{price_string}
+</price>
+<news>
+{news_string}
+</news>
+<record>
+{record_string}
+</record>
+<history_valid_action>
+{valid_action_string}
+</history_valid_action>
+<current_state>
+Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.
+</current_state>
+<environment_status>
+The environment status is {'done' if self.done else 'running'}.
+</environment_status>
+        """)
+        
         prompt_token_nums = get_token_count(prompt)
 
         state = dict(
@@ -608,22 +626,14 @@ class TradingOfflineEnvironment(BaseEnvironment):
         return self.state, info
 
     def _extract_action(self, action: str):
-        extract = extract_boxed_content(action)
-        if extract in self.action_labels:
-            action = extract
-        else:
-            action = 'HOLD'
-        action = self.action_labels.index(action)
-        return action
+        for index, label in enumerate(self.action_labels):
+            if label == action:
+                return index
+        return 1 # HOLD
 
-    def step(self, action: Any):
+    def step(self, action: str):
 
-        if isinstance(action, np.ndarray):
-            action = int(action.item())
-        elif isinstance(action, str):
-            action = self._extract_action(action)
-        elif isinstance(action, int):
-            action = int(action)
+        action = self._extract_action(action)
 
         action = action - 1  # modify the action to -1, 0, 1
 
@@ -731,7 +741,74 @@ class TradingOfflineEnvironment(BaseEnvironment):
             str: The state of the trading environment.
         """
         state, reward, done, truncted, info = self.step(action)
-        return state['prompt']
+        self.trading_records.add(
+            dict(
+                action=info["action"],
+                action_label=info["action_label"],
+                ret=info["ret"],
+                total_profit=info["total_profit"],
+                timestamp=info["timestamp"],  # next timestamp
+                price=info["price"],  # next price
+                cash=info["cash"],  # next cash
+                position=info["position"],  # next position
+                value=info["value"],  # next value
+            ),
+        )
+        
+        if not done:
+            logger.info(f"| Prompt Token Numbers: {state['prompt_token_nums']}")
+        
+            res = cleandoc(f"""
+<action>
+Expected executed action of assistant: {action}
+Actual executed action because of cash or position constraint: {info['action_label']}
+</action>
+<result>
+Total profit: {info['total_profit']:.4f}%
+Reward: {reward:.4f}
+Done status: {done}
+</result>
+            """)
+            
+            return res
+        
+        else:
+            self.trading_records.add(
+                dict(
+                    action=1,
+                    action_label="HOLD",
+                    ret=0.0,
+                    total_profit=info['total_profit'],
+                )
+            )
+            
+            rets = np.array(self.trading_records.data['ret'])
+            metrics = dict()
+            for metric_name, metric in self.metrics.items():
+                metrics[metric_name] = metric(rets)
+                
+            metrics_string = f"**Metric | Value**\n"
+            for metric_name, metric_value in metrics.items():
+                metrics_string += f"{metric_name} | {metric_value:.4f}\n"
+                
+            res = cleandoc(f"""
+<action>
+Expected executed action of assistant: {action}
+Actual executed action because of cash or position constraint: {info['action_label']}
+</action>
+<result>
+Total profit: {info['total_profit']:.4f}%
+Reward: {reward:.4f}
+Done status: {done}
+</result>
+<metrics>
+The environment has been done with the following trading metrics:
+{metrics_string}
+</metrics>
+""")
+            
+            return res
+
     
     async def get_state(self) -> str:
         return self.state['prompt']

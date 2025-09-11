@@ -5,7 +5,7 @@ from .utils import (_is_package_available,
                     make_image_url, 
                     parse_json_blob,
                     truncate_content)
-from .record_utils import Records, TradingRecords, PortfolioRecords
+from .record_utils import Record, TradingRecords, PortfolioRecords
 from .token_utils import get_token_count
 from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp, calculate_time_info
 from .string_utils import extract_boxed_content
@@ -23,7 +23,7 @@ __all__ = [
     "make_image_url",
     "parse_json_blob",
     "truncate_content",
-    "Records",
+    "Record",
     "TradingRecords",
     "PortfolioRecords",
     "get_token_count",

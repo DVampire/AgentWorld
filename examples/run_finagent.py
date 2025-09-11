@@ -68,5 +68,17 @@ async def main():
     await tool_manager.init_tools(env_names=config.env_names)
     logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
 
+    # Initialize and run Agent
+    logger.info("| 🤖 Initializing Agent...")
+    finagent = AGENTS.build(config.agent)
+    logger.info(f"| ✅ Agent initialized: {finagent}")
+    
+    # Example trading task
+    task = "Trading AAPL until the environment is done."
+    logger.info(f"| 📊 Starting trading task: {task}")
+    
+    result = await finagent.run(task=task)
+    logger.info(f"| ✅ Agent completed with result: {result}")
+
 if __name__ == "__main__":
     asyncio.run(main())

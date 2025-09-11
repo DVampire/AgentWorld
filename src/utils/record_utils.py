@@ -1,25 +1,23 @@
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
 import pandas as pd
 
-class Records():
-    def __init__(self):
-        self.data = dict()
-
-    def add(self, item: Dict[str, Any]):
-        """
-        Add a new record to the records.
-        :param item: A dictionary containing the record information.
-        """
-        for key, value in item.items():
-            self.data.setdefault(key, []).append(value)
-
-    def avg(self):
-        """
-        Calculate the average of each record.
-        :return: A dictionary containing the average of each record.
-        """
-        return {key: np.mean(value) for key, value in self.data.items()}
+@dataclass
+class Record():
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    price: float
+    cash: float
+    position: int
+    pre_value: Optional[float]
+    action: Optional[str]
+    post_value: Optional[float]
+    ret: Optional[float]
 
 class TradingRecords():
     def __init__(self):
