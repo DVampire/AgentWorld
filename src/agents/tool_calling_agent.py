@@ -5,9 +5,9 @@ import asyncio
 from typing import List, Optional, Union
 from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from inspect import cleandoc
-from langchain_core.messages import SystemMessage, HumanMessage
+from datetime import datetime
 
 from src.agents.base_agent import BaseAgent, ThinkOutput
 from src.registry import AGENTS
@@ -68,7 +68,7 @@ class ToolCallingAgent(BaseAgent):
             next_goal = think_output.next_goal
             actions = think_output.action
             
-            logger.info(f"| 💭 Thinking: {thinking[:100]}...")
+            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Actions to execute: {len(actions)}")
             
@@ -87,7 +87,7 @@ class ToolCallingAgent(BaseAgent):
                 tool_result = await self.tool_manager.execute_tool(tool_name, args=tool_args)
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)[:200]}...")
+                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
                 
                 # Update action with result
                 action_dict = action.model_dump()
@@ -106,7 +106,7 @@ class ToolCallingAgent(BaseAgent):
                 "next_goal": next_goal,
                 "action": action_results
             }
-            self.memory_manager.add_event(
+            await self.memory_manager.add_event(
                 step_number=self.step_number,
                 event_type="action_step",
                 data=event_data,
@@ -116,7 +116,7 @@ class ToolCallingAgent(BaseAgent):
             self.step_number += 1
             
             if done:
-                self.memory_manager.add_event(
+                await self.memory_manager.add_event(
                     step_number=self.step_number,
                     event_type="task_end",
                     data=dict(result=final_result),
@@ -189,11 +189,11 @@ class ToolCallingAgent(BaseAgent):
         description = session_info.description
         
         # Start session
-        self.memory_manager.start_session(session_id, description)
+        await self.memory_manager.start_session(session_id, description)
         
         # Add task start event
-        task_id = str(uuid.uuid4())
-        self.memory_manager.add_event(step_number=self.step_number, 
+        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        await self.memory_manager.add_event(step_number=self.step_number, 
                                       event_type="task_start", 
                                       data=dict(task=enhanced_task),
                                       agent_name=self.name,
@@ -227,7 +227,7 @@ class ToolCallingAgent(BaseAgent):
             final_result = "Reached maximum number of steps"
         
         # Add task end event
-        self.memory_manager.add_event(
+        await self.memory_manager.add_event(
             step_number=self.step_number,
             event_type="task_end",
             data=dict(result=final_result),
@@ -236,7 +236,7 @@ class ToolCallingAgent(BaseAgent):
         )
         
         # End session
-        self.memory_manager.end_session()
+        await self.memory_manager.end_session(session_id=session_id)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

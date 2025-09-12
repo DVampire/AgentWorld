@@ -54,14 +54,14 @@ No vision available.
 Available actions:
 1. step: Step the trading environment.
     - action: The action to take. Should be `BUY` or `SELL` or `HOLD`.
+2. save: Save the trading records if the environment is done.
+    - file_path: The path to save the trading records.
     
 Input format: JSON string with action-specific parameters.
 Example: {"name": "step", "args": {"action": "BUY"}}
 </interaction>
 
 </environment_trading_offline>"""
-
-
 
 
 def sample_news(df: pd.DataFrame, sample_texts: int = 2):
@@ -162,14 +162,19 @@ class TradingOfflineEnvironment(BaseEnvironment):
             asset_description=asset_info['description'],
         )
         
-        self.metrics = dict(
-            ARR=ARR(level=self.level.value, symbol_info=self.asset_info),
-            SR=SR(level=self.level.value, symbol_info=self.asset_info),
-            MDD=MDD(level=self.level.value, symbol_info=self.asset_info),
-            SOR=SOR(level=self.level.value, symbol_info=self.asset_info),
-            CR=CR(level=self.level.value, symbol_info=self.asset_info),
-            VOL=VOL(level=self.level.value, symbol_info=self.asset_info),
+        symbol_info = dict(
+            symbol=self.asset_info['asset_symbol'],
+            exchange=self.asset_info['asset_exchange'],
         )
+        self.metrics_functions = dict(
+            ARR=ARR(level=self.level.value, symbol_info=symbol_info),
+            SR=SR(level=self.level.value, symbol_info=symbol_info),
+            MDD=MDD(level=self.level.value, symbol_info=symbol_info),
+            SOR=SOR(level=self.level.value, symbol_info=symbol_info),
+            CR=CR(level=self.level.value, symbol_info=symbol_info),
+            VOL=VOL(level=self.level.value, symbol_info=symbol_info),
+        )
+        self.metrics = dict()
 
         self.initial_amount = initial_amount
         self.transaction_cost_pct = transaction_cost_pct
@@ -759,6 +764,14 @@ The environment status is {'done' if self.done else 'running'}.
             logger.info(f"| Prompt Token Numbers: {state['prompt_token_nums']}")
         
             res = cleandoc(f"""
+<info>
+Name: {self.asset_info['asset_name']}
+Symbol: {self.asset_info['asset_symbol']}
+Start timestamp: {self.start_timestamp}
+End timestamp: {self.end_timestamp}
+Current timestamp: {info['timestamp']}
+Environment status: running
+</info>
 <action>
 Expected executed action of assistant: {action}
 Actual executed action because of cash or position constraint: {info['action_label']}
@@ -766,7 +779,6 @@ Actual executed action because of cash or position constraint: {info['action_lab
 <result>
 Total profit: {info['total_profit']:.4f}%
 Reward: {reward:.4f}
-Done status: {done}
 </result>
             """)
             
@@ -783,15 +795,22 @@ Done status: {done}
             )
             
             rets = np.array(self.trading_records.data['ret'])
-            metrics = dict()
-            for metric_name, metric in self.metrics.items():
-                metrics[metric_name] = metric(rets)
+            for metric_name, metric in self.metrics_functions.items():
+                self.metrics[metric_name] = metric(rets)
                 
             metrics_string = f"**Metric | Value**\n"
-            for metric_name, metric_value in metrics.items():
+            for metric_name, metric_value in self.metrics.items():
                 metrics_string += f"{metric_name} | {metric_value:.4f}\n"
                 
             res = cleandoc(f"""
+<info>
+Name: {self.asset_info['asset_name']}
+Symbol: {self.asset_info['asset_symbol']}
+Start timestamp: {self.start_timestamp}
+End timestamp: {self.end_timestamp}
+Current timestamp: {info['timestamp']}
+Environment status: done
+</info>
 <action>
 Expected executed action of assistant: {action}
 Actual executed action because of cash or position constraint: {info['action_label']}
@@ -799,16 +818,19 @@ Actual executed action because of cash or position constraint: {info['action_lab
 <result>
 Total profit: {info['total_profit']:.4f}%
 Reward: {reward:.4f}
-Done status: {done}
-</result>
-<metrics>
-The environment has been done with the following trading metrics:
+Trading metrics: 
 {metrics_string}
-</metrics>
-""")
-            
+</result>
+""") 
             return res
-
+        
+    @ecp.action(name = "save",
+                description = "Save the trading records.")
+    async def _save(self, file_path: str) -> str:
+        """Save the trading records."""
+        df = self.trading_records.to_dataframe()
+        df.to_csv(file_path, index=False)
+        return f"Trading records saved successfully to {file_path}."
     
     async def get_state(self) -> str:
         return self.state['prompt']

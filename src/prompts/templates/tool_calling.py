@@ -46,7 +46,7 @@ You have access to a `todo` tool for task planning. Use it strategically based o
 </todo_rules>
 
 <agent_history>
-Agent history will be given as a list of step information as follows:
+Agent history will be given as a list of step information with summaries and insights as follows:
 
 <step_[step_number]>
 Evaluation of Previous Step: Assessment of last action
@@ -55,6 +55,12 @@ Next Goal: Your goal for this step
 Action Results: Your actions and their results
 </step_[step_number]>
 
+<summaries>
+This is a list of summaries of the agent's memory.
+</summaries>
+<insights>
+This is a list of insights of the agent's memory.
+</insights>
 </agent_history>
 
 <environments_rules>

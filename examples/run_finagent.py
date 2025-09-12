@@ -74,7 +74,7 @@ async def main():
     logger.info(f"| ✅ Agent initialized: {finagent}")
     
     # Example trading task
-    task = "Trading AAPL until the environment is done."
+    task = "Trading AAPL and maximize the total profit until the environment is done."
     logger.info(f"| 📊 Starting trading task: {task}")
     
     result = await finagent.run(task=task)

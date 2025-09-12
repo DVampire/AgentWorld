@@ -1,21 +1,15 @@
 """FinAgent implementation for financial trading tasks."""
 
 import uuid
-import asyncio
 from typing import List, Optional, Union
 from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage
-from inspect import cleandoc
-from langchain_core.messages import SystemMessage, HumanMessage
 
 from src.agents.base_agent import BaseAgent, ThinkOutput
 from src.registry import AGENTS
 from src.logger import logger
 from src.memory import MemoryManager
-from src.environments.protocol import ecp
-from src.utils import get_file_info
-from src.tools import tool_manager
 
 @AGENTS.register_module(force=True)
 class FinAgent(BaseAgent):
@@ -68,7 +62,7 @@ class FinAgent(BaseAgent):
             next_goal = think_output.next_goal
             actions = think_output.action
             
-            logger.info(f"| 💭 Thinking: {thinking[:100]}...")
+            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Actions to execute: {len(actions)}")
             
@@ -87,7 +81,7 @@ class FinAgent(BaseAgent):
                 tool_result = await self.tool_manager.execute_tool(tool_name, args=tool_args)
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)[:200]}...")
+                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
                 
                 # Update action with result
                 action_dict = action.model_dump()

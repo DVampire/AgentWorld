@@ -4,7 +4,7 @@ import numpy as np
 from typing import List, Optional, Any, Union, Dict
 
 from src.registry import METRIC
-from src.calendar import calendar_manager
+from src.calen import calendar_manager
 from src.metric.utils import clean_invalid_values
 from src.metric.base import Metric
 

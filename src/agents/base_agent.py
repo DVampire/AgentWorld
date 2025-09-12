@@ -94,6 +94,7 @@ class BaseAgent(ABC):
         env_names: Optional[List[str]] = None,
         max_steps: int = 20,
         review_steps: int = 5,
+        log_max_length: int = 1000,
         **kwargs
     ):
         self.name = name
@@ -122,7 +123,8 @@ class BaseAgent(ABC):
         self.max_steps = max_steps if max_steps>0 else int(1e8)
         self.review_steps = review_steps
         self.step_number = 0
-    
+        self.log_max_length = log_max_length
+
     def _setup_model(self, model_name: Optional[str], model: Optional[BaseLanguageModel]):
         """Setup the language model."""
         if model:
@@ -211,9 +213,11 @@ class BaseAgent(ABC):
     
     async def _get_agent_history(self) -> Dict[str, Any]:
         """Get the agent history."""
-        events = self.memory_manager.get_events(
-            num = self.review_steps
-        )
+        state = await self.memory_manager.get_state(n=self.review_steps)
+        
+        events = state["events"]
+        summaries = state["summaries"]
+        insights = state["insights"]
         
         agent_history = ""
         for event in events:
@@ -228,7 +232,16 @@ class BaseAgent(ABC):
                 agent_history += f"Next Goal: {event.data['next_goal']}\n"
                 agent_history += f"Action Results: {event.data['action']}\n"
             agent_history += "\n"
-            agent_history += f"<step_{self.step_number}>\n"
+            agent_history += f"</step_{event.step_number}>\n"
+        
+        agent_history += cleandoc(f"""
+<summaries>
+{chr(10).join([str(summary) for summary in summaries])}
+</summaries>
+<insights>
+{chr(10).join([str(insight) for insight in insights])}
+</insights>
+        """)
         
         return {
             "agent_history": agent_history,

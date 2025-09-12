@@ -2,7 +2,7 @@ from typing import Optional, Union, Dict, Any, List
 
 import pandas as pd
 
-from src.calendar.mapper import codemapper
+from src.calen.mapper import codemapper
 from src.logger import logger
 
 class CalendarManager():

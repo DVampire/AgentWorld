@@ -4,7 +4,7 @@ from typing import Any, Union
 
 from src.registry import METRIC
 from src.metric.utils import clean_invalid_values
-from src.calendar import calendar_manager
+from src.calen import calendar_manager
 from src.metric.base import Metric
 
 @METRIC.register_module(force=True)

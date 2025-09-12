@@ -1,38 +1,59 @@
 """Memory manager for session-based memory operations."""
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+from typing import Optional, Any
 
+from src.memory.memory_system import MemorySystem
 from src.logger import logger
-from src.memory.memory_store import MemoryStore
 
 class MemoryManager:
     """Session-based memory manager for agent execution history."""
-    def __init__(self):
-        self.memory_store = MemoryStore()
+    def __init__(self, **memory_config):
+        # MemorySystem can work as basic memory store or with LangChain enhancements
+        self.memory_system = MemorySystem(**memory_config)
     
-    def start_session(self, session_id: str, description: str):
-        self.memory_store.start_session(session_id, description)
+    async def start_session(self, 
+                            session_id: str, 
+                            agent_name: Optional[str] = None, 
+                            task_id: Optional[str] = None, 
+                            description: Optional[str] = None
+                            ):
+        await self.memory_system.start_session(session_id, agent_name, task_id, description)
     
-    def end_session(self):
-        self.memory_store.end_session()
+    async def end_session(self,
+                          session_id: Optional[str] = None
+                          ):
+        await self.memory_system.end_session(session_id)
     
-    def add_event(self, 
+    async def add_event(self, 
                   step_number: int,
-                  event_type: str,
+                  event_type,
                   data: Any,
                   agent_name: str,
                   task_id: Optional[str] = None,
-                  extra: Optional[Dict[str, Any]] = None,
-                  **kwargs,
-                  ):
+                  **kwargs):
         
-        self.memory_store.add_event(step_number,
-                                    event_type, 
-                                    data, 
-                                    agent_name,
-                                    task_id,
-                                    extra,
-                                    **kwargs)
+        await self.memory_system.add_event(step_number,
+                                           event_type, 
+                                           data, 
+                                           agent_name,
+                                           task_id,
+                                           **kwargs)
+        logger.info(f"| Added event successfully.")
+
     
-    def get_events(self, num: int = 5):
-        return self.memory_store.get_events(num)
+    async def get_event(self, n: Optional[int] = None):
+        return await self.memory_system.get_event(n=n)
+    
+    async def get_state(self, n: Optional[int] = None):
+        
+        state = dict()
+        events = await self.memory_system.get_event(n=n)
+        summaries = await self.memory_system.get_summary(n=n)
+        insights = await self.memory_system.get_insight(n=n)
+        
+        state["events"] = events
+        state["summaries"] = summaries
+        state["insights"] = insights
+        
+        logger.info(f"| Get memory state successfully.")
+        
+        return state

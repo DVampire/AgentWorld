@@ -12,7 +12,7 @@ version = "0.1.0"
 #---------------TRADING OFFLINE ENVIRONMENT CONFIG--------
 symbol = "AAPL"
 start_timestamp = "2015-05-01"
-split_timestamp = "2023-05-01"
+split_timestamp = "2025-01-01"
 end_timestamp = "2025-05-01"
 level = "1day"
 trading_offline_dataset.update(
@@ -40,6 +40,6 @@ agent = dict(
         # trading offline tools
         "step",
     ],
-    max_steps = 10,
+    max_steps = -1, # unlimited steps
     env_names = env_names
 )

@@ -1,4 +1,4 @@
-def get_primes_upto_100():
+def primes_up_to_100():
     primes = []
     for num in range(2, 100):
         is_prime = True
@@ -11,4 +11,4 @@ def get_primes_upto_100():
     return primes
 
 if __name__ == "__main__":
-    print(get_primes_upto_100())
+    print(primes_up_to_100())

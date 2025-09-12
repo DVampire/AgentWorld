@@ -22,8 +22,24 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
         self.output_tokens = 0
         self.total_tokens = 0
         self.total_cost = 0.0
+        self.start_time = None
+        self.end_time = None
+        self.total_duration = 0.0
+        self.call_count = 0
+
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        """Called when LLM starts running."""
+        import time
+        self.start_time = time.time()
 
     def on_llm_end(self, response, **kwargs):
+        """Called when LLM ends running."""
+        import time
+        if self.start_time is not None:
+            self.end_time = time.time()
+            duration = self.end_time - self.start_time
+            self.total_duration += duration
+            self.call_count += 1
         usage = None
         
         # Handle LLMResult
@@ -53,9 +69,33 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             if "input_token_details" in usage:
                 audio_tokens = usage["input_token_details"].get("audio_tokens", 0)
                 text_tokens = usage["input_token_details"].get("text_tokens", 0)
-                logger.info(f"| Model name: {self.model_name}. Tokens: {self.input_tokens} input tokens ({audio_tokens} audio, {text_tokens} text), {self.output_tokens} output tokens, {self.total_tokens} total tokens. Cost: ${self.total_cost:.6f}")
+                logger.info(f"| Model: {self.model_name} | Tokens: {self.input_tokens} input ({audio_tokens} audio, {text_tokens} text), {self.output_tokens} output, {self.total_tokens} total | Cost: ${self.total_cost:.6f} | Time: {duration:.2f}s (avg: {self.total_duration/self.call_count:.2f}s)")
             else:
-                logger.info(f"| Model name: {self.model_name}. Tokens: {self.input_tokens} input tokens, {self.output_tokens} output tokens, {self.total_tokens} total tokens. Cost: ${self.total_cost:.6f}")
+                logger.info(f"| Model: {self.model_name} | Tokens: {self.input_tokens} input, {self.output_tokens} output, {self.total_tokens} total | Cost: ${self.total_cost:.6f} | Time: {duration:.2f}s (avg: {self.total_duration/self.call_count:.2f}s)")
+
+    def get_stats(self) -> dict:
+        """Get comprehensive statistics about token usage and timing."""
+        avg_duration = self.total_duration / self.call_count if self.call_count > 0 else 0
+        return {
+            "model_name": self.model_name,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "total_cost": self.total_cost,
+            "total_duration": self.total_duration,
+            "call_count": self.call_count,
+            "avg_duration": avg_duration,
+            "tokens_per_second": self.total_tokens / self.total_duration if self.total_duration > 0 else 0
+        }
+
+    def reset_stats(self):
+        """Reset all statistics."""
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
+        self.total_cost = 0.0
+        self.total_duration = 0.0
+        self.call_count = 0
 
 class ModelManager(metaclass=Singleton):
     def __init__(self):
