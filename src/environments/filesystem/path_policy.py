@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Union
 
 from src.environments.filesystem.exceptions import InvalidPathError, PathTraversalError
 
@@ -30,7 +31,7 @@ class PathPolicy:
             # This allows access to any location when using absolute paths
             return absolute
 
-    def resolve_relative(self, relative: str | Path) -> Path:
+    def resolve_relative(self, relative: Union[str, Path]) -> Path:
         if isinstance(relative, str):
             relative = Path(relative)
         

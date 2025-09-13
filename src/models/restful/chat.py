@@ -1,5 +1,5 @@
 from tkinter import N
-from typing import Optional, Any
+from typing import Optional, Any, List, Union
 import json
 import requests
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -237,7 +237,7 @@ class ChatRestful():
 
     def _prepare_completion_kwargs(
             self,
-            messages: list[HumanMessage | AIMessage],
+            messages: List[Union[HumanMessage, AIMessage]],
             **kwargs,
     ) -> dict[str, Any]:
         """
@@ -260,7 +260,7 @@ class ChatRestful():
 
     async def generate(
         self,
-        messages: list[HumanMessage | AIMessage],
+        messages: List[Union[HumanMessage, AIMessage]],
         **kwargs,
     ) -> AIMessage:
 
@@ -344,7 +344,7 @@ class ChatRestfulSearch():
     def _prepare_completion_kwargs(
             self,
             model: str,
-            messages: list[HumanMessage | AIMessage],
+            messages: List[Union[HumanMessage, AIMessage]],
             **kwargs,
     ) -> dict[str, Any]:
         
@@ -367,7 +367,7 @@ class ChatRestfulSearch():
 
     async def generate(
         self,
-        messages: list[HumanMessage | AIMessage],
+        messages: List[Union[HumanMessage, AIMessage]],
         **kwargs,
     ) -> AIMessage:
 

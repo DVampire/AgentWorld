@@ -3,10 +3,9 @@ from typing import Any, Optional, Dict, List, Type
 import asyncio
 import json
 from langchain_core.tools import BaseTool
-from pydantic import Field
+from pydantic import Field, SecretStr
 from firecrawl import AsyncFirecrawlApp
-import os
-from langchain_core.utils import secret_from_env
+from src.utils import get_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
 from src.tools.base import ToolResponse
@@ -32,7 +31,7 @@ class FirecrawlSearch(BaseTool):
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
-    api_key: Optional[str] = Field(default_factory=secret_from_env(["FIRECRAWL_API_KEY"]))
+    api_key: Optional[SecretStr] = Field(default=get_env("FIRECRAWL_API_KEY"))
 
     def __init__(self, **data):
         """Initialize the FirecrawlSearch tool."""

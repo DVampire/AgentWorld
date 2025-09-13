@@ -151,7 +151,11 @@ class ECPServer:
                 field_type = str  # Default to string if no annotation
             
             # Get description from docstring or create default
-            field_description = param_descriptions.get(param_name, f"Parameter {param_name} of type {field_type.__name__}")
+            if isinstance(field_type, str):
+                type_name = field_type
+            else:
+                type_name = getattr(field_type, '__name__', str(field_type))
+            field_description = param_descriptions.get(param_name, f"Parameter {param_name} of type {type_name}")
             
             # Handle default values
             if param.default != inspect.Parameter.empty:
@@ -182,7 +186,7 @@ class ECPServer:
         
         return env_info.env_instance
     
-    async def get_state(self, env_name: str) -> Optional[str]:
+    async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
         
         Args:

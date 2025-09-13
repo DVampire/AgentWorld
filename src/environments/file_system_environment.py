@@ -1,7 +1,7 @@
 """File System Environment for AgentWorld - provides file system operations as an environment."""
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from src.environments.filesystem.file_system import FileSystem
 from src.logger import logger
@@ -86,7 +86,7 @@ class FileSystemEnvironment(BaseEnvironment):
     
     def __init__(
         self,
-        base_dir: str | Path,
+        base_dir: Union[str, Path],
         create_default_files: bool = True,
         max_file_size: int = 1024 * 1024,  # 1MB
     ):
@@ -109,10 +109,6 @@ class FileSystemEnvironment(BaseEnvironment):
         )
         
         logger.info(f"| 🗂️ File System Environment initialized at: {self.base_dir}")
-        
-    async def get_state(self) -> str:
-        """Get the state of the file system environment."""
-        return await self.file_system.describe()
         
     @ecp.action(name = "read",
                 description = "Read a file from the file system.")
@@ -318,3 +314,10 @@ class FileSystemEnvironment(BaseEnvironment):
             str: The result of the permissions change.
         """
         return await self.file_system.change_permissions(file_path, permissions)
+    
+    async def get_state(self) -> Dict[str, Any]:
+        """Get the state of the file system environment."""
+        state: Dict[str, Any] = {
+            "state": await self.file_system.describe()
+        }
+        return state

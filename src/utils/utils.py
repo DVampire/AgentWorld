@@ -29,7 +29,7 @@ from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Optional, Union
 
 @lru_cache
 def _is_package_available(package_name: str) -> bool:
@@ -108,7 +108,7 @@ def parse_json_blob(json_blob: str) -> Tuple[Dict[str, str], str]:
         )
 
 
-def extract_code_from_text(text: str) -> str | None:
+def extract_code_from_text(text: str) -> Optional[str]:
     """Extract code from the LLM's output."""
     pattern = r"<code>(.*?)</code>"
     matches = re.findall(pattern, text, re.DOTALL)
@@ -386,7 +386,7 @@ def make_image_url(base64_image):
     return f"data:image/png;base64,{base64_image}"
 
 
-def make_init_file(folder: str | Path):
+def make_init_file(folder: Union[str, Path]):
     os.makedirs(folder, exist_ok=True)
     # Create __init__
     with open(os.path.join(folder, "__init__.py"), "w"):

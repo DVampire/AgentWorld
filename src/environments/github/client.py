@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout
 
-from .exceptions import (
+from src.environments.github.exceptions import (
     GitHubError,
     AuthenticationError,
     RateLimitError,

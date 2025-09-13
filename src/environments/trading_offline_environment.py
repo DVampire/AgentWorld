@@ -1,9 +1,8 @@
 import warnings
 warnings.filterwarnings("ignore")
 from copy import deepcopy
-from dataclasses import dataclass, asdict
 from pandas import DataFrame
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 import random
 import numpy as np
 import pandas as pd
@@ -20,7 +19,6 @@ from src.environments.protocol.environment import BaseEnvironment
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 
 _TRADING_OFFLINE_ENVIRONMENT_RULES = """<environment_trading_offline>
-
 <state>
 The environment state includes:
 1. Name: Asset name, Symbol: Asset symbol
@@ -60,7 +58,6 @@ Available actions:
 Input format: JSON string with action-specific parameters.
 Example: {"name": "step", "args": {"action": "BUY"}}
 </interaction>
-
 </environment_trading_offline>"""
 
 
@@ -827,10 +824,20 @@ Trading metrics:
     @ecp.action(name = "save",
                 description = "Save the trading records.")
     async def _save(self, file_path: str) -> str:
-        """Save the trading records."""
+        """Save the trading records.
+        
+        Args:
+            file_path (str): The path to save the trading records.
+
+        Returns:
+            str: The message of the trading records saved successfully.
+        """
         df = self.trading_records.to_dataframe()
         df.to_csv(file_path, index=False)
         return f"Trading records saved successfully to {file_path}."
     
-    async def get_state(self) -> str:
-        return self.state['prompt']
+    async def get_state(self) -> Dict[str, Any]:
+        state: Dict[str, Any] = {
+            "state": self.state['prompt']
+        }
+        return state

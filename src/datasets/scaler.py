@@ -1,7 +1,7 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 import joblib
 import numpy as np
@@ -38,7 +38,7 @@ class BaseScaler:
 
         return mean, std
 
-    def _convert(self, df: DataFrame | np.ndarray) -> Tuple[np.ndarray, List[str]]:
+    def _convert(self, df: Union[DataFrame, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
         df = deepcopy(df)
 
         columns = []
@@ -52,8 +52,8 @@ class BaseScaler:
         return values, columns
 
     def _set_values(
-        self, df: DataFrame | np.ndarray, values: np.ndarray, columns: List[str]
-    ) -> DataFrame | np.ndarray:
+        self, df: Union[DataFrame, np.ndarray], values: np.ndarray, columns: List[str]
+    ) -> Union[DataFrame, np.ndarray]:
         df = deepcopy(df)
         if isinstance(df, DataFrame):
             df[columns] = values
@@ -61,15 +61,15 @@ class BaseScaler:
             df = values
         return df
 
-    def fit_transform(self, df: DataFrame | np.ndarray) -> DataFrame | np.ndarray:
+    def fit_transform(self, df: Union[DataFrame, np.ndarray]) -> Union[DataFrame, np.ndarray]:
         raise NotImplementedError
 
     def transform(
             self,
-            df: DataFrame | np.ndarray,
+            df: Union[DataFrame, np.ndarray],
             start_index: Optional[int] = None,
             end_index: Optional[int] = None,
-        ) -> DataFrame | np.ndarray:
+        ) -> Union[DataFrame, np.ndarray]:
 
         assert (
             self.mean is not None and self.std is not None
@@ -86,10 +86,10 @@ class BaseScaler:
 
     def inverse_transform(
                 self,
-                df: DataFrame | np.ndarray,
+                df: Union[DataFrame, np.ndarray],
                 start_index: Optional[int] = None,
                 end_index: Optional[int] = None,
-            ) -> DataFrame | np.ndarray:
+            ) -> Union[DataFrame, np.ndarray]:
         assert (
             self.mean is not None and self.std is not None
         ), 'mean and std should not be None'
@@ -115,7 +115,7 @@ class StandardScaler(BaseScaler):
         self.mean = mean
         self.std = std
 
-    def fit_transform(self, df: DataFrame | np.ndarray) -> DataFrame | np.ndarray:
+    def fit_transform(self, df: Union[DataFrame, np.ndarray]) -> Union[DataFrame, np.ndarray]:
         values, columns = self._convert(df)
 
         mean = values.mean(axis=0, keepdims=True)
@@ -147,7 +147,7 @@ class WindowedScaler(BaseScaler):
         self.std = std
         self.window_size = window_size
 
-    def fit_transform(self, df: DataFrame | np.ndarray) -> DataFrame | np.ndarray:
+    def fit_transform(self, df: Union[DataFrame, np.ndarray]) -> Union[DataFrame, np.ndarray]:
         values, columns = self._convert(df)
 
         nums, _ = values.shape[0], values.shape[1]

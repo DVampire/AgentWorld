@@ -275,7 +275,9 @@ class BaseAgent(ABC):
         """Get the environment state."""
         environment_state = ""
         for env_name in self.env_names:
-            environment_state += f"{await ecp.get_state(env_name)}\n"
+            state = await ecp.get_state(env_name)
+            state_string = state.get("state", "")
+            environment_state += f"{state_string}\n"
         return {
             "environment_state": environment_state,
         }

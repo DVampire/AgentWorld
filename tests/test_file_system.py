@@ -8,9 +8,9 @@ import asyncio
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
-from src.filesystem import FileSystemService, FileSystem
-from src.filesystem.types import FileReadRequest
-from src.filesystem.handlers import TextHandler, JsonHandler, HandlerRegistry
+from src.environments.filesystem import FileSystemService, FileSystem
+from src.environments.filesystem.types import FileReadRequest
+from src.environments.filesystem.handlers import TextHandler, JsonHandler, HandlerRegistry
 
 
 class FileSystemTester:

@@ -28,7 +28,7 @@ from functools import wraps
 from importlib import import_module
 from importlib.util import find_spec
 from types import BuiltinFunctionType, FunctionType, ModuleType
-from typing import Any
+from typing import Any, Optional, Dict, Union
 
 from src.utils import truncate_content
 from src.logger import logger
@@ -915,7 +915,7 @@ def evaluate_condition(
     static_tools: dict[str, Callable],
     custom_tools: dict[str, Callable],
     authorized_imports: list[str],
-) -> bool | object:
+) -> Union[bool, object]:
     result = True
     left = evaluate_ast(condition.left, state, static_tools, custom_tools, authorized_imports)
     for i, (op, comparator) in enumerate(zip(condition.ops, condition.comparators)):
@@ -1652,8 +1652,8 @@ class LocalPythonExecutor(PythonExecutor):
     def __init__(
         self,
         additional_authorized_imports: list[str],
-        max_print_outputs_length: int | None = None,
-        additional_functions: dict[str, Callable] | None = None,
+        max_print_outputs_length: Optional[int] = None,
+        additional_functions: Optional[Dict[str, Callable]] = None,
     ):
         self.custom_tools = {}
         self.state = {"__name__": "__main__"}

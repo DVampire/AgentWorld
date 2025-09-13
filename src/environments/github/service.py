@@ -8,15 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from .cache import GitHubCache
-from .client import GitHubClient
-from .exceptions import (
-    GitHubError,
-    AuthenticationError,
-    NotFoundError,
-    ValidationError,
-)
-from .types import (
+from src.environments.github.cache import GitHubCache
+from src.environments.github.client import GitHubClient
+from src.environments.github.types import (
     GitHubAuth,
     GitHubConfig,
     GitHubRepository,

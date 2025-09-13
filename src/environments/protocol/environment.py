@@ -4,6 +4,7 @@ Abstract base class for environments in the Environment Context Protocol.
 
 from abc import ABC
 from abc import abstractmethod
+from typing import Any, Dict
 
 from src.environments.protocol.types import EnvironmentAction
 
@@ -15,6 +16,6 @@ class BaseEnvironment(ABC):
         super().__init__(**kwargs)
     
     @abstractmethod
-    async def get_state(self) -> str:
+    async def get_state(self) -> Dict[str, Any]:
         """Get the state of the environment"""
         raise NotImplementedError("Get state method not implemented")

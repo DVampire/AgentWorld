@@ -7,7 +7,7 @@ from pydantic import Field, SecretStr, BaseModel
 import requests
 
 from langchain_core.documents import Document
-from langchain_core.utils import secret_from_env
+from src.utils import get_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
 from src.tools.base import ToolResponse
@@ -15,14 +15,12 @@ from src.tools.base import ToolResponse
 class BraveSearchWrapper(BaseModel):
     """Wrapper around the Brave search engine."""
 
-    api_key: SecretStr = Field(
-        default_factory=secret_from_env(["BRAVE_SEARCH_API_KEY"])
-    )
     """The API key to use for the Brave search engine."""
     search_kwargs: dict = Field(default_factory=dict)
     """Additional keyword arguments to pass to the search request."""
     base_url: str = "https://api.search.brave.com/res/v1/web/search"
     """The base URL for the Brave search engine."""
+    api_key: SecretStr = Field(default=get_env("BRAVE_SEARCH_API_KEY"))
 
     def run(self, query: str, 
             num_results: Optional[int] = 5,
