@@ -1,119 +1,87 @@
-"""GitHub environment implementation for AgentWorld."""
-
+"""GitHub environment implementation using simplified GitHub service."""
 from __future__ import annotations
+from dotenv import load_dotenv
+load_dotenv(verbose=True)
 
-from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
+from typing import Any, Dict, Optional
+from pydantic import SecretStr
 
-from src.environments.github import (
-    GitHubService,
-    GitHubAuth,
-    GitHubConfig,
-    GitHubRepository,
-    GitHubIssue,
-    GitHubPullRequest,
-    GitHubCommit,
-    GitHubBranch,
-    GitHubUser,
-    GitHubFile,
-    GitHubDirectory,
-    GitHubSearchResult,
-    GitHubError,
-    AuthenticationError,
-    NotFoundError,
-)
 from src.logger import logger
 from src.environments.protocol.environment import BaseEnvironment
 from src.environments.protocol import ecp
+from src.environments.github import (
+    GitHubService,
+    AuthenticationError,
+    NotFoundError,
+    GitError,
+    RepositoryError
+)
+from src.utils import dedent
+from src.utils import get_env
 
-
-_GITHUB_ENVIRONMENT_RULES = """<environment_github>
-<state>
-The environment state includes:
-1. Repository: GitHub repository information
-2. Branch: GitHub branch information
-3. Issue: GitHub issue information
-4. Pull Request: GitHub pull request information
-</state>
-
-<vision>
-No vision available.
-</vision>
-
-<interaction>
-Available actions:
-</interaction>
-</environment_github>
-"""
-
-@ecp.environment(name = "github",
-                 env_type = "github",
-                 description = "GitHub environment for interacting with GitHub repositories and services",
-                 rules = _GITHUB_ENVIRONMENT_RULES)
+@ecp.environment(
+    name="github",
+    env_type="github", 
+    description="GitHub environment for repository and Git operations. git_clone automatically forks repositories if they don't belong to you, then clones the forked version.",
+    has_vision=False,
+    additional_rules=None
+)
 class GitHubEnvironment(BaseEnvironment):
-    """GitHub environment for interacting with GitHub repositories and services."""
+    """GitHub environment using simplified GitHub service."""
 
     def __init__(
         self,
-        token: str ,
-        username: Optional[str] = None,
-        base_url: str = "https://api.github.com",
-        timeout: int = 30,
-        enable_cache: bool = True,
-        cache_ttl: int = 300,
-        **kwargs
+        token: SecretStr = get_env("GITHUB_TOKEN"),
+        username: SecretStr = get_env("GITHUB_USERNAME"),
+        base_dir: str = "workdir/github"
     ):
         """Initialize GitHub environment.
         
         Args:
             token: GitHub Personal Access Token (PAT)
-            username: GitHub username (optional, will be fetched if not provided)
-            base_url: GitHub API base URL
-            timeout: Request timeout in seconds
-            enable_cache: Enable caching for API responses
-            cache_ttl: Cache time-to-live in seconds
+            username: GitHub username (optional)
             **kwargs: Additional configuration parameters
         """
-        super().__init__(**kwargs)
-        
-        # Initialize GitHub authentication and configuration
-        self.auth = GitHubAuth(
-            token=token,
-            username=username,
-            base_url=base_url,
-            timeout=timeout
-        )
-        
-        self.config = GitHubConfig(
-            auth=self.auth,
-            enable_cache=enable_cache,
-            cache_ttl=cache_ttl,
-            **kwargs
-        )
-        
+        self.token = token.get_secret_value()
+        self.username = username.get_secret_value()
         self._service: Optional[GitHubService] = None
-        self._authenticated_user: Optional[GitHubUser] = None
+        self.base_dir = Path(base_dir)
+        
+        logger.info(f"| 🚀 GitHub environment initialized for user: {self.username}")
+
+    def _resolve_path(self, local_path: str) -> str:
+        """Resolve local path relative to base_dir or as absolute path.
+        
+        Args:
+            local_path: Path to resolve (can be relative or absolute)
+            
+        Returns:
+            Resolved absolute path
+        """
+        path = Path(local_path)
+        if path.is_absolute():
+            return str(path.resolve())
+        return str((self.base_dir / path).resolve())
 
     async def initialize(self) -> None:
         """Initialize the GitHub environment."""
         try:
-            self._service = GitHubService(self.config)
-            await self._service.__aenter__()
-            
-            # Verify authentication and get user info
-            self._authenticated_user = await self._service.verify_authentication()
-            logger.debug(f"| GitHub environment initialized for user: {self._authenticated_user.login}")
+            self._service = GitHubService(self.token, self.username)
+            await self._service.initialize()
+            logger.info(f"GitHub environment initialized for user: {self._service.authenticated_user.login}")
             
         except AuthenticationError as e:
-            logger.error(f"| GitHub authentication failed: {e}")
+            logger.error(f"GitHub authentication failed: {e}")
             raise
         except Exception as e:
-            logger.error(f"| Failed to initialize GitHub environment: {e}")
+            logger.error(f"Failed to initialize GitHub environment: {e}")
             raise
 
     async def cleanup(self) -> None:
         """Cleanup the GitHub environment."""
         if self._service:
-            await self._service.__aexit__(None, None, None)
+            await self._service.cleanup()
             self._service = None
         logger.info("GitHub environment cleaned up")
 
@@ -124,585 +92,468 @@ class GitHubEnvironment(BaseEnvironment):
             raise RuntimeError("GitHub environment not initialized")
         return self._service
 
-    @property
-    def authenticated_user(self) -> GitHubUser:
-        """Get authenticated user information."""
-        if self._authenticated_user is None:
-            raise RuntimeError("GitHub environment not initialized")
-        return self._authenticated_user
+    def _resolve_path(self, local_path: str) -> str:
+        """Resolve local path relative to base directory.
+        
+        Args:
+            local_path: The local path (can be relative or absolute)
+            
+        Returns:
+            str: The resolved absolute path
+        """
+        path = Path(local_path)
+        if path.is_absolute():
+            return str(path.resolve())
+        return str((self.base_dir / path).resolve())
 
     # --------------- Repository Operations ---------------
-    @ecp.action(name = "get_repository",
-                description = "Get repository information.")
-    async def _get_repository(self, owner: str, repo: str) -> GitHubRepository:
-        """Get repository information.
-        
-        Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-
-        Returns:
-            GitHubRepository: GitHub repository information
-        """
-        try:
-            return await self.service.get_repository(owner, repo)
-        except NotFoundError:
-            logger.error(f"| Repository not found: {owner}/{repo}")
-            raise
-        except Exception as e:
-            logger.error(f"| Failed to get repository {owner}/{repo}: {e}")
-            raise
-
-    @ecp.action(name = "list_repositories",
-                description = "List repositories.")
-    async def _list_repositories(
-        self,
-        owner: Optional[str] = None,
-        repo_type: str = "all",
-        sort: str = "updated",
-        direction: str = "desc",
-        per_page: int = 30
-    ) -> List[GitHubRepository]:
-        """List repositories.
-        
-        Args:
-            owner (str): GitHub repository owner
-            repo_type (str): GitHub repository type
-            sort (str): GitHub repository sort
-            direction (str): GitHub repository direction
-            per_page (int): GitHub repository per page
-
-        Returns:
-            List[GitHubRepository]: List of GitHub repositories
-        """
-        try:
-            return await self.service.list_repositories(
-                owner=owner,
-                repo_type=repo_type,
-                sort=sort,
-                direction=direction,
-                per_page=per_page
-            )
-        except Exception as e:
-            logger.error(f"| Failed to list repositories: {e}")
-            raise
-    
-    @ecp.action(name = "create_repository",
-                description = "Create a new repository.")
+    @ecp.action(name="create_repository", 
+                description="Create a new GitHub repository")
     async def _create_repository(
         self,
         name: str,
         description: Optional[str] = None,
         private: bool = False,
-        auto_init: bool = False,
-        gitignore_template: Optional[str] = None,
-        license_template: Optional[str] = None
-    ) -> GitHubRepository:
-        """Create a new repository.
+        auto_init: bool = False
+    ) -> str:
+        """Create a new GitHub repository.
         
         Args:
-            name (str): GitHub repository name
-            description (str): GitHub repository description
-            private (bool): GitHub repository private
-            auto_init (bool): GitHub repository auto init
-            gitignore_template (str): GitHub repository gitignore template
-            license_template (str): GitHub repository license template
-
+            name (str): The name of the repository.
+            description (Optional[str]): The description of the repository.
+            private (bool): Whether the repository is private.
+            auto_init (bool): Whether to auto-initialize the repository.
+        
         Returns:
-            GitHubRepository: GitHub repository information
+            A string indicating the success or failure of the repository creation.
         """
         try:
+            # First check if repository already exists
+            current_user = self.service.authenticated_user.login
+            try:
+                existing_repo = await self.service.get_repository(current_user, name)
+                return f"Repository '{existing_repo.full_name}' already exists. URL: {existing_repo.html_url}"
+            except RepositoryError:
+                # Repository doesn't exist, proceed with creation
+                pass
+            
             repo = await self.service.create_repository(
                 name=name,
                 description=description,
                 private=private,
-                auto_init=auto_init,
-                gitignore_template=gitignore_template,
-                license_template=license_template
+                auto_init=auto_init
             )
-            logger.info(f"| Created repository: {repo.full_name}")
-            return repo
+            return f"Repository '{repo.full_name}' created successfully. URL: {repo.html_url}"
+        except RepositoryError as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to create repository {name}: {e}")
-            raise
+            return f"Failed to create repository '{name}': {str(e)}"
 
-    # --------------- File Operations ---------------
-    @ecp.action(name = "get_file_content",
-                description = "Get file content from repository.")
-    async def _get_file_content(
-        self,
-        owner: str,
-        repo: str,
-        path: str,
-        ref: Optional[str] = None
-    ) -> GitHubFile:
-        """Get file content from repository.
+    @ecp.action(name="get_repository",
+                description="Get your repository information")
+    async def _get_repository(self, repo: str) -> str:
+        """Get repository information for your own repository.
         
         Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            path (str): GitHub repository path
-            ref (str): GitHub repository reference
-
-        Returns:
-            GitHubFile: GitHub file information
-        """
-        try:
-            return await self.service.get_file_content(owner, repo, path, ref)
-        except NotFoundError:
-            logger.error(f"| File not found: {owner}/{repo}/{path}")
-            raise
-        except Exception as e:
-            logger.error(f"| Failed to get file content {owner}/{repo}/{path}: {e}")
-            raise
-
-    @ecp.action(name = "get_directory_contents",
-                description = "Get directory contents from repository.")
-    async def _get_directory_contents(
-        self,
-        owner: str,
-        repo: str,
-        path: str = "",
-        ref: Optional[str] = None
-    ) -> List[Union[GitHubFile, GitHubDirectory]]:
-        """Get directory contents.
-        
-        Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            path (str): GitHub repository path
-            ref (str): GitHub repository reference
-
-        Returns:
-            List[Union[GitHubFile, GitHubDirectory]]: List of GitHub file and directory information
-        """
-        try:
-            return await self.service.get_directory_contents(owner, repo, path, ref)
-        except NotFoundError:
-            logger.error(f"| Directory not found: {owner}/{repo}/{path}")
-            raise
-        except Exception as e:
-            logger.error(f"| Failed to get directory contents {owner}/{repo}/{path}: {e}")
-            raise
-
-    @ecp.action(name = "create_or_update_file",
-                description = "Create or update a file in repository.")
-    async def _create_or_update_file(
-        self,
-        owner: str,
-        repo: str,
-        path: str,
-        content: str,
-        message: str,
-        branch: Optional[str] = None,
-        sha: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Create or update a file in repository.
-        
-        Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            path (str): GitHub repository path
-            content (str): GitHub repository content
-            message (str): GitHub repository message
-            branch (str): GitHub repository branch
-            sha (str): GitHub repository sha
+            repo (str): The name of your repository.
         
         Returns:
-            Dict[str, Any]: GitHub repository information
+            A string containing detailed repository information including description, URL, stars, forks, language, privacy status, and timestamps.
         """
         try:
-            result = await self.service.create_or_update_file(
-                owner, repo, path, content, message, branch, sha
-            )
-            logger.info(f"| File {'updated' if sha else 'created'}: {owner}/{repo}/{path}")
+            # Use authenticated user as owner
+            owner = self.service.authenticated_user.login
+            repository = await self.service.get_repository(owner, repo)
+            
+            result = dedent(f"""
+                        Repository: {repository.full_name}
+                        Description: {repository.description or 'No description'}
+                        URL: {repository.html_url}
+                        Stars: {repository.stargazers_count}
+                        Forks: {repository.forks_count}
+                        Language: {repository.language or 'Unknown'}
+                        Private: {repository.private}
+                        Created: {repository.created_at}
+                        Updated: {repository.updated_at}
+                        """)
             return result
+        except NotFoundError as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to create/update file {owner}/{repo}/{path}: {e}")
-            raise
+            return f"Failed to get repository '{repo}': {str(e)}"
 
-    @ecp.action(name = "delete_file",
-                description = "Delete a file from repository.")
-    async def _delete_file(
+    @ecp.action(name="fork_repository",
+                description="Fork a public repository to your account")
+    async def _fork_repository(self, owner: str, repo: str) -> str:
+        """Fork a public repository to your account.
+        
+        Args:
+            owner (str): The owner of the repository to fork.
+            repo (str): The name of the repository to fork.
+        
+        Returns:
+            A string indicating the success or failure of the fork operation.
+        """
+        try:
+            forked_repo = await self.service.fork_repository(owner, repo)
+            return f"Successfully forked repository '{owner}/{repo}' to '{forked_repo.full_name}'. URL: {forked_repo.html_url}"
+        except RepositoryError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to fork repository '{owner}/{repo}': {str(e)}"
+
+    @ecp.action(name="delete_repository",
+                description="Delete your own repository")
+    async def _delete_repository(self, repo: str) -> str:
+        """Delete your own repository.
+        
+        Args:
+            repo (str): The name of your repository to delete.
+        
+        Returns:
+            A string indicating the success or failure of the repository deletion operation.
+        """
+        try:
+            # Use authenticated user as owner
+            owner = self.service.authenticated_user.login
+            await self.service.delete_repository(owner, repo)
+            return f"Repository '{owner}/{repo}' deleted successfully"
+        except RepositoryError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to delete repository '{repo}': {str(e)}"
+
+    # --------------- Git Operations ---------------
+    @ecp.action(name="git_init", 
+                description="Initialize a local directory as Git repository")
+    async def _git_init(
+        self,
+        local_path: str,
+        remote_url: Optional[str] = None
+    ) -> str:
+        """Initialize a local directory as Git repository.
+        
+        Args:
+            local_path (str): The local directory path to initialize as a Git repository (relative to base_dir).
+            remote_url (Optional[str]): The remote repository URL to set as origin. If None, no remote is added.
+        
+        Returns:
+            A string indicating the success or failure of the repository initialization operation.
+        """
+        try:
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.init_repository(resolved_path, remote_url)
+        except (GitError, RepositoryError) as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to initialize repository in '{local_path}': {str(e)}"
+    
+    @ecp.action(name="git_clone", 
+                description="Clone a repository to local directory (automatically forks if not your repository)")
+    async def _git_clone(
         self,
         owner: str,
         repo: str,
-        path: str,
-        message: str,
-        sha: str,
+        local_path: str,
         branch: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Delete a file from repository.
+    ) -> str:
+        """Clone a repository to local directory.
+        
+        If the repository belongs to someone else, it will automatically fork the repository
+        to your account first, then clone the forked version.
         
         Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            path (str): GitHub repository path
-            message (str): GitHub repository message
-            sha (str): GitHub repository sha
-            branch (str): GitHub repository branch
+            owner (str): The owner of the repository.
+            repo (str): The name of the repository.
+            local_path (str): The local directory path where the repository will be cloned (relative to base_dir).
+            branch (Optional[str]): The specific branch to clone. If None, clones the default branch.
         
         Returns:
-            Dict[str, Any]: GitHub repository information
+            A string indicating the success or failure of the repository cloning operation.
         """
         try:
-            result = await self.service.delete_file(owner, repo, path, message, sha, branch)
-            logger.info(f"| File deleted: {owner}/{repo}/{path}")
-            return result
+            resolved_path = self._resolve_path(local_path)
+            current_user = self.service.authenticated_user.login
+            
+            # If it's the user's own repository, clone directly
+            if owner == current_user:
+                return await self.service.clone_repository(owner, repo, resolved_path, branch)
+            
+            # If it's someone else's repository, fork it first
+            try:
+                forked_repo = await self.service.fork_repository(owner, repo)
+                fork_result = f"Forked repository '{owner}/{repo}' to '{forked_repo.full_name}'. "
+                
+                # Clone the forked repository
+                clone_result = await self.service.clone_repository(
+                    forked_repo.owner, forked_repo.name, resolved_path, branch
+                )
+                
+                return fork_result + clone_result
+                
+            except RepositoryError as e:
+                # If fork fails (e.g., already forked), try to clone the existing fork
+                if "already be forked" in str(e).lower():
+                    # Try to clone the user's existing fork
+                    try:
+                        return await self.service.clone_repository(current_user, repo, resolved_path, branch)
+                    except Exception:
+                        pass
+                raise e
+                
+        except (GitError, RepositoryError) as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to delete file {owner}/{repo}/{path}: {e}")
-            raise
+            return f"Failed to clone repository '{owner}/{repo}': {str(e)}"
+    
+    @ecp.action(name="git_commit", description="Commit changes to local repository")
+    async def _git_commit(
+        self,
+        local_path: str,
+        message: str,
+        add_all: bool = True
+    ) -> str:
+        """Commit changes to local repository.
+        
+        Args:
+            local_path (str): The local repository path (relative to base_dir).
+            message (str): The commit message.
+            add_all (bool): Whether to add all changes before committing. Defaults to True.
+        
+        Returns:
+            A string indicating the success or failure of the commit operation, including the commit hash.
+        """
+        try:
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_commit(resolved_path, message, add_all)
+        except GitError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to commit in '{local_path}': {str(e)}"
+
+    @ecp.action(name="git_push", description="Push changes to remote repository")
+    async def _git_push(
+        self,
+        local_path: str,
+        remote: str = "origin",
+        branch: Optional[str] = None
+    ) -> str:
+        """Push changes to remote repository.
+        
+        Args:
+            local_path (str): The local repository path (relative to base_dir).
+            remote (str): The remote name. Defaults to "origin".
+            branch (Optional[str]): The branch name to push. If None, pushes the current branch.
+        
+        Returns:
+            A string indicating the success or failure of the push operation.
+        """
+        try:
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_push(resolved_path, remote, branch)
+        except GitError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to push from '{local_path}': {str(e)}"
+
+    @ecp.action(name="git_pull", description="Pull changes from remote repository")
+    async def _git_pull(
+        self,
+        local_path: str,
+        remote: str = "origin",
+        branch: Optional[str] = None
+    ) -> str:
+        """Pull changes from remote repository.
+        
+        Args:
+            local_path (str): The local repository path (relative to base_dir or absolute).
+            remote (str): The remote name. Defaults to "origin".
+            branch (Optional[str]): The branch name to pull. If None, pulls the current branch.
+        
+        Returns:
+            A string indicating the success or failure of the pull operation.
+        """
+        try:
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_pull(resolved_path, remote, branch)
+        except GitError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to pull to '{local_path}': {str(e)}"
+
+    @ecp.action(name="git_fetch", description="Fetch changes from remote repository")
+    async def _git_fetch(
+        self,
+        local_path: str,
+        remote: str = "origin"
+    ) -> str:
+        """Fetch changes from remote repository.
+        
+        Args:
+            local_path (str): The local repository path (relative to base_dir or absolute).
+            remote (str): The remote name. Defaults to "origin".
+        
+        Returns:
+            A string indicating the success or failure of the fetch operation.
+        """
+        try:
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_fetch(resolved_path, remote)
+        except GitError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to fetch to '{local_path}': {str(e)}"
 
     # --------------- Branch Operations ---------------
-    @ecp.action(name = "list_branches",
-                description = "List repository branches.")
-    async def _list_branches(self, owner: str, repo: str) -> List[GitHubBranch]:
-        """List repository branches.
-        
-        Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-
-        Returns:
-            List[GitHubBranch]: List of GitHub branches
-        """
-        try:
-            return await self.service.list_branches(owner, repo)
-        except Exception as e:
-            logger.error(f"| Failed to list branches for {owner}/{repo}: {e}")
-            raise
-
-    @ecp.action(name = "get_branch",
-                description = "Get specific branch information.")
-    async def _get_branch(self, owner: str, repo: str, branch: str) -> GitHubBranch:
-        """Get specific branch information.
-        
-        Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            branch (str): GitHub repository branch
-        
-        Returns:
-            GitHubBranch: GitHub branch information
-        """
-        try:
-            return await self.service.get_branch(owner, repo, branch)
-        except NotFoundError:
-            logger.error(f"| Branch not found: {owner}/{repo}/{branch}")
-            raise
-        except Exception as e:
-            logger.error(f"| Failed to get branch {owner}/{repo}/{branch}: {e}")
-            raise
-
-    # --------------- Issue Operations ---------------
-    @ecp.action(name = "list_issues",
-                description = "List repository issues.")
-    async def _list_issues(
+    @ecp.action(name="git_create_branch", description="Create a new branch")
+    async def _git_create_branch(
         self,
-        owner: str,
-        repo: str,
-        state: str = "open",
-        labels: Optional[List[str]] = None,
-        assignee: Optional[str] = None,
-        creator: Optional[str] = None,
-        per_page: int = 30
-    ) -> List[GitHubIssue]:
-        """List repository issues.
+        local_path: str,
+        branch_name: str,
+        checkout: bool = True
+    ) -> str:
+        """Create a new branch.
         
         Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            state (str): GitHub repository state
-            labels (List[str]): GitHub repository labels
-            assignee (str): GitHub repository assignee
-            creator (str): GitHub repository creator
-            per_page (int): GitHub repository per page
-
-        Returns:
-            List[GitHubIssue]: List of GitHub issues
-        """
-        try:
-            return await self.service.list_issues(
-                owner, repo, state, labels, assignee, creator, per_page
-            )
-        except Exception as e:
-            logger.error(f"| Failed to list issues for {owner}/{repo}: {e}")
-            raise
-
-    @ecp.action(name = "get_issue",
-                description = "Get specific issue.")
-    async def _get_issue(self, owner: str, repo: str, issue_number: int) -> GitHubIssue:
-        """Get specific issue.
+            local_path (str): The local repository path (relative to base_dir or absolute).
+            branch_name (str): The name of the new branch to create.
+            checkout (bool): Whether to checkout the new branch after creation. Defaults to True.
         
-        Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            issue_number (int): GitHub repository issue number
-
         Returns:
-            GitHubIssue: GitHub issue information
+            A string indicating the success or failure of the branch creation operation.
         """
         try:
-            return await self.service.get_issue(owner, repo, issue_number)
-        except NotFoundError:
-            logger.error(f"| Issue not found: {owner}/{repo}#{issue_number}")
-            raise
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_create_branch(resolved_path, branch_name, checkout)
+        except GitError as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to get issue {owner}/{repo}#{issue_number}: {e}")
-            raise
+            return f"Failed to create branch '{branch_name}': {str(e)}"
 
-    @ecp.action(name = "create_issue",
-                description = "Create a new issue.")
-    async def _create_issue(
+    @ecp.action(name="git_checkout_branch", description="Checkout an existing branch")
+    async def _git_checkout_branch(
         self,
-        owner: str,
-        repo: str,
-        title: str,
-        body: Optional[str] = None,
-        assignees: Optional[List[str]] = None,
-        labels: Optional[List[str]] = None
-    ) -> GitHubIssue:
-        """Create a new issue.
+        local_path: str,
+        branch_name: str
+    ) -> str:
+        """Checkout an existing branch.
         
         Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            title (str): GitHub repository title
-            body (str): GitHub repository body
-            assignees (List[str]): GitHub repository assignees
-            labels (List[str]): GitHub repository labels
-
+            local_path (str): The local repository path (relative to base_dir or absolute).
+            branch_name (str): The name of the branch to checkout.
+        
         Returns:
-            GitHubIssue: GitHub issue information
+            A string indicating the success or failure of the branch checkout operation.
         """
         try:
-            issue = await self.service.create_issue(
-                owner, repo, title, body, assignees, labels
-            )
-            logger.info(f"| Created issue: {owner}/{repo}#{issue.number}")
-            return issue
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_checkout_branch(resolved_path, branch_name)
+        except GitError as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to create issue in {owner}/{repo}: {e}")
-            raise
+            return f"Failed to checkout branch '{branch_name}': {str(e)}"
 
-    # --------------- Pull Request Operations ---------------
-    @ecp.action(name = "list_pull_requests",
-                description = "List repository pull requests.")
-    async def _list_pull_requests(
+    @ecp.action(name="git_list_branches", description="List all branches")
+    async def _git_list_branches(self, local_path: str) -> str:
+        """List all branches.
+        
+        Args:
+            local_path (str): The local repository path (relative to base_dir or absolute).
+        
+        Returns:
+            A string containing a formatted list of all branches with the current branch marked.
+        """
+        try:
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_list_branches(resolved_path)
+        except GitError as e:
+            return str(e)
+        except Exception as e:
+            return f"Failed to list branches: {str(e)}"
+
+    @ecp.action(name="git_delete_branch", description="Delete a branch")
+    async def _git_delete_branch(
         self,
-        owner: str,
-        repo: str,
-        state: str = "open",
-        head: Optional[str] = None,
-        base: Optional[str] = None,
-        per_page: int = 30
-    ) -> List[GitHubPullRequest]:
-        """List repository pull requests.
+        local_path: str,
+        branch_name: str,
+        force: bool = False
+    ) -> str:
+        """Delete a branch.
         
         Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            state (str): GitHub repository state
-            head (str): GitHub repository head
-            base (str): GitHub repository base
-            per_page (int): GitHub repository per page
-
+            local_path (str): The local repository path (relative to base_dir or absolute).
+            branch_name (str): The name of the branch to delete.
+            force (bool): Whether to force delete the branch even if it's not merged. Defaults to False.
+        
         Returns:
-            List[GitHubPullRequest]: List of GitHub pull requests
+            A string indicating the success or failure of the branch deletion operation.
         """
         try:
-            return await self.service.list_pull_requests(
-                owner, repo, state, head, base, per_page
-            )
+            resolved_path = self._resolve_path(local_path)
+            return await self.service.git_delete_branch(resolved_path, branch_name, force)
+        except GitError as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to list pull requests for {owner}/{repo}: {e}")
-            raise
+            return f"Failed to delete branch '{branch_name}': {str(e)}"
 
-    @ecp.action(name = "get_pull_request",
-                description = "Get specific pull request.")
-    async def _get_pull_request(self, owner: str, repo: str, pr_number: int) -> GitHubPullRequest:
-        """Get specific pull request.
+    @ecp.action(name="git_status", description="Get Git repository status")
+    async def _git_status(self, local_path: str) -> str:
+        """Get Git repository status.
         
         Args:
-            owner (str): GitHub repository owner
-            repo (str): GitHub repository name
-            pr_number (int): GitHub repository pull request number
-
-        Returns:
-            GitHubPullRequest: GitHub pull request information
-        """
-        try:
-            return await self.service.get_pull_request(owner, repo, pr_number)
-        except NotFoundError:
-            logger.error(f"| Pull request not found: {owner}/{repo}#{pr_number}")
-            raise
-        except Exception as e:
-            logger.error(f"| Failed to get pull request {owner}/{repo}#{pr_number}: {e}")
-            raise
-
-    # --------------- Search Operations ---------------
-    @ecp.action(name = "search_repositories",
-                description = "Search repositories.")
-    async def _search_repositories(
-        self,
-        query: str,
-        sort: str = "stars",
-        order: str = "desc",
-        per_page: int = 30
-    ) -> GitHubSearchResult:
-        """Search repositories.
-        
-        Args:
-            query (str): GitHub repository query
-            sort (str): GitHub repository sort
-            order (str): GitHub repository order
-            per_page (int): GitHub repository per page
+            local_path (str): The local repository path (relative to base_dir or absolute).
         
         Returns:
-            GitHubSearchResult: GitHub search result information
+            A string containing detailed repository status including current branch, dirty state, modified files, staged files, untracked files, and all branches.
         """
         try:
-            return await self.service.search_repositories(query, sort, order, per_page)
+            resolved_path = self._resolve_path(local_path)
+            status = await self.service.git_status(resolved_path)
+            result = dedent(f"""Repository Status:
+                Current Branch: {status.current_branch}
+                Dirty: {status.is_dirty}
+                Modified Files: {', '.join(status.modified_files) if status.modified_files else 'None'}
+                Staged Files: {', '.join(status.staged_files) if status.staged_files else 'None'}
+                Untracked Files: {', '.join(status.untracked_files) if status.untracked_files else 'None'}
+                Branches: {', '.join(status.branches)}""")
+            return result
+        except GitError as e:
+            return str(e)
         except Exception as e:
-            logger.error(f"| Failed to search repositories with query '{query}': {e}")
-            raise
-
-    @ecp.action(name = "search_issues",
-                description = "Search issues.")
-    async def _search_issues(
-        self,
-        query: str,
-        sort: str = "updated",
-        order: str = "desc",
-        per_page: int = 30
-    ) -> GitHubSearchResult:
-        """Search issues.
-        
-        Args:
-            query (str): GitHub repository query
-            sort (str): GitHub repository sort
-            order (str): GitHub repository order
-            per_page (int): GitHub repository per page
-
-        Returns:
-            GitHubSearchResult: GitHub search result information
-        """
-        try:
-            return await self.service.search_issues(query, sort, order, per_page)
-        except Exception as e:
-            logger.error(f"| Failed to search issues with query '{query}': {e}")
-            raise
-
-    # --------------- User Operations ---------------
-    @ecp.action(name = "get_user",
-                description = "Get user information by username.")
-    async def _get_user(self, username: str) -> GitHubUser:
-        """Get user information by username.
-        
-        Args:
-            username (str): GitHub repository username
-
-        Returns:
-            GitHubUser: GitHub user information
-        """
-        try:
-            return await self.service.get_user(username)
-        except NotFoundError:
-            logger.error(f"| User not found: {username}")
-            raise
-        except Exception as e:
-            logger.error(f"| Failed to get user {username}: {e}")
-            raise
-
-    # --------------- Utility Methods ---------------
-    @ecp.action(name = "get_rate_limit_info",
-                description = "Get current rate limit information.")
-    async def _get_rate_limit_info(self) -> Dict[str, Any]:
-        """Get current rate limit information.
-        
-        Returns:
-            Dict[str, Any]: GitHub rate limit information
-        """
-        try:
-            return await self.service.get_rate_limit_info()
-        except Exception as e:
-            logger.error(f"| Failed to get rate limit info: {e}")
-            raise
-
-    @ecp.action(name = "clear_cache",
-                description = "Clear service cache.")
-    async def _clear_cache(self, cache_type: Optional[str] = None) -> None:
-        """Clear service cache.
-        
-        Args:
-            cache_type (str): GitHub repository cache type
-        """
-        try:
-            await self.service.clear_cache(cache_type)
-            logger.info(f"| Cache cleared: {cache_type or 'all'}")
-        except Exception as e:
-            logger.error(f"| Failed to clear cache: {e}")
-            raise
-
-    @ecp.action(name = "cleanup_expired_cache",
-                description = "Cleanup expired cache entries.")
-    async def _cleanup_expired_cache(self) -> int:
-        """Cleanup expired cache entries.
-        
-        Returns:
-            int: GitHub repository expired cache entries
-        """
-        try:
-            count = await self.service.cleanup_expired_cache()
-            if count > 0:
-                logger.info(f"| Cleaned up {count} expired cache entries")
-            return count
-        except Exception as e:
-            logger.error(f"| Failed to cleanup expired cache: {e}")
-            raise
+            return f"Failed to get status: {str(e)}"
 
     # --------------- Environment Interface Methods ---------------
     async def get_info(self) -> Dict[str, Any]:
-        """Get environment information.
-        
-        Returns:
-            Dict[str, Any]: GitHub environment information
-        """
+        """Get environment information."""
         return {
             "type": "github",
-            "authenticated_user": self.authenticated_user.login if self._authenticated_user else None,
-            "base_url": self.auth.base_url,
-            "cache_enabled": self.config.enable_cache,
-            "cache_ttl": self.config.cache_ttl,
+            "username": self.service.authenticated_user.login if self._service else None,
+            "authenticated": self._service is not None,
         }
 
     async def health_check(self) -> Dict[str, Any]:
-        """Perform health check.
-        
-        Returns:
-            Dict[str, Any]: GitHub health check information
-        """
+        """Perform health check."""
         try:
-            rate_limit = await self.get_rate_limit_info()
+            if self._service is None:
+                return {"status": "unhealthy", "error": "Not initialized"}
+            
+            # Test service access
+            user = self.service.authenticated_user
             return {
                 "status": "healthy",
-                "authenticated": self._authenticated_user is not None,
-                "rate_limit_remaining": rate_limit.get("rate", {}).get("remaining"),
-                "rate_limit_reset": rate_limit.get("rate", {}).get("reset"),
+                "username": user.login,
+                "authenticated": True,
             }
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "error": str(e),
             }
-            
+
     async def get_state(self) -> Dict[str, Any]:
-        """Get environment state.
-        
-        Returns:
-            Dict[str, Any]: GitHub environment state
-        """
-        state: Dict[str, Any] = {
-            "state": "GitHub environment is ready to use."
+        """Get environment state."""
+        return {
+            "state": "GitHub environment is ready to use.",
+            "username": self.service.authenticated_user.login if self._service else None,
+            "authenticated": self._service is not None,
         }
-        return state

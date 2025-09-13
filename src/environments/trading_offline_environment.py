@@ -6,20 +6,19 @@ from typing import Any, Optional, Dict
 import random
 import numpy as np
 import pandas as pd
-from inspect import cleandoc
-
+from dataclasses import asdict
 
 from src.utils import TradingRecords, Record
 from src.utils import get_token_count
 from src.utils import get_start_end_timestamp
 from src.environments.protocol import ecp
 from src.logger import logger
+from src.utils import dedent
 
 from src.environments.protocol.environment import BaseEnvironment
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 
-_TRADING_OFFLINE_ENVIRONMENT_RULES = """<environment_trading_offline>
-<state>
+_STATE_RULES = """
 The environment state includes:
 1. Name: Asset name, Symbol: Asset symbol
 2. Price: Price information of the asset
@@ -42,23 +41,7 @@ Trading record fields:
 11. `action`: Action taken, `BUY`, `SELL`, or `HOLD`
 12. `post_value`: Current total value
 13. `ret`: Return, `ret = (post_value - pre_value) / pre_value`
-</state>
-
-<vision>
-No vision available.
-</vision>
-
-<interaction>
-Available actions:
-1. step: Step the trading environment.
-    - action: The action to take. Should be `BUY` or `SELL` or `HOLD`.
-2. save: Save the trading records if the environment is done.
-    - file_path: The path to save the trading records.
-    
-Input format: JSON string with action-specific parameters.
-Example: {"name": "step", "args": {"action": "BUY"}}
-</interaction>
-</environment_trading_offline>"""
+"""
 
 
 def sample_news(df: pd.DataFrame, sample_texts: int = 2):
@@ -118,7 +101,10 @@ def convert_dataframe_to_markdown(
 @ecp.environment(name = "trading_offline",
                  env_type = "trading_offline",
                  description = "Trading offline environment for trading",
-                 rules = _TRADING_OFFLINE_ENVIRONMENT_RULES)
+                 has_vision = False,
+                 additional_rules = {
+                    "state": _STATE_RULES,
+                 })
 class TradingOfflineEnvironment(BaseEnvironment):
     def __init__(
         self,
@@ -370,30 +356,30 @@ class TradingOfflineEnvironment(BaseEnvironment):
         record_string = strings['record']
         valid_action_string = strings['valid_action']
         
-        prompt = cleandoc(f"""
-<symbol>
-Name: {self.asset_info['asset_name']}
-Symbol: {self.asset_info['asset_symbol']}
-</symbol>
-<price>
-{price_string}
-</price>
-<news>
-{news_string}
-</news>
-<record>
-{record_string}
-</record>
-<history_valid_action>
-{valid_action_string}
-</history_valid_action>
-<current_state>
-Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.
-</current_state>
-<environment_status>
-The environment status is {'done' if self.done else 'running'}.
-</environment_status>
-        """)
+        prompt = dedent(f"""
+            <symbol>
+            Name: {self.asset_info['asset_name']}
+            Symbol: {self.asset_info['asset_symbol']}
+            </symbol>
+            <price>
+            {price_string}
+            </price>
+            <news>
+            {news_string}
+            </news>
+            <record>
+            {record_string}
+            </record>
+            <history_valid_action>
+            {valid_action_string}
+            </history_valid_action>
+            <current_state>
+            Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.
+            </current_state>
+            <environment_status>
+            The environment status is {'done' if self.done else 'running'}.
+            </environment_status>
+            """)
         
         prompt_token_nums = get_token_count(prompt)
 
@@ -731,13 +717,17 @@ The environment status is {'done' if self.done else 'running'}.
 
         return self.state, reward, self.done, self.truncted, info
     
+    async def initialize(self) -> None:
+        """Initialize the trading offline environment."""
+        logger.info(f"| 💰 Trading Offline Environment initialized")
+    
     @ecp.action(name = "step",
                 description = "Step the trading environment.")
     async def _step(self, action: str) -> str:
         """Step the trading environment.
         
         Args:
-            action (str): The action to take. Should be `BUY` or `SELL` or `HOLD`.
+            action (str): The action to take. Should be `BUY`, `SELL` or `HOLD`.
 
         Returns:
             str: The state of the trading environment.
@@ -760,24 +750,24 @@ The environment status is {'done' if self.done else 'running'}.
         if not done:
             logger.info(f"| Prompt Token Numbers: {state['prompt_token_nums']}")
         
-            res = cleandoc(f"""
-<info>
-Name: {self.asset_info['asset_name']}
-Symbol: {self.asset_info['asset_symbol']}
-Start timestamp: {self.start_timestamp}
-End timestamp: {self.end_timestamp}
-Current timestamp: {info['timestamp']}
-Environment status: running
-</info>
-<action>
-Expected executed action of assistant: {action}
-Actual executed action because of cash or position constraint: {info['action_label']}
-</action>
-<result>
-Total profit: {info['total_profit']:.4f}%
-Reward: {reward:.4f}
-</result>
-            """)
+            res = dedent(f"""
+                <info>
+                Name: {self.asset_info['asset_name']}
+                Symbol: {self.asset_info['asset_symbol']}
+                Start timestamp: {self.start_timestamp}
+                End timestamp: {self.end_timestamp}
+                Current timestamp: {info['timestamp']}
+                Environment status: running
+                </info>
+                <action>
+                Expected executed action of assistant: {action}
+                Actual executed action because of cash or position constraint: {info['action_label']}
+                </action>
+                <result>
+                Total profit: {info['total_profit']:.4f}%
+                Reward: {reward:.4f}
+                </result>
+                """)
             
             return res
         
@@ -799,26 +789,26 @@ Reward: {reward:.4f}
             for metric_name, metric_value in self.metrics.items():
                 metrics_string += f"{metric_name} | {metric_value:.4f}\n"
                 
-            res = cleandoc(f"""
-<info>
-Name: {self.asset_info['asset_name']}
-Symbol: {self.asset_info['asset_symbol']}
-Start timestamp: {self.start_timestamp}
-End timestamp: {self.end_timestamp}
-Current timestamp: {info['timestamp']}
-Environment status: done
-</info>
-<action>
-Expected executed action of assistant: {action}
-Actual executed action because of cash or position constraint: {info['action_label']}
-</action>
-<result>
-Total profit: {info['total_profit']:.4f}%
-Reward: {reward:.4f}
-Trading metrics: 
-{metrics_string}
-</result>
-""") 
+            res = dedent(f"""
+                <info>
+                Name: {self.asset_info['asset_name']}
+                Symbol: {self.asset_info['asset_symbol']}
+                Start timestamp: {self.start_timestamp}
+                End timestamp: {self.end_timestamp}
+                Current timestamp: {info['timestamp']}
+                Environment status: done
+                </info>
+                <action>
+                Expected executed action of assistant: {action}
+                Actual executed action because of cash or position constraint: {info['action_label']}
+                </action>
+                <result>
+                Total profit: {info['total_profit']:.4f}%
+                Reward: {reward:.4f}
+                Trading metrics: 
+                {metrics_string}
+                </result>
+                """) 
             return res
         
     @ecp.action(name = "save",
@@ -827,7 +817,7 @@ Trading metrics:
         """Save the trading records.
         
         Args:
-            file_path (str): The path to save the trading records.
+            file_path (str): The absolute path to save the trading records.
 
         Returns:
             str: The message of the trading records saved successfully.

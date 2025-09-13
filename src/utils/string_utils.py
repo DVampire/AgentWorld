@@ -27,3 +27,10 @@ def extract_boxed_content(text: str) -> str:
         return content[:end_pos].strip()
 
     return "None"
+
+def dedent(text: str) -> str:
+    """
+    Dedent the text and expand the tabs.
+    """
+    clean = "\n".join(line.strip() for line in text.splitlines())
+    return clean

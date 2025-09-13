@@ -59,7 +59,7 @@ class EnvironmentInfo(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     
     def __str__(self):
-        return f"EnvironmentInfo(name={self.name}, type={self.type}, rules={self.rules}, description={self.description}, actions={self.actions}, env_class={self.env_class}, metadata={self.metadata})"
+        return f"EnvironmentInfo(name={self.name}, type={self.type}, description={self.description})"
     
     def __repr__(self):
         return self.__str__()

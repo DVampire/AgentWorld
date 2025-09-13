@@ -12,7 +12,6 @@ from src.environments.filesystem import FileSystemService, FileSystem
 from src.environments.filesystem.types import FileReadRequest
 from src.environments.filesystem.handlers import TextHandler, JsonHandler, HandlerRegistry
 
-
 class FileSystemTester:
     """Comprehensive test suite for filesystem functionality."""
     

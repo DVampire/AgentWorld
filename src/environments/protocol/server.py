@@ -6,10 +6,11 @@ Server implementation for the Environment Context Protocol with decorator suppor
 import asyncio
 import json
 import inspect
-from typing import Any, Dict, List, Optional, Callable, Type
+from typing import Any, Dict, List, Optional, Callable, Type, get_origin, get_args
 from datetime import datetime
 from pydantic import BaseModel, create_model, Field
 import inflection
+import typing
 
 from src.environments.protocol.types import (
     EnvironmentInfo, 
@@ -26,17 +27,19 @@ class ECPServer:
     
     def environment(self, 
                     name: str = None,
-                    env_type: Optional[str] = None, 
-                    description: Optional[str] = "", 
-                    rules: Optional[str] = ""
+                    env_type: str = None, 
+                    description: str = "", 
+                    has_vision: bool = False,
+                    additional_rules: Optional[Dict[str, str]] = None
                     ):
         """Decorator to register an environment class
         
         Args:
-            name: Environment name (defaults to class name)
-            env_type: Environment type (defaults to class name)
-            description: Environment description
-            rules: Environment rules
+            name (str): Environment name (defaults to class name)
+            env_type (str): Environment type (defaults to class name)
+            description (str): Environment description
+            has_vision (bool): Whether the environment has vision capabilities
+            additional_rules (Dict[str, str]): Dictionary with custom rules for 'state', 'vision', 'interaction'
         """
         def decorator(cls: Type[BaseEnvironment]):
             env_name = name or cls.__name__
@@ -46,7 +49,8 @@ class ECPServer:
             cls._env_name = env_name
             cls._env_type = env_type_name
             cls._env_description = description
-            cls._env_rules = rules
+            cls._has_vision = has_vision
+            cls._additional_rules = additional_rules
             
             # Collect all actions from the class
             actions = {}
@@ -68,12 +72,22 @@ class ECPServer:
                     
                     actions[getattr(attr, '_action_name')] = action_info
             
+            # Generate rules
+            final_rules = self._generate_environment_rules(
+                env_name,
+                env_type_name,
+                description,
+                actions,
+                has_vision,
+                additional_rules
+            )
+            
             # Create EnvironmentInfo and store it
             env_info = EnvironmentInfo(
                 name=env_name,
                 type=env_type_name,
                 description=description,
-                rules=rules,
+                rules=final_rules,
                 actions=actions,
                 env_class=cls,
                 env_config=None,
@@ -169,7 +183,250 @@ class ECPServer:
 
         return args_schema
     
-    def build_environment(self, env_name: str, env_config: Optional[Dict[str, Any]] = None):
+    def _get_type_string(self, func: Callable, param_name: str) -> str:
+        """Get the type string for a parameter from function signature
+        
+        Args:
+            func: The function object
+            param_name: The parameter name
+            
+        Returns:
+            str: The type string (e.g., 'str', 'Optional[str]', 'List[str]')
+        """
+        if not func:
+            return 'unknown'
+            
+        try:
+            sig = inspect.signature(func)
+            param = sig.parameters.get(param_name)
+            if not param:
+                return 'unknown'
+                
+            annotation = param.annotation
+            if annotation == inspect.Parameter.empty:
+                return 'unknown'
+            
+            # Convert type annotation to string
+            result = self._format_type_annotation(annotation)
+            return result
+            
+        except Exception:
+            return 'unknown'
+    
+    def _format_type_annotation(self, annotation) -> str:
+        """Format type annotation to readable string
+        
+        Args:
+            annotation: The type annotation
+            
+        Returns:
+            str: Formatted type string
+        """
+        
+        # Handle basic types
+        if annotation is str:
+            return 'str'
+        elif annotation is int:
+            return 'int'
+        elif annotation is float:
+            return 'float'
+        elif annotation is bool:
+            return 'bool'
+        elif annotation is list:
+            return 'List[Any]'
+        elif annotation is dict:
+            return 'Dict[str, Any]'
+        
+        # Handle typing constructs
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        
+        if origin is typing.Union:
+            # Handle Optional types (Union[SomeType, NoneType])
+            if len(args) == 2 and type(None) in args:
+                non_none_type = args[0] if args[1] is type(None) else args[1]
+                inner_type = self._format_type_annotation(non_none_type)
+                return f"Optional[{inner_type}]"
+            else:
+                # Handle other Union types
+                type_strs = [self._format_type_annotation(arg) for arg in args]
+                return f"Union[{', '.join(type_strs)}]"
+        
+        elif origin is list:
+            if args:
+                return f"List[{self._format_type_annotation(args[0])}]"
+            else:
+                return 'List[Any]'
+        
+        elif origin is dict:
+            if len(args) >= 2:
+                key_type = self._format_type_annotation(args[0])
+                value_type = self._format_type_annotation(args[1])
+                return f"Dict[{key_type}, {value_type}]"
+            else:
+                return 'Dict[str, Any]'
+        
+        elif origin is tuple:
+            if args:
+                type_strs = [self._format_type_annotation(arg) for arg in args]
+                return f"Tuple[{', '.join(type_strs)}]"
+            else:
+                return 'Tuple'
+        
+        elif origin is set:
+            if args:
+                return f"Set[{self._format_type_annotation(args[0])}]"
+            else:
+                return 'Set[Any]'
+        
+        # Handle built-in types and standard library types
+        elif hasattr(annotation, '__name__'):
+            # Check if it's a built-in type or from standard library
+            if self._is_builtin_or_standard_type(annotation):
+                return annotation.__name__
+            else:
+                # Custom type - use Any
+                return 'Any'
+        
+        # Handle typing module types
+        elif hasattr(annotation, '__module__') and annotation.__module__ == 'typing':
+            return str(annotation).replace('typing.', '')
+        
+        # Fallback for custom types - use Any
+        else:
+            return 'Any'
+    
+    def _is_builtin_or_standard_type(self, annotation) -> bool:
+        """Check if annotation is a built-in or standard library type
+        
+        Args:
+            annotation: The type annotation
+            
+        Returns:
+            bool: True if it's a built-in or standard library type
+        """
+        # Built-in types
+        builtin_types = {str, int, float, bool, list, dict, tuple, set, bytes, bytearray}
+        if annotation in builtin_types:
+            return True
+        
+        # Check if it's from builtins module
+        if hasattr(annotation, '__module__'):
+            module = annotation.__module__
+            if module in ('builtins', '__builtin__'):
+                return True
+            
+            # Standard library modules
+            standard_modules = (
+                'collections', 'datetime', 'decimal', 'fractions', 'pathlib',
+                'uuid', 'enum', 'dataclasses', 'typing', 'abc', 'io', 'os',
+                'sys', 'json', 'pickle', 'copy', 'itertools', 'functools',
+                'operator', 'math', 'random', 'statistics', 'time', 'calendar'
+            )
+            if any(module.startswith(std_mod) for std_mod in standard_modules):
+                return True
+        
+        return False
+    
+    def _generate_environment_rules(self, 
+                                   env_name: str, 
+                                   env_type: str, 
+                                   description: str, 
+                                   actions: Dict[str, ActionInfo],
+                                   has_vision: bool = False,
+                                   additional_rules: Optional[Dict[str, str]] = None) -> str:
+        """Generate environment rules from actions and metadata
+        
+        Args:
+            env_name: Environment name
+            env_type: Environment type
+            description: Environment description
+            actions: Dictionary of actions
+            has_vision: Whether environment has vision capabilities
+            additional_rules: Dictionary with custom rules for 'state', 'vision', 'interaction'
+            
+        Returns:
+            str: Generated environment rules
+        """
+        # Start building the rules
+        rules_parts = [f"<environment_{env_type}>"]
+        
+        # Add state section
+        rules_parts.append("<state>")
+        if additional_rules and 'state' in additional_rules:
+            rules_parts.append(additional_rules['state'])
+        else:
+            rules_parts.append(f"The environment state about {env_name}.")
+        rules_parts.append("</state>")
+        
+        # Add vision section
+        rules_parts.append("<vision>")
+        if additional_rules and 'vision' in additional_rules:
+            rules_parts.append(additional_rules['vision'])
+        else:
+            if has_vision:
+                rules_parts.append("The environment vision information.")
+            else:
+                rules_parts.append("No vision available.")
+        rules_parts.append("</vision>")
+        
+        # Add additional rules if provided (for backward compatibility)
+        if additional_rules and 'additional_rules' in additional_rules:
+            rules_parts.append("<additional_rules>")
+            rules_parts.append(additional_rules['additional_rules'])
+            rules_parts.append("</additional_rules>")
+        
+        # Add interaction section with actions
+        rules_parts.append("<interaction>")
+        
+        if additional_rules and 'interaction' in additional_rules:
+            # Use custom interaction rules
+            rules_parts.append(additional_rules['interaction'])
+        else:
+            # Use default interaction rules
+            rules_parts.append("Available actions:")
+            
+            # Sort actions by name for consistent output
+            sorted_actions = sorted(actions.items(), key=lambda x: x[0])
+            
+            for i, (action_name, action_info) in enumerate(sorted_actions, 1):
+                rules_parts.append(f"{i}. {action_name}: {action_info.description}")
+                
+                # Add parameter information if available
+                if action_info.args_schema:
+                    try:
+                        schema = action_info.args_schema.model_json_schema()
+                        properties = schema.get('properties', {})
+                        required = schema.get('required', [])
+                        
+                        for param_name, param_info in properties.items():
+                            # Get the original type annotation from the function signature
+                            param_type_str = self._get_type_string(action_info.function, param_name)
+                            param_desc = param_info.get('description', f'Parameter {param_name}')
+                            is_required = param_name in required
+                            
+                            
+                            if is_required:
+                                rules_parts.append(f"    - {param_name} ({param_type_str}): {param_desc}")
+                            else:
+                                default_val = param_info.get('default', 'None')
+                                rules_parts.append(f"    - {param_name} ({param_type_str}): {param_desc} (default: {default_val})")
+                                
+                    except Exception:
+                        # If schema parsing fails, just add basic info
+                        rules_parts.append(f"    - Parameters: See function signature")
+            
+            rules_parts.append("Input format: JSON string with action-specific parameters.")
+            rules_parts.append("Example: {\"name\": \"action_name\", \"args\": {\"action-specific parameters\"}}")
+        
+        rules_parts.append("</interaction>")
+        
+        # Close the environment tag
+        rules_parts.append(f"</environment_{env_type}>")
+        
+        return "\n".join(rules_parts)
+    
+    async def build_environment(self, env_name: str, env_config: Optional[Dict[str, Any]] = None):
         """Build an environment by name
         
         Args:
@@ -181,6 +438,8 @@ class ECPServer:
         env_info = self._registered_environments.get(env_name)
         env_info.env_config = env_config
         env_info.env_instance = env_info.env_class(**env_config)
+        
+        await env_info.env_instance.initialize()
         
         self._registered_environments[env_name] = env_info
         

@@ -51,7 +51,7 @@ async def main():
     await model_manager.init_models(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
     
-    # Initialize controllers
+    # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     trading_offline_dataset = config.trading_offline_dataset
     trading_offline_dataset = DATASETS.build(trading_offline_dataset)
@@ -60,7 +60,7 @@ async def main():
         dataset=trading_offline_dataset
     ))
     for env_name in config.env_names:
-        ecp.build_environment(env_name, env_config=config.get(f"{env_name}_environment"))
+        await ecp.build_environment(env_name, env_config=config.get(f"{env_name}_environment"))
         logger.info(f"| ✅ Environments initialized: {ecp.get_environment_info(env_name)}")
     
     # Initialize tool manager

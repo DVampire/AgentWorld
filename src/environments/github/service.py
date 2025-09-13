@@ -1,542 +1,639 @@
-"""GitHub service implementation with PAT authentication."""
-
-from __future__ import annotations
-
+"""GitHub service implementation using PyGithub + GitPython."""
 import asyncio
-import base64
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional, List, Dict, Any
 
-from src.environments.github.cache import GitHubCache
-from src.environments.github.client import GitHubClient
-from src.environments.github.types import (
-    GitHubAuth,
-    GitHubConfig,
-    GitHubRepository,
-    GitHubIssue,
-    GitHubPullRequest,
-    GitHubCommit,
-    GitHubBranch,
-    GitHubUser,
-    GitHubOrganization,
-    GitHubSearchResult,
-    GitHubFile,
-    GitHubDirectory,
-    GitHubContent,
-    GitHubRequest,
-    GitHubResponse,
+from github import Github, GithubException
+from git import Repo, InvalidGitRepositoryError, GitCommandError
+
+from src.environments.github.types import GitHubRepository, GitHubUser, GitHubBranch, GitStatus
+from src.environments.github.exceptions import (
+    GitHubError, 
+    AuthenticationError, 
+    NotFoundError, 
+    GitError, 
+    RepositoryError
 )
 
 
 class GitHubService:
-    """Async GitHub service with PAT authentication, caching, and comprehensive API support."""
+    """GitHub service using PyGithub + GitPython."""
 
-    def __init__(self, config: GitHubConfig):
+    def __init__(self, token: str, username: Optional[str] = None):
         """Initialize GitHub service.
         
         Args:
-            config: GitHub service configuration
+            token: GitHub Personal Access Token
+            username: GitHub username (optional)
         """
-        self.config = config
-        self.auth = config.auth
-        self.cache = GitHubCache() if config.enable_cache else None
-        self._client: Optional[GitHubClient] = None
+        self.token = token
+        self.username = username
+        self._github: Optional[Github] = None
+        self._authenticated_user: Optional[GitHubUser] = None
 
     async def __aenter__(self):
         """Async context manager entry."""
-        await self._ensure_client()
+        await self.initialize()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
-        await self.close()
+        await self.cleanup()
 
-    async def _ensure_client(self) -> None:
-        """Ensure GitHub client is initialized."""
-        if self._client is None:
-            self._client = GitHubClient(self.auth)
-            await self._client._ensure_session()
+    async def initialize(self) -> None:
+        """Initialize the GitHub service."""
+        try:
+            self._github = Github(self.token)
+            github_user = self._github.get_user()
+            
+            self._authenticated_user = GitHubUser(
+                login=github_user.login,
+                id=github_user.id,
+                name=github_user.name,
+                email=github_user.email,
+                avatar_url=github_user.avatar_url,
+                html_url=github_user.html_url,
+                created_at=github_user.created_at
+            )
+            
+            if self.username is None:
+                self.username = self._authenticated_user.login
+                
+        except GithubException as e:
+            if e.status == 401:
+                raise AuthenticationError(f"Invalid GitHub token: {e}")
+            raise GitHubError(f"Failed to initialize GitHub service: {e}")
+        except Exception as e:
+            raise GitHubError(f"Failed to initialize GitHub service: {e}")
 
-    async def close(self) -> None:
-        """Close GitHub client."""
-        if self._client:
-            await self._client.close()
+    async def cleanup(self) -> None:
+        """Cleanup the GitHub service."""
+        self._github = None
+        self._authenticated_user = None
 
-    def _cache_key(self, operation: str, **kwargs) -> str:
-        """Generate cache key for operation."""
-        key_parts = [operation]
-        for k, v in sorted(kwargs.items()):
-            if v is not None:
-                key_parts.append(f"{k}:{v}")
-        return "|".join(key_parts)
+    @property
+    def github(self) -> Github:
+        """Get GitHub instance."""
+        if self._github is None:
+            raise RuntimeError("GitHub service not initialized")
+        return self._github
 
-    async def _get_cached_or_fetch(self, cache_key: str, cache_type: str, fetch_func, *args, **kwargs):
-        """Get from cache or fetch and cache result."""
-        if not self.cache:
-            return await fetch_func(*args, **kwargs)
-        
-        cached = await self.cache.get(cache_key, cache_type)
-        if cached is not None:
-            return cached
-        
-        result = await fetch_func(*args, **kwargs)
-        await self.cache.put(cache_key, result, cache_type)
-        return result
-
-    # --------------- Authentication & User Info ---------------
-    async def verify_authentication(self) -> GitHubUser:
-        """Verify PAT authentication and get user info."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("auth", token=self.auth.token[:10])
-        return await self._get_cached_or_fetch(
-            cache_key, 'user', self._fetch_user_info
-        )
-
-    async def _fetch_user_info(self) -> GitHubUser:
-        """Fetch authenticated user information."""
-        response = await self._client.get('/user')
-        return GitHubUser(**response.data)
-
-    async def get_user(self, username: str) -> GitHubUser:
-        """Get user information by username."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("user", username=username)
-        return await self._get_cached_or_fetch(
-            cache_key, 'user', self._fetch_user, username
-        )
-
-    async def _fetch_user(self, username: str) -> GitHubUser:
-        """Fetch user information."""
-        response = await self._client.get(f'/users/{username}')
-        return GitHubUser(**response.data)
-
-    async def get_organization(self, org_name: str) -> GitHubOrganization:
-        """Get organization information."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("org", org=org_name)
-        return await self._get_cached_or_fetch(
-            cache_key, 'user', self._fetch_organization, org_name
-        )
-
-    async def _fetch_organization(self, org_name: str) -> GitHubOrganization:
-        """Fetch organization information."""
-        response = await self._client.get(f'/orgs/{org_name}')
-        return GitHubOrganization(**response.data)
+    @property
+    def authenticated_user(self) -> GitHubUser:
+        """Get authenticated user."""
+        if self._authenticated_user is None:
+            raise RuntimeError("GitHub service not initialized")
+        return self._authenticated_user
 
     # --------------- Repository Operations ---------------
-    async def get_repository(self, owner: str, repo: str) -> GitHubRepository:
-        """Get repository information."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("repo", owner=owner, repo=repo)
-        return await self._get_cached_or_fetch(
-            cache_key, 'repo', self._fetch_repository, owner, repo
-        )
-
-    async def _fetch_repository(self, owner: str, repo: str) -> GitHubRepository:
-        """Fetch repository information."""
-        response = await self._client.get(f'/repos/{owner}/{repo}')
-        return GitHubRepository(**response.data)
-
-    async def list_repositories(
-        self,
-        owner: Optional[str] = None,
-        repo_type: str = "all",
-        sort: str = "updated",
-        direction: str = "desc",
-        per_page: int = 30
-    ) -> List[GitHubRepository]:
-        """List repositories for user or organization."""
-        await self._ensure_client()
-        
-        if owner:
-            endpoint = f'/users/{owner}/repos'
-            cache_key = self._cache_key("repos", owner=owner, type=repo_type, sort=sort)
-        else:
-            endpoint = '/user/repos'
-            cache_key = self._cache_key("user_repos", type=repo_type, sort=sort)
-        
-        params = {
-            'type': repo_type,
-            'sort': sort,
-            'direction': direction,
-            'per_page': per_page
-        }
-        
-        return await self._get_cached_or_fetch(
-            cache_key, 'repo', self._fetch_repositories, endpoint, params
-        )
-
-    async def _fetch_repositories(self, endpoint: str, params: Dict[str, Any]) -> List[GitHubRepository]:
-        """Fetch repositories."""
-        response = await self._client.get(endpoint, params=params)
-        return [GitHubRepository(**repo) for repo in response.data]
 
     async def create_repository(
         self,
         name: str,
         description: Optional[str] = None,
         private: bool = False,
-        auto_init: bool = False,
-        gitignore_template: Optional[str] = None,
-        license_template: Optional[str] = None
+        auto_init: bool = False
     ) -> GitHubRepository:
-        """Create a new repository."""
-        await self._ensure_client()
+        """Create a new GitHub repository.
         
-        data = {
-            'name': name,
-            'description': description,
-            'private': private,
-            'auto_init': auto_init,
-            'gitignore_template': gitignore_template,
-            'license_template': license_template
-        }
-        
-        response = await self._client.post('/user/repos', data=data)
-        repo = GitHubRepository(**response.data)
-        
-        # Invalidate cache
-        if self.cache:
-            await self.cache.clear('repo')
-        
-        return repo
-
-    # --------------- File Operations ---------------
-    async def get_file_content(
-        self,
-        owner: str,
-        repo: str,
-        path: str,
-        ref: Optional[str] = None
-    ) -> GitHubFile:
-        """Get file content from repository."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("file", owner=owner, repo=repo, path=path, ref=ref)
-        return await self._get_cached_or_fetch(
-            cache_key, 'content', self._fetch_file_content, owner, repo, path, ref
-        )
-
-    async def _fetch_file_content(self, owner: str, repo: str, path: str, ref: Optional[str]) -> GitHubFile:
-        """Fetch file content."""
-        params = {'ref': ref} if ref else {}
-        response = await self._client.get(f'/repos/{owner}/{repo}/contents/{path}', params=params)
-        return GitHubFile(**response.data)
-
-    async def get_directory_contents(
-        self,
-        owner: str,
-        repo: str,
-        path: str = "",
-        ref: Optional[str] = None
-    ) -> List[Union[GitHubFile, GitHubDirectory]]:
-        """Get directory contents."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("dir", owner=owner, repo=repo, path=path, ref=ref)
-        return await self._get_cached_or_fetch(
-            cache_key, 'content', self._fetch_directory_contents, owner, repo, path, ref
-        )
-
-    async def _fetch_directory_contents(
-        self, owner: str, repo: str, path: str, ref: Optional[str]
-    ) -> List[Union[GitHubFile, GitHubDirectory]]:
-        """Fetch directory contents."""
-        params = {'ref': ref} if ref else {}
-        response = await self._client.get(f'/repos/{owner}/{repo}/contents/{path}', params=params)
-        
-        contents = []
-        for item in response.data:
-            if item['type'] == 'file':
-                contents.append(GitHubFile(**item))
-            elif item['type'] == 'dir':
-                contents.append(GitHubDirectory(**item))
-        
-        return contents
-
-    async def create_or_update_file(
-        self,
-        owner: str,
-        repo: str,
-        path: str,
-        content: str,
-        message: str,
-        branch: Optional[str] = None,
-        sha: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Create or update a file in repository."""
-        await self._ensure_client()
-        
-        # Encode content to base64
-        content_bytes = content.encode('utf-8')
-        content_b64 = base64.b64encode(content_bytes).decode('ascii')
-        
-        data = {
-            'message': message,
-            'content': content_b64,
-            'branch': branch
-        }
-        
-        if sha:
-            data['sha'] = sha
-        
-        response = await self._client.put(f'/repos/{owner}/{repo}/contents/{path}', data=data)
-        
-        # Invalidate cache
-        if self.cache:
-            await self.cache.delete(
-                self._cache_key("file", owner=owner, repo=repo, path=path),
-                'content'
+        Args:
+            name: Repository name
+            description: Repository description
+            private: Whether repository is private
+            auto_init: Whether to initialize with README
+            
+        Returns:
+            GitHubRepository: Created repository information
+        """
+        try:
+            # Get the PyGithub user object for creating repositories
+            github_user = await asyncio.to_thread(self.github.get_user)
+            # Use asyncio.to_thread to run the synchronous GitHub API call in a thread pool
+            repo = await asyncio.to_thread(
+                github_user.create_repo,
+                name=name,
+                description=description,
+                private=private,
+                auto_init=auto_init
             )
-            await self.cache.delete(
-                self._cache_key("dir", owner=owner, repo=repo, path=str(Path(path).parent)),
-                'content'
+            
+            return GitHubRepository(
+                full_name=repo.full_name,
+                name=repo.name,
+                owner=repo.owner.login,
+                description=repo.description,
+                private=repo.private,
+                html_url=repo.html_url,
+                clone_url=repo.clone_url,
+                ssh_url=repo.ssh_url,
+                language=repo.language,
+                stargazers_count=repo.stargazers_count,
+                forks_count=repo.forks_count,
+                created_at=repo.created_at,
+                updated_at=repo.updated_at
             )
-        
-        return response.data
+            
+        except GithubException as e:
+            if e.status == 401:
+                raise AuthenticationError(f"Invalid GitHub token or insufficient permissions")
+            elif e.status == 403:
+                raise RepositoryError(f"Permission denied: Cannot create repository '{name}'")
+            elif e.status == 422:
+                raise RepositoryError(f"Repository '{name}' already exists or invalid name")
+            elif e.status == 404:
+                raise NotFoundError(f"User not found or repository creation failed")
+            else:
+                raise RepositoryError(f"Failed to create repository '{name}': {e}")
+        except Exception as e:
+            raise RepositoryError(f"Failed to create repository '{name}': {e}")
 
-    async def delete_file(
+    async def fork_repository(self, owner: str, repo: str) -> GitHubRepository:
+        """Fork a repository to your account.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            
+        Returns:
+            GitHubRepository: Forked repository information
+        """
+        try:
+            # Get the original repository
+            original_repo = await asyncio.to_thread(self.github.get_repo, f"{owner}/{repo}")
+            
+            # Fork the repository
+            github_user = await asyncio.to_thread(self.github.get_user)
+            forked_repo = await asyncio.to_thread(github_user.create_fork, original_repo)
+            
+            return GitHubRepository(
+                full_name=forked_repo.full_name,
+                name=forked_repo.name,
+                owner=forked_repo.owner.login,
+                description=forked_repo.description,
+                private=forked_repo.private,
+                html_url=forked_repo.html_url,
+                clone_url=forked_repo.clone_url,
+                ssh_url=forked_repo.ssh_url,
+                language=forked_repo.language,
+                stargazers_count=forked_repo.stargazers_count,
+                forks_count=forked_repo.forks_count,
+                created_at=forked_repo.created_at,
+                updated_at=forked_repo.updated_at
+            )
+            
+        except GithubException as e:
+            if e.status == 422:
+                raise RepositoryError(f"Repository '{owner}/{repo}' cannot be forked (may already be forked or private)")
+            elif e.status == 404:
+                raise NotFoundError(f"Repository '{owner}/{repo}' not found")
+            raise RepositoryError(f"Failed to fork repository '{owner}/{repo}': {e}")
+        except Exception as e:
+            raise RepositoryError(f"Failed to fork repository '{owner}/{repo}': {e}")
+
+    async def delete_repository(self, owner: str, repo: str) -> None:
+        """Delete a repository.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            
+        Raises:
+            RepositoryError: If deletion fails
+        """
+        try:
+            repository = await asyncio.to_thread(self.github.get_repo, f"{owner}/{repo}")
+            await asyncio.to_thread(repository.delete)
+            
+        except GithubException as e:
+            if e.status == 404:
+                raise NotFoundError(f"Repository '{owner}/{repo}' not found")
+            elif e.status == 403:
+                raise RepositoryError(f"Permission denied: Cannot delete repository '{owner}/{repo}'")
+            raise RepositoryError(f"Failed to delete repository '{owner}/{repo}': {e}")
+        except Exception as e:
+            raise RepositoryError(f"Failed to delete repository '{owner}/{repo}': {e}")
+
+    async def get_repository(self, owner: str, repo: str) -> GitHubRepository:
+        """Get repository information.
+        
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            
+        Returns:
+            GitHubRepository: Repository information
+        """
+        try:
+            
+            repository = await asyncio.to_thread(self.github.get_repo, f"{owner}/{repo}")
+            
+            return GitHubRepository(
+                full_name=repository.full_name,
+                name=repository.name,
+                owner=repository.owner.login,
+                description=repository.description,
+                private=repository.private,
+                html_url=repository.html_url,
+                clone_url=repository.clone_url,
+                ssh_url=repository.ssh_url,
+                language=repository.language,
+                stargazers_count=repository.stargazers_count,
+                forks_count=repository.forks_count,
+                created_at=repository.created_at,
+                updated_at=repository.updated_at
+            )
+            
+        except GithubException as e:
+            if e.status == 404:
+                raise NotFoundError(f"Repository '{owner}/{repo}' not found")
+            raise GitHubError(f"Failed to get repository '{owner}/{repo}': {e}")
+        except Exception as e:
+            raise GitHubError(f"Failed to get repository '{owner}/{repo}': {e}")
+
+    async def clone_repository(
         self,
         owner: str,
         repo: str,
-        path: str,
-        message: str,
-        sha: str,
+        local_path: str,
         branch: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Delete a file from repository."""
-        await self._ensure_client()
+    ) -> str:
+        """Clone a repository to local directory.
         
-        data = {
-            'message': message,
-            'sha': sha,
-            'branch': branch
-        }
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            local_path: Local directory path to clone to
+            branch: Specific branch to clone (optional)
+            
+        Returns:
+            str: Clone result message
+        """
+        try:
+            repo_url = f"https://github.com/{owner}/{repo}.git"
+            local_path = Path(local_path)
+            
+            if local_path.exists():
+                raise RepositoryError(f"Directory '{local_path}' already exists")
+            
+            # Clone repository
+            if branch:
+                Repo.clone_from(repo_url, local_path, branch=branch)
+                return f"Repository '{owner}/{repo}' cloned to '{local_path}' (branch: {branch})"
+            else:
+                Repo.clone_from(repo_url, local_path)
+                return f"Repository '{owner}/{repo}' cloned to '{local_path}'"
+                
+        except GitCommandError as e:
+            raise GitError(f"Failed to clone repository '{owner}/{repo}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to clone repository '{owner}/{repo}': {str(e)}")
+
+    async def init_repository(
+        self,
+        local_path: str,
+        remote_url: Optional[str] = None
+    ) -> str:
+        """Initialize a local directory as Git repository.
         
-        response = await self._client.delete(f'/repos/{owner}/{repo}/contents/{path}', data=data)
+        Args:
+            local_path: Local directory path
+            remote_url: Remote repository URL (optional)
+            
+        Returns:
+            str: Initialization result message
+        """
+        try:
+            local_path = Path(local_path)
+            
+            if not local_path.exists():
+                raise RepositoryError(f"Directory '{local_path}' does not exist")
+            
+            if (local_path / '.git').exists():
+                raise RepositoryError(f"Directory '{local_path}' is already a Git repository")
+            
+            # Initialize repository
+            repo = Repo.init(local_path)
+            
+            result = f"Git repository initialized in '{local_path}'"
+            
+            if remote_url:
+                try:
+                    repo.create_remote('origin', remote_url)
+                    result += f" with remote origin: {remote_url}"
+                except Exception as e:
+                    result += f" (failed to add remote: {str(e)})"
+            
+            return result
+            
+        except Exception as e:
+            raise GitError(f"Failed to initialize repository in '{local_path}': {str(e)}")
+
+    # --------------- Git Operations ---------------
+
+    async def git_commit(
+        self,
+        local_path: str,
+        message: str,
+        add_all: bool = True
+    ) -> str:
+        """Commit changes to local repository.
         
-        # Invalidate cache
-        if self.cache:
-            await self.cache.delete(
-                self._cache_key("file", owner=owner, repo=repo, path=path),
-                'content'
-            )
-            await self.cache.delete(
-                self._cache_key("dir", owner=owner, repo=repo, path=str(Path(path).parent)),
-                'content'
-            )
+        Args:
+            local_path: Local repository path
+            message: Commit message
+            add_all: Whether to add all changes
+            
+        Returns:
+            str: Commit result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            if add_all:
+                repo.git.add(A=True)
+            
+            # Check if there are changes to commit
+            if not repo.is_dirty() and not repo.untracked_files:
+                return "No changes to commit"
+            
+            # Commit changes
+            commit = repo.index.commit(message)
+            return f"Commit created: {commit.hexsha[:8]} - {message}"
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to commit in '{local_path}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to commit in '{local_path}': {str(e)}")
+
+    async def git_push(
+        self,
+        local_path: str,
+        remote: str = "origin",
+        branch: Optional[str] = None
+    ) -> str:
+        """Push changes to remote repository.
         
-        return response.data
+        Args:
+            local_path: Local repository path
+            remote: Remote name (default: origin)
+            branch: Branch name (optional, uses current branch if not specified)
+            
+        Returns:
+            str: Push result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            if branch is None:
+                branch = repo.active_branch.name
+            
+            # Push to remote
+            origin = repo.remote(remote)
+            origin.push(branch)
+            
+            return f"Successfully pushed branch '{branch}' to remote '{remote}'"
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to push from '{local_path}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to push from '{local_path}': {str(e)}")
+
+    async def git_pull(
+        self,
+        local_path: str,
+        remote: str = "origin",
+        branch: Optional[str] = None
+    ) -> str:
+        """Pull changes from remote repository.
+        
+        Args:
+            local_path: Local repository path
+            remote: Remote name (default: origin)
+            branch: Branch name (optional, uses current branch if not specified)
+            
+        Returns:
+            str: Pull result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            if branch is None:
+                branch = repo.active_branch.name
+            
+            # Pull from remote
+            origin = repo.remote(remote)
+            origin.pull(branch)
+            
+            return f"Successfully pulled branch '{branch}' from remote '{remote}'"
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to pull to '{local_path}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to pull to '{local_path}': {str(e)}")
+
+    async def git_fetch(
+        self,
+        local_path: str,
+        remote: str = "origin"
+    ) -> str:
+        """Fetch changes from remote repository.
+        
+        Args:
+            local_path: Local repository path
+            remote: Remote name (default: origin)
+            
+        Returns:
+            str: Fetch result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            # Fetch from remote
+            origin = repo.remote(remote)
+            origin.fetch()
+            
+            return f"Successfully fetched from remote '{remote}'"
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to fetch to '{local_path}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to fetch to '{local_path}': {str(e)}")
 
     # --------------- Branch Operations ---------------
-    async def list_branches(self, owner: str, repo: str) -> List[GitHubBranch]:
-        """List repository branches."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("branches", owner=owner, repo=repo)
-        return await self._get_cached_or_fetch(
-            cache_key, 'repo', self._fetch_branches, owner, repo
-        )
 
-    async def _fetch_branches(self, owner: str, repo: str) -> List[GitHubBranch]:
-        """Fetch repository branches."""
-        response = await self._client.get(f'/repos/{owner}/{repo}/branches')
-        return [GitHubBranch(**branch) for branch in response.data]
-
-    async def get_branch(self, owner: str, repo: str, branch: str) -> GitHubBranch:
-        """Get specific branch information."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("branch", owner=owner, repo=repo, branch=branch)
-        return await self._get_cached_or_fetch(
-            cache_key, 'repo', self._fetch_branch, owner, repo, branch
-        )
-
-    async def _fetch_branch(self, owner: str, repo: str, branch: str) -> GitHubBranch:
-        """Fetch specific branch."""
-        response = await self._client.get(f'/repos/{owner}/{repo}/branches/{branch}')
-        return GitHubBranch(**response.data)
-
-    # --------------- Issue Operations ---------------
-    async def list_issues(
+    async def git_create_branch(
         self,
-        owner: str,
-        repo: str,
-        state: str = "open",
-        labels: Optional[List[str]] = None,
-        assignee: Optional[str] = None,
-        creator: Optional[str] = None,
-        per_page: int = 30
-    ) -> List[GitHubIssue]:
-        """List repository issues."""
-        await self._ensure_client()
+        local_path: str,
+        branch_name: str,
+        checkout: bool = True
+    ) -> str:
+        """Create a new branch.
         
-        params = {
-            'state': state,
-            'per_page': per_page
-        }
-        
-        if labels:
-            params['labels'] = ','.join(labels)
-        if assignee:
-            params['assignee'] = assignee
-        if creator:
-            params['creator'] = creator
-        
-        response = await self._client.get(f'/repos/{owner}/{repo}/issues', params=params)
-        return [GitHubIssue(**issue) for issue in response.data]
+        Args:
+            local_path: Local repository path
+            branch_name: New branch name
+            checkout: Whether to checkout the new branch
+            
+        Returns:
+            str: Branch creation result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            # Check if branch already exists
+            if branch_name in [branch.name for branch in repo.branches]:
+                return f"Branch '{branch_name}' already exists"
+            
+            # Create new branch
+            new_branch = repo.create_head(branch_name)
+            
+            if checkout:
+                new_branch.checkout()
+                return f"Branch '{branch_name}' created and checked out"
+            else:
+                return f"Branch '{branch_name}' created"
+                
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to create branch '{branch_name}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to create branch '{branch_name}': {str(e)}")
 
-    async def get_issue(self, owner: str, repo: str, issue_number: int) -> GitHubIssue:
-        """Get specific issue."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("issue", owner=owner, repo=repo, number=issue_number)
-        return await self._get_cached_or_fetch(
-            cache_key, 'default', self._fetch_issue, owner, repo, issue_number
-        )
-
-    async def _fetch_issue(self, owner: str, repo: str, issue_number: int) -> GitHubIssue:
-        """Fetch specific issue."""
-        response = await self._client.get(f'/repos/{owner}/{repo}/issues/{issue_number}')
-        return GitHubIssue(**response.data)
-
-    async def create_issue(
+    async def git_checkout_branch(
         self,
-        owner: str,
-        repo: str,
-        title: str,
-        body: Optional[str] = None,
-        assignees: Optional[List[str]] = None,
-        labels: Optional[List[str]] = None
-    ) -> GitHubIssue:
-        """Create a new issue."""
-        await self._ensure_client()
+        local_path: str,
+        branch_name: str
+    ) -> str:
+        """Checkout an existing branch.
         
-        data = {
-            'title': title,
-            'body': body,
-            'assignees': assignees or [],
-            'labels': labels or []
-        }
-        
-        response = await self._client.post(f'/repos/{owner}/{repo}/issues', data=data)
-        return GitHubIssue(**response.data)
+        Args:
+            local_path: Local repository path
+            branch_name: Branch name to checkout
+            
+        Returns:
+            str: Checkout result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            # Check if branch exists
+            if branch_name not in [branch.name for branch in repo.branches]:
+                return f"Branch '{branch_name}' does not exist"
+            
+            # Checkout branch
+            repo.git.checkout(branch_name)
+            
+            return f"Checked out branch '{branch_name}'"
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to checkout branch '{branch_name}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to checkout branch '{branch_name}': {str(e)}")
 
-    # --------------- Pull Request Operations ---------------
-    async def list_pull_requests(
+    async def git_list_branches(self, local_path: str) -> str:
+        """List all branches.
+        
+        Args:
+            local_path: Local repository path
+            
+        Returns:
+            str: List of branches
+        """
+        try:
+            repo = Repo(local_path)
+            
+            branches = []
+            current_branch = repo.active_branch.name
+            
+            for branch in repo.branches:
+                status = " (current)" if branch.name == current_branch else ""
+                branches.append(f"- {branch.name}{status}")
+            
+            if not branches:
+                return "No branches found"
+            
+            return f"Branches:\n" + "\n".join(branches)
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except Exception as e:
+            raise GitError(f"Failed to list branches: {str(e)}")
+
+    async def git_delete_branch(
         self,
-        owner: str,
-        repo: str,
-        state: str = "open",
-        head: Optional[str] = None,
-        base: Optional[str] = None,
-        per_page: int = 30
-    ) -> List[GitHubPullRequest]:
-        """List repository pull requests."""
-        await self._ensure_client()
+        local_path: str,
+        branch_name: str,
+        force: bool = False
+    ) -> str:
+        """Delete a branch.
         
-        params = {
-            'state': state,
-            'per_page': per_page
-        }
+        Args:
+            local_path: Local repository path
+            branch_name: Branch name to delete
+            force: Force delete even if not merged
+            
+        Returns:
+            str: Delete result message
+        """
+        try:
+            repo = Repo(local_path)
+            
+            # Check if branch exists
+            if branch_name not in [branch.name for branch in repo.branches]:
+                return f"Branch '{branch_name}' does not exist"
+            
+            # Check if trying to delete current branch
+            if branch_name == repo.active_branch.name:
+                return f"Cannot delete current branch '{branch_name}'. Switch to another branch first."
+            
+            # Delete branch
+            if force:
+                repo.git.branch('-D', branch_name)
+                return f"Branch '{branch_name}' force deleted"
+            else:
+                repo.git.branch('-d', branch_name)
+                return f"Branch '{branch_name}' deleted"
+                
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except GitCommandError as e:
+            raise GitError(f"Failed to delete branch '{branch_name}': {str(e)}")
+        except Exception as e:
+            raise GitError(f"Failed to delete branch '{branch_name}': {str(e)}")
+
+    async def git_status(self, local_path: str) -> GitStatus:
+        """Get Git repository status.
         
-        if head:
-            params['head'] = head
-        if base:
-            params['base'] = base
-        
-        response = await self._client.get(f'/repos/{owner}/{repo}/pulls', params=params)
-        return [GitHubPullRequest(**pr) for pr in response.data]
-
-    async def get_pull_request(self, owner: str, repo: str, pr_number: int) -> GitHubPullRequest:
-        """Get specific pull request."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("pr", owner=owner, repo=repo, number=pr_number)
-        return await self._get_cached_or_fetch(
-            cache_key, 'default', self._fetch_pull_request, owner, repo, pr_number
-        )
-
-    async def _fetch_pull_request(self, owner: str, repo: str, pr_number: int) -> GitHubPullRequest:
-        """Fetch specific pull request."""
-        response = await self._client.get(f'/repos/{owner}/{repo}/pulls/{pr_number}')
-        return GitHubPullRequest(**response.data)
-
-    # --------------- Search Operations ---------------
-    async def search_repositories(
-        self,
-        query: str,
-        sort: str = "stars",
-        order: str = "desc",
-        per_page: int = 30
-    ) -> GitHubSearchResult:
-        """Search repositories."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("search_repos", query=query, sort=sort, order=order)
-        return await self._get_cached_or_fetch(
-            cache_key, 'search', self._search_repositories, query, sort, order, per_page
-        )
-
-    async def _search_repositories(self, query: str, sort: str, order: str, per_page: int) -> GitHubSearchResult:
-        """Search repositories."""
-        params = {
-            'q': query,
-            'sort': sort,
-            'order': order,
-            'per_page': per_page
-        }
-        
-        response = await self._client.get('/search/repositories', params=params)
-        return GitHubSearchResult(**response.data)
-
-    async def search_issues(
-        self,
-        query: str,
-        sort: str = "updated",
-        order: str = "desc",
-        per_page: int = 30
-    ) -> GitHubSearchResult:
-        """Search issues."""
-        await self._ensure_client()
-        
-        cache_key = self._cache_key("search_issues", query=query, sort=sort, order=order)
-        return await self._get_cached_or_fetch(
-            cache_key, 'search', self._search_issues, query, sort, order, per_page
-        )
-
-    async def _search_issues(self, query: str, sort: str, order: str, per_page: int) -> GitHubSearchResult:
-        """Search issues."""
-        params = {
-            'q': query,
-            'sort': sort,
-            'order': order,
-            'per_page': per_page
-        }
-        
-        response = await self._client.get('/search/issues', params=params)
-        return GitHubSearchResult(**response.data)
-
-    # --------------- Utility Methods ---------------
-    async def get_rate_limit_info(self) -> Dict[str, Any]:
-        """Get current rate limit information."""
-        await self._ensure_client()
-        
-        response = await self._client.get('/rate_limit')
-        return response.data
-
-    async def clear_cache(self, cache_type: Optional[str] = None) -> None:
-        """Clear service cache."""
-        if self.cache:
-            await self.cache.clear(cache_type)
-
-    async def cleanup_expired_cache(self) -> int:
-        """Cleanup expired cache entries."""
-        if self.cache:
-            return await self.cache.cleanup_expired()
-        return 0
+        Args:
+            local_path: Local repository path
+            
+        Returns:
+            GitStatus: Repository status information
+        """
+        try:
+            repo = Repo(local_path)
+            
+            return GitStatus(
+                is_dirty=repo.is_dirty(),
+                untracked_files=repo.untracked_files,
+                modified_files=[item.a_path for item in repo.index.diff(None)],
+                staged_files=[item.a_path for item in repo.index.diff("HEAD")],
+                current_branch=repo.active_branch.name,
+                branches=[branch.name for branch in repo.branches]
+            )
+            
+        except InvalidGitRepositoryError:
+            raise GitError(f"'{local_path}' is not a valid Git repository")
+        except Exception as e:
+            raise GitError(f"Failed to get status: {str(e)}")

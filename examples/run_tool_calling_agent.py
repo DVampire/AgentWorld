@@ -17,6 +17,7 @@ from src.registry import AGENTS
 from src.models import model_manager
 from src.tools import tool_manager
 from src.environments import ecp
+from src.registry import DATASETS
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -49,8 +50,14 @@ async def main():
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
+    trading_offline_dataset = config.trading_offline_dataset
+    trading_offline_dataset = DATASETS.build(trading_offline_dataset)
+    trading_offline_environment = config.trading_offline_environment
+    trading_offline_environment.update(dict(
+        dataset=trading_offline_dataset
+    ))
     for env_name in config.env_names:
-        ecp.build_environment(env_name, env_config=config.get(f"{env_name}_environment"))
+        await ecp.build_environment(env_name, env_config=config.get(f"{env_name}_environment"))
         logger.info(f"| ✅ Environments initialized: {ecp.get_environment_info(env_name)}")
     
     # Initialize tool manager
