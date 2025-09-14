@@ -1,143 +1,27 @@
-import os
-import sys
-from dotenv import load_dotenv
-load_dotenv(verbose=True)
-
-from pathlib import Path
-import argparse
-from mmengine import DictAction
-import asyncio
-import json
-
-root = str(Path(__file__).parent)
-sys.path.append(root)
-
-from src.config import config
-from src.logger import logger
-from src.registry import AGENTS
-from src.models import model_manager
-from src.tools import tool_manager
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
-
-    parser.add_argument(
-        '--cfg-options',
-        nargs='+',
-        action=DictAction,
-        help='override some settings in the used config, the key-value pair '
-        'in xxx=yyy format will be merged into config file. If the value to '
-        'be overwritten is a list, it should be like key="[a,b]" or key=a,b '
-        'It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" '
-        'Note that the quotation marks are necessary and that no white space '
-        'is allowed.')
-    args = parser.parse_args()
-    return args
+from langchain.tools import BaseTool
+from pydantic import Field, BaseModel
+from typing import Type
 
 
-async def test_standard_mode(agent):
-    """Test standard execution mode."""
-    logger.info("="*60)
-    logger.info("Testing standard execution mode")
-    logger.info("="*60)
+class TestArgs(BaseModel):
+    name: str = Field(description="The name of the test")
+    age: int = Field(description="The age of the test")
+
+class Test(BaseTool):
+    name: str = "test"
+    description: str = "The description of the test"
+    args_schema: Type[BaseModel] = TestArgs
     
-    url = "https://skyagent-artifacts.tiangong.cn/page/52c3eff4-4870-4880-9067-d169efa0f108/index.html"
-    task = f"""You are a professional website testing specialist. Your mission is to conduct a comprehensive evaluation of the target webpage and provide a detailed completion assessment.
+    def _run(self, name: str, age: int) -> str:
+        return f"Hello, {name}! You are {age} years old."
+    
+    async def _arun(self, name: str, age: int) -> str:
+        return f"Hello, {name}! You are {age} years old."
+    
+test = Test()
 
-INSTRUCTIONS:
-- You should interact with every interactive element on the page.
-- You should first define all interactions as a list of test cases.
-- For each test case, determine pass/fail based on the following rules:
-    1. Button click: When a button is clicked, it must cause the expected page change, modal, or action; otherwise, the test case fails.
-    2. Hyperlink (text or image): When a hyperlink is clicked, it must navigate to the correct destination page; otherwise, the test case fails.
-    3. Form submission: When a form is submitted, it must cause the expected page change or feedback; otherwise, the test case fails.
-- Record the number of passed and failed test cases after execution.
-- If the page changes after an action in the actions list, you should continue to interact with the new page and DO NOT interrupt the process.
+test.metadata = {"type": "test"}
 
-REQUIRED OUTPUT FORMAT:
-- Total Test Cases: [number]
-- Passed Test Cases: [number]
-- Failed Test Cases: [number]
-- Success Rate: [percentage]%
-- Overall Test Case Success Score: [0-100]%
+print(test.invoke(input={"name": "John", "age": 20}))
 
-TARGET URL: {url}
-
-Please execute the testing and provide your assessment in the exact format specified above.
-IMPORTANT: You should give the above complete task text to the browser tool, DO NOT modify the task.
-"""
-
-    logger.info(f"| Task: {task}")
-    
-    result = await agent.run(task)
-    
-    logger.info(f"| Final Result: {result['final_response']}")
-    logger.info(f"| Iterations: {result['iterations']}")
-    logger.info(f"| Tool Results: {len(result['tool_results'])}")
-    logger.info(f"| Success: {result['success']}")
-    logger.info(f"| Execution Mode: {result['execution_mode']}")
-
-
-async def test_streaming_mode(agent):
-    """Test streaming execution mode."""
-    logger.info("\n" + "="*60)
-    logger.info("Testing streaming execution mode")
-    logger.info("="*60)
-    
-    task = "Calculate 10 + 5 and then multiply by 3 and then search the web for information about the weather in Beijing."
-    logger.info(f"| Task: {task}")
-    
-    logger.info("\n🔄 Streaming execution process:")
-    logger.info("-" * 50)
-    
-    async for update in agent.run_streaming(task):
-        # Print the update in a user-friendly format
-        if update["type"] == "task_start":
-            logger.info(f"🚀 Task started: {update['task']}")
-            logger.info(f"   Agent: {update['agent_name']}")
-            
-        elif update["type"] == "tool_calling":
-            logger.info(f"   🔧 Agent calling tool: {update['tool_name']}")
-            logger.info(f"      Input: {update['tool_input']}")
-            
-        elif update["type"] == "tool_result":
-            logger.info(f"   ✅ Tool {update['tool_name']} succeeded")
-            logger.info(f"      Result: {update['result'][:100]}...")
-            
-        elif update["type"] == "final_response":
-            logger.info(f"\n🏁 Final Response:")
-            logger.info(f"   Final Response: {update['final_response']}")
-            
-        # Simulate some delay for demonstration
-        await asyncio.sleep(0.5)
-    
-    logger.info("-" * 50)
-    logger.info("| Streaming execution completed")
-
-
-async def main():
-    args = parse_args()
-    
-    config.init_config(args.config, args)
-    logger.init_logger(config)
-    logger.info(f"| Config: {config}")
-    
-    await model_manager.init_models()
-    logger.info(f"| Model: {model_manager.list_models()}")
-    
-    await tool_manager.init_tools()
-    logger.info(f"| Tool: {tool_manager.list_tools()}")
-    
-    agent = AGENTS.build(config.agent)
-    logger.info(f"| Agent: {agent}")
-    
-    # Test standard mode
-    await test_standard_mode(agent)
-    
-    # Test streaming mode
-    # await test_streaming_mode(agent)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+print(test.metadata)

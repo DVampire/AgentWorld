@@ -498,7 +498,7 @@ class ECPServer:
         
         return result
     
-    def get_registered_environments(self) -> List[EnvironmentInfo]:
+    def list_environments(self) -> List[EnvironmentInfo]:
         """Get list of registered environments
         
         Returns:
@@ -506,7 +506,7 @@ class ECPServer:
         """
         return list(self._registered_environments.values())
     
-    def get_environment_info(self, env_name: str) -> Optional[EnvironmentInfo]:
+    def get_environment(self, env_name: str) -> Optional[EnvironmentInfo]:
         """Get environment information by type
         
         Args:
@@ -516,42 +516,5 @@ class ECPServer:
             EnvironmentInfo: Environment information or None if not found
         """
         return self._registered_environments.get(env_name)
-    
-    def get_action_info(self, env_name: str, action_name: str) -> Optional[ActionInfo]:
-        """Get action information by name
-        
-        Args:
-            env_name: Environment name
-            action_name: Action name
-            
-        Returns:
-            ActionInfo: Action information or None if not found
-        """
-        env_info = self._registered_environments.get(env_name)
-        if not env_info:
-            raise ValueError(f"Environment '{env_name}' not found")
-        return env_info.actions.get(action_name)
-    
-    def get_actions(self, env_name: str) -> Optional[Dict[str, ActionInfo]]:
-        """Get all actions for an environment
-        
-        Args:
-            env_name: Environment name
-            
-        Returns:
-            Dict[str, ActionInfo]: Dictionary of actions or None if not found
-        """
-        return self._registered_environments.get(env_name).actions
-    
-    def list_actions(self) -> Dict[str, Dict[str, ActionInfo]]:
-        """List all actions for all environments
-        
-        Returns:
-            Dict[str, Dict[str, ActionInfo]]: Dictionary of environments and their actions
-        """
-        actions = {}
-        for env_name in self._registered_environments:
-            actions[env_name] = self._registered_environments.get(env_name).actions
-        return actions
     
 ecp = ECPServer()

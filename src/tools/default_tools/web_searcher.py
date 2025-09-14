@@ -1,14 +1,15 @@
 from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tenacity import retry, stop_after_attempt, wait_exponential
-from langchain.tools import BaseTool
 import time
 import asyncio
+from langchain.tools import BaseTool
 
 from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.tools.default_tools.search import FirecrawlSearch, SearchItem
 from src.logger import logger
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 
 _WEB_SEARCHER_DESCRIPTION = """Search the web for real-time information about any topic.
 This tool returns comprehensive search results with relevant information, URLs, titles, and descriptions.
@@ -94,58 +95,30 @@ class WebSearcherToolArgs(BaseModel):
         description="(optional) Filter results by year (e.g., 2025)."
     )
 
+@tcp.tool()
 class WebSearcherTool(BaseTool):
     """Search the web for information using various search engines."""
-
+    
     name: str = "web_searcher"
     description: str = _WEB_SEARCHER_DESCRIPTION
-    args_schema: Type[WebSearcherToolArgs] = WebSearcherToolArgs
+    args_schema: Type[BaseModel] = WebSearcherToolArgs
+    metadata: Dict[str, Any] = {"type": "Web Search"}
     
-    # Configure parameters as class attributes
-    tool: str = Field(
-        default="firecrawl_search", 
-        description="The search tool to use."
-    )
-    fallback_tools: List[str] = Field(
-        default=["duckduckgo_search", "baidu_search", "bing_search"],
-        description="The fallback search tools to use."
-    )
-    max_length: int = Field(
-        default=4096,
-        description="The maximum length of the content to fetch."
-    )
-    retry_delay: int = Field(
-        default=10,
-        description="The retry delay in seconds."
-    )
-    max_retries: int = Field(
-        default=3,
-        description="The maximum number of retries."
-    )
-    lang: str = Field(
-        default="en",
-        description="The language to use."
-    )
-    country: str = Field(
-        default="us", 
-        description="The country to use."
-    )
-    num_results: int = Field(
-        default=5,
-        description="The number of results to return."
-    )
-    fetch_content: bool = Field(
-        default=False,
-        description="Whether to fetch content from the search results."
-    )
-    search_tools: Dict[str, BaseTool] = Field(default_factory=dict, description="The search engines to use.")
-    content_fetcher: WebFetcherTool = Field(default_factory=WebFetcherTool, description="The content fetcher to use.")
-
+    max_length: int = Field(default=4096, description="The maximum length of the search results")
+    retry_delay: int = Field(default=10, description="The delay between retries")
+    max_retries: int = Field(default=3, description="The maximum number of retries")
+    lang: str = Field(default="en", description="The language to use for the search")
+    country: str = Field(default="us", description="The country to use for the search")
+    num_results: int = Field(default=5, description="The number of search results to return")
+    fetch_content: bool = Field(default=False, description="Whether to fetch content from the search results")
+    search_tools: Dict[str, Any] = Field(default=None, description="The search tools to use")
+    content_fetcher: WebFetcherTool = Field(default=None, description="The content fetcher to use")
+    
     def __init__(self, **kwargs):
+        """Search the web for information using various search engines."""
         super().__init__(**kwargs)
-        
         # Initialize search engines and content fetcher
-        self.search_tools: Dict[str, BaseTool] = {
+        self.search_tools: Dict[str, Any] = {
             "firecrawl_search": FirecrawlSearch(),
         }
         self.content_fetcher = WebFetcherTool()
@@ -324,7 +297,7 @@ class WebSearcherTool(BaseTool):
     )
     async def _perform_search_with_tool(
         self,
-        tool: BaseTool,
+        tool: Any,
         query: str,
         num_results: int,
         search_params: Dict[str, Any],
@@ -358,12 +331,3 @@ class WebSearcherTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
             return f"Error in synchronous execution: {e}"
-    
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "args_schema": self.args_schema,
-            "type": "web_searcher"
-        }

@@ -1,12 +1,12 @@
 """Bash tool for executing shell commands."""
-
 import asyncio
 import shlex
-from typing import Dict, Any, Type
-from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+from typing import Type, Dict, Any
 
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
 Use this tool to run system commands, scripts, or any bash operations. 
@@ -18,19 +18,18 @@ Input should be a valid bash command string.
 class BashToolArgs(BaseModel):
     command: str = Field(description="The command to execute")
 
+@tcp.tool()
 class BashTool(BaseTool):
     """A tool for executing bash commands asynchronously."""
-    
     name: str = "bash"
     description: str = _BASH_TOOL_DESCRIPTION
-    args_schema: Type[BashToolArgs] = BashToolArgs
+    args_schema: Type[BaseModel] = BashToolArgs
+    metadata: Dict[str, Any] = {"type": "System Management"}
     
-    timeout: int = Field(
-        default=30,
-        description="Timeout in seconds for command execution"
-    )
+    timeout: int = Field(description="Timeout in seconds for command execution", default=30)
     
     def __init__(self, **kwargs):
+        """A tool for executing bash commands asynchronously."""
         super().__init__(**kwargs)
     
     async def _arun(self, command: str) -> ToolResponse:
@@ -94,12 +93,3 @@ class BashTool(BaseTool):
                 loop.close()
         except Exception as e:
             return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
-    
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "timeout": self.timeout,
-            "type": "bash"
-        }

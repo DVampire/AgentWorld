@@ -17,7 +17,7 @@ from markitdown._exceptions import MissingDependencyException, MISSING_DEPENDENC
 import pdfminer
 import pdfminer.high_level
 
-from src.models import model_manager, HumanMessage
+from src.infrastructures.models import model_manager, HumanMessage
 from src.logger import logger
 
 

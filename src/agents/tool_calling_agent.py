@@ -6,18 +6,20 @@ from typing import List, Optional, Union
 from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
-from inspect import cleandoc
 from datetime import datetime
 
 from src.agents.base_agent import BaseAgent, ThinkOutput
-from src.registry import AGENTS
+from src.agents.protocol import acp
 from src.logger import logger
-from src.memory import MemoryManager
-from src.environments.protocol import ecp
-from src.utils import get_file_info
+from src.infrastructures.memory import MemoryManager
+from src.utils import get_file_info, dedent
 from src.tools import tool_manager
 
-@AGENTS.register_module(force=True)
+@acp.agent(
+    name="tool_calling_agent",
+    agent_type="tool_calling",
+    description="A tool calling agent that can execute various tools and actions",
+)
 class ToolCallingAgent(BaseAgent):
     """Tool calling agent implementation with manual agent logic."""
     
@@ -140,7 +142,7 @@ class ToolCallingAgent(BaseAgent):
         # Use LLM to summarize the file content
         system_prompt = "You are a helpful assistant that summarizes file content."
         
-        user_prompt = cleandoc(f"""
+        user_prompt = dedent(f"""
             Summarize the following file content as 1-3 sentences:
             {file_content}
         """)
@@ -162,12 +164,12 @@ class ToolCallingAgent(BaseAgent):
         
         attach_files_string = "\n".join([f"File: {file['path']}\nSummary: {file['summary']}" for file in files])
         
-        enhanced_task = cleandoc(f"""
-- Task:
-{task}
-- Attach files:
-{attach_files_string}
-""")
+        enhanced_task = dedent(f"""
+        - Task:
+        {task}
+        - Attach files:
+        {attach_files_string}
+        """)
         return enhanced_task
         
     async def run(self, 

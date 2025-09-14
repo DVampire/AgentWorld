@@ -13,7 +13,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils import secret_from_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
 
 
 class GoogleSearch(BaseTool):
@@ -40,9 +40,9 @@ class GoogleSearch(BaseTool):
     base_url: Optional[str] = Field(default_factory=secret_from_env(["SKYWORK_GOOGLE_SEARCH_BASE_URL"]))
     api_key: Optional[str] = Field(default=None, description="The API key to use for the Google search engine.")
 
-    def __init__(self, **data):
+    def __init__(self, **kwargs):
         """Initialize the GoogleSearch tool."""
-        super().__init__(**data)
+        super().__init__(**kwargs)
 
     @classmethod
     def from_search_kwargs(cls, search_kwargs: dict, **kwargs: Any) -> GoogleSearch:

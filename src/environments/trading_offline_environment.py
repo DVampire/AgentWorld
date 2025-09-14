@@ -16,7 +16,7 @@ from src.logger import logger
 from src.utils import dedent
 
 from src.environments.protocol.environment import BaseEnvironment
-from src.metric import ARR, SR, MDD, SOR, CR, VOL
+from src.supports.metric import ARR, SR, MDD, SOR, CR, VOL
 
 _STATE_RULES = """
 The environment state includes:

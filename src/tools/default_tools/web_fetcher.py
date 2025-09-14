@@ -1,26 +1,34 @@
-from typing import Optional, Dict, Any, Type
-from langchain.tools import BaseTool
-from pydantic import BaseModel, Field
+"""Web fetcher tool for retrieving content from web pages."""
+
 import asyncio
+from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+from typing import Type, Dict, Any
 
 from src.utils import fetch_url
 from src.logger import logger
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 
-_WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text. """
+_WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text content.
+Use this tool to fetch and read content from web pages.
+The tool will return the page title and markdown-formatted content.
+"""
 
 class WebFetcherToolArgs(BaseModel):
     url: str = Field(description="The relative or absolute url of the webpage to visit.")
 
-
+@tcp.tool()
 class WebFetcherTool(BaseTool):
     """A tool for fetching web content asynchronously."""
     
     name: str = "web_fetcher"
     description: str = _WEB_FETCHER_DESCRIPTION
-    args_schema: Type[WebFetcherToolArgs] = WebFetcherToolArgs
+    args_schema: Type[BaseModel] = WebFetcherToolArgs
+    metadata: Dict[str, Any] = {"type": "Web Interaction"}
     
     def __init__(self, **kwargs):
+        """A tool for fetching web content asynchronously."""
         super().__init__(**kwargs)
     
     async def _arun(self, url: str) -> ToolResponse:
@@ -60,12 +68,4 @@ class WebFetcherTool(BaseTool):
                 content=f"Error in synchronous execution: {e}",
                 extra={"status": "error", "error_type": type(e).__name__}
             )
-    
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "type": "web_fetcher"
-        }
 

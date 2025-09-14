@@ -1,39 +1,39 @@
-"""Unified file operation tool for reading, writing, deleting, modifying files and searching with grep."""
+"""Python interpreter tool for executing Python code."""
 
 import asyncio
-import os
-import re
-from typing import Optional, Dict, Any, List, Callable, Type
+from typing import Optional, Dict, Any, List, Type
+from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
-from pydantic import BaseModel, Field, field_validator
+from typing import Type, Dict, Any
 
 from src.tools.default_tools.executor import LocalPythonExecutor, BASE_BUILTIN_MODULES, BASE_PYTHON_TOOLS
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 
-
-_PYTHON_INTERPRETER_TOOL_DESCRIPTION = """It is a tool that can execute python code.
-
-Input format: JSON string with 'code' parameter.
-Example: {"name": "python_interpreter", "args": {"code": "print('Hello, world!')"}}
+_PYTHON_INTERPRETER_TOOL_DESCRIPTION = """Execute Python code and return the output.
+Use this tool to run Python scripts, perform calculations, or execute any Python code.
+The tool provides a safe execution environment with access to standard Python libraries.
 """
 
 class PythonInterpreterArgs(BaseModel):
-    code: str = Field(..., description="Python code to execute")
+    code: str = Field(description="Python code to execute")
 
+@tcp.tool()
 class PythonInterpreterTool(BaseTool):
-    """It is a tool that can execute python code."""
+    """A tool that can execute Python code."""
     
     name: str = "python_interpreter"
     description: str = _PYTHON_INTERPRETER_TOOL_DESCRIPTION
-    args_schema: Type[PythonInterpreterArgs] = PythonInterpreterArgs
-
+    args_schema: Type[BaseModel] = PythonInterpreterArgs
+    metadata: Dict[str, Any] = {"type": "Code Execution"}
+    
     authorized_imports: Optional[List[str]] = None
     base_python_tools: Optional[List[str]] = None
     python_evaluator: Optional["LocalPythonExecutor"] = None
-
-    model_config = {"arbitrary_types_allowed": True}
     
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        """A tool that can execute Python code."""
+        super().__init__(**kwargs)
 
     def model_post_init(self, __context):
         if self.authorized_imports is None:
@@ -50,18 +50,18 @@ class PythonInterpreterTool(BaseTool):
             )
             self.python_evaluator.send_tools(self.base_python_tools)
         
-    async def _arun(self, code: str) -> str:
+    async def _arun(self, code: str) -> ToolResponse:
         try:
             self.python_evaluator.state = {}
             code_output = self.python_evaluator(code)
             output = f"Stdout:\n{code_output.logs}\nOutput: {str(code_output.output)}"
-            return output
+            return ToolResponse(content=output)
         
         except Exception as e:
-            return f"Error: {str(e)}"
+            return ToolResponse(content=f"Error: {str(e)}")
         
-    def _run(self, code: str) -> str:
-        """Execute a bash command synchronously (fallback)."""
+    def _run(self, code: str) -> ToolResponse:
+        """Execute Python code synchronously (fallback)."""
         try:
             # Run the async version in a new event loop
             loop = asyncio.new_event_loop()
@@ -71,12 +71,4 @@ class PythonInterpreterTool(BaseTool):
             finally:
                 loop.close()
         except Exception as e:
-            return f"Error in synchronous execution: {str(e)}"
-    
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "type": "python_interpreter"
-        }
+            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")

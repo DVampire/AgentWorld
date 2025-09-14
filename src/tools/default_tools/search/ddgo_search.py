@@ -9,7 +9,7 @@ load_dotenv(verbose=True)
 from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
 
 class DuckDuckGoSearchAPIWrapper(BaseModel):
     """Wrapper for DuckDuckGo Search API.
@@ -42,6 +42,10 @@ class DuckDuckGoSearchAPIWrapper(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    
+    def __init__(self, **kwargs):
+        """Initialize the DuckDuckGoSearchAPIWrapper tool."""
+        super().__init__(**kwargs)
 
     @model_validator(mode="before")
     @classmethod

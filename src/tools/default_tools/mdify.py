@@ -2,11 +2,13 @@
 
 import asyncio
 import os
-from typing import Dict, Any, Type, Optional
-from langchain.tools import BaseTool
+from typing import Optional
 from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+from typing import Type, Dict, Any
 
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 from src.tools.default_tools.markdown.mdconvert import MarkitdownConverter
 from src.logger import logger
 
@@ -34,26 +36,22 @@ class MdifyToolArgs(BaseModel):
         description="Output format (default: markdown)"
     )
 
+@tcp.tool()
 class MdifyTool(BaseTool):
     """A tool for converting various file formats to markdown text asynchronously."""
-    
     name: str = "mdify"
     description: str = _MDIFY_TOOL_DESCRIPTION
-    args_schema: Type[MdifyToolArgs] = MdifyToolArgs
+    args_schema: Type[BaseModel] = MdifyToolArgs
+    metadata: Dict[str, Any] = {"type": "Markdown Conversion"}
     
-    timeout: int = Field(
-        default=60,
-        description="Timeout in seconds for file conversion"
-    )
-    converter: MarkitdownConverter = Field(
-        default=None,
-        description="The converter to use for file conversion"
-    )
+    timeout: int = Field(description="Timeout in seconds for file conversion", default=60)
+    converter: MarkitdownConverter = Field(description="The converter to use for file conversion", default=None)
     
-    def __init__(self, **kwargs):
+    def __init__(self,  **kwargs):
+        """A tool for converting various file formats to markdown text asynchronously"""
         super().__init__(**kwargs)
         self.converter = MarkitdownConverter(timeout=self.timeout)
-    
+        
     async def _arun(self, file_path: str, output_format: str = "markdown") -> ToolResponse:
         """Convert a file to markdown asynchronously."""
         try:
@@ -136,11 +134,3 @@ class MdifyTool(BaseTool):
                 loop.close()
         except Exception as e:
             return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
-    
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "type": "mdify"
-        }

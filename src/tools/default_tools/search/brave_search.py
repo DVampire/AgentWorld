@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 from src.utils import get_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
 
 class BraveSearchWrapper(BaseModel):
     """Wrapper around the Brave search engine."""

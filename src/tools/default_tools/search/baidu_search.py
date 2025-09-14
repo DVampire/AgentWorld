@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
 
 class BaiduSearch(BaseTool):
     """Tool that queries the Baidu search engine.
@@ -39,6 +39,10 @@ class BaiduSearch(BaseTool):
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    
+    def __init__(self, **kwargs):
+        """Initialize the BaiduSearch tool."""
+        super().__init__(**kwargs)
 
     @classmethod
     def from_search_kwargs(cls, search_kwargs: dict, **kwargs: Any) -> BaiduSearch:

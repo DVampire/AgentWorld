@@ -8,7 +8,7 @@ from firecrawl import AsyncFirecrawlApp
 from src.utils import get_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
 
 class FirecrawlSearch(BaseTool):
     """Tool that queries the Firecrawl search engine.
@@ -33,9 +33,9 @@ class FirecrawlSearch(BaseTool):
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     api_key: Optional[SecretStr] = Field(default=get_env("FIRECRAWL_API_KEY"))
 
-    def __init__(self, **data):
+    def __init__(self, **kwargs):
         """Initialize the FirecrawlSearch tool."""
-        super().__init__(**data)
+        super().__init__(**kwargs)
 
     @classmethod
     def from_search_kwargs(cls, search_kwargs: dict, **kwargs: Any) -> FirecrawlSearch:

@@ -1,41 +1,36 @@
 """Done tool for indicating that the task has been completed."""
-
-import asyncio
-import os
-import re
-from typing import Optional, Dict, Any, Type
-from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
+from langchain.tools import BaseTool
+from typing import Type, Dict, Any
 
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 
-_DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed."""
+_DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
+Use this tool to signal that a task or subtask has been finished.
+Provide a brief summary of what was accomplished.
+"""
 
 class DoneToolArgs(BaseModel):
     result: str = Field(description="The result of the task")
 
-
+@tcp.tool()
 class DoneTool(BaseTool):
-    """Done tool for indicating that the task has been completed."""
+    """A tool for indicating that the task has been completed."""
     
     name: str = "done"
     description: str = _DONE_TOOL_DESCRIPTION
-    args_schema: Type[DoneToolArgs] = DoneToolArgs
+    args_schema: Type[BaseModel] = DoneToolArgs
+    metadata: Dict[str, Any] = {"type": "Task Completion"}
     
     def __init__(self, **kwargs):
+        """A tool for indicating that the task has been completed."""
         super().__init__(**kwargs)
     
-    async def _arun(self, result: str) -> str:
+    async def _arun(self, result: str) -> ToolResponse:
         """Indicate that the task has been completed."""
-        return result
+        return ToolResponse(content=f"✅ Task completed: {result}")
     
-    def _run(self, result: str) -> str:
+    def _run(self, result: str) -> ToolResponse:
         """Indicate that the task has been completed."""
-        return result
-    
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get the tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "args_schema": self.args_schema
-        }
+        return ToolResponse(content=f"✅ Task completed: {result}")

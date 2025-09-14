@@ -12,11 +12,11 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 from inspect import cleandoc
 
-from src.models import model_manager
+from src.infrastructures.models import model_manager
 from src.tools import tool_manager
-from src.prompts import PromptManager
+from src.agents.prompts import PromptManager
 from src.logger import logger
-from src.memory import MemoryManager, SessionInfo, EventType
+from src.infrastructures.memory import MemoryManager, SessionInfo, EventType
 from src.config import config
 from src.environments.protocol import ecp
 

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
 
 
 ABSTRACT_MAX_LENGTH = 300
@@ -64,9 +64,9 @@ class BingSearch(BaseTool):
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     session: Optional[requests.Session] = None
 
-    def __init__(self, **data):
+    def __init__(self, **kwargs):
         """Initialize the BingSearch tool with a requests session."""
-        super().__init__(**data)
+        super().__init__(**kwargs)
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 

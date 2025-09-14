@@ -6,11 +6,12 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, Type, List
-from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 import tempfile
+from langchain.tools import BaseTool
 
-from src.tools.base import ToolResponse
+from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol import tcp
 from src.utils import assemble_project_path
 
 class Step(BaseModel):
@@ -99,26 +100,21 @@ class TodoToolArgs(BaseModel):
     )
 
 
+@tcp.tool()
 class TodoTool(BaseTool):
-    """Todo tool for managing a todo.md file with task decomposition and step tracking."""
+    """A tool for managing a todo.md file with task decomposition and step tracking."""
     
     name: str = "todo"
     description: str = _TODO_TOOL_DESCRIPTION
-    args_schema: Type[TodoToolArgs] = TodoToolArgs
-    todo_file: Path = Field(
-        default=None,
-        description="Path to the todo.md file"
-    )
-    steps_file: Path = Field(
-        default=None,
-        description="Path to the todo_steps.json file"
-    )
-    steps: List[Step] = Field(
-        default=[],
-        description="List of steps"
-    )
+    args_schema: Type[BaseModel] = TodoToolArgs
+    metadata: Dict[str, Any] = {"type": "Task Management"}
+    
+    todo_file: Optional[Path] = None
+    steps_file: Optional[Path] = None
+    steps: Optional[List[Step]] = None
     
     def __init__(self, **kwargs):
+        """A tool for managing a todo.md file with task decomposition and step tracking."""
         super().__init__(**kwargs)
         # Use temporary file for todo.md
         temp_dir = Path(assemble_project_path(tempfile.gettempdir()))
@@ -491,11 +487,3 @@ class TodoTool(BaseTool):
         except Exception as e:
             return
     
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get the tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "args_schema": self.args_schema,
-            "type": "todo"
-        }
