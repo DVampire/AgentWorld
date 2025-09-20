@@ -8,6 +8,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from src.utils import assemble_project_path
 from src.tools.protocol import tcp
+from src.logger import logger
 
 # Configure logging
 logging.getLogger("mcp.os.posix.utilities").setLevel(logging.ERROR)
@@ -82,16 +83,24 @@ class MCPClient:
         self.client = MultiServerMCPClient(self.servers_config)
         self._initialized = True
         
-    async def register_tools(self) -> None:
+    def register_tools(self) -> None:
         """Register the tools from the MCP client."""
         if not self._initialized:
             self.initialize()
             
-        tools = await self.client.get_tools()
-        for tool in tools:
-            metadata = dict(type="Mcp Tool")
-            tool.metadata.update(metadata)
-            tcp.tool(tool=tool)
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                tools = loop.run_until_complete(self.client.get_tools())
+                for tool in tools:
+                    metadata = dict(type="Mcp Tool")
+                    tool.metadata.update(metadata)
+                    tcp.tool(tool=tool)
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Error in synchronous execution: {e}")
 
 mcp_client = MCPClient()
-asyncio.run(mcp_client.register_tools())
+mcp_client.register_tools()

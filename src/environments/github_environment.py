@@ -22,7 +22,7 @@ from src.utils import get_env
 
 @ecp.environment(
     name="github",
-    env_type="github", 
+    type="GitHub", 
     description="GitHub environment for repository and Git operations. git_clone automatically forks repositories if they don't belong to you, then clones the forked version.",
     has_vision=False,
     additional_rules=None
@@ -108,6 +108,7 @@ class GitHubEnvironment(BaseEnvironment):
 
     # --------------- Repository Operations ---------------
     @ecp.action(name="create_repository", 
+                type="GitHub", 
                 description="Create a new GitHub repository")
     async def _create_repository(
         self,
@@ -150,6 +151,7 @@ class GitHubEnvironment(BaseEnvironment):
             return f"Failed to create repository '{name}': {str(e)}"
 
     @ecp.action(name="get_repository",
+                type="GitHub", 
                 description="Get your repository information")
     async def _get_repository(self, repo: str) -> str:
         """Get repository information for your own repository.
@@ -183,6 +185,7 @@ class GitHubEnvironment(BaseEnvironment):
             return f"Failed to get repository '{repo}': {str(e)}"
 
     @ecp.action(name="fork_repository",
+                type="GitHub", 
                 description="Fork a public repository to your account")
     async def _fork_repository(self, owner: str, repo: str) -> str:
         """Fork a public repository to your account.
@@ -203,6 +206,7 @@ class GitHubEnvironment(BaseEnvironment):
             return f"Failed to fork repository '{owner}/{repo}': {str(e)}"
 
     @ecp.action(name="delete_repository",
+                type="GitHub", 
                 description="Delete your own repository")
     async def _delete_repository(self, repo: str) -> str:
         """Delete your own repository.
@@ -225,6 +229,7 @@ class GitHubEnvironment(BaseEnvironment):
 
     # --------------- Git Operations ---------------
     @ecp.action(name="git_init", 
+                type="GitHub", 
                 description="Initialize a local directory as Git repository")
     async def _git_init(
         self,
@@ -249,6 +254,7 @@ class GitHubEnvironment(BaseEnvironment):
             return f"Failed to initialize repository in '{local_path}': {str(e)}"
     
     @ecp.action(name="git_clone", 
+                type="GitHub", 
                 description="Clone a repository to local directory (automatically forks if not your repository)")
     async def _git_clone(
         self,
@@ -306,7 +312,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to clone repository '{owner}/{repo}': {str(e)}"
     
-    @ecp.action(name="git_commit", description="Commit changes to local repository")
+    @ecp.action(name="git_commit",
+                type="GitHub", 
+                description="Commit changes to local repository")
     async def _git_commit(
         self,
         local_path: str,
@@ -331,7 +339,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to commit in '{local_path}': {str(e)}"
 
-    @ecp.action(name="git_push", description="Push changes to remote repository")
+    @ecp.action(name="git_push",
+                type="GitHub", 
+                description="Push changes to remote repository")
     async def _git_push(
         self,
         local_path: str,
@@ -356,7 +366,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to push from '{local_path}': {str(e)}"
 
-    @ecp.action(name="git_pull", description="Pull changes from remote repository")
+    @ecp.action(name="git_pull",
+                type="GitHub", 
+                description="Pull changes from remote repository")
     async def _git_pull(
         self,
         local_path: str,
@@ -381,7 +393,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to pull to '{local_path}': {str(e)}"
 
-    @ecp.action(name="git_fetch", description="Fetch changes from remote repository")
+    @ecp.action(name="git_fetch",
+                type="GitHub", 
+                description="Fetch changes from remote repository")
     async def _git_fetch(
         self,
         local_path: str,
@@ -405,7 +419,9 @@ class GitHubEnvironment(BaseEnvironment):
             return f"Failed to fetch to '{local_path}': {str(e)}"
 
     # --------------- Branch Operations ---------------
-    @ecp.action(name="git_create_branch", description="Create a new branch")
+    @ecp.action(name="git_create_branch",
+                type="GitHub", 
+                description="Create a new branch")
     async def _git_create_branch(
         self,
         local_path: str,
@@ -430,7 +446,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to create branch '{branch_name}': {str(e)}"
 
-    @ecp.action(name="git_checkout_branch", description="Checkout an existing branch")
+    @ecp.action(name="git_checkout_branch",
+                type="GitHub", 
+                description="Checkout an existing branch")
     async def _git_checkout_branch(
         self,
         local_path: str,
@@ -453,7 +471,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to checkout branch '{branch_name}': {str(e)}"
 
-    @ecp.action(name="git_list_branches", description="List all branches")
+    @ecp.action(name="git_list_branches",
+                type="GitHub", 
+                description="List all branches")
     async def _git_list_branches(self, local_path: str) -> str:
         """List all branches.
         
@@ -471,7 +491,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to list branches: {str(e)}"
 
-    @ecp.action(name="git_delete_branch", description="Delete a branch")
+    @ecp.action(name="git_delete_branch",
+                type="GitHub", 
+                description="Delete a branch")
     async def _git_delete_branch(
         self,
         local_path: str,
@@ -496,7 +518,9 @@ class GitHubEnvironment(BaseEnvironment):
         except Exception as e:
             return f"Failed to delete branch '{branch_name}': {str(e)}"
 
-    @ecp.action(name="git_status", description="Get Git repository status")
+    @ecp.action(name="git_status",
+                type="GitHub", 
+                description="Get Git repository status")
     async def _git_status(self, local_path: str) -> str:
         """Get Git repository status.
         

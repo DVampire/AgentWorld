@@ -1,6 +1,6 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import browser_tool, deep_researcher_tool, memory
+    from .base import browser_tool, deep_researcher_tool, deep_analyzer_tool, memory
     from .environments.file_system import environment as file_system_environment
     from .environments.trading_offline import environment as trading_offline_environment, dataset as trading_offline_dataset
     from .environments.github import environment as github_environment

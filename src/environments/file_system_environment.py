@@ -11,11 +11,11 @@ from src.environments.protocol.environment import BaseEnvironment
 
 @ecp.environment(
     name="file_system",
-    env_type="file_system",
+    type="File System",
     description="File system environment for file operations",
     has_vision=False,
     additional_rules={
-        "state": "The state of the file system environment [addi].",
+        "state": "The state of the file system environment.",
     }
 )
 class FileSystemEnvironment(BaseEnvironment):
@@ -49,7 +49,9 @@ class FileSystemEnvironment(BaseEnvironment):
         """Initialize the file system environment."""
         logger.info(f"| 🗂️ File System Environment initialized at: {self.base_dir}")
         
-    @ecp.action(name = "read", description = "Read a file from the file system.")
+    @ecp.action(name = "read", 
+                type = "File System", 
+                description = "Read a file from the file system.")
     async def _read(self, 
                     file_path: str, 
                     start_line: Optional[int] = None, 
@@ -67,6 +69,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.read_file(file_path, start_line=start_line, end_line=end_line)
     
     @ecp.action(name = "write", 
+                type = "File System", 
                 description = "Write content to a file.")
     async def _write(self, 
                      file_path: str, 
@@ -85,6 +88,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.write_file(file_path, content, mode=mode)
     
     @ecp.action(name = "replace", 
+                type = "File System", 
                 description = "Replace a string in a file.")
     async def _replace(self, 
                        file_path: str, 
@@ -107,6 +111,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.replace_file_str(file_path, old_string, new_string, start_line=start_line, end_line=end_line)
     
     @ecp.action(name = "delete", 
+                type = "File System", 
                 description = "Delete a file from the file system.")
     async def _delete(self, file_path: str) -> str:
         """Delete a file from the file system.
@@ -120,6 +125,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.delete_file(file_path)
     
     @ecp.action(name = "copy", 
+                type = "File System", 
                 description = "Copy a file from source to destination.")
     async def _copy(self, src_path: str, dst_path: str) -> str:
         """Copy a file from source to destination.
@@ -134,6 +140,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.copy_file(src_path, dst_path)
     
     @ecp.action(name = "move",
+                type = "File System", 
                 description = "Move a file from source to destination.")
     async def _move(self, src_path: str, dst_path: str) -> str:
         """Move a file from source to destination.
@@ -148,6 +155,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.move_file(src_path, dst_path)
     
     @ecp.action(name = "rename",
+                type = "File System", 
                 description = "Rename a file or directory.")
     async def _rename(self, old_path: str, new_path: str) -> str:
         """Rename a file or directory.
@@ -162,6 +170,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.rename_file(old_path, new_path)
     
     @ecp.action(name = "get_info",
+                type = "File System", 
                 description = "Get detailed information about a file.")
     async def _get_info(self, file_path: str,
                         include_stats: Optional[bool] = True) -> str:
@@ -177,6 +186,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.get_file_info(file_path, include_stats=include_stats)
     
     @ecp.action(name = "create_dir",
+                type = "File System", 
                 description = "Create a directory.")
     async def _create_dir(self, dir_path: str) -> str:
         """Create a directory.
@@ -190,6 +200,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.create_directory(dir_path)
     
     @ecp.action(name = "delete_dir",
+                type = "File System", 
                 description = "Delete a directory.")
     async def _delete_dir(self, dir_path: str) -> str:
         """Delete a directory.
@@ -203,6 +214,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.delete_directory(dir_path)
     
     @ecp.action(name = "tree",
+                type = "File System", 
                 description = "Show directory tree structure.")
     async def _tree(self, 
                     dir_path: str, 
@@ -225,6 +237,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.tree_structure(dir_path, max_depth=max_depth, show_hidden=show_hidden, exclude_patterns=exclude_patterns, file_types=file_types)
     
     @ecp.action(name = "describe",
+                type = "File System", 
                 description = "Describe the file system with directory structure and file information.")
     async def _describe(self) -> str:
         """Describe the file system with directory structure and file information.
@@ -238,6 +251,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.describe()
     
     @ecp.action(name = "search",
+                type = "File System", 
                 description = "Search for files by name or content.")
     async def _search(self, 
                       search_path: str, 
@@ -262,6 +276,7 @@ class FileSystemEnvironment(BaseEnvironment):
         return await self.file_system.search_files(search_path, query=query, search_type=search_type, file_types=file_types, case_sensitive=case_sensitive, max_results=max_results)
     
     @ecp.action(name = "change_permissions",
+                type = "File System", 
                 description = "Change file or directory permissions.")
     async def _change_permissions(self, file_path: str, permissions: str) -> str:
         """Change file or directory permissions.

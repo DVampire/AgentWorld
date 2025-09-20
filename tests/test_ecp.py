@@ -15,10 +15,8 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.registry import AGENTS
-from src.registry import DATASETS
-from src.models import model_manager
-from src.tools import tool_manager
+from src.supports.registry import DATASETS
+from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.utils import assemble_project_path
 
@@ -172,10 +170,10 @@ async def test_trading_offline():
 async def main():
     
     # Test file system
-    # await test_file_system()
+    await test_file_system()
     
     # Test github
-    await test_github()
+    # await test_github()
     
     # Test trading offline
     # await test_trading_offline()

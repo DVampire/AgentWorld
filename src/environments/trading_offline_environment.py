@@ -99,7 +99,7 @@ def convert_dataframe_to_markdown(
     return res_strings
 
 @ecp.environment(name = "trading_offline",
-                 env_type = "trading_offline",
+                 type = "Trading Offline",
                  description = "Trading offline environment for trading",
                  has_vision = False,
                  additional_rules = {
@@ -722,6 +722,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
         logger.info(f"| 💰 Trading Offline Environment initialized")
     
     @ecp.action(name = "step",
+                type = "Trading Offline",
                 description = "Step the trading environment.")
     async def _step(self, action: str) -> str:
         """Step the trading environment.
@@ -812,6 +813,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
             return res
         
     @ecp.action(name = "save",
+                type = "Trading Offline",
                 description = "Save the trading records.")
     async def _save(self, file_path: str) -> str:
         """Save the trading records.

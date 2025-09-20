@@ -4,18 +4,13 @@ Server implementation for the Environment Context Protocol with decorator suppor
 """
 
 import asyncio
-import json
 import inspect
 from typing import Any, Dict, List, Optional, Callable, Type, get_origin, get_args
-from datetime import datetime
 from pydantic import BaseModel, create_model, Field
 import inflection
 import typing
 
-from src.environments.protocol.types import (
-    EnvironmentInfo, 
-    ActionInfo, 
-)
+from src.environments.protocol.types import EnvironmentInfo, ActionInfo
 from src.environments.protocol.environment import BaseEnvironment
 
 
@@ -27,10 +22,11 @@ class ECPServer:
     
     def environment(self, 
                     name: str = None,
-                    env_type: str = None, 
+                    type: str = None, 
                     description: str = "", 
                     has_vision: bool = False,
-                    additional_rules: Optional[Dict[str, str]] = None
+                    additional_rules: Optional[Dict[str, str]] = None,
+                    metadata: Optional[Dict[str, Any]] = None
                     ):
         """Decorator to register an environment class
         
@@ -43,14 +39,15 @@ class ECPServer:
         """
         def decorator(cls: Type[BaseEnvironment]):
             env_name = name or cls.__name__
-            env_type_name = env_type or cls.__name__.lower()  # Use class name as environment type
+            env_type = type or cls.__name__.lower()
             
             # Store environment metadata
             cls._env_name = env_name
-            cls._env_type = env_type_name
+            cls._env_type = env_type
             cls._env_description = description
             cls._has_vision = has_vision
             cls._additional_rules = additional_rules
+            cls._metadata = metadata
             
             # Collect all actions from the class
             actions = {}
@@ -64,6 +61,7 @@ class ECPServer:
                     action_info = ActionInfo(
                         env_name=env_name,
                         name=getattr(attr, '_action_name'),
+                        type=getattr(attr, '_action_type', ''),
                         description=getattr(attr, '_action_description', ''),
                         args_schema=getattr(attr, '_args_schema', None),
                         function=getattr(attr, '_action_function', None),
@@ -75,7 +73,7 @@ class ECPServer:
             # Generate rules
             final_rules = self._generate_environment_rules(
                 env_name,
-                env_type_name,
+                env_type,
                 description,
                 actions,
                 has_vision,
@@ -85,14 +83,13 @@ class ECPServer:
             # Create EnvironmentInfo and store it
             env_info = EnvironmentInfo(
                 name=env_name,
-                type=env_type_name,
+                type=env_type,
                 description=description,
                 rules=final_rules,
                 actions=actions,
-                env_class=cls,
-                env_config=None,
-                env_instance=None,
-                metadata=None
+                cls=cls,
+                instance=None,
+                metadata=metadata
             )
             
             self._registered_environments[env_name] = env_info
@@ -102,12 +99,16 @@ class ECPServer:
     
     def action(self, 
                name: str = None, 
-               description: str = ""):
+               type: str = None,
+               description: str = "",
+               metadata: Optional[Dict[str, Any]] = None):
         """Decorator to register an action (tool) for an environment
         
         Args:
             name: Action name (defaults to function name)
-            description: Action description
+            type: Action type (defaults to function name)
+            description: Action description,
+            metadata: Action metadata
         """
         def decorator(func: Callable):
             action_name = name or func.__name__
@@ -118,10 +119,11 @@ class ECPServer:
             
             # Store action metadata (env_name will be set later by environment decorator)
             func._action_name = action_name
+            func._action_type = type
             func._action_description = description
             func._args_schema = args_schema
             func._action_function = func
-            func._metadata = None
+            func._metadata = metadata
             
             return func
         return decorator
@@ -436,14 +438,13 @@ class ECPServer:
             BaseEnvironment: Environment instance or None if not found
         """
         env_info = self._registered_environments.get(env_name)
-        env_info.env_config = env_config
-        env_info.env_instance = env_info.env_class(**env_config)
+        env_info.instance = env_info.cls(**env_config)
         
-        await env_info.env_instance.initialize()
+        await env_info.instance.initialize()
         
         self._registered_environments[env_name] = env_info
         
-        return env_info.env_instance
+        return env_info.instance
     
     async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
@@ -454,7 +455,7 @@ class ECPServer:
         Returns:
             str: State of the environment or None if not found
         """
-        env = self._registered_environments.get(env_name).env_instance
+        env = self._registered_environments.get(env_name).instance
         if not env:
             raise ValueError(f"Environment '{env_name}' not found")
         return await env.get_state()
@@ -484,11 +485,11 @@ class ECPServer:
             raise ValueError(f"Action '{action_name}' has no function implementation")
         
         # Get environment instance
-        env_instance = env_info.env_instance
+        env_instance = env_info.instance
         if not env_instance:
             # Create instance if not exists
-            env_instance = env_info.env_class()
-            env_info.env_instance = env_instance
+            env_instance = env_info.instance()
+            env_info.instance = env_instance
         
         # Call the action function
         if asyncio.iscoroutinefunction(action_info.function):
@@ -506,8 +507,8 @@ class ECPServer:
         """
         return list(self._registered_environments.values())
     
-    def get_environment(self, env_name: str) -> Optional[EnvironmentInfo]:
-        """Get environment information by type
+    def get_environment_info(self, env_name: str) -> Optional[EnvironmentInfo]:
+        """Get environment information by name
         
         Args:
             env_name: Environment name
@@ -516,5 +517,16 @@ class ECPServer:
             EnvironmentInfo: Environment information or None if not found
         """
         return self._registered_environments.get(env_name)
+    
+    def get_environment(self, env_name: str) -> Optional[BaseEnvironment]:
+        """Get environment information by type
+        
+        Args:
+            env_name: Environment name
+            
+        Returns:
+            EnvironmentInfo: Environment information or None if not found
+        """
+        return self._registered_environments.get(env_name).instance
     
 ecp = ECPServer()

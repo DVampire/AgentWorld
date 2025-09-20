@@ -2,12 +2,13 @@
 
 Core type definitions for the Environment Context Protocol.
 """
-import json
-from typing import Any, Dict, List, Optional, Union, Literal, Type, Callable
+from typing import Any, Dict, Optional, Union, Literal, Type, Callable
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
 from datetime import datetime
+
+from src.environments.protocol.environment import BaseEnvironment
 
 class ECPErrorCode(Enum):
     """ECP error codes"""
@@ -53,9 +54,8 @@ class EnvironmentInfo(BaseModel):
     rules: str
     description: str
     actions: Dict[str, "ActionInfo"]
-    env_class: Optional[Any] = None
-    env_config: Optional[Dict[str, Any]] = None
-    env_instance: Optional[Any] = None
+    cls: Optional[Type[BaseEnvironment]] = None
+    instance: Optional[Any] = None
     metadata: Optional[Dict[str, Any]] = None
     
     def __str__(self):
@@ -69,14 +69,14 @@ class ActionInfo(BaseModel):
     """Action information (equivalent to MCP tool)"""
     env_name: str
     name: str
+    type: str
     description: str
     args_schema: Optional[Type[BaseModel]] = None
     function: Optional[Callable] = None
     metadata: Optional[Dict[str, Any]] = None
     
     def __str__(self):
-        schema = self.args_schema.model_json_schema()
-        return json.dumps(schema, indent=4)
+        return f"ActionInfo(env_name={self.env_name}, name={self.name}, type={self.type}, description={self.description})"
     
     def __repr__(self):
         return self.__str__()

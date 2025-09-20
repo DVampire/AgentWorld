@@ -40,8 +40,8 @@ async def test_bash():
         print("🔌 Registering MCP tools with TCP...")
         
         tools = tcp.list_tools()
-        for tool in tools:
-            print(tool)
+        for index, tool in enumerate(tools):
+            print(f"Tool {index}: {tool.name}, Type: {tool.type}, Description: {tool.description}")
             
         tool = tcp.get_tool("bash")
         input = {

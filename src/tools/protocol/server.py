@@ -4,7 +4,6 @@ Server implementation for the Tool Context Protocol.
 """
 
 import inspect
-from re import A
 from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import BaseModel, create_model, Field
 from langchain.tools import BaseTool

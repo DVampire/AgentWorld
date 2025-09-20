@@ -143,23 +143,17 @@ class ACPToolInfo(BaseModel):
 class AgentInfo(BaseModel):
     """Agent information for registration"""
     name: str
-    agent_type: str
+    type: str
     description: str
-    capabilities: List[str] = Field(default_factory=list)
-    available_environments: List[str] = Field(default_factory=list)
-    available_tools: List[str] = Field(default_factory=list)
-    agent_class: Optional[Any] = None
-    agent_config: Optional[Dict[str, Any]] = None
-    agent_instance: Optional[Any] = None
+    cls: Optional[Any] = None
+    instance: Optional[Any] = None
     metadata: Optional[Dict[str, Any]] = None
     
     def __str__(self):
-        return f"AgentInfo(name={self.name}, type={self.agent_type}, description={self.description})"
+        return f"AgentInfo(name={self.name}, type={self.type}, description={self.description})"
     
     def __repr__(self):
         return self.__str__()
-
-
 
 
 # Update forward references

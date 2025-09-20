@@ -35,3 +35,4 @@ class Config(MMConfig, metaclass=Singleton):
         self.__dict__.update(mmconfig.__dict__)
 
 config = Config()
+config.init_config(config_path=assemble_project_path("configs/base.py"), args=Namespace())
