@@ -14,8 +14,7 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager
-from src.tools import tool_manager
+from src.infrastructures.models import model_manager
 from src.utils import assemble_project_path
 from src.environments import ecp
 
