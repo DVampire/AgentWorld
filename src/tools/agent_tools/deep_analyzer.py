@@ -6,17 +6,17 @@ from typing import List, Dict, Any, Optional, Type
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
 from langchain_core.messages import HumanMessage, SystemMessage
-from inspect import cleandoc
 from PIL import Image
 
-from src.logger import logger
-from src.tools.protocol import tcp
-from src.config import config
-from src.infrastructures.models import model_manager
+from src.utils import dedent
 from src.utils import make_image_url
 from src.utils import encode_image_base64
 from src.utils import assemble_project_path
 from src.utils import get_file_info
+from src.logger import logger
+from src.tools.protocol import tcp
+from src.config import config
+from src.infrastructures.models import model_manager
 from src.tools.default_tools.mdify import MdifyTool
 from src.tools.protocol.tool import ToolResponse
 
@@ -143,7 +143,7 @@ class DeepAnalyzerTool(BaseTool):
         self.model_name = model_name
         
         # Initialize model
-        self.model = model_manager.get_model(self.model_name)
+        self.model = model_manager.get(self.model_name)
         
         # Initialize tools
         self.mdify_tool = MdifyTool()
@@ -258,7 +258,7 @@ class DeepAnalyzerTool(BaseTool):
         # Use LLM to summarize the file content
         system_prompt = "You are a helpful assistant that summarizes file content."
         
-        user_prompt = cleandoc(f"""
+        user_prompt = dedent(f"""
             Summarize the following file content as 1-3 sentences:
             {file_content}
         """)
@@ -285,11 +285,11 @@ class DeepAnalyzerTool(BaseTool):
             for file_info in file_infos
         ])
         
-        enhanced_task = cleandoc(f"""
-- Task:
-{task}
-- Attached files:
-{attach_files_string}
+        enhanced_task = dedent(f"""
+        - Task:
+        {task}
+        - Attached files:
+        {attach_files_string}
         """)
         
         return enhanced_task
@@ -307,7 +307,7 @@ class DeepAnalyzerTool(BaseTool):
             
             # Build multimodal message
             message_content = [
-                {"type": "text", "text": cleandoc(f"""Analyze the following task and files in detail.
+                {"type": "text", "text": dedent(f"""Analyze the following task and files in detail.
                 
                 {text_context}
                 
@@ -356,7 +356,7 @@ class DeepAnalyzerTool(BaseTool):
         if not insights:
             return f"No insights found in round {round_num}"
         
-        prompt = cleandoc(f"""Summarize the analysis results for this round.
+        prompt = dedent(f"""Summarize the analysis results for this round.
         
         Round: {round_num}
         Insights found: {len(insights)}
@@ -381,7 +381,7 @@ class DeepAnalyzerTool(BaseTool):
         if not self.all_insights:
             return "No insights collected yet"
         
-        prompt = cleandoc(f"""Evaluate if we have collected sufficient information to answer the analysis task.
+        prompt = dedent(f"""Evaluate if we have collected sufficient information to answer the analysis task.
         
         Analysis Task: {task}
         
@@ -455,13 +455,10 @@ class DeepAnalyzerTool(BaseTool):
             logger.error(f"Error validating file {file_path}: {e}")
             return False
 
-
-
-
     async def _format_final_result(self, conclusion: str, round_num: int) -> str:
         """Format the final successful result."""
         try:
-            prompt = cleandoc(f"""Format the final analysis results into a comprehensive report.
+            prompt = dedent(f"""Format the final analysis results into a comprehensive report.
             
             Analysis completed in {round_num} rounds.
             
@@ -518,7 +515,7 @@ class DeepAnalyzerTool(BaseTool):
     async def _format_failure_result(self, task: str) -> str:
         """Format the failure result when max steps are reached."""
         try:
-            prompt = cleandoc(f"""The analysis task was incomplete after maximum steps. Format a helpful failure report.
+            prompt = dedent(f"""The analysis task was incomplete after maximum steps. Format a helpful failure report.
             
             Task: {task}
             
@@ -583,11 +580,3 @@ class DeepAnalyzerTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
             return ToolResponse(content=f"Error in synchronous execution: {e}")
-
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "type": "deep_analyzer"
-        }

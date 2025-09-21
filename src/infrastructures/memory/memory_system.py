@@ -135,7 +135,7 @@ class CombinedMemory:
     def _init_llm(self):
         """Initialize LLM for combined memory processing"""
         try:
-            self.llm = model_manager.get_model(self.model_name)
+            self.llm = model_manager.get(self.model_name)
         except Exception as e:
             logger.warning(f"Could not initialize LLM for combined memory: {e}")
             self.llm = None

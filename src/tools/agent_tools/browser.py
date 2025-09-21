@@ -40,6 +40,7 @@ class BrowserTool(BaseTool):
         self.model_name = model_name
         
     async def _arun(self, task: str, base_dir: str) -> ToolResponse:
+        agent = None
         try:
             base_dir = assemble_project_path(base_dir)
             os.makedirs(base_dir, exist_ok=True)
@@ -47,10 +48,12 @@ class BrowserTool(BaseTool):
             try:
                 agent = Agent(
                     task=task,
-                    llm=model_manager.get_model(self.model_name),
-                    page_extraction_llm=model_manager.get_model(self.model_name),
+                    llm=model_manager.get(self.model_name),
+                    page_extraction_llm=model_manager.get(self.model_name),
                     file_system_path=base_dir,
-                    max_steps=20,
+                    generate_gif=os.path.join(base_dir, "browser.gif"),
+                    save_conversation_path=os.path.join(base_dir, "logs"),
+                    max_steps=50,
                     verbose=True,
                 )
             except Exception as e:
@@ -72,11 +75,18 @@ class BrowserTool(BaseTool):
             except Exception as e:
                 res = ToolResponse(content=f"Task completed but error extracting results: {str(e)}")
 
-            await agent.close()
             return res
 
         except Exception as e:
             return ToolResponse(content=f"Error in browser tool: {str(e)}")
+        finally:
+            # Ensure proper cleanup
+            if agent:
+                try:
+                    # Close the agent
+                    await agent.close()
+                except Exception as e:
+                    logger.warning(f"Error during browser cleanup: {e}")
         
     def _run(self, task: str, base_dir: str) -> ToolResponse:
         """Execute deep analysis synchronously (fallback)."""

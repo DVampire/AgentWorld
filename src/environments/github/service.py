@@ -6,7 +6,42 @@ from typing import Optional, List, Dict, Any
 from github import Github, GithubException
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 
-from src.environments.github.types import GitHubRepository, GitHubUser, GitHubBranch, GitStatus
+from src.environments.github.types import (
+    GitHubRepository,
+    GitHubUser, 
+    GitHubBranch,
+    GitStatus,
+    CreateRepositoryRequest, 
+    CreateRepositoryResult,
+    ForkRepositoryRequest, 
+    ForkRepositoryResult,
+    DeleteRepositoryRequest, 
+    DeleteRepositoryResult,
+    GetRepositoryRequest, 
+    GetRepositoryResult,
+    CloneRepositoryRequest,
+    CloneRepositoryResult,
+    InitRepositoryRequest, 
+    InitRepositoryResult,
+    GitCommitRequest, 
+    GitCommitResult,
+    GitPushRequest,
+    GitPushResult,
+    GitPullRequest, 
+    GitPullResult,
+    GitFetchRequest,
+    GitFetchResult,
+    GitCreateBranchRequest, 
+    GitCreateBranchResult,
+    GitCheckoutBranchRequest,
+    GitCheckoutBranchResult,
+    GitListBranchesRequest,
+    GitListBranchesResult,
+    GitDeleteBranchRequest,
+    GitDeleteBranchResult,
+    GitStatusRequest,
+    GitStatusResult
+)
 from src.environments.github.exceptions import (
     GitHubError, 
     AuthenticationError, 
@@ -87,37 +122,21 @@ class GitHubService:
 
     # --------------- Repository Operations ---------------
 
-    async def create_repository(
-        self,
-        name: str,
-        description: Optional[str] = None,
-        private: bool = False,
-        auto_init: bool = False
-    ) -> GitHubRepository:
-        """Create a new GitHub repository.
-        
-        Args:
-            name: Repository name
-            description: Repository description
-            private: Whether repository is private
-            auto_init: Whether to initialize with README
-            
-        Returns:
-            GitHubRepository: Created repository information
-        """
+    async def create_repository(self, request: CreateRepositoryRequest) -> CreateRepositoryResult:
+        """Create a new GitHub repository."""
         try:
             # Get the PyGithub user object for creating repositories
             github_user = await asyncio.to_thread(self.github.get_user)
             # Use asyncio.to_thread to run the synchronous GitHub API call in a thread pool
             repo = await asyncio.to_thread(
                 github_user.create_repo,
-                name=name,
-                description=description,
-                private=private,
-                auto_init=auto_init
+                name=request.name,
+                description=request.description,
+                private=request.private,
+                auto_init=request.auto_init
             )
             
-            return GitHubRepository(
+            repository = GitHubRepository(
                 full_name=repo.full_name,
                 name=repo.name,
                 owner=repo.owner.login,
@@ -133,39 +152,46 @@ class GitHubService:
                 updated_at=repo.updated_at
             )
             
-        except GithubException as e:
-            if e.status == 401:
-                raise AuthenticationError(f"Invalid GitHub token or insufficient permissions")
-            elif e.status == 403:
-                raise RepositoryError(f"Permission denied: Cannot create repository '{name}'")
-            elif e.status == 422:
-                raise RepositoryError(f"Repository '{name}' already exists or invalid name")
-            elif e.status == 404:
-                raise NotFoundError(f"User not found or repository creation failed")
-            else:
-                raise RepositoryError(f"Failed to create repository '{name}': {e}")
-        except Exception as e:
-            raise RepositoryError(f"Failed to create repository '{name}': {e}")
-
-    async def fork_repository(self, owner: str, repo: str) -> GitHubRepository:
-        """Fork a repository to your account.
-        
-        Args:
-            owner: Repository owner
-            repo: Repository name
+            return CreateRepositoryResult(
+                repository=repository,
+                success=True,
+                message=f"Successfully created repository {request.name}"
+            )
             
-        Returns:
-            GitHubRepository: Forked repository information
-        """
+        except GithubException as e:
+            error_msg = f"Failed to create repository '{request.name}': {e}"
+            if e.status == 401:
+                error_msg = "Invalid GitHub token or insufficient permissions"
+            elif e.status == 403:
+                error_msg = f"Permission denied: Cannot create repository '{request.name}'"
+            elif e.status == 422:
+                error_msg = f"Repository '{request.name}' already exists or invalid name"
+            elif e.status == 404:
+                error_msg = "User not found or repository creation failed"
+            
+            return CreateRepositoryResult(
+                repository=None,
+                success=False,
+                message=error_msg
+            )
+        except Exception as e:
+            return CreateRepositoryResult(
+                repository=None,
+                success=False,
+                message=f"Failed to create repository '{request.name}': {e}"
+            )
+
+    async def fork_repository(self, request: ForkRepositoryRequest) -> ForkRepositoryResult:
+        """Fork a repository to your account."""
         try:
             # Get the original repository
-            original_repo = await asyncio.to_thread(self.github.get_repo, f"{owner}/{repo}")
+            original_repo = await asyncio.to_thread(self.github.get_repo, f"{request.owner}/{request.repo}")
             
             # Fork the repository
             github_user = await asyncio.to_thread(self.github.get_user)
             forked_repo = await asyncio.to_thread(github_user.create_fork, original_repo)
             
-            return GitHubRepository(
+            repository = GitHubRepository(
                 full_name=forked_repo.full_name,
                 name=forked_repo.name,
                 owner=forked_repo.owner.login,
@@ -181,53 +207,65 @@ class GitHubService:
                 updated_at=forked_repo.updated_at
             )
             
-        except GithubException as e:
-            if e.status == 422:
-                raise RepositoryError(f"Repository '{owner}/{repo}' cannot be forked (may already be forked or private)")
-            elif e.status == 404:
-                raise NotFoundError(f"Repository '{owner}/{repo}' not found")
-            raise RepositoryError(f"Failed to fork repository '{owner}/{repo}': {e}")
-        except Exception as e:
-            raise RepositoryError(f"Failed to fork repository '{owner}/{repo}': {e}")
-
-    async def delete_repository(self, owner: str, repo: str) -> None:
-        """Delete a repository.
-        
-        Args:
-            owner: Repository owner
-            repo: Repository name
+            return ForkRepositoryResult(
+                repository=repository,
+                success=True,
+                message=f"Successfully forked repository {request.owner}/{request.repo}"
+            )
             
-        Raises:
-            RepositoryError: If deletion fails
-        """
+        except GithubException as e:
+            error_msg = f"Failed to fork repository '{request.owner}/{request.repo}': {e}"
+            if e.status == 422:
+                error_msg = f"Repository '{request.owner}/{request.repo}' cannot be forked (may already be forked or private)"
+            elif e.status == 404:
+                error_msg = f"Repository '{request.owner}/{request.repo}' not found"
+            
+            return ForkRepositoryResult(
+                repository=None,
+                success=False,
+                message=error_msg
+            )
+        except Exception as e:
+            return ForkRepositoryResult(
+                repository=None,
+                success=False,
+                message=f"Failed to fork repository '{request.owner}/{request.repo}': {e}"
+            )
+
+    async def delete_repository(self, request: DeleteRepositoryRequest) -> DeleteRepositoryResult:
+        """Delete a repository."""
         try:
-            repository = await asyncio.to_thread(self.github.get_repo, f"{owner}/{repo}")
+            repository = await asyncio.to_thread(self.github.get_repo, f"{request.owner}/{request.repo}")
             await asyncio.to_thread(repository.delete)
             
+            return DeleteRepositoryResult(
+                success=True,
+                message=f"Successfully deleted repository {request.owner}/{request.repo}"
+            )
+            
         except GithubException as e:
+            error_msg = f"Failed to delete repository '{request.owner}/{request.repo}': {e}"
             if e.status == 404:
-                raise NotFoundError(f"Repository '{owner}/{repo}' not found")
+                error_msg = f"Repository '{request.owner}/{request.repo}' not found"
             elif e.status == 403:
-                raise RepositoryError(f"Permission denied: Cannot delete repository '{owner}/{repo}'")
-            raise RepositoryError(f"Failed to delete repository '{owner}/{repo}': {e}")
+                error_msg = f"Permission denied: Cannot delete repository '{request.owner}/{request.repo}'"
+            
+            return DeleteRepositoryResult(
+                success=False,
+                message=error_msg
+            )
         except Exception as e:
-            raise RepositoryError(f"Failed to delete repository '{owner}/{repo}': {e}")
+            return DeleteRepositoryResult(
+                success=False,
+                message=f"Failed to delete repository '{request.owner}/{request.repo}': {e}"
+            )
 
-    async def get_repository(self, owner: str, repo: str) -> GitHubRepository:
-        """Get repository information.
-        
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            
-        Returns:
-            GitHubRepository: Repository information
-        """
+    async def get_repository(self, request: GetRepositoryRequest) -> GetRepositoryResult:
+        """Get repository information."""
         try:
+            repository = await asyncio.to_thread(self.github.get_repo, f"{request.owner}/{request.repo}")
             
-            repository = await asyncio.to_thread(self.github.get_repo, f"{owner}/{repo}")
-            
-            return GitHubRepository(
+            repo_info = GitHubRepository(
                 full_name=repository.full_name,
                 name=repository.name,
                 owner=repository.owner.login,
@@ -243,171 +281,208 @@ class GitHubService:
                 updated_at=repository.updated_at
             )
             
-        except GithubException as e:
-            if e.status == 404:
-                raise NotFoundError(f"Repository '{owner}/{repo}' not found")
-            raise GitHubError(f"Failed to get repository '{owner}/{repo}': {e}")
-        except Exception as e:
-            raise GitHubError(f"Failed to get repository '{owner}/{repo}': {e}")
-
-    async def clone_repository(
-        self,
-        owner: str,
-        repo: str,
-        local_path: str,
-        branch: Optional[str] = None
-    ) -> str:
-        """Clone a repository to local directory.
-        
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            local_path: Local directory path to clone to
-            branch: Specific branch to clone (optional)
+            return GetRepositoryResult(
+                repository=repo_info,
+                success=True,
+                message=f"Successfully retrieved repository {request.owner}/{request.repo}"
+            )
             
-        Returns:
-            str: Clone result message
-        """
+        except GithubException as e:
+            error_msg = f"Failed to get repository '{request.owner}/{request.repo}': {e}"
+            if e.status == 404:
+                error_msg = f"Repository '{request.owner}/{request.repo}' not found"
+            
+            return GetRepositoryResult(
+                repository=None,
+                success=False,
+                message=error_msg
+            )
+        except Exception as e:
+            return GetRepositoryResult(
+                repository=None,
+                success=False,
+                message=f"Failed to get repository '{request.owner}/{request.repo}': {e}"
+            )
+
+    async def clone_repository(self, request: CloneRepositoryRequest) -> CloneRepositoryResult:
+        """Clone a repository to local directory."""
         try:
-            repo_url = f"https://github.com/{owner}/{repo}.git"
-            local_path = Path(local_path)
+            repo_url = f"https://github.com/{request.owner}/{request.repo}.git"
+            local_path = Path(request.local_path)
             
             if local_path.exists():
-                raise RepositoryError(f"Directory '{local_path}' already exists")
+                return CloneRepositoryResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Directory '{request.local_path}' already exists"
+                )
             
             # Clone repository
-            if branch:
-                Repo.clone_from(repo_url, local_path, branch=branch)
-                return f"Repository '{owner}/{repo}' cloned to '{local_path}' (branch: {branch})"
+            if request.branch:
+                Repo.clone_from(repo_url, local_path, branch=request.branch)
+                return CloneRepositoryResult(
+                    local_path=request.local_path,
+                    success=True,
+                    message=f"Repository '{request.owner}/{request.repo}' cloned to '{request.local_path}' (branch: {request.branch})"
+                )
             else:
                 Repo.clone_from(repo_url, local_path)
-                return f"Repository '{owner}/{repo}' cloned to '{local_path}'"
+                return CloneRepositoryResult(
+                    local_path=request.local_path,
+                    success=True,
+                    message=f"Repository '{request.owner}/{request.repo}' cloned to '{request.local_path}'"
+                )
                 
         except GitCommandError as e:
-            raise GitError(f"Failed to clone repository '{owner}/{repo}': {str(e)}")
+            return CloneRepositoryResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to clone repository '{request.owner}/{request.repo}': {str(e)}"
+            )
         except Exception as e:
-            raise GitError(f"Failed to clone repository '{owner}/{repo}': {str(e)}")
+            return CloneRepositoryResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to clone repository '{request.owner}/{request.repo}': {str(e)}"
+            )
 
-    async def init_repository(
-        self,
-        local_path: str,
-        remote_url: Optional[str] = None
-    ) -> str:
-        """Initialize a local directory as Git repository.
-        
-        Args:
-            local_path: Local directory path
-            remote_url: Remote repository URL (optional)
-            
-        Returns:
-            str: Initialization result message
-        """
+    async def init_repository(self, request: InitRepositoryRequest) -> InitRepositoryResult:
+        """Initialize a local directory as Git repository."""
         try:
-            local_path = Path(local_path)
+            local_path = Path(request.local_path)
             
             if not local_path.exists():
-                raise RepositoryError(f"Directory '{local_path}' does not exist")
+                return InitRepositoryResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Directory '{request.local_path}' does not exist"
+                )
             
             if (local_path / '.git').exists():
-                raise RepositoryError(f"Directory '{local_path}' is already a Git repository")
+                return InitRepositoryResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Directory '{request.local_path}' is already a Git repository"
+                )
             
             # Initialize repository
             repo = Repo.init(local_path)
             
-            result = f"Git repository initialized in '{local_path}'"
+            message = f"Git repository initialized in '{request.local_path}'"
             
-            if remote_url:
+            if request.remote_url:
                 try:
-                    repo.create_remote('origin', remote_url)
-                    result += f" with remote origin: {remote_url}"
+                    repo.create_remote('origin', request.remote_url)
+                    message += f" with remote origin: {request.remote_url}"
                 except Exception as e:
-                    result += f" (failed to add remote: {str(e)})"
+                    message += f" (failed to add remote: {str(e)})"
             
-            return result
+            return InitRepositoryResult(
+                local_path=request.local_path,
+                success=True,
+                message=message
+            )
             
         except Exception as e:
-            raise GitError(f"Failed to initialize repository in '{local_path}': {str(e)}")
+            return InitRepositoryResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to initialize repository in '{request.local_path}': {str(e)}"
+            )
 
     # --------------- Git Operations ---------------
 
-    async def git_commit(
-        self,
-        local_path: str,
-        message: str,
-        add_all: bool = True
-    ) -> str:
-        """Commit changes to local repository.
-        
-        Args:
-            local_path: Local repository path
-            message: Commit message
-            add_all: Whether to add all changes
-            
-        Returns:
-            str: Commit result message
-        """
+    async def git_commit(self, request: GitCommitRequest) -> GitCommitResult:
+        """Commit changes to local repository."""
         try:
-            repo = Repo(local_path)
+            repo = Repo(request.local_path)
             
-            if add_all:
+            # Add files
+            if request.files is None:  # add_all
                 repo.git.add(A=True)
+            elif request.files:
+                for file in request.files:
+                    repo.git.add(file)
             
             # Check if there are changes to commit
             if not repo.is_dirty() and not repo.untracked_files:
-                return "No changes to commit"
+                return GitCommitResult(
+                    local_path=request.local_path,
+                    commit_hash=None,
+                    success=True,
+                    message="No changes to commit"
+                )
             
             # Commit changes
-            commit = repo.index.commit(message)
-            return f"Commit created: {commit.hexsha[:8]} - {message}"
+            commit = repo.index.commit(request.message)
+            return GitCommitResult(
+                local_path=request.local_path,
+                commit_hash=commit.hexsha,
+                success=True,
+                message=f"Commit created: {commit.hexsha[:8]} - {request.message}"
+            )
             
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            return GitCommitResult(
+                local_path=request.local_path,
+                commit_hash=None,
+                success=False,
+                message=f"'{request.local_path}' is not a valid Git repository"
+            )
         except GitCommandError as e:
-            raise GitError(f"Failed to commit in '{local_path}': {str(e)}")
+            return GitCommitResult(
+                local_path=request.local_path,
+                commit_hash=None,
+                success=False,
+                message=f"Failed to commit in '{request.local_path}': {str(e)}"
+            )
         except Exception as e:
-            raise GitError(f"Failed to commit in '{local_path}': {str(e)}")
+            return GitCommitResult(
+                local_path=request.local_path,
+                commit_hash=None,
+                success=False,
+                message=f"Failed to commit in '{request.local_path}': {str(e)}"
+            )
 
-    async def git_push(
-        self,
-        local_path: str,
-        remote: str = "origin",
-        branch: Optional[str] = None
-    ) -> str:
-        """Push changes to remote repository.
-        
-        Args:
-            local_path: Local repository path
-            remote: Remote name (default: origin)
-            branch: Branch name (optional, uses current branch if not specified)
-            
-        Returns:
-            str: Push result message
-        """
+    async def git_push(self, request: GitPushRequest) -> GitPushResult:
+        """Push changes to remote repository."""
         try:
-            repo = Repo(local_path)
+            repo = Repo(request.local_path)
             
+            branch = request.branch
             if branch is None:
                 branch = repo.active_branch.name
             
             # Push to remote
-            origin = repo.remote(remote)
+            origin = repo.remote(request.remote)
             origin.push(branch)
             
-            return f"Successfully pushed branch '{branch}' to remote '{remote}'"
+            return GitPushResult(
+                local_path=request.local_path,
+                success=True,
+                message=f"Successfully pushed branch '{branch}' to remote '{request.remote}'"
+            )
             
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            return GitPushResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"'{request.local_path}' is not a valid Git repository"
+            )
         except GitCommandError as e:
-            raise GitError(f"Failed to push from '{local_path}': {str(e)}")
+            return GitPushResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to push from '{request.local_path}': {str(e)}"
+            )
         except Exception as e:
-            raise GitError(f"Failed to push from '{local_path}': {str(e)}")
+            return GitPushResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to push from '{request.local_path}': {str(e)}"
+            )
 
-    async def git_pull(
-        self,
-        local_path: str,
-        remote: str = "origin",
-        branch: Optional[str] = None
-    ) -> str:
+    async def git_pull(self, request: GitPullRequest) -> GitPullResult:
         """Pull changes from remote repository.
         
         Args:
@@ -419,29 +494,42 @@ class GitHubService:
             str: Pull result message
         """
         try:
-            repo = Repo(local_path)
+            repo = Repo(request.local_path)
             
+            branch = request.branch
             if branch is None:
                 branch = repo.active_branch.name
             
             # Pull from remote
-            origin = repo.remote(remote)
+            origin = repo.remote(request.remote)
             origin.pull(branch)
             
-            return f"Successfully pulled branch '{branch}' from remote '{remote}'"
+            return GitPullResult(
+                local_path=request.local_path,
+                success=True,
+                message=f"Successfully pulled branch '{branch}' from remote '{request.remote}'"
+            )
             
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            return GitPullResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"'{request.local_path}' is not a valid Git repository"
+            )
         except GitCommandError as e:
-            raise GitError(f"Failed to pull to '{local_path}': {str(e)}")
+            return GitPullResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to pull to '{request.local_path}': {str(e)}"
+            )
         except Exception as e:
-            raise GitError(f"Failed to pull to '{local_path}': {str(e)}")
+            return GitPullResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to pull to '{request.local_path}': {str(e)}"
+            )
 
-    async def git_fetch(
-        self,
-        local_path: str,
-        remote: str = "origin"
-    ) -> str:
+    async def git_fetch(self, request: GitFetchRequest) -> GitFetchResult:
         """Fetch changes from remote repository.
         
         Args:
@@ -452,20 +540,36 @@ class GitHubService:
             str: Fetch result message
         """
         try:
-            repo = Repo(local_path)
+            repo = Repo(request.local_path)
             
             # Fetch from remote
-            origin = repo.remote(remote)
+            origin = repo.remote(request.remote)
             origin.fetch()
             
-            return f"Successfully fetched from remote '{remote}'"
+            return GitFetchResult(
+                local_path=request.local_path,
+                success=True,
+                message=f"Successfully fetched from remote '{request.remote}'"
+            )
             
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            return GitFetchResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"'{request.local_path}' is not a valid Git repository"
+            )
         except GitCommandError as e:
-            raise GitError(f"Failed to fetch to '{local_path}': {str(e)}")
+            return GitFetchResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to fetch to '{request.local_path}': {str(e)}"
+            )
         except Exception as e:
-            raise GitError(f"Failed to fetch to '{local_path}': {str(e)}")
+            return GitFetchResult(
+                local_path=request.local_path,
+                success=False,
+                message=f"Failed to fetch to '{request.local_path}': {str(e)}"
+            )
 
     # --------------- Branch Operations ---------------
 

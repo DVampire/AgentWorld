@@ -10,6 +10,7 @@ from pydantic import BaseModel, create_model, Field
 import inflection
 import typing
 
+from src.config import config
 from src.environments.protocol.types import EnvironmentInfo, ActionInfo
 from src.environments.protocol.environment import BaseEnvironment
 
@@ -428,7 +429,17 @@ class ECPServer:
         
         return "\n".join(rules_parts)
     
-    async def build_environment(self, env_name: str, env_config: Optional[Dict[str, Any]] = None):
+    async def initialize(self, env_names: List[str]):
+        """Initialize environments by names
+        
+        Args:
+            env_names: List of environment names
+        """
+        for env_name in env_names:
+            env_config = config.get(f"{env_name}_environment")
+            await self.build(env_name, env_config)
+    
+    async def build(self, env_name: str, env_config: Optional[Dict[str, Any]] = None):
         """Build an environment by name
         
         Args:
@@ -499,15 +510,15 @@ class ECPServer:
         
         return result
     
-    def list_environments(self) -> List[EnvironmentInfo]:
+    def list(self) -> List[str]:
         """Get list of registered environments
         
         Returns:
             List[EnvironmentInfo]: List of registered environment information
         """
-        return list(self._registered_environments.values())
+        return [name for name in self._registered_environments.keys()]
     
-    def get_environment_info(self, env_name: str) -> Optional[EnvironmentInfo]:
+    def get_info(self, env_name: str) -> Optional[EnvironmentInfo]:
         """Get environment information by name
         
         Args:
@@ -518,7 +529,7 @@ class ECPServer:
         """
         return self._registered_environments.get(env_name)
     
-    def get_environment(self, env_name: str) -> Optional[BaseEnvironment]:
+    def get(self, env_name: str) -> Optional[BaseEnvironment]:
         """Get environment information by type
         
         Args:

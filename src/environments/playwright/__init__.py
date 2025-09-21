@@ -60,6 +60,17 @@ if TYPE_CHECKING:
 	from browser_use.llm.openai.chat import ChatOpenAI
 	from browser_use.tools.service import Controller, Tools
 
+# Import exceptions directly (not lazy)
+from .exceptions import (
+	PlaywrightError,
+	LLMException,
+	BrowserError,
+	NavigationError,
+	ElementError,
+	ScreenshotError,
+	JavaScriptError,
+)
+
 
 # Lazy imports mapping - only import when actually accessed
 _LAZY_IMPORTS = {
@@ -135,4 +146,12 @@ __all__ = [
 	'Controller',
 	# LLM models module
 	'models',
+	# Exceptions
+	'PlaywrightError',
+	'LLMException',
+	'BrowserError',
+	'NavigationError',
+	'ElementError',
+	'ScreenshotError',
+	'JavaScriptError',
 ]

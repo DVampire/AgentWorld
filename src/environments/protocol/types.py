@@ -56,7 +56,7 @@ class EnvironmentInfo(BaseModel):
     actions: Dict[str, "ActionInfo"]
     cls: Optional[Type[BaseEnvironment]] = None
     instance: Optional[Any] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
     def __str__(self):
         return f"EnvironmentInfo(name={self.name}, type={self.type}, description={self.description})"
@@ -73,7 +73,7 @@ class ActionInfo(BaseModel):
     description: str
     args_schema: Optional[Type[BaseModel]] = None
     function: Optional[Callable] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
     def __str__(self):
         return f"ActionInfo(env_name={self.env_name}, name={self.name}, type={self.type}, description={self.description})"

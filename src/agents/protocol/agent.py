@@ -131,14 +131,14 @@ class BaseAgent(ABC):
             return model
         elif model_name:
             # Get model from ModelManager
-            model = self.model_manager.get_model(model_name)
+            model = self.model_manager.get(model_name)
             if model:
                 return model
             else:
                 logger.warning(f"Warning: Model '{model_name}' not found in ModelManager")
         
         # Fallback to default model
-        default_model = self.model_manager.get_model("gpt-4.1")
+        default_model = self.model_manager.get("gpt-4.1")
         if default_model:
             return default_model
         else:

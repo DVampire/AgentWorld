@@ -37,7 +37,7 @@ def transcribe_audio(file_stream, audio_format):
     messages = [
         HumanMessage(content=file_path),
     ]
-    response = model_manager.get_model("gpt-4o-transcribe").invoke(messages)
+    response = model_manager.get("gpt-4o-transcribe").invoke(messages)
 
     return response.content
 
@@ -145,7 +145,7 @@ class MarkitdownConverter():
 
         self.timeout = timeout
         
-        llm_client = model_manager.get_model("gpt-4.1").root_client
+        llm_client = model_manager.get("gpt-4.1").root_client
         
         self.client = MarkItDown(
             enable_plugins=True,

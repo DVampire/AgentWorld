@@ -95,6 +95,9 @@ class MCPClient:
                 tools = loop.run_until_complete(self.client.get_tools())
                 for tool in tools:
                     metadata = dict(type="Mcp Tool")
+                    # Ensure metadata exists before updating
+                    if tool.metadata is None:
+                        tool.metadata = {}
                     tool.metadata.update(metadata)
                     tcp.tool(tool=tool)
             finally:

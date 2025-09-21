@@ -147,7 +147,7 @@ models = model_manager.list_models()
 print(f"Available models: {models}")
 
 # Get a specific model
-model = model_manager.get_model("gpt-4")
+model = model_manager.get("gpt-4")
 
 # Create new models
 custom_model = model_manager.create_openai_model(
@@ -462,7 +462,7 @@ results = await tool_manager.execute_multiple_tools(tool_calls)
 ### Async Model Invocation
 ```python
 # Invoke models asynchronously
-model = model_manager.get_model("gpt-4")
+model = model_manager.get("gpt-4")
 response = await model.ainvoke("Hello, how are you?")
 
 # Generate multiple responses

@@ -82,8 +82,8 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| Model: {model_manager.list_models()}")
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    logger.info(f"| Model: {model_manager.list()}")
 
 if __name__ == "__main__":
     # Initialize the server first

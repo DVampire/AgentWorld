@@ -137,7 +137,7 @@ class ACPToolInfo(BaseModel):
     category: str = "acp"
     protocol: Literal["ecp", "mcp", "acp"]
     requires_context: bool = True
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class AgentInfo(BaseModel):
@@ -147,7 +147,7 @@ class AgentInfo(BaseModel):
     description: str
     cls: Optional[Any] = None
     instance: Optional[Any] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
     def __str__(self):
         return f"AgentInfo(name={self.name}, type={self.type}, description={self.description})"

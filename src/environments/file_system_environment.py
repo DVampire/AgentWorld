@@ -4,6 +4,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Union, Optional
 
 from src.environments.filesystem.file_system import FileSystem
+from src.environments.filesystem.types import (
+    FileReadRequest, 
+    FileWriteRequest,
+    FileReplaceRequest, 
+    FileDeleteRequest,
+    FileMoveRequest,
+    DirectoryCreateRequest, 
+    DirectoryDeleteRequest,
+    FileListRequest, 
+    FileTreeRequest, 
+    FileSearchRequest, 
+    FileStatRequest
+)
 from src.logger import logger
 from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
@@ -66,7 +79,19 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The content of the file.
         """
-        return await self.file_system.read_file(file_path, start_line=start_line, end_line=end_line)
+        request = FileReadRequest(
+            path=Path(file_path),
+            start_line=start_line,
+            end_line=end_line
+        )
+        result = await self.file_system.read(request)
+        
+        if result.content_text:
+            return result.content_text
+        elif result.content_bytes:
+            return result.content_bytes.decode('utf-8', errors='ignore')
+        else:
+            return f"File read result: {result.message}"
     
     @ecp.action(name = "write", 
                 type = "File System", 
@@ -85,7 +110,13 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the write operation.
         """
-        return await self.file_system.write_file(file_path, content, mode=mode)
+        request = FileWriteRequest(
+            path=Path(file_path),
+            content=content,
+            mode=mode
+        )
+        result = await self.file_system.write_text(request)
+        return result.message
     
     @ecp.action(name = "replace", 
                 type = "File System", 
@@ -108,7 +139,15 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the replacement.
         """
-        return await self.file_system.replace_file_str(file_path, old_string, new_string, start_line=start_line, end_line=end_line)
+        request = FileReplaceRequest(
+            path=Path(file_path),
+            old_string=old_string,
+            new_string=new_string,
+            start_line=start_line,
+            end_line=end_line
+        )
+        result = await self.file_system.replace(request)
+        return result.message
     
     @ecp.action(name = "delete", 
                 type = "File System", 
@@ -122,7 +161,9 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the deletion.
         """
-        return await self.file_system.delete_file(file_path)
+        request = FileDeleteRequest(path=Path(file_path))
+        result = await self.file_system.remove(request)
+        return result.message
     
     @ecp.action(name = "copy", 
                 type = "File System", 
@@ -137,7 +178,20 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the copy operation.
         """
-        return await self.file_system.copy_file(src_path, dst_path)
+        # For copy operation, we need to read the source file and write to destination
+        read_request = FileReadRequest(path=Path(src_path))
+        read_result = await self.file_system.read(read_request)
+        
+        if not read_result.content_bytes:
+            return f"Failed to read source file: {src_path}"
+        
+        write_request = FileWriteRequest(
+            path=Path(dst_path),
+            content=read_result.content_bytes.decode('utf-8', errors='ignore'),
+            mode="w"
+        )
+        write_result = await self.file_system.write_text(write_request)
+        return write_result.message
     
     @ecp.action(name = "move",
                 type = "File System", 
@@ -152,7 +206,12 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the move operation.
         """
-        return await self.file_system.move_file(src_path, dst_path)
+        request = FileMoveRequest(
+            src_path=Path(src_path),
+            dst_path=Path(dst_path)
+        )
+        result = await self.file_system.rename(request)
+        return result.message
     
     @ecp.action(name = "rename",
                 type = "File System", 
@@ -167,7 +226,12 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the rename operation.
         """
-        return await self.file_system.rename_file(old_path, new_path)
+        request = FileMoveRequest(
+            src_path=Path(old_path),
+            dst_path=Path(new_path)
+        )
+        result = await self.file_system.rename(request)
+        return result.message
     
     @ecp.action(name = "get_info",
                 type = "File System", 
@@ -183,7 +247,22 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The detailed information about the file.
         """
-        return await self.file_system.get_file_info(file_path, include_stats=include_stats)
+        request = FileStatRequest(path=Path(file_path))
+        result = await self.file_system.stat(request)
+        
+        if result.success and result.stats:
+            stats = result.stats
+            info = f"File: {file_path}\n"
+            info += f"Size: {stats.size} bytes\n"
+            info += f"Type: {'Directory' if stats.is_directory else 'File'}\n"
+            info += f"Permissions: {stats.permissions}\n"
+            if include_stats:
+                info += f"Is Directory: {stats.is_directory}\n"
+                info += f"Is File: {stats.is_file}\n"
+                info += f"Is Symlink: {stats.is_symlink}\n"
+            return info
+        else:
+            return result.message
     
     @ecp.action(name = "create_dir",
                 type = "File System", 
@@ -197,7 +276,9 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the directory creation.
         """
-        return await self.file_system.create_directory(dir_path)
+        request = DirectoryCreateRequest(path=Path(dir_path))
+        result = await self.file_system.mkdir(request)
+        return result.message
     
     @ecp.action(name = "delete_dir",
                 type = "File System", 
@@ -211,7 +292,52 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the directory deletion.
         """
-        return await self.file_system.delete_directory(dir_path)
+        request = DirectoryDeleteRequest(path=Path(dir_path), recursive=True)
+        result = await self.file_system.rmtree(request)
+        return result.message
+    
+    @ecp.action(name = "listdir",
+                type = "File System", 
+                description = "List directory contents.")
+    async def _listdir(self, 
+                       dir_path: str, 
+                       show_hidden: bool = False, 
+                       file_types: Optional[List[str]] = None) -> str:
+        """List directory contents.
+        
+        Args:
+            dir_path (str): The absolute path of the directory to list.
+            show_hidden (bool): Whether to show hidden files and directories.
+            file_types (Optional[List[str]]): List of file extensions to filter by.
+        
+        Returns:
+            str: The directory contents listing.
+        """
+        request = FileListRequest(
+            path=Path(dir_path),
+            show_hidden=show_hidden,
+            file_types=file_types
+        )
+        result = await self.file_system.listdir(request)
+        
+        if result.files or result.directories:
+            listing = f"Contents of {dir_path}:\n"
+            listing += f"Total: {result.total_files} files, {result.total_directories} directories\n\n"
+            
+            if result.directories:
+                listing += "Directories:\n"
+                for directory in result.directories:
+                    listing += f"  📁 {directory}/\n"
+                listing += "\n"
+            
+            if result.files:
+                listing += "Files:\n"
+                for file in result.files:
+                    listing += f"  📄 {file}\n"
+            
+            return listing
+        else:
+            return f"Directory {dir_path} is empty"
     
     @ecp.action(name = "tree",
                 type = "File System", 
@@ -234,7 +360,22 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The directory tree structure.
         """
-        return await self.file_system.tree_structure(dir_path, max_depth=max_depth, show_hidden=show_hidden, exclude_patterns=exclude_patterns, file_types=file_types)
+        request = FileTreeRequest(
+            path=Path(dir_path),
+            max_depth=max_depth,
+            show_hidden=show_hidden,
+            exclude_patterns=exclude_patterns,
+            file_types=file_types
+        )
+        result = await self.file_system.tree(request)
+        
+        if result.tree_lines:
+            tree_str = f"Directory tree for {dir_path}:\n"
+            tree_str += "\n".join(result.tree_lines)
+            tree_str += f"\n\nTotal: {result.total_files} files, {result.total_directories} directories"
+            return tree_str
+        else:
+            return f"No tree structure found for {dir_path}"
     
     @ecp.action(name = "describe",
                 type = "File System", 
@@ -248,7 +389,24 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The file system description with directory structure and file information.
         """
-        return await self.file_system.describe()
+        # Use tree to describe the file system
+        request = FileTreeRequest(
+            path=Path("."),
+            max_depth=3,
+            show_hidden=False
+        )
+        result = await self.file_system.tree(request)
+        
+        description = f"File System Environment at: {self.base_dir}\n"
+        description += f"Total: {result.total_files} files, {result.total_directories} directories\n\n"
+        
+        if result.tree_lines:
+            description += "Directory Structure:\n"
+            description += "\n".join(result.tree_lines)
+        else:
+            description += "No files or directories found."
+        
+        return description
     
     @ecp.action(name = "search",
                 type = "File System", 
@@ -273,7 +431,30 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The search results.
         """
-        return await self.file_system.search_files(search_path, query=query, search_type=search_type, file_types=file_types, case_sensitive=case_sensitive, max_results=max_results)
+        request = FileSearchRequest(
+            path=Path(search_path),
+            query=query,
+            by=search_type,
+            file_types=file_types,
+            case_sensitive=case_sensitive,
+            max_results=max_results
+        )
+        result = await self.file_system.search(request)
+        
+        if result.results:
+            search_str = f"Search results for '{query}' in {search_path}:\n"
+            search_str += f"Found {result.total_found} results\n\n"
+            
+            for i, search_result in enumerate(result.results, 1):
+                search_str += f"{i}. {search_result.path}\n"
+                if search_result.matches:
+                    for match in search_result.matches[:5]:  # Show first 5 matches
+                        search_str += f"   Line {match.line}: {match.text[:100]}...\n"
+                search_str += "\n"
+            
+            return search_str
+        else:
+            return f"No results found for '{query}' in {search_path}"
     
     @ecp.action(name = "change_permissions",
                 type = "File System", 

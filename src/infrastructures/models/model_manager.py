@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from langchain.callbacks.base import BaseCallbackHandler
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -109,14 +109,14 @@ class ModelManager(metaclass=Singleton):
         # browser-use
         self._register_browser_models(use_local_proxy=use_local_proxy)
         
-    def get_model(self, model_name: str) -> Any:
+    def get(self, model_name: str) -> Any:
         return self.registed_models[model_name]
     
-    def get_model_info(self, model_name: str) -> Any:
+    def get_info(self, model_name: str) -> Any:
         return self.registed_models_info[model_name]
     
-    def list_models(self) -> List[str]:
-        return list(self.registed_models.keys())
+    def list(self) -> List[str]:
+        return [name for name in self.registed_models.keys()]
 
     def _check_local_api_key(self, local_api_key_name: str, remote_api_key_name: str) -> str:
         api_key = os.getenv(local_api_key_name, PLACEHOLDER)
@@ -342,6 +342,20 @@ class ModelManager(metaclass=Singleton):
                 "model_name": model_name,
                 "model_id": model_id,
             }
+            
+            # text-embedding-3-large
+            model_name = "text-embedding-3-large"
+            model_id = "text-embedding-3-large"
+            model = OpenAIEmbeddings(model=model_id,
+                                     api_key=api_key,
+                                     base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
+                                                                       remote_api_base_name="OPENAI_API_BASE"))
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
         else:
             logger.info("| Using remote API for OpenAI models")
             api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
@@ -374,7 +388,7 @@ class ModelManager(metaclass=Singleton):
                 {
                     "model_name": "gpt-4o-search-preview",
                     "model_id": "gpt-4o-search-preview",
-                },
+                }
             ]
             
             for model in models:
@@ -413,6 +427,25 @@ class ModelManager(metaclass=Singleton):
                     base_url=api_base,
                     callbacks=[TokenUsageCallbackHandler(model_name)],
                 )
+                self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "openai",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
+            # embedding models
+            models = [
+                {
+                    "model_name": "text-embedding-3-large",
+                    "model_id": "text-embedding-3-large",
+                },
+            ]
+            for model in models:
+                model_name = model["model_name"]
+                model_id = model["model_id"]
+                model = OpenAIEmbeddings(model=model_id,
+                                     api_key=api_key,
+                                     base_url=api_base)
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {
                     "type": "openai",
@@ -682,8 +715,5 @@ class ModelManager(metaclass=Singleton):
                     "model_name": model_name,
                     "model_id": model_id,
                 }
-    
-    async def init_models(self, use_local_proxy: bool = False):
-        await self.initialize(use_local_proxy=use_local_proxy)
             
 model_manager = ModelManager()

@@ -2,21 +2,22 @@
 
 Server implementation for the Tool Context Protocol.
 """
-
-import inspect
 from typing import Any, Dict, List, Optional, Type, Union
-from pydantic import BaseModel, create_model, Field
-from langchain.tools import BaseTool
+from pydantic import create_model
+from pydantic import Field
+from langchain.tools import BaseTool, StructuredTool
 import inflection
-from langchain.tools import StructuredTool
 
+from src.logger import logger
 from src.tools.protocol.types import ToolInfo
+from src.tools.protocol.context import ToolContextManager
 
 class TCPServer:
     """TCP Server for managing tool registration and execution"""
     
     def __init__(self):
         self._registered_tools: Dict[str, ToolInfo] = {}  # tool_name -> ToolInfo
+        self.tool_context_manager = ToolContextManager()
     
     def tool(self, tool: Union[BaseTool, Type[BaseTool]] = None):
         """Register a tool class or tool instance with decorator support"""
@@ -36,22 +37,26 @@ class TCPServer:
         Args:
             cls: Tool class to register
         """
-        instance = cls()
+        # Get class-level attributes for registration
+        model_fields = cls.model_fields
         
-        name = instance.name
-        description = instance.description
-        args_schema = instance.args_schema
-        metadata = instance.metadata
-        type = metadata.get('type', cls.__name__.lower())
+        name = model_fields['name'].default
+        description = model_fields['description'].default
+        args_schema = model_fields['args_schema'].default
+        metadata = model_fields['metadata'].default
+        type = metadata.get('type', name) if metadata else name
+        config = metadata.get('config', None)
         
-        # Create ToolInfo and store it
+        # Create ToolInfo with lazy instance creation
         tool_info = ToolInfo(
             name=name,
             type=type,
             description=description,
-            instance=instance,
             args_schema=args_schema,
-            metadata=metadata
+            metadata=metadata,
+            cls=cls,  # Store the class for lazy instantiation
+            config=config,
+            instance=None
         )
         
         self._registered_tools[name] = tool_info
@@ -105,12 +110,14 @@ class TCPServer:
         name = tool.name
         description = tool.description
         metadata = tool.metadata
-        type = metadata.get('type', tool.name.lower())
+        type = metadata.get('type', name) if metadata else name
+        config = metadata.get('config', None)
         
         tool = StructuredTool(
             name=name,
             description=description,
             args_schema=args_schema,
+            metadata=metadata,
             func=tool._run,
             coroutine=tool._arun
         )
@@ -120,109 +127,54 @@ class TCPServer:
             name=name,
             type=type,
             description=description,
-            instance=tool,
             args_schema=args_schema,
-            metadata=metadata
+            metadata=metadata,
+            cls=StructuredTool,
+            config=config,
+            instance=tool
         )
         
         self._registered_tools[name] = tool_info
-        
-        return tool
     
-    def _parse_init_signature(self, cls: Type[Any]) -> Optional[Type[BaseModel]]:
-        """Parse __init__ method signature to generate initialization schema
+    async def initialize(self):
+        """Initialize tools by names using tool context manager
         
         Args:
-            cls: Tool class
-            
-        Returns:
-            Type[BaseModel]: Initialization schema or None if no parameters
+            env_names: List of environment names
         """
-        try:
-            sig = inspect.signature(cls.__init__)
-            fields = {}
-            
-            for param_name, param in sig.parameters.items():
-                if param_name == 'self':
-                    continue
-                    
-                # Get the type annotation
-                field_type = param.annotation
-                if field_type == inspect.Parameter.empty:
-                    field_type = str  # Default to string if no annotation
+        logger.info(f"| 🛠️ Initializing {len(self._registered_tools)} tools with context manager...")
+        
+        for tool_name, tool_info in self._registered_tools.items():
+            # Check if tool instance needs initialization
+            if tool_info.instance is None and tool_info.cls is not None:
+                logger.debug(f"| 🔧 Initializing tool: {tool_name}")
                 
-                # Get description from docstring or create default
-                if isinstance(field_type, str):
-                    type_name = field_type
-                else:
-                    type_name = getattr(field_type, '__name__', str(field_type))
-                field_description = f"Parameter {param_name} of type {type_name}"
+                # Create tool factory function
+                def tool_factory():
+                    if tool_info.config:
+                        return tool_info.cls(**tool_info.config)
+                    else:
+                        return tool_info.cls()
                 
-                # Handle default values
-                if param.default != inspect.Parameter.empty:
-                    fields[param_name] = (field_type, Field(default=param.default, description=field_description))
-                else:
-                    fields[param_name] = (field_type, Field(description=field_description))
-            
-            if not fields:
-                return None
-                
-            # Create init schema class
-            init_schema_name = inflection.camelize(cls.__name__) + 'InitArgs'
-            init_schema = create_model(init_schema_name, **fields)
-            
-            return init_schema
-            
-        except Exception as e:
-            print(f"Warning: Failed to parse init signature for {cls.__name__}: {e}")
-            return None
+                # Create tool instance and store it in context manager
+                tool_instance = self.tool_context_manager.create_tool(tool_name, tool_factory)
+                tool_info.instance = tool_instance
+                logger.debug(f"| ✅ Tool {tool_name} initialized")
+            else:
+                logger.debug(f"| ⏭️ Tool {tool_name} already initialized or no class available")
+        
+        logger.info("| ✅ Tools initialization completed")
     
-    def _create_tool_instance(self, 
-                              cls: Type[Any], 
-                              init_schema: Optional[Type[BaseModel]] = None,
-                              tool_name: str = None,
-                              tool_description: str = None,
-                              tool_args_schema: Optional[Type[BaseModel]] = None):
-        """Create tool instance with default parameters
-        
-        Args:
-            cls: Tool class
-            init_schema: Initialization schema
-            
-        Returns:
-            Tool instance
-        """
-        if init_schema:
-            # Create instance with default values from schema
-            default_values = {}
-            for field_name, field_info in init_schema.model_fields.items():
-                if field_info.default is not None:
-                    default_values[field_name] = field_info.default
-            instance = cls(**default_values)
-            
-        else:
-            # Create instance without parameters
-            instance = cls()
-            
-        tool = StructuredTool(
-                name=tool_name,
-                description=tool_description,
-                args_schema=tool_args_schema,
-                func=instance._run,
-                coroutine=instance._arun
-            )
-            
-        return tool
-        
-    def list_tools(self) -> List[ToolInfo]:
+    def list(self) -> List[str]:
         """List all registered tools
         
         Returns:
             List[ToolInfo]: List of tool information
         """
-        return list(self._registered_tools.values())
+        names = [name for name in self._registered_tools.keys()]
+        return names
     
-    def get_tool_info(self, tool_name: str) -> Optional[ToolInfo]:
+    def get_info(self, tool_name: str) -> Optional[ToolInfo]:
         """Get tool information by name
         
         Args:
@@ -233,8 +185,8 @@ class TCPServer:
         """
         return self._registered_tools.get(tool_name)
     
-    def get_tool(self, tool_name: str) -> Optional[Any]:
-        """Get tool instance by name
+    def get(self, tool_name: str) -> Optional[Any]:
+        """Get tool instance by name using tool context manager
         
         Args:
             tool_name: Tool name
@@ -242,7 +194,36 @@ class TCPServer:
         Returns:
             Tool instance or None if not found
         """
-        return self._registered_tools.get(tool_name).instance
+        return self.tool_context_manager.get(tool_name)
+    
+    async def ainvoke(self, name: str, input: Any, **kwargs) -> Any:
+        """Invoke a tool with context management.
+        
+        Args:
+            name: Name of the tool to invoke
+            input: Input for the tool
+            **kwargs: Keyword arguments for the tool
+        Returns:
+            Tool execution result
+        """
+        return await self.tool_context_manager.ainvoke(name, input, **kwargs)
+    
+    def invoke(self, name: str, input: Any, **kwargs) -> Any:
+        """Synchronous invoke a tool using tool context manager.
+        
+        Args:
+            name: Name of the tool to invoke
+            input: Input for the tool
+            **kwargs: Keyword arguments for the tool
+            
+        Returns:
+            Tool execution result
+        """
+        return self.tool_context_manager.invoke(name, input, **kwargs)
+        
+    async def cleanup(self):
+        """Cleanup all tools"""
+        self.tool_context_manager.cleanup()
 
 
 # Global TCP server instance

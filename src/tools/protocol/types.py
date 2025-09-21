@@ -54,10 +54,11 @@ class ToolInfo(BaseModel):
     name: str
     type: str
     description: str
+    args_schema: Optional[Type[BaseModel]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    cls: Optional[Type[Any]] = None  # For lazy instantiation
     config: Optional[Dict[str, Any]] = None
     instance: Optional[Any] = None
-    args_schema: Optional[Type[BaseModel]] = None
-    metadata: Optional[Dict[str, Any]] = None
     
     def __str__(self):
         schema = self.args_schema.model_json_schema()

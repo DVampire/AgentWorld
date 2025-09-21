@@ -111,7 +111,7 @@ class DeepResearcherTool(BaseTool):
         self.web_fetcher = WebFetcherTool()
         
         # Initialize model
-        self.model = model_manager.get_model(self.model_name)
+        self.model = model_manager.get(self.model_name)
         
         # Store research history
         self.research_history: List[SearchRound] = []

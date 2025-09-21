@@ -15,8 +15,9 @@ sys.path.append(root)
 from src.config import config
 from src.logger import logger
 from src.infrastructures.models import model_manager
-from src.utils import assemble_project_path
+from src.tools import tcp
 from src.environments import ecp
+from src.tools.protocol.context import tool_context
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -47,13 +48,8 @@ async def test_browser_tool():
     print(f"Data directory: {base_dir}")
     
     try:
-        # Call the browser tool
-        browser = tool_manager.get_tool("browser")
-        print(f"Browser tool: {browser}")
-        print(f"Browser tool args schema: {browser.args_schema}")
-        
-        # Use the correct parameter name
-        result = await browser.ainvoke(input={"task": task, "base_dir": base_dir})
+        # Invoke the browser tool
+        result = await tcp.ainvoke("browser", input={"task": task, "base_dir": base_dir})
         
         print("\n📋 Browser tool result:")
         print("=" * 50)
@@ -69,366 +65,6 @@ async def test_browser_tool():
         print(f"❌ Error testing browser tool: {e}")
         import traceback
         traceback.print_exc()
-        
-async def test_web_fetcher_tool():
-    """Test the web fetcher tool directly."""
-    
-    # Test parameters
-    url = "https://www.google.com"
-    
-    print("🧪 Testing web fetcher tool...")
-    print(f"URL: {url}")
-    
-    try:
-        # Call the web fetcher tool
-        web_fetcher = tool_manager.get_tool("web_fetcher")
-        print(f"Web fetcher tool: {web_fetcher}")
-        print(f"Web fetcher tool args schema: {web_fetcher.args_schema}")
-        
-        # Use the correct parameter name
-        result = await web_fetcher.ainvoke(input={"url": url})
-        
-        print("\n📋 Web fetcher tool result:")
-        print("=" * 50)
-        print(result)
-        print("=" * 50)
-        
-        if result and "Error" not in str(result):
-            print("✅ Web fetcher tool test successful!")
-        else:
-            print("❌ Web fetcher tool test failed!")
-            
-    except Exception as e:
-        print(f"❌ Error testing web fetcher tool: {e}")
-        import traceback
-        traceback.print_exc()
-        
-async def test_web_searcher_tool():
-    """Test the web searcher tool directly."""
-    
-    # Test parameters
-    query = "python programming"
-    
-    print("🧪 Testing web searcher tool...")
-    print(f"Query: {query}")
-    
-    try:
-        # Call the web searcher tool
-        web_searcher = tool_manager.get_tool("web_searcher")
-        print(f"Web searcher tool: {web_searcher}")
-        print(f"Web searcher tool args schema: {web_searcher.args_schema}")
-        
-        # Use the correct parameter name
-        result = await web_searcher.ainvoke(input={"query": query})
-        
-        print("\n📋 Web searcher tool result:")
-        print("=" * 50)
-        print(result.content)
-        print("=" * 50)
-        
-        if result and "Error" not in str(result):
-            print("✅ Web searcher tool test successful!")
-        else:
-            print("❌ Web searcher tool test failed!")
-            
-    except Exception as e:
-        print(f"❌ Error testing web searcher tool: {e}")
-        import traceback
-        traceback.print_exc()
-        
-async def test_deep_researcher_tool():
-    """Test the deep researcher tool directly."""
-    
-    # Test parameters
-    task = "Find out the Pokémon IDs in the image."
-    image = assemble_project_path("tests/pokemon.jpg")
-    
-    print("🧪 Testing deep researcher tool...")
-    print(f"Task: {task}")
-    print(f"Image: {image}")
-    
-    try:
-        # Call the deep researcher tool
-        deep_researcher = tool_manager.get_tool("deep_researcher")
-        print(f"Deep researcher tool: {deep_researcher}")
-        print(f"Deep researcher tool args schema: {deep_researcher.args_schema}")
-        
-        # Use the correct parameter name
-        result = await deep_researcher.ainvoke(input={"task": task, "image": image})
-        
-        print("\n📋 Deep researcher tool result:")
-        print("=" * 50)
-        print(result)
-        print("=" * 50)
-        
-        if result and "Error" not in str(result):
-            print("✅ Deep researcher tool test successful!")
-        else:
-            print("❌ Deep researcher tool test failed!")
-            
-    except Exception as e:
-        print(f"❌ Error testing deep researcher tool: {e}")
-        import traceback
-        traceback.print_exc()
-
-async def test_todo_tool():
-    """Test the todo tool directly."""
-    
-    print("🧪 Testing todo tool...")
-    
-    try:
-        # Get the todo tool
-        todo_tool = tool_manager.get_tool("todo")
-        print(f"Todo tool: {todo_tool}")
-        print(f"Todo tool args schema: {todo_tool.args_schema}")
-        
-        # Test 1: Add a high priority task
-        print("\n1. Adding a high priority task...")
-        result1 = await todo_tool.ainvoke(input={
-            "action": "add", 
-            "task": "Implement user authentication", 
-            "priority": "high", 
-            "category": "backend",
-            "parameters": {"framework": "FastAPI", "auth_type": "JWT"}
-        })
-        print(f"Result: {result1.content}")
-        
-        # Test 2: Add a medium priority task
-        print("\n2. Adding a medium priority task...")
-        result2 = await todo_tool.ainvoke(input={
-            "action": "add", 
-            "task": "Write unit tests", 
-            "priority": "medium", 
-            "category": "testing",
-            "parameters": {"coverage": "80%", "framework": "pytest"}
-        })
-        print(f"Result: {result2.content}")
-        
-        # Test 3: Add a low priority task
-        print("\n3. Adding a low priority task...")
-        result3 = await todo_tool.ainvoke(input={
-            "action": "add", 
-            "task": "Update documentation", 
-            "priority": "low"
-        })
-        print(f"Result: {result3.content}")
-        
-        # Test 4: List all tasks
-        print("\n4. Listing all tasks...")
-        result4 = await todo_tool.ainvoke(input={"action": "list"})
-        print(f"Result:\n{result4.content}")
-        
-        # Test 5: Show todo file
-        print("\n5. Showing todo.md content...")
-        result5 = await todo_tool.ainvoke(input={"action": "show"})
-        print(f"Result:\n{result5.content}")
-        
-        # Test 6: List steps to get the actual step IDs
-        print("\n6. Listing steps to get step IDs...")
-        result6 = await todo_tool.ainvoke(input={"action": "list"})
-        print(f"Result:\n{result6.content}")
-        
-        # Extract step IDs from the result (this is a bit hacky for testing)
-        # In real usage, you would know the step IDs from previous operations
-        step_ids = []
-        for line in result6.content.split('\n'):
-            if '**' in line and '_' in line:
-                # Extract step ID from format like "**20241201_143022_a1b2c3d4**"
-                start = line.find('**') + 2
-                end = line.find('**', start)
-                if start < end:
-                    step_ids.append(line[start:end])
-        
-        print(f"Found step IDs: {step_ids}")
-        
-        # Test 7: Complete the first task with success
-        if step_ids:
-            print(f"\n7. Completing {step_ids[0]} with success...")
-            result7 = await todo_tool.ainvoke(input={
-                "action": "complete", 
-                "step_id": step_ids[0],
-                "status": "success",
-                "result": "Successfully implemented JWT authentication with FastAPI. All endpoints are now protected and working correctly."
-            })
-            print(f"Result: {result7.content}")
-        
-        # Test 8: Insert a new step after the first one
-        if step_ids:
-            print(f"\n8. Inserting new step after {step_ids[0]}...")
-            result8 = await todo_tool.ainvoke(input={
-                "action": "add", 
-                "task": "Add rate limiting to API endpoints",
-                "priority": "high",
-                "category": "security",
-                "parameters": {"limit": "100 requests/minute"},
-                "after_step_id": step_ids[0]
-            })
-            print(f"Result: {result8.content}")
-        
-        # Test 9: Update the second task
-        if len(step_ids) > 1:
-            print(f"\n9. Updating {step_ids[1]}...")
-            result9 = await todo_tool.ainvoke(input={
-                "action": "update", 
-                "step_id": step_ids[1], 
-                "task": "Write comprehensive unit tests with 90% coverage"
-            })
-            print(f"Result: {result9.content}")
-        
-        # Test 10: Complete the second task with failure
-        if len(step_ids) > 1:
-            print(f"\n10. Completing {step_ids[1]} with failure...")
-            result10 = await todo_tool.ainvoke(input={
-                "action": "complete", 
-                "step_id": step_ids[1],
-                "status": "failed",
-                "result": "Failed to achieve 90% coverage due to complex integration tests. Only reached 75% coverage."
-            })
-            print(f"Result: {result10.content}")
-        
-        # Test 11: List tasks after updates
-        print("\n11. Listing tasks after updates...")
-        result11 = await todo_tool.ainvoke(input={"action": "list"})
-        print(f"Result:\n{result11.content}")
-        
-        # Test 12: Clear completed tasks
-        print("\n12. Clearing completed tasks...")
-        result12 = await todo_tool.ainvoke(input={"action": "clear"})
-        print(f"Result: {result12.content}")
-        
-        # Test 13: Final list
-        print("\n13. Final task list...")
-        result13 = await todo_tool.ainvoke(input={"action": "list"})
-        print(f"Result:\n{result13.content}")
-        
-        # Test 14: Export todo.md to a specific path
-        print("\n14. Exporting todo.md to /tmp/exported_todo.md...")
-        result14 = await todo_tool.ainvoke(input={
-            "action": "export",
-            "export_path": "/tmp/exported_todo.md"
-        })
-        print(f"Result: {result14.content}")
-        
-        # Test 15: Export to a nested directory
-        print("\n15. Exporting todo.md to a nested directory...")
-        result15 = await todo_tool.ainvoke(input={
-            "action": "export",
-            "export_path": "/tmp/todo_backup/exported_todo.md"
-        })
-        print(f"Result: {result15.content}")
-        
-        print("\n✅ Todo tool test completed!")
-        
-    except Exception as e:
-        print(f"❌ Error testing todo tool: {e}")
-        import traceback
-        traceback.print_exc()
-        
-async def test_mdify_tool():
-    """Test the mdify tool directly."""
-    
-    print("🧪 Testing mdify tool...")
-    
-    try:
-        # Get the mdify tool
-        mdify_tool = tool_manager.get_tool("mdify")
-        print(f"Mdify tool: {mdify_tool}")
-        print(f"Mdify tool args schema: {mdify_tool.args_schema}")
-        
-        # Test 1: Convert a MP3 file
-        print("\n1. Converting a MP3 file...")
-        result1 = await mdify_tool.ainvoke(input={
-            "file_path": assemble_project_path("tests/files/audio.mp3"),
-            "output_format": "markdown"
-        })
-        print(f"Result: {result1.content}")
-        
-        # Test 2: Convert an Image file
-        print("\n2. Converting an Image file...")
-        result2 = await mdify_tool.ainvoke(input={
-            "file_path": assemble_project_path("tests/files/pokemon.jpg"),
-            "output_format": "markdown"
-        })
-        print(f"Result: {result2.content}")
-        
-        print("\n✅ Mdify tool test completed!")
-        
-    except Exception as e:
-        print(f"❌ Error testing mdify tool: {e}")
-        import traceback
-        traceback.print_exc()
-        
-async def test_deep_analyzer_tool():
-    """Test the deep analyzer tool directly."""
-    
-    print("🧪 Testing deep analyzer tool...")
-    
-    try:
-        # Get the deep analyzer tool
-        deep_analyzer = tool_manager.get_tool("deep_analyzer")
-        print(f"Deep analyzer tool: {deep_analyzer}")
-        print(f"Deep analyzer tool args schema: {deep_analyzer.args_schema}")
-        
-        # Test 1: Analyze a text file
-        print("\n1. Analyzing a audio file...")
-        result1 = await deep_analyzer.ainvoke(input={
-            "task": "Analyze the provided audio file and extract key insights.",
-            "files": [assemble_project_path("tests/files/audio.mp3")]
-        })
-        print(f"Result: {result1.content}")
-        
-        print("\n✅ Deep analyzer tool test completed!")
-        
-    except Exception as e:
-        print(f"❌ Error testing deep analyzer tool: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        
-async def test_search_tool():
-    """Test the brave search tool directly."""
-    
-    print("🧪 Testing brave search tool...")
-    
-    try:
-        # Get the brave search tool
-        from src.tools.default_tools.search.brave_search import BraveSearch
-        tool = BraveSearch()
-        print(f"Brave search tool: {tool}")
-        print(f"Brave search tool args schema: {tool.args_schema}")
-        result = await tool.ainvoke(input={"query": "OpenAI GPT-4"})
-        print(f"Result: {result.extra['data']}")
-        
-        # Get DuckDuckGo search tool
-        from src.tools.default_tools.search.ddgo_search import DuckDuckGoSearch
-        tool = DuckDuckGoSearch()
-        print(f"DuckDuckGo search tool: {tool}")
-        print(f"DuckDuckGo search tool args schema: {tool.args_schema}")
-        result = await tool.ainvoke(input={"query": "OpenAI GPT-4"})
-        print(f"Result: {result.extra['data']}")
-            
-    except Exception as e:
-        print(f"❌ Error testing search tool: {e}")
-        import traceback
-        traceback.print_exc()
-        
-async def test_file_system_tool():
-    """Test the file system tool directly."""
-    
-    print("🧪 Testing file system tool...")
-    
-    try:
-        # Get the file system tool
-        read_tool = await tool_manager.get_tool("read")
-        read_tool_string = await tool_manager.convert_tool_to_string(read_tool)
-        print(f"File system tool: \n{read_tool_string}")
-        result = await read_tool.ainvoke(input={"file_path": assemble_project_path("tests/files/test.txt")})
-        print(f"Result: {result.content}")
-        
-    except Exception as e:
-        print(f"❌ Error testing file system tool: {e}")
-        import traceback
-        traceback.print_exc()
             
 async def main():
     args = parse_args()
@@ -437,30 +73,26 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    # Initialize model manager
+    # Initialize model managerxx
     logger.info("| 🧠 Initializing model manager...")
-    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
     # Initialize environments
-    logger.info("| 🎮 Initializing environments...")
-    ecp.build_environment("file_system", env_config=config.file_system_environment)
-    logger.info(f"| ✅ Environments initialized: {ecp.get_registered_environments()}")
+    # logger.info("| 🎮 Initializing environments...")
+    # await ecp.initialize(config.env_names)
+    # logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
-    # Initialize tool manager
-    logger.info("| 🛠️ Initializing tool manager...")
-    await tool_manager.init_tools(env_names=["file_system"])
-    logger.info(f"| ✅ Tool manager initialized: {tool_manager.list_tools()}")
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
+    await tcp.initialize()
+    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
     
-    # await test_browser_tool()
-    # await test_web_fetcher_tool()
-    # await test_web_searcher_tool()
-    # await test_deep_researcher_tool()
-    # await test_todo_tool()
-    # await test_mdify_tool()
-    # await test_deep_analyzer_tool()
-    # await test_search_tool()
-    await test_file_system_tool()
+    await test_browser_tool()
+    
+    tcp.cleanup()
+
+    logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":
     asyncio.run(main())

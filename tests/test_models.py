@@ -1,6 +1,7 @@
 import imp
 import os
 import sys
+import numpy as np
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
@@ -15,7 +16,7 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager, HumanMessage
+from src.infrastructures.models import model_manager, HumanMessage
 from src.utils import assemble_project_path
 from src.utils import make_image_url, encode_image_base64
 
@@ -62,7 +63,7 @@ async def test_general_models():
         # "claude-4-sonnet",
         # "gemini-2.5-pro",  
     ]:
-        model = model_manager.get_model(model_name)
+        model = model_manager.get(model_name)
         response = await model.ainvoke(messages)
         logger.info(f"| {model_name} Response: {response}")
         
@@ -78,7 +79,7 @@ async def test_deep_research_models():
         # "o4-mini-deep-research",
         # "gpt-4o-search-preview",
     ]:
-        model = model_manager.get_model(model_name)
+        model = model_manager.get(model_name)
         response = await model.ainvoke(messages)
         logger.info(f"| {model_name} Response: {response}")
         
@@ -87,7 +88,7 @@ async def test_transcribe_models():
         "gpt-4o-transcribe",
         "gpt-4o-mini-transcribe",
     ]:
-        model = model_manager.get_model(model_name)
+        model = model_manager.get(model_name)
         
         # Test with file path
         audio_path = assemble_project_path("tests/files/audio.mp3")
@@ -99,6 +100,15 @@ async def test_transcribe_models():
         response = await model.ainvoke(messages)
         logger.info(f"| {model_name} (file path) Response: {response}")
         
+async def test_embedding_models():
+    for model_name in [
+        "text-embedding-3-large",
+    ]:
+        model = model_manager.get(model_name)
+        response = await model.aembed_query("Hello, world!")
+        response = np.array(response)
+        logger.info(f"| {model_name} Response: {response.shape}")
+        
 async def main():
     args = parse_args()
     
@@ -106,12 +116,13 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| Models: {model_manager.list_models()}")
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    logger.info(f"| Models: {model_manager.list()}")
     
     # await test_general_models()
     # await test_deep_research_models()
-    await test_transcribe_models()
+    # await test_transcribe_models()
+    await test_embedding_models()
     
     
 if __name__ == "__main__":
