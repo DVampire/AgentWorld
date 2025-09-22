@@ -1,7 +1,6 @@
 """Deep Researcher Tool - A workflow agent for multi-round web research."""
 
 import asyncio
-import time
 from typing import List, Dict, Any, Optional, Type
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
@@ -19,7 +18,6 @@ from src.utils import encode_image_base64
 from src.utils import assemble_project_path
 from src.tools.default_tools.web_searcher import SearchResult
 from src.tools.protocol import tcp
-from src.tools.protocol.tool import ToolResponse
 
 
 _DEEP_RESEARCHER_DESCRIPTION = """Deep research tool that performs multi-round web search and content analysis.

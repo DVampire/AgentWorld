@@ -3,8 +3,7 @@
 Server implementation for the Tool Context Protocol.
 """
 from typing import Any, Dict, List, Optional, Type, Union
-from pydantic import create_model
-from pydantic import Field
+from pydantic import create_model, BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool
 import inflection
 
@@ -173,6 +172,22 @@ class TCPServer:
         """
         names = [name for name in self._registered_tools.keys()]
         return names
+    
+    def args_schemas(self) -> List[Type[BaseModel]]:
+        """List all registered tool args schemas
+        
+        Returns:
+            List[Type[BaseModel]]: List of tool args schemas
+        """
+        return [tool_info.args_schema for tool_info in self._registered_tools.values()]
+    
+    def to_string(self, tool_info: ToolInfo) -> str:
+        """Convert tool information to string
+        
+        Returns:
+            str: Tool information string
+        """
+        return f"Tool: {tool_info.name}\nDescription: {tool_info.description}\nArgs Schema: {tool_info.args_schema}"
     
     def get_info(self, tool_name: str) -> Optional[ToolInfo]:
         """Get tool information by name

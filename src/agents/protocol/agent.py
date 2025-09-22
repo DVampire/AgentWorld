@@ -11,7 +11,7 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 
 from src.infrastructures.models import model_manager
-from src.tools import tool_manager
+from src.tools.protocol import tcp
 from src.agents.prompts import PromptManager
 from src.logger import logger
 from src.infrastructures.memory import MemoryManager, SessionInfo, EventType
@@ -22,7 +22,7 @@ from src.utils import dedent
 class Action(BaseModel):
     """Action."""
     name: str = Field(description="The name of the action.")
-    args: Union[*tool_manager.list_tool_args_schemas()] = Field(description="The arguments of the action.")
+    args: Union[*tcp.args_schemas()] = Field(description="The arguments of the action.")
     output: Optional[str] = Field(description="The output of the action. This is only provided if the action is completed.", default=None)
 
     def __str__(self):
@@ -104,7 +104,6 @@ class BaseAgent(ABC):
         logger.info(f"| 📁 Agent working directory: {self.workdir}")
         
         self.model_manager = model_manager
-        self.tool_manager = tool_manager
         self.prompt_manager = PromptManager(prompt_name=prompt_name)
         self.memory_manager = memory_manager or MemoryManager()
         self.env_names = env_names or []
@@ -153,7 +152,7 @@ class BaseAgent(ABC):
         for tool in tools:
             if isinstance(tool, str):
                 # Get tool by name from ToolManager
-                tool_obj = self.tool_manager.get_tool(tool)
+                tool_obj = tcp.get(tool)
                 if tool_obj:
                     if hasattr(tool_obj, 'name') and hasattr(tool_obj, 'description'):
                         valid_tools.append(tool_obj)
@@ -252,7 +251,7 @@ class BaseAgent(ABC):
     
     async def _get_todo_contents(self) -> str:
         """Get the todo contents."""
-        todo_tool = tool_manager.get_tool("todo")
+        todo_tool = tcp.get("todo")
         todo_contents = todo_tool.get_todo_content()
         return todo_contents   
     
@@ -262,7 +261,7 @@ class BaseAgent(ABC):
         time_str = datetime.now().isoformat()
         step_info_description += f'Current date and time: {time_str}'
         
-        available_actions_description = await asyncio.gather(*[self.tool_manager.convert_tool_to_string(tool) for tool in self.tools])
+        available_actions_description = [tcp.to_string(tool) for tool in self.tools]
         available_actions_description = "\n".join(available_actions_description)
         
         todo_contents = await self._get_todo_contents()
@@ -290,7 +289,7 @@ class BaseAgent(ABC):
         system_input_variables = {}
         environment_rules = ""
         for env_name in self.env_names:
-            environment_rules += f"{ecp.get_environment_info(env_name).rules}\n"
+            environment_rules += f"{ecp.get_info(env_name).rules}\n"
         system_input_variables.update(dict(
             environment_rules=environment_rules,
         ))

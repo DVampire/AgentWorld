@@ -7,7 +7,7 @@ from datetime import datetime
 from jinja2 import Template
 
 from src.logger import logger
-from src.prompts.templates import PROMPT_TEMPLATES
+from src.agents.prompts.templates import PROMPT_TEMPLATES
 
 
 class AgentMessagePrompt:

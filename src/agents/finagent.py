@@ -6,19 +6,10 @@ from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage
 
-from src.agents.base_agent import BaseAgent, ThinkOutput
-from src.agents.protocol import acp
+from src.agents.protocol.agent import BaseAgent, ThinkOutput
 from src.logger import logger
 from src.infrastructures.memory import MemoryManager
 
-@acp.agent(
-    name="finagent",
-    agent_type="financial",
-    description="A financial agent specialized in trading and financial analysis",
-    capabilities=["trading", "financial_analysis", "market_research"],
-    available_environments=["trading_offline"],
-    available_tools=["trading", "analysis", "research"]
-)
 class FinAgent(BaseAgent):
     """FinAgent for financial trading tasks with simplified structure."""
     

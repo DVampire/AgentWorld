@@ -1,6 +1,9 @@
+from langchain_openai import ChatOpenAI
 import os
 import sys
+import base64
 from dotenv import load_dotenv
+from pathlib import Path
 load_dotenv(verbose=True)
 
 from pathlib import Path
@@ -11,12 +14,11 @@ import asyncio
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
-from src.config import config
-from src.logger import logger
+from src.utils import assemble_project_path
 from src.infrastructures.models import model_manager
-from src.tools.protocol import tcp
-from src.environments import ecp
-from src.agents.tool_calling_agent import ToolCallingAgent
+from src.logger import logger
+from src.config import config
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -35,7 +37,31 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+screenshot_1_path = assemble_project_path("tests/files/google.png")
+screenshot_1_base64 = base64.b64encode(open(screenshot_1_path, "rb").read()).decode("utf-8")
+
+model = model_manager.get("computer-browser-use")
+
+# Construct input message
+input_message = {
+    "role": "user",
+    "content": [
+        {
+            "type": "text",
+            "text": (
+                "Search for 'OpenAI Computer Use API' on Google"
+            ),
+        },
+        {
+            "type": "input_image",
+            "image_url": f"data:image/png;base64,{screenshot_1_base64}",
+        },
+    ],
+}
+
+
 async def main():
+    
     args = parse_args()
     
     config.init_config(args.config, args)
@@ -47,29 +73,14 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize environments
-    logger.info("| 🎮 Initializing environments...")
-    await ecp.initialize(config.env_names)
-    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    response = await model.ainvoke(
+        [input_message],
+        reasoning={
+            "generate_summary": "concise",
+        },
+    )
+    print(response.content)
     
-    # Initialize tool manager
-    logger.info("| 🛠️ Initializing tool manager...")
-    await tcp.initialize()
-    logger.info(f"| ✅ Tool manager initialized: {tcp.list()}")
+import asyncio
+asyncio.run(main())
 
-    # Initialize and run Agent
-    logger.info("| 🤖 Initializing Agent...")
-    agent = ToolCallingAgent(**config.agent)
-    logger.info(f"| ✅ Agent initialized: {agent}")
-    
-    # Example task
-    task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
-    files = []
-    
-    logger.info(f"| 📋 Task: {task}")
-    logger.info(f"| 📂 Files: {files}")
-    
-    await agent.run(task, files)
-    
-if __name__ == "__main__":
-    asyncio.run(main())

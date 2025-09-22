@@ -8,18 +8,13 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 
-from src.agents.base_agent import BaseAgent, ThinkOutput
-from src.agents.protocol import acp
+from src.agents.protocol.agent import BaseAgent, ThinkOutput
 from src.logger import logger
 from src.infrastructures.memory import MemoryManager
 from src.utils import get_file_info, dedent
-from src.tools import tool_manager
+from src.tools.protocol import tcp
+from src.tools.protocol.tool import ToolResponse
 
-@acp.agent(
-    name="tool_calling_agent",
-    agent_type="tool_calling",
-    description="A tool calling agent that can execute various tools and actions",
-)
 class ToolCallingAgent(BaseAgent):
     """Tool calling agent implementation with manual agent logic."""
     
@@ -86,7 +81,11 @@ class ToolCallingAgent(BaseAgent):
                 
                 logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
                 
-                tool_result = await self.tool_manager.execute_tool(tool_name, args=tool_args)
+                tool_result = await tcp.ainvoke(tool_name, input=tool_args)
+                if isinstance(tool_result, ToolResponse):
+                    tool_result = tool_result.content
+                else:
+                    tool_result = str(tool_result)
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
@@ -137,7 +136,7 @@ class ToolCallingAgent(BaseAgent):
         info = get_file_info(file)
         
         # Extract file content
-        file_content = await tool_manager.execute_tool("mdify", args={"file_path": file, "output_format": "markdown"})
+        file_content = await tcp.ainvoke("mdify", input={"file_path": file, "output_format": "markdown"})
         
         # Use LLM to summarize the file content
         system_prompt = "You are a helpful assistant that summarizes file content."

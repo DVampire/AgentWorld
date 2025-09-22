@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 
 from src.environments.protocol.types import EnvironmentInfo, ActionInfo, ActionResult
-from src.tools.base import BaseTool
+from src.tools.protocol.types import ToolInfo
 
 
 class ACPErrorCode(Enum):

@@ -6,7 +6,7 @@ Server implementation for the Agent Context Protocol.
 from typing import Any, Dict, List, Optional, Type
 
 from src.agents.protocol.types import AgentInfo
-from src.agents.base_agent import BaseAgent
+from src.agents.protocol.agent import BaseAgent
 
 class ACPServer:
     """ACP Server for managing agent registration and capabilities"""

@@ -364,6 +364,31 @@ class ModelManager(metaclass=Singleton):
                 "model_name": model_name,
                 "model_id": model_id,
             }
+            
+            # computer browser use
+            model_name = "computer-browser-use"
+            model_id = "computer-use-preview"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENAI_US_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE"),
+                output_version="responses/v1",
+                truncation="auto",  # Required for computer-use-preview model
+            )
+            tool = {
+                "type": "computer_use_preview",
+                "display_width": 1024,
+                "display_height": 768,
+                "environment": "browser",
+            }
+            model = model.bind_tools([tool])
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
         else:
             logger.info("| Using remote API for OpenAI models")
             api_key = self._check_local_api_key(local_api_key_name="OPENAI_API_KEY", 
@@ -461,6 +486,29 @@ class ModelManager(metaclass=Singleton):
                     "model_id": model_id,
                 }
                 
+            # computer browser use
+            model_name = "computer-browser-use"
+            model_id = "computer-use-preview"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=api_base,
+                output_version="responses/v1",
+                truncation="auto",  # Required for computer-use-preview model
+            )
+            tool = {
+                "type": "computer_use_preview",
+                "display_width": 1024,
+                "display_height": 768,
+                "environment": "browser",
+            }
+            model = model.bind_tools([tool])
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
     def _register_anthropic_models(self, use_local_proxy: bool = False):
         # claude37-sonnet, claude-4-sonnet

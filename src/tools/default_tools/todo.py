@@ -457,9 +457,9 @@ class TodoTool(BaseTool):
     
     def get_todo_content(self) -> str:
         """Get the content of the todo.md file."""
+        if not self.todo_file.exists():
+            return "[Current todo.md is empty, fill it with your plan when applicable]"
         todo_contents = self.todo_file.read_text(encoding='utf-8')
-        if not todo_contents:
-            todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
         return todo_contents
     
     async def export_todo_file(self, export_path: str):
