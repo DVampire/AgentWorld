@@ -101,12 +101,19 @@ class ModelManager(metaclass=Singleton):
     def __init__(self):
         self.registed_models: Dict[str, Any] = {}
         self.registed_models_info: Dict[str, Any] = {}
+        self.use_local_proxy = False
+        self._register_models(use_local_proxy=self.use_local_proxy)
         
     async def initialize(self, use_local_proxy: bool = False):
+        self.registed_models: Dict[str, Any] = {}
+        self.registed_models_info: Dict[str, Any] = {}
+        self.use_local_proxy = use_local_proxy
+        self._register_models(use_local_proxy=use_local_proxy)
+        
+    def _register_models(self, use_local_proxy: bool = False):
         self._register_openai_models(use_local_proxy=use_local_proxy)
         self._register_anthropic_models(use_local_proxy=use_local_proxy)
         self._register_google_models(use_local_proxy=use_local_proxy)
-        # browser-use
         self._register_browser_models(use_local_proxy=use_local_proxy)
         
     def get(self, model_name: str) -> Any:
@@ -348,8 +355,9 @@ class ModelManager(metaclass=Singleton):
             model_id = "text-embedding-3-large"
             model = OpenAIEmbeddings(model=model_id,
                                      api_key=api_key,
-                                     base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
-                                                                       remote_api_base_name="OPENAI_API_BASE"))
+                                     base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_BJ_API_BASE", 
+                                                                         remote_api_base_name="OPENAI_API_BASE")
+                                     )
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
                 "type": "openai",

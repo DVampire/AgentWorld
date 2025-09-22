@@ -131,7 +131,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="execute_sql",
                 type="Database",
                 description="Execute a SQL query.")
-    async def _execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> str:
+    async def execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> str:
         """Execute a SQL query.
         
         Args:
@@ -155,7 +155,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="create_table",
                 type="Database",
                 description="Create a table.")
-    async def _create_table(self, 
+    async def create_table(self, 
                            table_name: str,
                            columns: List[Dict[str, Any]],
                            primary_key: Optional[str] = None,
@@ -187,7 +187,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="insert_data",
                 type="Database",
                 description="Insert data into a table.")
-    async def _insert_data(self, 
+    async def insert_data(self, 
                           table_name: str,
                           data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> str:
         """Insert data into a table.
@@ -210,7 +210,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="select_data",
                 type="Database",
                 description="Select data from a table.")
-    async def _select_data(self, 
+    async def select_data(self, 
                           table_name: str,
                           columns: Optional[List[str]] = None,
                           where_clause: Optional[str] = None,
@@ -251,7 +251,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="update_data",
                 type="Database",
                 description="Update data in a table.")
-    async def _update_data(self, 
+    async def update_data(self, 
                           table_name: str,
                           data: Dict[str, Any],
                           where_clause: str,
@@ -283,7 +283,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="delete_data",
                 type="Database",
                 description="Delete data from a table.")
-    async def _delete_data(self, 
+    async def delete_data(self, 
                           table_name: str,
                           where_clause: str,
                           where_params: Optional[Dict[str, Any]] = None) -> str:
@@ -312,7 +312,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="get_tables",
                 type="Database",
                 description="Get information about all tables.")
-    async def _get_tables(self) -> str:
+    async def get_tables(self) -> str:
         """Get information about all tables.
         
         Returns:

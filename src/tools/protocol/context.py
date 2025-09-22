@@ -1,69 +1,15 @@
 """Tool Context Manager for managing tool lifecycle and resources."""
 
 import atexit
-from typing import Any, Dict, Optional, Callable
-from src.logger import logger
+import uuid
+from typing import Any, Dict, Optional, Callable, List
+import importlib
 
-class ToolContext:
-    """Context manager for individual tool lifecycle."""
-    
-    def __init__(self, tool_name: str, tool_factory: Callable, tool_manager: 'ToolContextManager'):
-        """Initialize tool context.
-        
-        Args:
-            tool_name: Name of the tool
-            tool_factory: Function to create the tool instance
-            tool_manager: Reference to the tool context manager
-        """
-        self.tool_name = tool_name
-        self.tool_factory = tool_factory
-        self.tool_manager = tool_manager
-        self.tool_instance: Optional[Any] = None
-    
-    async def __aenter__(self) -> Any:
-        """Async context manager entry - create tool."""
-        logger.debug(f"| 🔧 Creating tool: {self.tool_name}")
-        
-        # Create tool instance
-        self.tool_instance = await self.tool_factory()
-        
-        # Store in manager
-        self.tool_manager._tool_instances[self.tool_name] = self.tool_instance
-        
-        logger.debug(f"| ✅ Tool ready: {self.tool_name}")
-        return self.tool_instance
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit - cleanup tool."""
-        if self.tool_instance:
-            logger.debug(f"| 🧹 Cleaning up tool: {self.tool_name}")
-            
-            self.tool_manager._tool_instances.pop(self.tool_name, None)
-            
-            logger.debug(f"| ✅ Tool cleaned up: {self.tool_name}")
-    
-    def __enter__(self) -> Any:
-        """Sync context manager entry - create tool."""
-        logger.debug(f"| 🔧 Creating tool (sync): {self.tool_name}")
-        
-        # Create tool instance
-        self.tool_instance = self.tool_factory()
-        
-        # Store in manager
-        self.tool_manager._tool_instances[self.tool_name] = self.tool_instance
-        
-        logger.debug(f"| ✅ Tool ready (sync): {self.tool_name}")
-        return self.tool_instance
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Sync context manager exit - cleanup tool."""
-        if self.tool_instance:
-            logger.debug(f"| 🧹 Cleaning up tool (sync): {self.tool_name}")
-            
-            # Remove from manager
-            self.tool_manager._tool_instances.pop(self.tool_name, None)
-            
-            logger.debug(f"| ✅ Tool cleaned up (sync): {self.tool_name}")
+from src.logger import logger
+from src.infrastructures.models import model_manager
+from src.environments.faiss.service import FaissService
+from src.environments.faiss.types import FaissAddRequest, FaissSearchRequest
+from src.utils import assemble_project_path
 
 class ToolContextManager:
     """Global context manager for all tools."""
@@ -71,6 +17,7 @@ class ToolContextManager:
     def __init__(self):
         """Initialize the tool context manager."""
         self._tool_instances: Dict[str, Any] = {}
+        self._tool_info: Dict[str, Dict[str, Any]] = {}  # Store tool metadata
         self._cleanup_registered = False
         
         # Register cleanup on exit
@@ -78,11 +25,17 @@ class ToolContextManager:
             atexit.register(self.cleanup)
             self._cleanup_registered = True
             
+        # Initialize Faiss service for tool embedding
+        self._faiss_service = FaissService(
+            base_dir=assemble_project_path(str(importlib.resources.files("src.tools.protocol"))),
+            embedding_function=model_manager.get("text-embedding-3-large")
+        )
+            
     def invoke(self, name: str, input: Any, **kwargs) -> Any:
         """Invoke a tool.
         
         Args:
-            tool_name: Name of the tool
+            name: Name of the tool
             input: Input for the tool
             **kwargs: Keyword arguments for the tool
         """
@@ -97,7 +50,7 @@ class ToolContextManager:
         """Invoke a tool.
         
         Args:
-            tool_name: Name of the tool
+            name: Name of the tool
             input: Input for the tool
             **kwargs: Keyword arguments for the tool
         """
@@ -107,40 +60,14 @@ class ToolContextManager:
         else:
             raise ValueError(f"Tool {name} not found")
     
-    def tool_context(self, tool_name: str, tool_factory: Callable) -> ToolContext:
-        """Create a tool context for managing tool lifecycle.
-        
-        Args:
-            tool_name: Name of the tool
-            tool_factory: Function to create the tool instance
-            
-        Returns:
-            ToolContext instance
-        """
-        tool_context = ToolContext(tool_name, tool_factory, self)
-        return tool_context
-    
-    def get(self, tool_name: str) -> Any: # type: ignore
-        """Get a tool instance.
-        
-        Args:
-            tool_name: Name of the tool
-            
-        Returns:
-            Tool instance
-        """
-        # If tool is already active, return existing instance
-        if tool_name in self._tool_instances:
-            return self._tool_instances[tool_name]
-        else:
-            raise ValueError(f"Tool {tool_name} not found")
-    
-    def create_tool(self, tool_name: str, tool_factory: Callable) -> Any:
+    async def build(self, tool_name: str, tool_factory: Callable, tool_type: str = "unknown", description: str = "") -> Any:
         """Create a tool instance and store it.
         
         Args:
             tool_name: Name of the tool
             tool_factory: Function to create the tool instance
+            tool_type: Type/category of the tool
+            description: Description of the tool
             
         Returns:
             Tool instance
@@ -152,11 +79,93 @@ class ToolContextManager:
         try:
             tool_instance = tool_factory()
             self._tool_instances[tool_name] = tool_instance
+            
+            # Store tool metadata
+            self._tool_info[tool_name] = {
+                "name": tool_name,
+                "type": tool_type,
+                "description": description,
+                "instance": tool_instance
+            }
+            
             logger.debug(f"| 🔧 Tool {tool_name} created and stored")
+            
+            # Add tool to embedding index
+            await self._store(tool_name, tool_type, description)
+            
             return tool_instance
         except Exception as e:
             logger.error(f"| ❌ Failed to create tool {tool_name}: {e}")
             raise
+    
+    async def _store(self, tool_name: str, tool_type: str, description: str):
+        """Add tool information to the embedding index.
+        
+        Args:
+            tool_name: Name of the tool
+            tool_type: Type/category of the tool
+            description: Description of the tool
+        """
+        try:
+            # Create comprehensive text representation
+            tool_text = f"Tool: {tool_name}\nType: {tool_type}\nDescription: {description}"
+            
+            # Add to FAISS index
+            request = FaissAddRequest(
+                texts=[tool_text],
+                metadatas=[{
+                    "name": tool_name,
+                    "type": tool_type,
+                    "description": description
+                }]
+            )
+            
+            await self._faiss_service.add_documents(request)
+            logger.debug(f"| 📝 Tool {tool_name} added to embedding index")
+            
+        except Exception as e:
+            logger.warning(f"| ⚠️ Failed to add tool {tool_name} to embedding: {e}")
+    
+    async def candidates(self, query: str, k: int = 5, score_threshold: float = 0.7) -> List[Dict[str, Any]]:
+        """Get tool candidates based on semantic similarity to query.
+        
+        Args:
+            query: Search query
+            k: Number of candidates to return
+            score_threshold: Minimum similarity score threshold
+
+        Returns:
+            List of tool candidates with metadata and scores
+        """
+        try:
+            # Search for similar tools
+            request = FaissSearchRequest(
+                query=query,
+                k=k,
+                score_threshold=score_threshold
+            )
+            
+            result = await self._faiss_service.search_similar(request)
+            
+            # Format results
+            candidates = []
+            for i, doc in enumerate(result.documents):
+                if i < len(result.scores):
+                    candidate = {
+                        "name": doc.metadata.get("name", "unknown"),
+                        "type": doc.metadata.get("type", "unknown"),
+                        "description": doc.metadata.get("description", ""),
+                        "score": result.scores[i],
+                        "content": doc.page_content
+                    }
+                    candidates.append(candidate)
+            
+            logger.debug(f"| 🔍 Found {len(candidates)} tool candidates for query: {query}")
+            return candidates
+            
+        except Exception as e:
+            logger.error(f"| ❌ Failed to get tool candidates: {e}")
+            return []
     
     def cleanup(self):
         """Cleanup all active tools."""
@@ -167,6 +176,10 @@ class ToolContextManager:
         
         for tool_name in active_tools:
             self._tool_instances.pop(tool_name, None)
+            self._tool_info.pop(tool_name, None)
+            
+        # Clean up Faiss service
+        self._faiss_service.cleanup()
         
         logger.info("| ✅ All tools cleaned up")
     

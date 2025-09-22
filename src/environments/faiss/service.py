@@ -1,12 +1,12 @@
 """FAISS Vector Store Service for AgentWorld."""
 
 import asyncio
-import os
-import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union
+import os
 
 import numpy as np
+import uuid
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_community.docstore.in_memory import InMemoryDocstore
@@ -14,8 +14,11 @@ from langchain_community.vectorstores.utils import DistanceStrategy
 
 from src.logger import logger
 from src.environments.faiss.exceptions import (
-    FaissError, FaissIndexError, FaissEmbeddingError, 
-    FaissDocumentError, FaissSearchError, FaissStorageError, FaissConfigurationError
+    FaissIndexError, 
+    FaissDocumentError, 
+    FaissSearchError, 
+    FaissStorageError,
+    FaissConfigurationError
 )
 from src.environments.faiss.types import (
     FaissSearchRequest, 
@@ -60,10 +63,10 @@ class FaissService:
     def _initialize_index(self) -> None:
         """Initialize the FAISS index."""
         try:
-            index_path = self.base_dir / f"{self.config.index_name}.faiss"
-            pkl_path = self.base_dir / f"{self.config.index_name}.pkl"
+            self.index_path = self.base_dir / f"{self.config.index_name}.faiss"
+            self.pkl_path = self.base_dir / f"{self.config.index_name}.pkl"
             
-            if index_path.exists() and pkl_path.exists():
+            if self.index_path.exists() and self.pkl_path.exists():
                 # Load existing index
                 self._load_index()
             else:
@@ -147,11 +150,31 @@ class FaissService:
             raise FaissIndexError("FAISS index not initialized")
         
         try:
+            # Filter out empty texts
+            valid_texts = []
+            valid_metadatas = []
+            for i, text in enumerate(request.texts):
+                if text and text.strip():  # Skip empty or whitespace-only texts
+                    valid_texts.append(text)
+                    if request.metadatas and i < len(request.metadatas):
+                        valid_metadatas.append(request.metadatas[i])
+                    else:
+                        valid_metadatas.append({})
+            
+            if not valid_texts:
+                logger.info("| ⚠️ No valid texts to add (all texts were empty)")
+                return FaissAddResult(ids=[], count=0)
+
+            ids = []
+            documents = []
+            for text, metadata in zip(valid_texts, valid_metadatas):
+                ids.append(str(uuid.uuid4()))
+                documents.append(Document(page_content=text, metadata=metadata or {}))
+            
             # Add documents
             ids = await self.vector_store.aadd_documents(
-                documents=[Document(page_content=text, metadata=metadata or {}) 
-                          for text, metadata in zip(request.texts, request.metadatas or [{}] * len(request.texts))],
-                ids=request.ids
+                documents=documents,
+                ids=ids
             )
             
             self._operation_count += 1
@@ -230,6 +253,16 @@ class FaissService:
                 success=result is not False
             )
             
+        except ValueError as e:
+            # Handle case where some IDs don't exist
+            if "Some specified ids do not exist" in str(e):
+                logger.warning(f"| ⚠️ Some IDs not found during deletion: {e}")
+                return FaissDeleteResult(
+                    deleted_count=0,
+                    success=True  # Still consider it successful, just no documents deleted
+                )
+            else:
+                raise FaissDocumentError(f"Failed to delete documents: {e}")
         except Exception as e:
             raise FaissDocumentError(f"Failed to delete documents: {e}")
     
@@ -281,11 +314,14 @@ class FaissService:
         if self.config.auto_save and self._operation_count % self.config.save_interval == 0:
             await self.save_index()
     
-    async def cleanup(self) -> None:
+    def cleanup(self) -> None:
         """Cleanup resources."""
         try:
-            if self.config.auto_save and self._operation_count > 0:
-                await self.save_index()
+            # Delete the index from disk
+            if self.index_path.exists():
+                os.remove(self.index_path)
+            if self.pkl_path.exists():
+                os.remove(self.pkl_path)
             logger.info("| 🧹 FAISS service cleanup completed")
         except Exception as e:
             logger.warning(f"| ⚠️ Error during FAISS cleanup: {e}")

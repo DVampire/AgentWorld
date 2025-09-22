@@ -127,7 +127,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="create_repository", 
                 type="GitHub", 
                 description="Create a new GitHub repository")
-    async def _create_repository(
+    async def create_repository(
         self,
         name: str,
         description: Optional[str] = None,
@@ -175,7 +175,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="get_repository",
                 type="GitHub", 
                 description="Get your repository information")
-    async def _get_repository(self, repo: str) -> str:
+    async def get_repository(self, repo: str) -> str:
         """Get repository information for your own repository.
         
         Args:
@@ -215,7 +215,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="fork_repository",
                 type="GitHub", 
                 description="Fork a public repository to your account")
-    async def _fork_repository(self, owner: str, repo: str) -> str:
+    async def fork_repository(self, owner: str, repo: str) -> str:
         """Fork a public repository to your account.
         
         Args:
@@ -242,7 +242,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="delete_repository",
                 type="GitHub", 
                 description="Delete your own repository")
-    async def _delete_repository(self, repo: str) -> str:
+    async def delete_repository(self, repo: str) -> str:
         """Delete your own repository.
         
         Args:
@@ -266,7 +266,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_init", 
                 type="GitHub", 
                 description="Initialize a local directory as Git repository")
-    async def _git_init(
+    async def git_init(
         self,
         local_path: str,
         remote_url: Optional[str] = None
@@ -293,7 +293,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_clone", 
                 type="GitHub", 
                 description="Clone a repository to local directory (automatically forks if not your repository)")
-    async def _git_clone(
+    async def git_clone(
         self,
         owner: str,
         repo: str,
@@ -369,7 +369,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_commit",
                 type="GitHub", 
                 description="Commit changes to local repository")
-    async def _git_commit(
+    async def git_commit(
         self,
         local_path: str,
         message: str,
@@ -402,7 +402,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_push",
                 type="GitHub", 
                 description="Push changes to remote repository")
-    async def _git_push(
+    async def git_push(
         self,
         local_path: str,
         remote: str = "origin",
@@ -435,7 +435,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_pull",
                 type="GitHub", 
                 description="Pull changes from remote repository")
-    async def _git_pull(
+    async def git_pull(
         self,
         local_path: str,
         remote: str = "origin",
@@ -468,7 +468,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_fetch",
                 type="GitHub", 
                 description="Fetch changes from remote repository")
-    async def _git_fetch(
+    async def git_fetch(
         self,
         local_path: str,
         remote: str = "origin"
@@ -499,7 +499,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_create_branch",
                 type="GitHub", 
                 description="Create a new branch")
-    async def _git_create_branch(
+    async def git_create_branch(
         self,
         local_path: str,
         branch_name: str,
@@ -532,7 +532,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_checkout_branch",
                 type="GitHub", 
                 description="Checkout an existing branch")
-    async def _git_checkout_branch(
+    async def git_checkout_branch(
         self,
         local_path: str,
         branch_name: str
@@ -562,7 +562,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_list_branches",
                 type="GitHub", 
                 description="List all branches")
-    async def _git_list_branches(self, local_path: str) -> str:
+    async def git_list_branches(self, local_path: str) -> str:
         """List all branches.
         
         Args:
@@ -584,7 +584,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_delete_branch",
                 type="GitHub", 
                 description="Delete a branch")
-    async def _git_delete_branch(
+    async def git_delete_branch(
         self,
         local_path: str,
         branch_name: str,
@@ -617,7 +617,7 @@ class GitHubEnvironment(BaseEnvironment):
     @ecp.action(name="git_status",
                 type="GitHub", 
                 description="Get Git repository status")
-    async def _git_status(self, local_path: str) -> str:
+    async def git_status(self, local_path: str) -> str:
         """Get Git repository status.
         
         Args:

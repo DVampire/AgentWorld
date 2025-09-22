@@ -69,23 +69,20 @@ class FaissEnvironment(BaseEnvironment):
     async def add_documents(
         self,
         texts: List[str],
-        metadatas: Optional[List[Dict[str, Any]]] = None,
-        ids: Optional[List[str]] = None
+        metadatas: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """Add documents to the FAISS vector store.
         
         Args:
             texts (List[str]): List of texts to add to the vector store
             metadatas (Optional[List[Dict[str, Any]]]): Optional metadata for each text
-            ids (Optional[List[str]]): Optional custom IDs for each text
         
         Returns:
-            str: IDs of added documents and count of added documents
+            str: Count of added documents
         """
         request = FaissAddRequest(
             texts=texts,
             metadatas=metadatas,
-            ids=ids
         )
         
         result = await self.faiss_service.add_documents(request)

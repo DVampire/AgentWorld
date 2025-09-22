@@ -157,7 +157,7 @@ class TCPServer:
                         return tool_info.cls()
                 
                 # Create tool instance and store it in context manager
-                tool_instance = self.tool_context_manager.create_tool(tool_name, tool_factory)
+                tool_instance = await self.tool_context_manager.build(tool_name, tool_factory)
                 tool_info.instance = tool_instance
                 logger.debug(f"| ✅ Tool {tool_name} initialized")
             else:
@@ -194,7 +194,7 @@ class TCPServer:
         Returns:
             Tool instance or None if not found
         """
-        return self.tool_context_manager.get(tool_name)
+        return self._registered_tools.get(tool_name).instance
     
     async def ainvoke(self, name: str, input: Any, **kwargs) -> Any:
         """Invoke a tool with context management.

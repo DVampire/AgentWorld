@@ -56,6 +56,7 @@ librosa>=0.11.0
 inflection>=0.5.1
 boltons>=25.0.0
 html2text
+faiss-cpu>=1.12.0
 
 # GitHub integration
 PyGithub>=2.8.1

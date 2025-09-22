@@ -724,7 +724,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
     @ecp.action(name = "step",
                 type = "Trading Offline",
                 description = "Step the trading environment.")
-    async def _step(self, action: str) -> str:
+    async def step(self, action: str) -> str:
         """Step the trading environment.
         
         Args:
@@ -815,7 +815,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
     @ecp.action(name = "save",
                 type = "Trading Offline",
                 description = "Save the trading records.")
-    async def _save(self, file_path: str) -> str:
+    async def save(self, file_path: str) -> str:
         """Save the trading records.
         
         Args:

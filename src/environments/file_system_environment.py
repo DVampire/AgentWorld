@@ -65,7 +65,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "read", 
                 type = "File System", 
                 description = "Read a file from the file system.")
-    async def _read(self, 
+    async def read(self, 
                     file_path: str, 
                     start_line: Optional[int] = None, 
                     end_line: Optional[int] = None) -> str:
@@ -96,7 +96,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "write", 
                 type = "File System", 
                 description = "Write content to a file.")
-    async def _write(self, 
+    async def write(self, 
                      file_path: str, 
                      content: str, 
                      mode: str = "w") -> str:
@@ -121,7 +121,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "replace", 
                 type = "File System", 
                 description = "Replace a string in a file.")
-    async def _replace(self, 
+    async def replace(self, 
                        file_path: str, 
                        old_string: str, 
                        new_string: str, 
@@ -152,7 +152,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "delete", 
                 type = "File System", 
                 description = "Delete a file from the file system.")
-    async def _delete(self, file_path: str) -> str:
+    async def delete(self, file_path: str) -> str:
         """Delete a file from the file system.
         
         Args:
@@ -168,7 +168,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "copy", 
                 type = "File System", 
                 description = "Copy a file from source to destination.")
-    async def _copy(self, src_path: str, dst_path: str) -> str:
+    async def copy(self, src_path: str, dst_path: str) -> str:
         """Copy a file from source to destination.
         
         Args:
@@ -196,7 +196,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "move",
                 type = "File System", 
                 description = "Move a file from source to destination.")
-    async def _move(self, src_path: str, dst_path: str) -> str:
+    async def move(self, src_path: str, dst_path: str) -> str:
         """Move a file from source to destination.
         
         Args:
@@ -216,7 +216,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "rename",
                 type = "File System", 
                 description = "Rename a file or directory.")
-    async def _rename(self, old_path: str, new_path: str) -> str:
+    async def rename(self, old_path: str, new_path: str) -> str:
         """Rename a file or directory.
         
         Args:
@@ -236,7 +236,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "get_info",
                 type = "File System", 
                 description = "Get detailed information about a file.")
-    async def _get_info(self, file_path: str,
+    async def get_info(self, file_path: str,
                         include_stats: Optional[bool] = True) -> str:
         """Get detailed information about a file.
         
@@ -267,7 +267,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "create_dir",
                 type = "File System", 
                 description = "Create a directory.")
-    async def _create_dir(self, dir_path: str) -> str:
+    async def create_dir(self, dir_path: str) -> str:
         """Create a directory.
         
         Args:
@@ -283,7 +283,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "delete_dir",
                 type = "File System", 
                 description = "Delete a directory.")
-    async def _delete_dir(self, dir_path: str) -> str:
+    async def delete_dir(self, dir_path: str) -> str:
         """Delete a directory.
         
         Args:
@@ -299,7 +299,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "listdir",
                 type = "File System", 
                 description = "List directory contents.")
-    async def _listdir(self, 
+    async def listdir(self, 
                        dir_path: str, 
                        show_hidden: bool = False, 
                        file_types: Optional[List[str]] = None) -> str:
@@ -342,7 +342,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "tree",
                 type = "File System", 
                 description = "Show directory tree structure.")
-    async def _tree(self, 
+    async def tree(self, 
                     dir_path: str, 
                     max_depth: Optional[int] = 3, 
                     show_hidden: bool = False, 
@@ -380,7 +380,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "describe",
                 type = "File System", 
                 description = "Describe the file system with directory structure and file information.")
-    async def _describe(self) -> str:
+    async def describe(self) -> str:
         """Describe the file system with directory structure and file information.
         
         Args:
@@ -411,7 +411,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "search",
                 type = "File System", 
                 description = "Search for files by name or content.")
-    async def _search(self, 
+    async def search(self, 
                       search_path: str, 
                       query: str, 
                       search_type: str = "name", 
@@ -459,7 +459,7 @@ class FileSystemEnvironment(BaseEnvironment):
     @ecp.action(name = "change_permissions",
                 type = "File System", 
                 description = "Change file or directory permissions.")
-    async def _change_permissions(self, file_path: str, permissions: str) -> str:
+    async def change_permissions(self, file_path: str, permissions: str) -> str:
         """Change file or directory permissions.
         
         Args:

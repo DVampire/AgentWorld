@@ -1,26 +1,26 @@
-"""Example of running the InteractiveAgent with Cursor-style interaction."""
+"""Test script for browser tool functionality."""
 
-import os
+import asyncio
 import sys
-from dotenv import load_dotenv
-load_dotenv(verbose=True)
-
+import os
 from pathlib import Path
 import argparse
 from mmengine import DictAction
-import asyncio
+from dotenv import load_dotenv
+load_dotenv(verbose=True)
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.infrastructures import model_manager
+from src.infrastructures.models import model_manager
+from src.tools import tcp
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Tool Calling Agent Example')
+    parser = argparse.ArgumentParser(description='main')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
-    
+
     parser.add_argument(
         '--cfg-options',
         nargs='+',
@@ -34,39 +34,61 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-async def test_bash():
-    from src.tools import tcp
+async def test_browser_tool():
+    """Test the browser tool directly."""
+    
+    # Test parameters
+    task = "Go to google.com and search for 'python programming' get the first result."
+    base_dir = "workdir/test_browser_tool"
+    
+    print("🧪 Testing browser tool...")
+    print(f"Task: {task}")
+    print(f"Data directory: {base_dir}")
+    
     try:
-        print("🔌 Registering MCP tools with TCP...")
+        # Invoke the browser tool
+        result = await tcp.ainvoke("browser", input={"task": task, "base_dir": base_dir})
         
-        tools = tcp.list_tools()
-        for index, tool in enumerate(tools):
-            print(f"Tool {index}: {tool.name}, Type: {tool.type}, Description: {tool.description}")
-            
-        tool = tcp.get_tool("bash")
-        input = {
-            "command": "echo 'Hello, World!'"
-        }
-        result = await tool.ainvoke(input=input)
+        print("\n📋 Browser tool result:")
+        print("=" * 50)
         print(result)
+        print("=" * 50)
+        
+        if result and "Error" not in str(result):
+            print("✅ Browser tool test successful!")
+        else:
+            print("❌ Browser tool test failed!")
             
     except Exception as e:
-        print(f"❌ Error registering MCP tools: {e}")
-    
+        print(f"❌ Error testing browser tool: {e}")
+        import traceback
+        traceback.print_exc()
+            
 async def main():
     args = parse_args()
     
-    # Initialize configuration
     config.init_config(args.config, args)
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    # Initialize model manager
+    # Initialize model managerxx
     logger.info("| 🧠 Initializing model manager...")
-    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| ✅ Model manager initialized: {model_manager.list_models()}")
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    await test_bash()
+    # Initialize environments
+    # logger.info("| 🎮 Initializing environments...")
+    # await ecp.initialize(config.env_names)
+    # logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
+    await tcp.initialize()
+    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
+    
+    await test_browser_tool()
 
+    logger.info("| 🚪 Test completed")
+    
 if __name__ == "__main__":
     asyncio.run(main())

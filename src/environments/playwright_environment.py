@@ -78,7 +78,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="search_google",
                 type="Browser Automation",
                 description="Search Google with a query.")
-    async def _search_google(self, query: str) -> str:
+    async def search_google(self, query: str) -> str:
         """Search Google with a query.
         
         Args:
@@ -98,7 +98,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="go_to_url",
                 type="Browser Automation", 
                 description="Navigate to a URL.")
-    async def _go_to_url(self, url: str, new_tab: bool = False) -> str:
+    async def go_to_url(self, url: str, new_tab: bool = False) -> str:
         """Navigate to a URL.
         
         Args:
@@ -119,7 +119,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="go_back",
                 type="Browser Automation",
                 description="Go back to the previous page.")
-    async def _go_back(self) -> str:
+    async def go_back(self) -> str:
         """Go back to the previous page.
         
         Returns:
@@ -136,7 +136,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="wait",
                 type="Browser Automation",
                 description="Wait for a specified number of seconds.")
-    async def _wait(self, seconds: int = 3) -> str:
+    async def wait(self, seconds: int = 3) -> str:
         """Wait for a specified number of seconds.
         
         Args:
@@ -156,7 +156,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="click_element",
                 type="Browser Automation",
                 description="Click an element by its index.")
-    async def _click_element(self, index: int, while_holding_ctrl: bool = False) -> str:
+    async def click_element(self, index: int, while_holding_ctrl: bool = False) -> str:
         """Click an element by its index.
         
         Args:
@@ -177,7 +177,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="input_text",
                 type="Browser Automation",
                 description="Input text into an element.")
-    async def _input_text(self, 
+    async def input_text(self, 
                          index: int, 
                          text: str, 
                          clear_existing: bool = True,
@@ -212,7 +212,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="scroll",
                 type="Browser Automation",
                 description="Scroll the page.")
-    async def _scroll(self, 
+    async def scroll(self, 
                      down: bool = True, 
                      num_pages: float = 1.0, 
                      frame_element_index: Optional[int] = None) -> str:
@@ -241,7 +241,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="send_keys",
                 type="Browser Automation",
                 description="Send special keys to the page.")
-    async def _send_keys(self, keys: str) -> str:
+    async def send_keys(self, keys: str) -> str:
         """Send special keys to the page.
         
         Args:
@@ -261,7 +261,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="scroll_to_text",
                 type="Browser Automation",
                 description="Scroll to a specific text on the page.")
-    async def _scroll_to_text(self, text: str) -> str:
+    async def scroll_to_text(self, text: str) -> str:
         """Scroll to a specific text on the page.
         
         Args:
@@ -281,7 +281,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="get_dropdown_options",
                 type="Browser Automation",
                 description="Get options from a dropdown element.")
-    async def _get_dropdown_options(self, index: int) -> str:
+    async def get_dropdown_options(self, index: int) -> str:
         """Get options from a dropdown element.
         
         Args:
@@ -302,7 +302,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="select_dropdown_option",
                 type="Browser Automation",
                 description="Select an option from a dropdown element.")
-    async def _select_dropdown_option(self, index: int, text: str) -> str:
+    async def select_dropdown_option(self, index: int, text: str) -> str:
         """Select an option from a dropdown element.
         
         Args:
@@ -323,7 +323,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="upload_file",
                 type="Browser Automation",
                 description="Upload a file to an element.")
-    async def _upload_file(self, 
+    async def upload_file(self, 
                           index: int, 
                           path: str, 
                           available_file_paths: Optional[List[str]] = None) -> str:
@@ -352,7 +352,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="switch_tab",
                 type="Browser Automation",
                 description="Switch to a different tab.")
-    async def _switch_tab(self, tab_id: str) -> str:
+    async def switch_tab(self, tab_id: str) -> str:
         """Switch to a different tab.
         
         Args:
@@ -372,7 +372,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="close_tab",
                 type="Browser Automation",
                 description="Close a tab.")
-    async def _close_tab(self, tab_id: str) -> str:
+    async def close_tab(self, tab_id: str) -> str:
         """Close a tab.
         
         Args:
@@ -392,7 +392,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="extract_structured_data",
                 type="Browser Automation",
                 description="Extract structured data from the current page.")
-    async def _extract_structured_data(self, 
+    async def extract_structured_data(self, 
                                      query: str,
                                      extract_links: bool = False,
                                      start_from_char: int = 0) -> str:
@@ -421,7 +421,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="execute_js",
                 type="Browser Automation",
                 description="Execute JavaScript code on the page.")
-    async def _execute_js(self, code: str) -> str:
+    async def execute_js(self, code: str) -> str:
         """Execute JavaScript code on the page.
         
         Args:
@@ -441,7 +441,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="screenshot",
                 type="Browser Automation",
                 description="Take a screenshot of the current page.")
-    async def _screenshot(self, 
+    async def screenshot(self, 
                          highlight_elements: bool = False,
                          path: Optional[str] = None) -> str:
         """Take a screenshot of the current page.
@@ -470,7 +470,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="store_screenshot",
                 type="Browser Automation",
                 description="Take and store a screenshot with step number.")
-    async def _store_screenshot(self, 
+    async def store_screenshot(self, 
                                step_number: int, 
                                highlight_elements: bool = False) -> str:
         """Take and store a screenshot with step number.
@@ -496,7 +496,7 @@ class PlaywrightEnvironment(BaseEnvironment):
     @ecp.action(name="get_screenshot",
                 type="Browser Automation",
                 description="Get a screenshot from disk.")
-    async def _get_screenshot(self, screenshot_path: str) -> str:
+    async def get_screenshot(self, screenshot_path: str) -> str:
         """Get a screenshot from disk.
         
         Args:
