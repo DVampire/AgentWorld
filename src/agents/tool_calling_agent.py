@@ -1,6 +1,5 @@
 """Tool calling agent implementation with manual agent logic."""
 
-import uuid
 import asyncio
 from typing import List, Optional, Union
 from langchain.tools import BaseTool
@@ -12,9 +11,9 @@ from src.agents.protocol.agent import BaseAgent, ThinkOutput
 from src.logger import logger
 from src.infrastructures.memory import MemoryManager
 from src.utils import get_file_info, dedent
-from src.tools.protocol import tcp
-from src.tools.protocol.tool import ToolResponse
 from src.agents.protocol import acp
+from src.tools.protocol import tcp
+from src.tools.protocol.types import ToolResponse
 
 @acp.agent(
     name="tool_calling",
@@ -178,7 +177,7 @@ class ToolCallingAgent(BaseAgent):
         """)
         return enhanced_task
         
-    async def run(self, 
+    async def ainvoke(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
                   ):

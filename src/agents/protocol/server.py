@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional, Type
 from src.agents.protocol.types import AgentInfo
 from src.agents.protocol.agent import BaseAgent
 from src.agents.protocol.context import AgentContextManager
+from src.config import config
+from src.logger import logger
 
 class ACPServer:
     """ACP Server for managing agent registration and lifecycle"""
@@ -55,15 +57,33 @@ class ACPServer:
             return cls
         return decorator
     
-    def get_registered_agents(self) -> List[AgentInfo]:
-        """Get list of registered agents
+    async def initialize(self, agent_names: List[str]):
+        """Initialize environments by names
         
-        Returns:
-            List[AgentInfo]: List of registered agent information
+        Args:
+            agent_names (List[str]): List of agent names
         """
-        return list(self._registered_agents.values())
+        logger.info(f"| 🎮 Initializing {len(self._registered_agents)} agents with context manager...")
+        
+        for agent_name, agent_info in self._registered_agents.items():
+            if agent_name in agent_names:
+                logger.debug(f"| 🔧 Initializing agent: {agent_name}")
+                
+                def agent_factory():
+                    agent_config = config.get(f"{agent_name}_agent", None)
+                    if agent_config:
+                        return agent_info.cls(**agent_config)
+                    else:
+                        return agent_info.cls()
+                
+                await self.agent_context_manager.build(agent_info, agent_factory)
+                logger.debug(f"| ✅ Agent {agent_name} initialized")
+            else:
+                logger.info(f"| ⏭️ Agent {agent_name} not found")
+                
+        logger.info("| ✅ Agents initialization completed")
     
-    def get_agent_info(self, agent_name: str) -> Optional[AgentInfo]:
+    def get_info(self, agent_name: str) -> Optional[AgentInfo]:
         """Get agent information by name
         
         Args:
@@ -75,19 +95,11 @@ class ACPServer:
         return self._registered_agents.get(agent_name)
     
     
-    def list_agents(self) -> Dict[str, AgentInfo]:
+    def list(self) -> Dict[str, AgentInfo]:
         """List all registered agents
         
         Returns:
             Dict[str, AgentInfo]: Dictionary of agent names and their information
-        """
-        return self._registered_agents.copy()
-    
-    def list(self) -> List[str]:
-        """Get list of registered agent names
-        
-        Returns:
-            List[str]: List of registered agent names
         """
         return [name for name in self._registered_agents.keys()]
     
@@ -114,33 +126,29 @@ class ACPServer:
         agent_info = self._registered_agents.get(agent_name)
         return agent_info.instance if agent_info else None
     
-    def invoke(self, name: str, method: str, input: Any, **kwargs) -> Any:
+    def invoke(self, name: str, input: Any, **kwargs) -> Any:
         """Invoke an agent method using context manager.
         
         Args:
             name: Name of the agent
-            method: Name of the method
-            input: Input for the method
-            **kwargs: Keyword arguments for the method
+            input: Input for the agent
             
         Returns:
-            Method result
+            Agent result
         """
-        return self.agent_context_manager.invoke(name, method, input, **kwargs)
+        return self.agent_context_manager.invoke(name, input, **kwargs)
     
-    async def ainvoke(self, name: str, method: str, input: Any, **kwargs) -> Any:
+    async def ainvoke(self, name: str, input: Any, **kwargs) -> Any:
         """Invoke an agent method asynchronously using context manager.
         
         Args:
             name: Name of the agent
-            method: Name of the method
-            input: Input for the method
-            **kwargs: Keyword arguments for the method
+            input: Input for the agent
             
         Returns:
-            Method result
+            Agent result
         """
-        return await self.agent_context_manager.ainvoke(name, method, input, **kwargs)
+        return await self.agent_context_manager.ainvoke(name, input, **kwargs)
     
     def cleanup(self):
         """Cleanup all agents using context manager."""

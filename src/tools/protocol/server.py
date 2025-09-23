@@ -3,12 +3,11 @@
 Server implementation for the Tool Context Protocol.
 """
 from typing import Any, Dict, List, Optional, Type, Union
-from pydantic import create_model, BaseModel, Field
-from langchain.tools import BaseTool, StructuredTool
-import inflection
-import asyncio
+from pydantic import BaseModel
 
 from src.logger import logger
+from src.config import config
+from src.tools.protocol.tool import BaseTool, WrappedTool
 from src.tools.protocol.types import ToolInfo
 from src.tools.protocol.context import ToolContextManager
 
@@ -19,7 +18,7 @@ class TCPServer:
         self._registered_tools: Dict[str, ToolInfo] = {}  # tool_name -> ToolInfo
         self.tool_context_manager = ToolContextManager()
     
-    def tool(self, tool: Union[BaseTool, Type[BaseTool]] = None):
+    def tool(self, tool: Union[WrappedTool, Type[BaseTool]] = None):
         """Register a tool class or tool instance with decorator support"""
         # If tool_instance is provided, register it directly
         if tool is not None:
@@ -44,8 +43,7 @@ class TCPServer:
         description = model_fields['description'].default
         args_schema = model_fields['args_schema'].default
         metadata = model_fields['metadata'].default
-        type = model_fields['type'].default if 'type' in model_fields else inflection.camelize(name)
-        config = metadata.get('config', None)
+        type = model_fields['type'].default
         
         # Create ToolInfo with lazy instance creation
         tool_info = ToolInfo(
@@ -55,7 +53,6 @@ class TCPServer:
             args_schema=args_schema,
             metadata=metadata,
             cls=cls,  # Store the class for lazy instantiation
-            config=config,
             instance=None
         )
         
@@ -63,64 +60,17 @@ class TCPServer:
         
         return cls
     
-    def _register_tool_instance(self, tool: BaseTool):
+    def _register_tool_instance(self, tool: WrappedTool):
         """Register a tool instance directly
         
         Args:
             tool: Tool instance to register
         """
-        
-        args_schema_name = inflection.camelize(tool.name) + 'InputArgs'
-        fields = {}
-        # Get required fields
-        required_fields = tool.args_schema.get('required', [])
-        
-        for field_name, field_info in tool.args_schema['properties'].items():
-            # Convert string type to actual Python type
-            field_type_str = field_info.get('type', 'string')
-            if field_type_str == 'string':
-                field_type = str
-            elif field_type_str == 'integer':
-                field_type = int
-            elif field_type_str == 'number':
-                field_type = float
-            elif field_type_str == 'boolean':
-                field_type = bool
-            elif field_type_str == 'array':
-                field_type = list
-            else:
-                field_type = str  # Default to string
-            
-            # Get description
-            field_description = field_info.get('description', f"Parameter {field_name}")
-            
-            # Handle default values and required fields
-            if 'default' in field_info:
-                # Has default value
-                fields[field_name] = (field_type, Field(default=field_info['default'], description=field_description))
-            elif field_name in required_fields:
-                # Required field without default
-                fields[field_name] = (field_type, Field(description=field_description))
-            else:
-                # Optional field without default
-                fields[field_name] = (field_type, Field(default=None, description=field_description))
-        
-        args_schema = create_model(args_schema_name, **fields)
-        
         name = tool.name
+        type = tool.type
         description = tool.description
+        args_schema = tool.args_schema
         metadata = tool.metadata
-        type = metadata.get('type', name) if metadata else name
-        config = metadata.get('config', None)
-        
-        tool = StructuredTool(
-            name=name,
-            description=description,
-            args_schema=args_schema,
-            metadata=metadata,
-            func=tool._run,
-            coroutine=tool._arun
-        )
         
         # Create ToolInfo and store it
         tool_info = ToolInfo(
@@ -129,8 +79,7 @@ class TCPServer:
             description=description,
             args_schema=args_schema,
             metadata=metadata,
-            cls=StructuredTool,
-            config=config,
+            cls=WrappedTool,
             instance=tool
         )
         
@@ -151,8 +100,9 @@ class TCPServer:
                 
                 # Create tool factory function
                 def tool_factory():
-                    if tool_info.config:
-                        return tool_info.cls(**tool_info.config)
+                    tool_config = config.get(f"{tool_name}_tool", None)
+                    if tool_config:
+                        return tool_info.cls(**tool_config)
                     else:
                         return tool_info.cls()
                 

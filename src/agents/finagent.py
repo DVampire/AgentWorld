@@ -121,7 +121,7 @@ class FinAgent(BaseAgent):
         
         return done, final_result
         
-    async def run(self, 
+    async def ainvoke(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
                   ):

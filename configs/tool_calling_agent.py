@@ -1,10 +1,13 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import browser_tool, deep_researcher_tool, deep_analyzer_tool, memory
-    # from .environments.trading_offline import environment as trading_offline_environment, dataset as trading_offline_dataset
+    from .base import memory
     from .environments.file_system import environment as file_system_environment
     from .environments.github import environment as github_environment
     from .environments.database import environment as database_environment
+    from .tools.browser import browser_tool
+    from .tools.deep_researcher import deep_researcher_tool
+    from .tools.deep_analyzer import deep_analyzer_tool
+    from .agents.tool_calling import tool_calling_agent
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
@@ -17,6 +20,9 @@ env_names = [
     "file_system",
     "github",
     "database",
+]
+agent_names = [
+    "tool_calling",
 ]
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
@@ -33,23 +39,19 @@ database_environment.update(dict(
 ))
 
 #-----------------AGENT CONFIG-----------------------------------
-agent = dict(
-    type = "ToolCallingAgent",
-    name = "tool_calling_agent",
-    model_name = "gpt-4.1",
-    prompt_name = "tool_calling",  # Use explicit tool usage template
-    tools = [
-        "bash",
-        "python_interpreter",
-        "browser",
-        "done",
-        "weather",
-        "web_fetcher",
-        "web_searcher",
-        "deep_researcher",
-        "deep_analyzer",
-        "todo",
-    ],
-    max_steps = 10,
+tools = [
+    'bash',        
+    'python_interpreter', 
+    'done', 
+    'todo', 
+    'web_fetcher', 
+    'web_searcher', 
+    'mdify', 
+    'browser',
+    'deep_researcher',
+    'deep_analyzer',
+    ]
+tool_calling_agent.update(dict(
+    tools = tools,
     env_names = env_names
-)
+))

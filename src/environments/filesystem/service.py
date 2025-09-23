@@ -652,3 +652,6 @@ class FileSystemService:
                 success=False,
                 message=f"Failed to change permissions: {e}"
             )
+    async def describe(self) -> str:
+        """Describe the file system."""
+        return "The file system is a file system that provides file operations as an environment interface."

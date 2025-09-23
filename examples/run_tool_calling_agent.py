@@ -14,9 +14,9 @@ sys.path.append(root)
 from src.config import config
 from src.logger import logger
 from src.infrastructures.models import model_manager
-from src.tools.protocol import tcp
+from src.tools import tcp
 from src.environments import ecp
-from src.agents.tool_calling_agent import ToolCallingAgent
+from src.agents import acp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -52,15 +52,15 @@ async def main():
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
-    # Initialize tool manager
-    logger.info("| 🛠️ Initializing tool manager...")
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
     await tcp.initialize()
-    logger.info(f"| ✅ Tool manager initialized: {tcp.list()}")
+    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
 
-    # Initialize and run Agent
-    logger.info("| 🤖 Initializing Agent...")
-    agent = ToolCallingAgent(**config.agent)
-    logger.info(f"| ✅ Agent initialized: {agent}")
+    # Initialize agents
+    logger.info("| 🤖 Initializing agents...")
+    await acp.initialize(config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {acp.list()}")
     
     # Example task
     task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
@@ -69,7 +69,14 @@ async def main():
     logger.info(f"| 📋 Task: {task}")
     logger.info(f"| 📂 Files: {files}")
     
-    await agent.run(task, files)
+    input = {
+        "name": "tool_calling",
+        "input": {
+            "task": task,
+            "files": files
+        }
+    }
+    await acp.ainvoke(**input)
     
 if __name__ == "__main__":
     asyncio.run(main())

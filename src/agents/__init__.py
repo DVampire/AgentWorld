@@ -2,8 +2,10 @@
 
 from .tool_calling_agent import ToolCallingAgent
 from .finagent import FinAgent
+from .protocol import acp
 
 __all__ = [
     "ToolCallingAgent",
-    "FinAgent"
+    "FinAgent",
+    "acp",
 ]

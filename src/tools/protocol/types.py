@@ -66,7 +66,6 @@ class ToolInfo(BaseModel):
     args_schema: Optional[Type[BaseModel]] = None
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     cls: Optional[Type[Any]] = None  # For lazy instantiation
-    config: Optional[Dict[str, Any]] = None
     instance: Optional[Any] = None
     
     def __str__(self):

@@ -488,6 +488,6 @@ class FileSystemEnvironment(BaseEnvironment):
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the file system environment."""
         state: Dict[str, Any] = {
-            "state": await self.file_system.describe()
+            "state": await self.describe()
         }
         return state
