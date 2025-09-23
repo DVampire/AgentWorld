@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-from src.environments.openai_browser.service import OpenAIBrowserService
-from src.environments.openai_browser.types import (
+from src.environments.operator_browser.service import OperatorBrowserService
+from src.environments.operator_browser.types import (
     ClickRequest,
     DoubleClickRequest,
     ScrollRequest,
@@ -19,16 +19,16 @@ from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
 @ecp.environment(
-    name="openai_browser",
-    type="OpenAI Browser",
-    description="OpenAI Computer Use API compatible browser environment for web automation",
+    name="operator_browser",
+    type="Operator Browser",
+    description="OpenAI Operator compatible browser environment for web automation",
     has_vision=True,
     additional_rules={
         "state": "The state of the browser environment including current URL, title, and viewport.",
     }
 )
-class OpenAIBrowserEnvironment(BaseEnvironment):
-    """OpenAI Browser Environment that provides browser automation as an environment interface."""
+class OperatorBrowserEnvironment(BaseEnvironment):
+    """Operator Browser Environment that provides browser automation as an environment interface."""
     
     def __init__(
         self,
@@ -37,7 +37,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
         base_dir: Union[str, Path] = None,
     ):
         """
-        Initialize the OpenAI browser environment.
+        Initialize the Operator browser environment.
         
         Args:
             headless (bool): Whether to run browser in headless mode
@@ -46,16 +46,16 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
         """
         self.headless = headless
         self.viewport = viewport or {"width": 1280, "height": 720}
-        self.base_dir = Path(base_dir) if base_dir else Path("workdir/openai_browser")
+        self.base_dir = Path(base_dir) if base_dir else Path("workdir/operator_browser")
         self.base_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize the browser service
-        self.browser_service = OpenAIBrowserService(
+        self.browser_service = OperatorBrowserService(
             headless=self.headless,
             viewport=self.viewport
         )
         
-        logger.info(f"| 🌐 OpenAI Browser Environment initialized")
+        logger.info(f"| 🌐 Operator Browser Environment initialized")
         logger.info(f"| 📁 Base directory: {self.base_dir}")
         logger.info(f"| 👁️ Headless mode: {self.headless}")
         logger.info(f"| 📐 Viewport: {self.viewport}")
@@ -66,7 +66,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
         """Initialize the browser environment."""
         try:
             await self.browser_service.start()
-            logger.info("| ✅ OpenAI Browser Environment initialized successfully")
+            logger.info("| ✅ Operator Browser Environment initialized successfully")
         except Exception as e:
             logger.error(f"| ❌ Failed to initialize OpenAI Browser Environment: {e}")
             raise
@@ -75,9 +75,9 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
         """Cleanup the browser environment."""
         try:
             await self.browser_service.stop()
-            logger.info("| 🧹 OpenAI Browser Environment cleaned up successfully")
+            logger.info("| 🧹 Operator Browser Environment cleaned up successfully")
         except Exception as e:
-            logger.error(f"| ❌ Error cleaning up OpenAI Browser Environment: {e}")
+            logger.error(f"| ❌ Error cleaning up Operator Browser Environment: {e}")
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the browser environment.
@@ -91,7 +91,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
             self.step_number += 1
             
             return {
-                "environment": "openai_browser",
+                "environment": "operator_browser_environment",
                 "headless": self.headless,
                 "viewport": self.viewport,
                 "screenshot": screenshot_b64,
@@ -104,13 +104,13 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
         except Exception as e:
             logger.error(f"| ❌ Error getting browser state: {e}")
             return {
-                "environment": "openai_browser",
+                "environment": "operator_browser_environment",
                 "error": str(e)
             }
     
     @ecp.action(
         name="click",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
         description="Click at specified coordinates on the page",
     )
     async def click(self, x: int, y: int, button: str = "left") -> str:
@@ -140,7 +140,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="double_click",
         description="Double click at specified coordinates on the page",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def double_click(self, x: int, y: int, button: str = "left") -> str:
         """Double click at specified coordinates on the page.
@@ -169,7 +169,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="scroll",
         description="Scroll at specified coordinates with given offsets",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> str:
         """Scroll at specified coordinates with given offsets.
@@ -199,7 +199,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="type",
         description="Type text at the current cursor position",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def type(self, text: str) -> str:
         """Type text at the current cursor position.
@@ -226,7 +226,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="wait",
         description="Wait for specified milliseconds",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def wait(self, ms: int) -> str:
         """Wait for specified milliseconds.
@@ -253,7 +253,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="move",
         description="Move mouse to specified coordinates",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def move(self, x: int, y: int) -> str:
         """Move mouse to specified coordinates.
@@ -281,7 +281,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="keypress",
         description="Press specified keys",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def keypress(self, keys: List[str]) -> str:
         """Press specified keys.
@@ -308,7 +308,7 @@ class OpenAIBrowserEnvironment(BaseEnvironment):
     @ecp.action(
         name="drag",
         description="Drag mouse along specified path",
-        type="OpenAI Browser",
+        type="Operator Browser Environment",
     )
     async def drag(self, path: List[List[int]]) -> str:
         """Drag mouse along specified path.

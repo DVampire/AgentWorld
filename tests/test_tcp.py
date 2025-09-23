@@ -76,11 +76,6 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize environments
-    # logger.info("| 🎮 Initializing environments...")
-    # await ecp.initialize(config.env_names)
-    # logger.info(f"| ✅ Environments initialized: {ecp.list()}")
-    
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
     await tcp.initialize()

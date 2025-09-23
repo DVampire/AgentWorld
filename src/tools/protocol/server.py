@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import create_model, BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool
 import inflection
+import asyncio
 
 from src.logger import logger
 from src.tools.protocol.types import ToolInfo
@@ -156,13 +157,45 @@ class TCPServer:
                         return tool_info.cls()
                 
                 # Create tool instance and store it in context manager
-                tool_instance = await self.tool_context_manager.build(tool_name, tool_factory)
-                tool_info.instance = tool_instance
+                await self.tool_context_manager.build(tool_info, tool_factory)
                 logger.debug(f"| ✅ Tool {tool_name} initialized")
             else:
                 logger.debug(f"| ⏭️ Tool {tool_name} already initialized or no class available")
         
         logger.info("| ✅ Tools initialization completed")
+    
+    async def ainvoke(self, name: str, input: Any, **kwargs) -> Any:
+        """Invoke a tool with context management.
+        
+        Args:
+            name: Name of the tool to invoke
+            input: Input for the tool
+            **kwargs: Keyword arguments for the tool
+        Returns:
+            Tool execution result
+        """
+        return await self.tool_context_manager.ainvoke(name, input, **kwargs)
+    
+    def args_schemas(self) -> List[Type[BaseModel]]:
+        """List all registered tool args schemas
+        
+        Returns:
+            List[Type[BaseModel]]: List of tool args schemas
+        """
+        return [tool_info.args_schema for tool_info in self._registered_tools.values()]
+    
+    def invoke(self, name: str, input: Any, **kwargs) -> Any:
+        """Synchronous invoke a tool using tool context manager.
+        
+        Args:
+            name: Name of the tool to invoke
+            input: Input for the tool
+            **kwargs: Keyword arguments for the tool
+            
+        Returns:
+            Tool execution result
+        """
+        return self.tool_context_manager.invoke(name, input, **kwargs)
     
     def list(self) -> List[str]:
         """List all registered tools
@@ -172,14 +205,6 @@ class TCPServer:
         """
         names = [name for name in self._registered_tools.keys()]
         return names
-    
-    def args_schemas(self) -> List[Type[BaseModel]]:
-        """List all registered tool args schemas
-        
-        Returns:
-            List[Type[BaseModel]]: List of tool args schemas
-        """
-        return [tool_info.args_schema for tool_info in self._registered_tools.values()]
     
     def to_string(self, tool_info: ToolInfo) -> str:
         """Convert tool information to string
@@ -210,35 +235,10 @@ class TCPServer:
             Tool instance or None if not found
         """
         return self._registered_tools.get(tool_name).instance
-    
-    async def ainvoke(self, name: str, input: Any, **kwargs) -> Any:
-        """Invoke a tool with context management.
-        
-        Args:
-            name: Name of the tool to invoke
-            input: Input for the tool
-            **kwargs: Keyword arguments for the tool
-        Returns:
-            Tool execution result
-        """
-        return await self.tool_context_manager.ainvoke(name, input, **kwargs)
-    
-    def invoke(self, name: str, input: Any, **kwargs) -> Any:
-        """Synchronous invoke a tool using tool context manager.
-        
-        Args:
-            name: Name of the tool to invoke
-            input: Input for the tool
-            **kwargs: Keyword arguments for the tool
-            
-        Returns:
-            Tool execution result
-        """
-        return self.tool_context_manager.invoke(name, input, **kwargs)
         
     async def cleanup(self):
         """Cleanup all tools"""
-        self.tool_context_manager.cleanup()
+        await self.tool_context_manager.cleanup()
 
 
 # Global TCP server instance

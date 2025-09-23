@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional, Union
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 
 from src.logger import logger
-from src.environments.openai_browser.types import (
+from src.environments.operator_browser.types import (
     ClickRequest,
     ClickResult,
     DoubleClickRequest,
@@ -25,8 +25,8 @@ from src.environments.openai_browser.types import (
     DragResult,
 )
 
-class OpenAIBrowserService:
-    """Browser implementation compatible with OpenAI Computer Use API."""
+class OperatorBrowserService:
+    """Browser implementation compatible with OpenAI Operator Browser API."""
     
     def __init__(self, headless: bool = True, viewport: Dict[str, int] = None):
         """Initialize the browser.
@@ -83,7 +83,7 @@ class OpenAIBrowserService:
                 "Accept-Language": "en-US,en;q=0.9"
             })
             
-            logger.info("| 🌐 OpenAI Computer Use Browser started successfully")
+            logger.info("| 🌐 Operator started successfully")
             
         except Exception as e:
             logger.error(f"| ❌ Failed to start browser: {e}")
@@ -101,7 +101,7 @@ class OpenAIBrowserService:
             if self.playwright:
                 await self.playwright.stop()
                 
-            logger.info("| 🛑 OpenAI Browser stopped")
+            logger.info("| 🛑 Operator stopped")
             
         except Exception as e:
             logger.error(f"| ❌ Error stopping browser: {e}")
@@ -284,7 +284,7 @@ class OpenAIBrowserService:
             return DragResult(success=False, message=f"Failed to drag: {e}")
             
     async def screenshot(self, full_page: bool = False, save_path: Optional[str] = None) -> Union[str, bytes]:
-        """Take a screenshot of the current page (Computer Use API compatible).
+        """Take a screenshot of the current page (Operator compatible).
         
         Args:
             full_page: Whether to capture the full page

@@ -20,13 +20,35 @@ from src.environments.filesystem.lock_manager import AsyncLockManager
 from src.environments.filesystem.path_policy import PathPolicy
 from src.environments.filesystem.storage import LocalAsyncStorage, StorageBackend
 from src.environments.filesystem.types import (
-    FileReadRequest, FileReadResult, SearchMatch, SearchResult,
-    FileWriteRequest, FileWriteResult, FileReplaceRequest, FileReplaceResult,
-    FileDeleteRequest, FileDeleteResult, FileCopyRequest, FileCopyResult,
-    FileMoveRequest, FileMoveResult, DirectoryCreateRequest, DirectoryCreateResult,
-    DirectoryDeleteRequest, DirectoryDeleteResult, FileListRequest, FileListResult,
-    FileTreeRequest, FileTreeResult, FileSearchRequest, FileSearchResult,
-    FileStatRequest, FileStatResult, FileStats
+    FileReadRequest,
+    FileReadResult,
+    SearchMatch,
+    SearchResult,
+    FileWriteRequest, 
+    FileWriteResult, 
+    FileReplaceRequest, 
+    FileReplaceResult,
+    FileDeleteRequest, 
+    FileDeleteResult,
+    FileCopyRequest,
+    FileCopyResult,
+    FileMoveRequest, 
+    FileMoveResult, 
+    DirectoryCreateRequest,
+    DirectoryCreateResult,
+    DirectoryDeleteRequest, 
+    DirectoryDeleteResult, 
+    FileListRequest, 
+    FileListResult,
+    FileTreeRequest,
+    FileTreeResult, 
+    FileSearchRequest,
+    FileSearchResult,
+    FileStatRequest, 
+    FileStatResult, 
+    FileStats,
+    FileChangePermissionsRequest,
+    FileChangePermissionsResult
 )
 
 
@@ -110,7 +132,7 @@ class FileSystemService:
         result = await handler.decode(data, request)
         return result
 
-    async def write_text(self, request: FileWriteRequest) -> FileWriteResult:
+    async def write(self, request: FileWriteRequest) -> FileWriteResult:
         """Write text content to a file."""
         if request.mode not in {"w", "a"}:
             raise InvalidArgumentError("mode must be 'w' or 'a'")
@@ -206,7 +228,7 @@ class FileSystemService:
                 message=f"Failed to replace text: {e}"
             )
 
-    async def remove(self, request: FileDeleteRequest) -> FileDeleteResult:
+    async def delete(self, request: FileDeleteRequest) -> FileDeleteResult:
         """Remove a file."""
         try:
             absolute = self._policy.resolve_relative(request.path)
@@ -229,6 +251,32 @@ class FileSystemService:
                 path=request.path,
                 success=False,
                 message=f"Failed to delete file: {e}"
+            )
+            
+    async def copy(self, request: FileCopyRequest) -> FileCopyResult:
+        """Copy a file."""
+        try:
+            absolute = self._policy.resolve_relative(request.src_path)
+            relative = self._policy.to_relative(absolute)
+            async with self._locks.acquire(self._key(relative)):
+                if not await self._storage.exists(absolute):
+                    raise NotFoundError(f"Path not found: {relative}")
+                await self._storage.copy(absolute, request.dst_path)
+            
+            return FileCopyResult(
+                src_path=relative,
+                dst_path=request.dst_path,
+                bytes_copied=0,
+                success=True,
+                message=f"Successfully copied {relative} to {request.dst_path}"
+            )
+        except Exception as e:
+            return FileCopyResult(
+                src_path=request.src_path,
+                dst_path=request.dst_path,
+                bytes_copied=0,
+                success=False,
+                message=f"Failed to copy file: {e}"
             )
 
     async def rename(self, request: FileMoveRequest) -> FileMoveResult:
@@ -584,4 +632,23 @@ class FileSystemService:
                 total_found=0
             )
 
+    async def change_permissions(self, request: FileChangePermissionsRequest) -> FileChangePermissionsResult:
+        """Change file or directory permissions."""
+        try:
+            absolute = self._policy.resolve_relative(request.path)
+            relative = self._policy.to_relative(absolute)
+            
+            async with self._locks.acquire(self._key(relative)):
+                await self._storage.chmod(absolute, request.permissions)
 
+            return FileChangePermissionsResult(
+                path=relative,
+                success=True,
+                message=f"Successfully changed permissions for {relative}"
+            )
+        except Exception as e:
+            return FileChangePermissionsResult(
+                path=request.path,
+                success=False,
+                message=f"Failed to change permissions: {e}"
+            )

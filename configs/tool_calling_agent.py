@@ -1,10 +1,10 @@
 from mmengine.config import read_base
 with read_base():
     from .base import browser_tool, deep_researcher_tool, deep_analyzer_tool, memory
-    from .environments.file_system import environment as file_system_environment
     # from .environments.trading_offline import environment as trading_offline_environment, dataset as trading_offline_dataset
-    # from .environments.github import environment as github_environment
-    # from .environments.database import environment as database_environment
+    from .environments.file_system import environment as file_system_environment
+    from .environments.github import environment as github_environment
+    from .environments.database import environment as database_environment
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
@@ -15,23 +15,22 @@ version = "0.1.0"
 
 env_names = [
     "file_system",
-    # "github",
-    # "database",
+    "github",
+    "database",
 ]
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
 file_system_environment.update(dict(
     base_dir=workdir,
 ))
-
-# #-----------------GITHUB ENVIRONMENT CONFIG-----------------
-# github_environment.update(dict(
-#     base_dir=workdir
-# ))
-# #-----------------DATABASE ENVIRONMENT CONFIG-----------------
-# database_environment.update(dict(
-#     base_dir=workdir
-# ))
+#-----------------GITHUB ENVIRONMENT CONFIG-----------------
+github_environment.update(dict(
+    base_dir=workdir
+))
+#-----------------DATABASE ENVIRONMENT CONFIG-----------------
+database_environment.update(dict(
+    base_dir=workdir
+))
 
 #-----------------AGENT CONFIG-----------------------------------
 agent = dict(
@@ -49,7 +48,7 @@ agent = dict(
         "web_searcher",
         "deep_researcher",
         "deep_analyzer",
-        # "todo",
+        "todo",
     ],
     max_steps = 10,
     env_names = env_names

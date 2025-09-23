@@ -3,12 +3,13 @@
 from pathlib import Path
 from typing import Any, Dict, List, Union, Optional
 
-from src.environments.filesystem.file_system import FileSystem
+from src.environments.filesystem.service import FileSystemService
 from src.environments.filesystem.types import (
     FileReadRequest, 
     FileWriteRequest,
     FileReplaceRequest, 
     FileDeleteRequest,
+    FileCopyRequest,
     FileMoveRequest,
     DirectoryCreateRequest, 
     DirectoryDeleteRequest,
@@ -53,9 +54,8 @@ class FileSystemEnvironment(BaseEnvironment):
         self.max_file_size = max_file_size
         
         # Initialize file system
-        self.file_system = FileSystem(
-            base_dir=self.base_dir,
-            create_default_files=create_default_files
+        self.file_system_service = FileSystemService(
+            base_dir=self.base_dir
         )
         
     async def initialize(self) -> None:
@@ -84,7 +84,7 @@ class FileSystemEnvironment(BaseEnvironment):
             start_line=start_line,
             end_line=end_line
         )
-        result = await self.file_system.read(request)
+        result = await self.file_system_service.read(request)
         
         if result.content_text:
             return result.content_text
@@ -115,7 +115,7 @@ class FileSystemEnvironment(BaseEnvironment):
             content=content,
             mode=mode
         )
-        result = await self.file_system.write_text(request)
+        result = await self.file_system_service.write(request)
         return result.message
     
     @ecp.action(name = "replace", 
@@ -146,7 +146,7 @@ class FileSystemEnvironment(BaseEnvironment):
             start_line=start_line,
             end_line=end_line
         )
-        result = await self.file_system.replace(request)
+        result = await self.file_system_service.replace(request)
         return result.message
     
     @ecp.action(name = "delete", 
@@ -162,7 +162,21 @@ class FileSystemEnvironment(BaseEnvironment):
             str: The result of the deletion.
         """
         request = FileDeleteRequest(path=Path(file_path))
-        result = await self.file_system.remove(request)
+        result = await self.file_system_service.delete(request)
+        return result.message
+    
+    @ecp.action(name = "copy", 
+                type = "File System", 
+                description = "Copy a file from source to destination.")
+    async def copy(self, src_path: str, dst_path: str) -> str:
+        """Copy a file from source to destination.
+        
+        Args:
+            src_path (str): The absolute path of the source file.
+            dst_path (str): The absolute path of the destination file.
+        """
+        request = FileCopyRequest(src_path=Path(src_path), dst_path=Path(dst_path))
+        result = await self.file_system_service.copy(request)
         return result.message
     
     @ecp.action(name = "copy", 
@@ -180,7 +194,7 @@ class FileSystemEnvironment(BaseEnvironment):
         """
         # For copy operation, we need to read the source file and write to destination
         read_request = FileReadRequest(path=Path(src_path))
-        read_result = await self.file_system.read(read_request)
+        read_result = await self.file_system_service.read(read_request)
         
         if not read_result.content_bytes:
             return f"Failed to read source file: {src_path}"
@@ -190,7 +204,7 @@ class FileSystemEnvironment(BaseEnvironment):
             content=read_result.content_bytes.decode('utf-8', errors='ignore'),
             mode="w"
         )
-        write_result = await self.file_system.write_text(write_request)
+        write_result = await self.file_system_service.write(write_request)
         return write_result.message
     
     @ecp.action(name = "move",
@@ -210,7 +224,7 @@ class FileSystemEnvironment(BaseEnvironment):
             src_path=Path(src_path),
             dst_path=Path(dst_path)
         )
-        result = await self.file_system.rename(request)
+        result = await self.file_system_service.rename(request)
         return result.message
     
     @ecp.action(name = "rename",
@@ -230,7 +244,7 @@ class FileSystemEnvironment(BaseEnvironment):
             src_path=Path(old_path),
             dst_path=Path(new_path)
         )
-        result = await self.file_system.rename(request)
+        result = await self.file_system_service.rename(request)
         return result.message
     
     @ecp.action(name = "get_info",
@@ -248,7 +262,7 @@ class FileSystemEnvironment(BaseEnvironment):
             str: The detailed information about the file.
         """
         request = FileStatRequest(path=Path(file_path))
-        result = await self.file_system.stat(request)
+        result = await self.file_system_service.stat(request)
         
         if result.success and result.stats:
             stats = result.stats
@@ -277,7 +291,7 @@ class FileSystemEnvironment(BaseEnvironment):
             str: The result of the directory creation.
         """
         request = DirectoryCreateRequest(path=Path(dir_path))
-        result = await self.file_system.mkdir(request)
+        result = await self.file_system_service.mkdir(request)
         return result.message
     
     @ecp.action(name = "delete_dir",
@@ -293,7 +307,7 @@ class FileSystemEnvironment(BaseEnvironment):
             str: The result of the directory deletion.
         """
         request = DirectoryDeleteRequest(path=Path(dir_path), recursive=True)
-        result = await self.file_system.rmtree(request)
+        result = await self.file_system_service.rmtree(request)
         return result.message
     
     @ecp.action(name = "listdir",
@@ -318,7 +332,7 @@ class FileSystemEnvironment(BaseEnvironment):
             show_hidden=show_hidden,
             file_types=file_types
         )
-        result = await self.file_system.listdir(request)
+        result = await self.file_system_service.listdir(request)
         
         if result.files or result.directories:
             listing = f"Contents of {dir_path}:\n"
@@ -367,7 +381,7 @@ class FileSystemEnvironment(BaseEnvironment):
             exclude_patterns=exclude_patterns,
             file_types=file_types
         )
-        result = await self.file_system.tree(request)
+        result = await self.file_system_service.tree(request)
         
         if result.tree_lines:
             tree_str = f"Directory tree for {dir_path}:\n"
@@ -395,7 +409,7 @@ class FileSystemEnvironment(BaseEnvironment):
             max_depth=3,
             show_hidden=False
         )
-        result = await self.file_system.tree(request)
+        result = await self.file_system_service.tree(request)
         
         description = f"File System Environment at: {self.base_dir}\n"
         description += f"Total: {result.total_files} files, {result.total_directories} directories\n\n"
@@ -439,7 +453,7 @@ class FileSystemEnvironment(BaseEnvironment):
             case_sensitive=case_sensitive,
             max_results=max_results
         )
-        result = await self.file_system.search(request)
+        result = await self.file_system_service .search(request)
         
         if result.results:
             search_str = f"Search results for '{query}' in {search_path}:\n"
@@ -469,7 +483,7 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the permissions change operation.
         """
-        return await self.file_system.change_permissions(file_path, permissions)
+        return await self.file_system_service.change_permissions(file_path, permissions)
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the file system environment."""

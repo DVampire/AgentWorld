@@ -11,15 +11,17 @@ import inflection
 import typing
 
 from src.config import config
+from src.logger import logger
 from src.environments.protocol.types import EnvironmentInfo, ActionInfo
 from src.environments.protocol.environment import BaseEnvironment
-
+from src.environments.protocol.context import EnvironmentContextManager
 
 class ECPServer:
     """ECP Server for managing environments and actions with decorator support"""
     
     def __init__(self):
         self._registered_environments: Dict[str, EnvironmentInfo] = {}  # env_name -> EnvironmentInfo
+        self.environment_context_manager = EnvironmentContextManager()
     
     def environment(self, 
                     name: str = None,
@@ -435,27 +437,26 @@ class ECPServer:
         Args:
             env_names: List of environment names
         """
-        for env_name in env_names:
-            env_config = config.get(f"{env_name}_environment")
-            await self.build(env_name, env_config)
-    
-    async def build(self, env_name: str, env_config: Optional[Dict[str, Any]] = None):
-        """Build an environment by name
+        logger.info(f"| 🎮 Initializing {len(self._registered_environments)} environments with context manager...")
         
-        Args:
-            env_name: Environment name
-            
-        Returns:
-            BaseEnvironment: Environment instance or None if not found
-        """
-        env_info = self._registered_environments.get(env_name)
-        env_info.instance = env_info.cls(**env_config)
+        for env_name, env_info in self._registered_environments.items():
+            if env_name in env_names:
+                logger.debug(f"| 🔧 Initializing environment: {env_name}")
+                
+                def environment_factory():
+                    env_config = config.get(f"{env_name}_environment", None)
+                    if env_config:
+                        return env_info.cls(**env_config)
+                    else:
+                        return env_info.cls()
+                
+                await self.environment_context_manager.build(env_info, environment_factory)
+                logger.debug(f"| ✅ Environment {env_name} initialized")
+            else:
+                logger.info(f"| ⏭️ Environment {env_name} not found")
+                
+        logger.info("| ✅ Environments initialization completed")
         
-        await env_info.instance.initialize()
-        
-        self._registered_environments[env_name] = env_info
-        
-        return env_info.instance
     
     async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
@@ -464,51 +465,12 @@ class ECPServer:
             env_name: Environment name
             
         Returns:
-            str: State of the environment or None if not found
+            Dict[str, Any]: State of the environment or None if not found
         """
         env = self._registered_environments.get(env_name).instance
         if not env:
             raise ValueError(f"Environment '{env_name}' not found")
         return await env.get_state()
-    
-    async def call_action(self, env_name: str, action_name: str, **kwargs) -> Any:
-        """Call an action by name with arguments
-        
-        Args:
-            env_name: Environment name
-            action_name: Action name
-            arguments: Action arguments
-            
-        Returns:
-            Any: Action result
-        """
-        env_info = self._registered_environments.get(env_name)
-        if not env_info:
-            raise ValueError(f"Environment '{env_name}' not found")
-        
-        # Find the action
-        action_info = env_info.actions.get(action_name)
-        
-        if not action_info:
-            raise ValueError(f"Action '{action_name}' not found in environment '{env_name}'")
-        
-        if not action_info.function:
-            raise ValueError(f"Action '{action_name}' has no function implementation")
-        
-        # Get environment instance
-        env_instance = env_info.instance
-        if not env_instance:
-            # Create instance if not exists
-            env_instance = env_info.instance()
-            env_info.instance = env_instance
-        
-        # Call the action function
-        if asyncio.iscoroutinefunction(action_info.function):
-            result = await action_info.function(env_instance, **kwargs)
-        else:
-            result = action_info.function(env_instance, **kwargs)
-        
-        return result
     
     def list(self) -> List[str]:
         """Get list of registered environments
@@ -539,5 +501,37 @@ class ECPServer:
             EnvironmentInfo: Environment information or None if not found
         """
         return self._registered_environments.get(env_name).instance
+    
+    def invoke(self, name: str, action: str, input: Any, **kwargs) -> Any:
+        """Invoke an environment action using context manager.
+        
+        Args:
+            name: Name of the environment
+            action: Name of the action
+            input: Input for the action
+            **kwargs: Keyword arguments for the action
+            
+        Returns:
+            Action result
+        """
+        return self.environment_context_manager.invoke(name, action, input, **kwargs)
+    
+    async def ainvoke(self, name: str, action: str, input: Any, **kwargs) -> Any:
+        """Invoke an environment action asynchronously using context manager.
+        
+        Args:
+            name: Name of the environment
+            action: Name of the action
+            input: Input for the action
+            **kwargs: Keyword arguments for the action
+            
+        Returns:
+            Action result
+        """
+        return await self.environment_context_manager.ainvoke(name, action, input, **kwargs)
+    
+    def cleanup(self):
+        """Cleanup all environments using context manager."""
+        self.environment_context_manager.cleanup()
     
 ecp = ECPServer()

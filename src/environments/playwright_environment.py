@@ -34,7 +34,7 @@ from src.environments.protocol.environment import BaseEnvironment
 
 @ecp.environment(
     name="playwright",
-    type="Browser Automation",
+    type="Playwright Browser",
     description="Playwright browser automation environment for web interactions",
     has_vision=True,
     additional_rules={
@@ -76,7 +76,7 @@ class PlaywrightEnvironment(BaseEnvironment):
         logger.info("| 🌐 Playwright Environment cleaned up")
     
     @ecp.action(name="search_google",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Search Google with a query.")
     async def search_google(self, query: str) -> str:
         """Search Google with a query.
@@ -96,7 +96,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Search failed: {result.message}"
     
     @ecp.action(name="go_to_url",
-                type="Browser Automation", 
+                type="Playwright Browser", 
                 description="Navigate to a URL.")
     async def go_to_url(self, url: str, new_tab: bool = False) -> str:
         """Navigate to a URL.
@@ -117,7 +117,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Navigation failed: {result.message}"
     
     @ecp.action(name="go_back",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Go back to the previous page.")
     async def go_back(self) -> str:
         """Go back to the previous page.
@@ -134,7 +134,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Go back failed: {result.message}"
     
     @ecp.action(name="wait",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Wait for a specified number of seconds.")
     async def wait(self, seconds: int = 3) -> str:
         """Wait for a specified number of seconds.
@@ -154,7 +154,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Wait failed: {result.message}"
     
     @ecp.action(name="click_element",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Click an element by its index.")
     async def click_element(self, index: int, while_holding_ctrl: bool = False) -> str:
         """Click an element by its index.
@@ -175,7 +175,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Click failed: {result.message}"
     
     @ecp.action(name="input_text",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Input text into an element.")
     async def input_text(self, 
                          index: int, 
@@ -210,7 +210,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Input failed: {result.message}"
     
     @ecp.action(name="scroll",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Scroll the page.")
     async def scroll(self, 
                      down: bool = True, 
@@ -239,7 +239,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Scroll failed: {result.message}"
     
     @ecp.action(name="send_keys",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Send special keys to the page.")
     async def send_keys(self, keys: str) -> str:
         """Send special keys to the page.
@@ -259,7 +259,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Send keys failed: {result.message}"
     
     @ecp.action(name="scroll_to_text",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Scroll to a specific text on the page.")
     async def scroll_to_text(self, text: str) -> str:
         """Scroll to a specific text on the page.
@@ -279,7 +279,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Scroll to text failed: {result.message}"
     
     @ecp.action(name="get_dropdown_options",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Get options from a dropdown element.")
     async def get_dropdown_options(self, index: int) -> str:
         """Get options from a dropdown element.
@@ -300,7 +300,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Get dropdown options failed: {result.message}"
     
     @ecp.action(name="select_dropdown_option",
-                type="Browser Automation",
+                    type="Playwright Browser",
                 description="Select an option from a dropdown element.")
     async def select_dropdown_option(self, index: int, text: str) -> str:
         """Select an option from a dropdown element.
@@ -321,7 +321,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Select dropdown option failed: {result.message}"
     
     @ecp.action(name="upload_file",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Upload a file to an element.")
     async def upload_file(self, 
                           index: int, 
@@ -350,7 +350,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Upload failed: {result.message}"
     
     @ecp.action(name="switch_tab",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Switch to a different tab.")
     async def switch_tab(self, tab_id: str) -> str:
         """Switch to a different tab.
@@ -370,7 +370,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Switch tab failed: {result.message}"
     
     @ecp.action(name="close_tab",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Close a tab.")
     async def close_tab(self, tab_id: str) -> str:
         """Close a tab.
@@ -390,7 +390,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Close tab failed: {result.message}"
     
     @ecp.action(name="extract_structured_data",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Extract structured data from the current page.")
     async def extract_structured_data(self, 
                                      query: str,
@@ -419,7 +419,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Extraction failed: {result.message}"
     
     @ecp.action(name="execute_js",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Execute JavaScript code on the page.")
     async def execute_js(self, code: str) -> str:
         """Execute JavaScript code on the page.
@@ -439,7 +439,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"JavaScript execution failed: {result.message}"
     
     @ecp.action(name="screenshot",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Take a screenshot of the current page.")
     async def screenshot(self, 
                          highlight_elements: bool = False,
@@ -468,7 +468,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Screenshot failed: {result.message}"
     
     @ecp.action(name="store_screenshot",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Take and store a screenshot with step number.")
     async def store_screenshot(self, 
                                step_number: int, 
@@ -494,7 +494,7 @@ class PlaywrightEnvironment(BaseEnvironment):
             return f"Store screenshot failed: {result.message}"
     
     @ecp.action(name="get_screenshot",
-                type="Browser Automation",
+                type="Playwright Browser",
                 description="Get a screenshot from disk.")
     async def get_screenshot(self, screenshot_path: str) -> str:
         """Get a screenshot from disk.

@@ -264,5 +264,16 @@ class FileStatResult(BaseModel):
     exists: bool
     success: bool
     message: str
+    
+class FileChangePermissionsRequest(BaseModel):
+    """Request for changing file or directory permissions."""
+    path: Path
+    permissions: str
 
+
+class FileChangePermissionsResult(BaseModel):
+    """Result of file change permissions operation."""
+    path: Path
+    success: bool
+    message: str
 

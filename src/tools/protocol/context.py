@@ -1,23 +1,23 @@
 """Tool Context Manager for managing tool lifecycle and resources."""
 
 import atexit
-import uuid
-from typing import Any, Dict, Optional, Callable, List
+from typing import Any, Dict, Callable, List
 import importlib
+import asyncio
 
 from src.logger import logger
 from src.infrastructures.models import model_manager
 from src.environments.faiss.service import FaissService
 from src.environments.faiss.types import FaissAddRequest, FaissSearchRequest
 from src.utils import assemble_project_path
+from src.tools.protocol.types import ToolInfo
 
 class ToolContextManager:
     """Global context manager for all tools."""
     
     def __init__(self):
         """Initialize the tool context manager."""
-        self._tool_instances: Dict[str, Any] = {}
-        self._tool_info: Dict[str, Dict[str, Any]] = {}  # Store tool metadata
+        self._tool_info: Dict[str, ToolInfo] = {}
         self._cleanup_registered = False
         
         # Register cleanup on exit
@@ -40,11 +40,15 @@ class ToolContextManager:
             **kwargs: Keyword arguments for the tool
         """
         
-        if name in self._tool_instances:
-            instance = self._tool_instances[name]
-            return instance.invoke(input, **kwargs)
-        else:
-            raise ValueError(f"Tool {name} not found")
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(self.ainvoke(name, input, **kwargs))
+            finally:
+                loop.close()
+        except Exception as e:
+            return f"Error in synchronous execution: {str(e)}"
     
     async def ainvoke(self, name: str, input: Any, **kwargs) -> Any:
         """Invoke a tool.
@@ -54,77 +58,69 @@ class ToolContextManager:
             input: Input for the tool
             **kwargs: Keyword arguments for the tool
         """
-        if name in self._tool_instances:
-            instance = self._tool_instances[name]
+        if name in self._tool_info:
+            instance = self._tool_info[name].instance
             return await instance.ainvoke(input, **kwargs)
         else:
             raise ValueError(f"Tool {name} not found")
     
-    async def build(self, tool_name: str, tool_factory: Callable, tool_type: str = "unknown", description: str = "") -> Any:
+    async def build(self, tool_info: ToolInfo, tool_factory: Callable) -> ToolInfo:
         """Create a tool instance and store it.
         
         Args:
-            tool_name: Name of the tool
+            tool_info: Tool information
             tool_factory: Function to create the tool instance
-            tool_type: Type/category of the tool
-            description: Description of the tool
             
         Returns:
-            Tool instance
+            ToolInfo: Tool information
         """
-        if tool_name in self._tool_instances:
-            return self._tool_instances[tool_name]
+        if tool_info.name in self._tool_info:
+            return self._tool_info[tool_info.name]
         
         # Create new tool instance
         try:
             tool_instance = tool_factory()
-            self._tool_instances[tool_name] = tool_instance
+            
+            tool_info.instance = tool_instance
             
             # Store tool metadata
-            self._tool_info[tool_name] = {
-                "name": tool_name,
-                "type": tool_type,
-                "description": description,
-                "instance": tool_instance
-            }
+            self._tool_info[tool_info.name] = tool_info
             
-            logger.debug(f"| 🔧 Tool {tool_name} created and stored")
+            logger.debug(f"| 🔧 Tool {tool_info.name} created and stored")
             
             # Add tool to embedding index
-            await self._store(tool_name, tool_type, description)
+            await self._store(tool_info)
             
-            return tool_instance
+            return tool_info
         except Exception as e:
-            logger.error(f"| ❌ Failed to create tool {tool_name}: {e}")
+            logger.error(f"| ❌ Failed to create tool {tool_info.name}: {e}")
             raise
     
-    async def _store(self, tool_name: str, tool_type: str, description: str):
+    async def _store(self, tool_info: ToolInfo):
         """Add tool information to the embedding index.
         
         Args:
-            tool_name: Name of the tool
-            tool_type: Type/category of the tool
-            description: Description of the tool
+            tool_info: Tool information
         """
         try:
             # Create comprehensive text representation
-            tool_text = f"Tool: {tool_name}\nType: {tool_type}\nDescription: {description}"
+            tool_text = f"Tool: {tool_info.name}\nType: {tool_info.type}\nDescription: {tool_info.description}"
             
             # Add to FAISS index
             request = FaissAddRequest(
                 texts=[tool_text],
                 metadatas=[{
-                    "name": tool_name,
-                    "type": tool_type,
-                    "description": description
+                    "name": tool_info.name,
+                    "type": tool_info.type,
+                    "description": tool_info.description
                 }]
             )
             
             await self._faiss_service.add_documents(request)
-            logger.debug(f"| 📝 Tool {tool_name} added to embedding index")
+            logger.info(f"| 📝 Tool {tool_info.name} added to FAISS index")
             
         except Exception as e:
-            logger.warning(f"| ⚠️ Failed to add tool {tool_name} to embedding: {e}")
+            logger.warning(f"| ⚠️ Failed to add tool {tool_info.name} to FAISS index: {e}")
     
     async def candidates(self, query: str, k: int = 5, score_threshold: float = 0.7) -> List[Dict[str, Any]]:
         """Get tool candidates based on semantic similarity to query.
@@ -160,7 +156,7 @@ class ToolContextManager:
                     }
                     candidates.append(candidate)
             
-            logger.debug(f"| 🔍 Found {len(candidates)} tool candidates for query: {query}")
+                logger.info(f"| 🔍 Found {len(candidates)} tool candidates for query: {query}")
             return candidates
             
         except Exception as e:
@@ -169,20 +165,13 @@ class ToolContextManager:
     
     def cleanup(self):
         """Cleanup all active tools."""
-        logger.info("| 🧹 Cleaning up all tools...")
-        
-        # Get list of active tool names to avoid dict modification during iteration
-        active_tools = list(self._tool_instances.keys())
-        
-        for tool_name in active_tools:
-            self._tool_instances.pop(tool_name, None)
-            self._tool_info.pop(tool_name, None)
+        try:
+            # Get list of active tool names to avoid dict modification during iteration
+            self._tool_info.clear()
+                
+            # Clean up Faiss service
+            self._faiss_service.cleanup()
+            logger.info("| 🧹 Tool context manager cleaned up")
             
-        # Clean up Faiss service
-        self._faiss_service.cleanup()
-        
-        logger.info("| ✅ All tools cleaned up")
-    
-    def __del__(self):
-        """Destructor to ensure cleanup."""
-        self.cleanup()
+        except Exception as e:
+            logger.error(f"| ❌ Error during tool context manager cleanup: {e}")
