@@ -1,7 +1,7 @@
 """Playwright Environment for AgentWorld - provides browser automation operations as an environment."""
 
-from pathlib import Path
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Union, Optional, Type
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.environments.playwright.service import PlaywrightService
 from src.environments.playwright.types import (
@@ -31,37 +31,43 @@ from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-
-@ecp.environment(
-    name="playwright",
-    type="Playwright Browser",
-    description="Playwright browser automation environment for web interactions",
-    has_vision=True,
-    additional_rules={
-        "state": "The state of the browser environment including current URL, title, and available elements.",
-    }
-)
+@ecp.environment()
 class PlaywrightEnvironment(BaseEnvironment):
     """Playwright Environment that provides browser automation operations as an environment interface."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="playwright", description="The name of the Playwright environment.")
+    type: str = Field(default="Playwright Browser", description="The type of the Playwright environment.")
+    description: str = Field(default="Playwright browser automation environment for web interactions", description="The description of the Playwright environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Playwright environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": True,
+        "additional_rules": {
+            "state": "The state of the browser environment including current URL, title, and available elements.",
+        }
+    }, description="The metadata of the Playwright environment.")
     
     def __init__(
         self,
-        base_dir: Union[str, Path, None] = None,
+        base_dir: str = None,
         auto_start: bool = True,
+        **kwargs
     ):
         """
         Initialize the playwright environment.
         
         Args:
-            base_dir (Union[str, Path, None]): Base directory for storing screenshots and other files
+            base_dir (str): Base directory for storing screenshots and other files
             auto_start (bool): Whether to automatically start the browser session
         """
-        self.base_dir = Path(assemble_project_path(str(base_dir))) if base_dir else None
+        super().__init__(**kwargs)
+        
+        self.base_dir = assemble_project_path(base_dir)
         self.auto_start = auto_start
         
         # Initialize playwright service
         self.playwright_service = PlaywrightService(
-            base_dir=str(self.base_dir) if self.base_dir else None
+            base_dir=self.base_dir
         )
         
     async def initialize(self) -> None:
@@ -513,22 +519,21 @@ class PlaywrightEnvironment(BaseEnvironment):
         else:
             return f"Get screenshot failed: {result.message}"
     
-    async def get_state(self, include_screenshot: bool = False) -> Dict[str, Any]:
+    async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the playwright environment.
         
-        Args:
-            include_screenshot (bool): Whether to include screenshot in the state.
-            
         Returns:
             Dict[str, Any]: The browser state information including URL, title, tabs, elements, and environment config.
         """
         try:
-            request = BrowserStateRequest(include_screenshot=include_screenshot)
+            request = BrowserStateRequest(include_screenshot=False)
             result = await self.playwright_service.state(request)
             
             if result.success:
                 state = result.state
                 return {
+                    "base_dir": self.base_dir,
+                    "auto_start": self.auto_start,
                     # Browser state from service
                     "url": state.get('url', 'Unknown'),
                     "title": state.get('title', 'Unknown'),
@@ -537,7 +542,6 @@ class PlaywrightEnvironment(BaseEnvironment):
                     "tabs_count": len(state.get('tabs', [])),
                     "interactive_elements": state.get('interactive_elements', []),
                     "interactive_elements_count": len(state.get('interactive_elements', [])),
-                    "screenshot": state.get('screenshot'),
                     "dom_tree": state.get('dom_tree'),
                     "selector_map": state.get('selector_map', {}),
                     "viewport": state.get('viewport'),
@@ -545,22 +549,18 @@ class PlaywrightEnvironment(BaseEnvironment):
                     "network_logs": state.get('network_logs', []),
                     "errors": state.get('errors', []),
                     "warnings": state.get('warnings', []),
-                    "performance_metrics": state.get('performance_metrics'),
-                    
-                    # Environment configuration
-                    "base_dir": str(self.base_dir) if self.base_dir else None,
-                    "auto_start": self.auto_start
+                    "performance_metrics": state.get('performance_metrics')
                 }
             else:
                 return {
                     "error": result.message,
-                    "base_dir": str(self.base_dir) if self.base_dir else None,
+                    "base_dir": self.base_dir,
                     "auto_start": self.auto_start
                 }
         except Exception as e:
             logger.error(f"Failed to get playwright state: {e}")
             return {
                 "error": str(e),
-                "base_dir": str(self.base_dir) if self.base_dir else None,
+                "base_dir": self.base_dir,
                 "auto_start": self.auto_start
             }

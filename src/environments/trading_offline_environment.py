@@ -1,19 +1,22 @@
+"""Trading Offline Environment for AgentWorld - provides trading operations as an environment."""
+
 import warnings
 warnings.filterwarnings("ignore")
 from copy import deepcopy
 from pandas import DataFrame
-from typing import Any, Optional, Dict
+from typing import Any, Optional, Dict, Type, Union
 import random
 import numpy as np
 import pandas as pd
 from dataclasses import asdict
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import TradingRecords, Record
 from src.utils import get_token_count
 from src.utils import get_start_end_timestamp
 from src.environments.protocol import ecp
 from src.logger import logger
-from src.utils import dedent
+from src.utils import dedent, assemble_project_path
 
 from src.environments.protocol.environment import BaseEnvironment
 from src.supports.metric import ARR, SR, MDD, SOR, CR, VOL
@@ -98,17 +101,24 @@ def convert_dataframe_to_markdown(
 
     return res_strings
 
-@ecp.environment(name = "trading_offline",
-                 type = "Trading Offline",
-                 description = "Trading offline environment for trading",
-                 has_vision = False,
-                 additional_rules = {
-                    "state": _STATE_RULES,
-                 })
+@ecp.environment()
 class TradingOfflineEnvironment(BaseEnvironment):
+    """Trading Offline Environment that provides trading operations as an environment interface."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    name: str = Field(default="trading_offline", description="The name of the Trading Offline environment.")
+    type: str = Field(default="Trading Offline", description="The type of the Trading Offline environment.")
+    description: str = Field(default="Trading offline environment for trading", description="The description of the Trading Offline environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Trading Offline environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": False,
+        "additional_rules": {
+            "state": _STATE_RULES,
+        }
+    }, description="The metadata of the Trading Offline environment.")
+    
     def __init__(
         self,
-        *args,
         mode: str = "train",
         dataset: Any = None,
         initial_amount: float = 1e3,
@@ -126,7 +136,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
         daily_sample_texts: int = 2,
         **kwargs,
     ):
-        super(TradingOfflineEnvironment, self).__init__()
+        super().__init__(**kwargs)
 
         self.mode = mode
         self.dataset = dataset
@@ -571,6 +581,14 @@ class TradingOfflineEnvironment(BaseEnvironment):
         self.valid_action_df = self.record_df[self.record_df['action'] != 'HOLD']
         valid_action_max_len = min(self.valid_action_max_len, len(self.valid_action_df))
         self.valid_action_df = self.valid_action_df[-valid_action_max_len:]
+        
+    async def initialize(self) -> None:
+        """Initialize the Trading Offline environment."""
+        logger.info(f"| 📈 Trading Offline Environment initialized at: {self.base_dir}")
+        
+    async def cleanup(self) -> None:
+        """Cleanup the Trading Offline environment."""
+        logger.info("| 🧹 Trading Offline Environment cleanup completed")
 
     def reset(self, **kwargs):
         self.timestamp_index = self._init_timestamp_index()
@@ -829,7 +847,28 @@ class TradingOfflineEnvironment(BaseEnvironment):
         return f"Trading records saved successfully to {file_path}."
     
     async def get_state(self) -> Dict[str, Any]:
-        state: Dict[str, Any] = {
-            "state": self.state['prompt']
-        }
-        return state
+        """Get the current state of the Trading Offline environment."""
+        try:
+            return {
+                "base_dir": str(self.base_dir),
+                "mode": self.mode,
+                "symbol": self.symbol,
+                "asset_info": self.asset_info,
+                "current_timestamp": self.timestamp_string,
+                "current_price": self.price,
+                "cash": self.cash,
+                "position": self.position,
+                "value": self.value,
+                "total_return": self.total_return,
+                "total_profit": self.total_profit,
+                "action": self.action_label,
+                "state_prompt": self.state['prompt'] if hasattr(self, 'state') else None
+            }
+        except Exception as e:
+            logger.error(f"Failed to get trading state: {e}")
+            return {
+                "base_dir": str(self.base_dir),
+                "mode": self.mode,
+                "symbol": self.symbol,
+                "error": str(e)
+            }

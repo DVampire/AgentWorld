@@ -4,6 +4,7 @@ Server implementation for the Agent Context Protocol.
 """
 
 from typing import Any, Dict, List, Optional, Type
+from pydantic import create_model, Field
 
 from src.agents.protocol.types import AgentInfo
 from src.agents.protocol.agent import BaseAgent
@@ -18,12 +19,7 @@ class ACPServer:
         self._registered_agents: Dict[str, AgentInfo] = {}  # agent_name -> AgentInfo
         self.agent_context_manager = AgentContextManager()
     
-    def agent(self, 
-              name: str = None,
-              type: str = None, 
-              description: str = "",
-              metadata: Optional[Dict[str, Any]] = None
-              ):
+    def agent(self):
         """Decorator to register an agent class
         
         Args:
@@ -33,14 +29,14 @@ class ACPServer:
             metadata (Dict[str, Any]): Additional metadata
         """
         def decorator(cls: Type[BaseAgent]):
-            agent_name = name or cls.__name__
-            agent_type = type or cls.__name__.lower()
+            agent_name = cls.name or cls.__name__
+            agent_type = cls.type or cls.__name__.lower()
             
             # Store agent metadata
             cls._agent_name = agent_name
             cls._agent_type = agent_type
-            cls._agent_description = description
-            cls._agent_metadata = metadata
+            cls._agent_description = cls.description
+            cls._agent_metadata = cls.metadata
             
             # Create AgentInfo and store it
             agent_info = AgentInfo(

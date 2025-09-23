@@ -1,7 +1,7 @@
 """FAISS Vector Store Environment for AgentWorld."""
 
-from pathlib import Path
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Union, Optional, Any, Dict, Type
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.environments.faiss.service import FaissService
 from src.environments.faiss.types import (
@@ -15,35 +15,42 @@ from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-@ecp.environment(
-    name="faiss",
-    type="Vector Store",
-    description="FAISS vector store environment for similarity search and document management",
-    has_vision=False,
-    additional_rules={
-        "state": "The state of the FAISS vector store environment.",
-    }
-)
+@ecp.environment()
 class FaissEnvironment(BaseEnvironment):
     """FAISS Vector Store Environment that provides vector operations as an environment interface."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="faiss", description="The name of the FAISS environment.")
+    type: str = Field(default="Vector Store", description="The type of the FAISS environment.")
+    description: str = Field(default="FAISS vector store environment for similarity search and document management", description="The description of the FAISS environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the FAISS environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": False,
+        "additional_rules": {
+            "state": "The state of the FAISS vector store environment.",
+        }
+    }, description="The metadata of the FAISS environment.")
     
     def __init__(
         self,
-        base_dir: Union[str, Path],
+        base_dir: str,
         embedding_function: Optional[Any] = None,
         config: Optional[FaissConfig] = None,
+        **kwargs
     ):
         """
         Initialize the FAISS environment.
         
         Args:
-            base_dir: Base directory for FAISS storage
-            embedding_function: Embedding function to use
-            config: Configuration for the FAISS service
+            base_dir (str): Base directory for FAISS storage
+            embedding_function (Optional[Any]): Embedding function to use
+            config (Optional[FaissConfig]): Configuration for the FAISS service
         """
-        self.base_dir = Path(assemble_project_path(str(base_dir)))
+        super().__init__(**kwargs)
+        
+        self.base_dir = assemble_project_path(base_dir)
         self.embedding_function = embedding_function
-        self.config = config or FaissConfig(base_dir=str(self.base_dir))
+        self.config = config or FaissConfig(base_dir=self.base_dir)
         
         # Initialize FAISS service
         self.faiss_service = FaissService(

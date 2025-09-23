@@ -3,7 +3,7 @@
 Core type definitions for the Agent Context Protocol.
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, Type
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
@@ -39,6 +39,7 @@ class AgentInfo(BaseModel):
     name: str
     type: str
     description: str
+    args_schema: Optional[Type[BaseModel]] = None
     cls: Optional[Any] = None
     instance: Optional[Any] = None
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)

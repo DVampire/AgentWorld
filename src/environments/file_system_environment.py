@@ -1,7 +1,8 @@
 """File System Environment for AgentWorld - provides file system operations as an environment."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Union, Optional
+from typing import List, Optional, Any, Dict, Type
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.environments.filesystem.service import FileSystemService
 from src.environments.filesystem.types import (
@@ -23,34 +24,38 @@ from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-@ecp.environment(
-    name="file_system",
-    type="File System",
-    description="File system environment for file operations",
-    has_vision=False,
-    additional_rules={
-        "state": "The state of the file system environment.",
-    }
-)
+@ecp.environment()
 class FileSystemEnvironment(BaseEnvironment):
-    """File System Environment that provides file operations as an environment interface."""
+    """File System Environment hat provides file operations as an environment interface."""
+    
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="file_system", description="The name of the file system environment.")
+    type: str = Field(default="File System", description="The type of the file system environment.")
+    description: str = Field(default="File system environment for file operations", description="The description of the file system environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the file system environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": False,
+        "additional_rules": {
+            "state": "The state of the file system environment.",
+        }
+    }, description="The metadata of the file system environment.")
     
     def __init__(
         self,
-        base_dir: Union[str, Path],
-        create_default_files: bool = True,
+        base_dir: str = None,
         max_file_size: int = 1024 * 1024,  # 1MB
+        **kwargs
     ):
         """
         Initialize the file system environment.
         
         Args:
-            base_dir (Union[str, Path]): Base directory for the file system
-            create_default_files (bool): Whether to create default files (todo.md)
+            base_dir (str): Base directory for the file system
             max_file_size (int): Maximum file size in bytes
-            allowed_extensions (List[str]): List of allowed file extensions (None for all supported)
         """
-        self.base_dir = Path(assemble_project_path(str(base_dir)))
+        super().__init__(**kwargs)
+        self.base_dir = assemble_project_path(base_dir)
         self.max_file_size = max_file_size
         
         # Initialize file system

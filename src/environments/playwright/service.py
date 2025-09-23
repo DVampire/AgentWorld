@@ -3,8 +3,8 @@ import enum
 import json
 import logging
 import os
-from typing import Any, Generic, TypeVar
-
+from typing import Any, Generic, TypeVar, Union
+from pathlib import Path
 try:
     from lmnr import Laminar  # type: ignore
 except ImportError:
@@ -136,12 +136,13 @@ class PlaywrightService(Generic[Context]):
     def __init__(
         self,
         *,
-        base_dir: str | None = None,
+        base_dir: Union[str, Path],
     ):
         self._session = BrowserSession(
             browser_profile=DEFAULT_BROWSER_PROFILE,
         )
-        self._screenshot_service = ScreenshotService(base_dir or "workdir") if base_dir else None
+        base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
+        self._screenshot_service = ScreenshotService(base_dir)
 
     async def search_google(self, request: SearchGoogleRequest) -> SearchGoogleResult:
         """Search the query in Google, the query should be a search query like humans search in Google, concrete and not vague or super long."""

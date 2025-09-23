@@ -1,9 +1,10 @@
 """Tool Context Manager for managing tool lifecycle and resources."""
 
 import atexit
-from typing import Any, Dict, Callable, List
+from typing import Any, Dict, Callable, List, Type, Optional
 import importlib
 import asyncio
+from pydantic import BaseModel
 
 from src.logger import logger
 from src.infrastructures.models import model_manager
@@ -162,6 +163,58 @@ class ToolContextManager:
         except Exception as e:
             logger.error(f"| ❌ Failed to get tool candidates: {e}")
             return []
+        
+    def get(self, tool_name: str) -> Optional[ToolInfo]:
+        """Get tool information by name
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            ToolInfo: Tool information or None if not found
+        """
+        return self._tool_info.get(tool_name)
+    
+    def get_info(self, tool_name: str) -> Optional[ToolInfo]:
+        """Get tool information by name
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            ToolInfo: Tool information or None if not found
+        """
+        return self._tool_info.get(tool_name)
+    
+    def list(self) -> List[str]:
+        """Get list of registered tools
+        
+        Returns:
+            List[ToolInfo]: List of tool information
+        """
+        return [name for name in self._tool_info.keys()]
+    
+    def args_schemas(self) -> List[Type[BaseModel]]:
+        """Get list of registered tool args schemas
+        
+        Returns:
+            List[Type[BaseModel]]: List of tool args schemas
+        """
+        return [tool_info.args_schema for tool_info in self._tool_info.values()]
+    
+    def to_string(self, tool_name: str) -> str:
+        """Convert tool information to string
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            str: Tool information string
+        """
+        tool_info = self._tool_info.get(tool_name)
+        if not tool_info:
+            raise ValueError(f"Tool {tool_name} not found")
+        return f"Tool: {tool_info.name}\nDescription: {tool_info.description}\nArgs Schema: {tool_info.args_schema}"
     
     def cleanup(self):
         """Cleanup all active tools."""

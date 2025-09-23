@@ -4,6 +4,7 @@ Screenshot storage service for browser-use agents.
 
 import base64
 from pathlib import Path
+from typing import Union
 
 import anyio
 
@@ -13,7 +14,7 @@ from src.environments.playwright.observability import observe_debug
 class ScreenshotService:
 	"""Simple screenshot storage service that saves screenshots to disk"""
 
-	def __init__(self, agent_directory: str | Path):
+	def __init__(self, agent_directory: Union[str, Path]):
 		"""Initialize with agent directory path"""
 		self.agent_directory = Path(agent_directory) if isinstance(agent_directory, str) else agent_directory
 

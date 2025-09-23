@@ -1,7 +1,8 @@
-"""OpenAI Browser Environment for AgentWorld - provides browser automation as an environment."""
+"""Operator Browser Environment for AgentWorld - provides browser automation as an environment."""
 
-from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional, Type
+from pydantic import BaseModel, Field, ConfigDict
+import os
 
 from src.environments.operator_browser.service import OperatorBrowserService
 from src.environments.operator_browser.types import (
@@ -15,69 +16,65 @@ from src.environments.operator_browser.types import (
     DragRequest,
 )
 from src.logger import logger
+from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-@ecp.environment(
-    name="operator_browser",
-    type="Operator Browser",
-    description="OpenAI Operator compatible browser environment for web automation",
-    has_vision=True,
-    additional_rules={
-        "state": "The state of the browser environment including current URL, title, and viewport.",
-    }
-)
+@ecp.environment()
 class OperatorBrowserEnvironment(BaseEnvironment):
     """Operator Browser Environment that provides browser automation as an environment interface."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="operator_browser", description="The name of the Operator Browser environment.")
+    type: str = Field(default="Operator Browser Environment", description="The type of the Operator Browser environment.")
+    description: str = Field(default="OpenAI Operator compatible browser environment for web automation", description="The description of the Operator Browser environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Operator Browser environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": True,
+        "additional_rules": {
+            "state": "The state of the browser environment including current URL, title, and viewport.",
+        }
+    }, description="The metadata of the Operator Browser environment.")
     
     def __init__(
         self,
+        base_dir: str = None,
         headless: bool = True,
-        viewport: Dict[str, int] = None,
-        base_dir: Union[str, Path] = None,
+        viewport: Optional[Dict[str, int]] = None,
+        **kwargs
     ):
         """
         Initialize the Operator browser environment.
         
         Args:
-            headless (bool): Whether to run browser in headless mode
-            viewport (Dict[str, int]): Browser viewport size
-            base_dir (Union[str, Path]): Base directory for screenshots and logs
+            base_dir: Base directory for screenshots and logs
+            headless: Whether to run browser in headless mode
+            viewport: Browser viewport size
         """
+        super().__init__(**kwargs)
+        self.base_dir = assemble_project_path(base_dir)
         self.headless = headless
         self.viewport = viewport or {"width": 1280, "height": 720}
-        self.base_dir = Path(base_dir) if base_dir else Path("workdir/operator_browser")
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        
+        os.makedirs(self.base_dir, exist_ok=True)
         
         # Initialize the browser service
-        self.browser_service = OperatorBrowserService(
+        self.operator_browser_service = OperatorBrowserService(
             headless=self.headless,
             viewport=self.viewport
         )
         
-        logger.info(f"| 🌐 Operator Browser Environment initialized")
-        logger.info(f"| 📁 Base directory: {self.base_dir}")
-        logger.info(f"| 👁️ Headless mode: {self.headless}")
-        logger.info(f"| 📐 Viewport: {self.viewport}")
-        
+        # Initialize step counter for screenshots
         self.step_number = 0
     
-    async def initialize(self):
-        """Initialize the browser environment."""
-        try:
-            await self.browser_service.start()
-            logger.info("| ✅ Operator Browser Environment initialized successfully")
-        except Exception as e:
-            logger.error(f"| ❌ Failed to initialize OpenAI Browser Environment: {e}")
-            raise
-    
-    async def cleanup(self):
-        """Cleanup the browser environment."""
-        try:
-            await self.browser_service.stop()
-            logger.info("| 🧹 Operator Browser Environment cleaned up successfully")
-        except Exception as e:
-            logger.error(f"| ❌ Error cleaning up Operator Browser Environment: {e}")
+    async def initialize(self) -> None:
+        """Initialize the Operator Browser environment."""
+        logger.info(f"| 🌐 Operator Browser Environment initialized at: {self.base_dir}")
+        
+    async def cleanup(self) -> None:
+        """Cleanup the Operator Browser environment."""
+        await self.operator_browser_service.stop()
+        logger.info("| 🧹 Operator Browser Environment cleanup completed")
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the browser environment.
@@ -87,7 +84,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         
         try:
-            screenshot_b64 = await self.browser_service.screenshot(save_path=str(self.base_dir / f"step_{self.step_number:04d}.png"))
+            screenshot_b64 = await self.operator_browser_service.screenshot(save_path=os.path.join(self.base_dir, f"step_{self.step_number:04d}.png"))
             self.step_number += 1
             
             return {
@@ -95,11 +92,11 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 "headless": self.headless,
                 "viewport": self.viewport,
                 "screenshot": screenshot_b64,
-                "base_dir": str(self.base_dir),
-                "browser_ready": self.browser_service.browser is not None,
-                "page_ready": self.browser_service.page is not None,
-                "current_url": self.browser_service.page.url if self.browser_service.page else None,
-                "current_title": self.browser_service.page.title() if self.browser_service.page else None,
+                "base_dir": self.base_dir,
+                "browser_ready": self.operator_browser_service.browser is not None,
+                "page_ready": self.operator_browser_service.page is not None,
+                "current_url": self.operator_browser_service.page.url if self.operator_browser_service.page else None,
+                "current_title": self.operator_browser_service.page.title() if self.operator_browser_service.page else None,
             }
         except Exception as e:
             logger.error(f"| ❌ Error getting browser state: {e}")
@@ -126,7 +123,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = ClickRequest(x=x, y=y, button=button)
-            result = await self.browser_service.click(request)
+            result = await self.operator_browser_service.click(request)
             
             if result.success:
                 return f"✅ Clicked at ({x}, {y}) with {button} button"
@@ -155,7 +152,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = DoubleClickRequest(x=x, y=y, button=button)
-            result = await self.browser_service.double_click(request)
+            result = await self.operator_browser_service.double_click(request)
             
             if result.success:
                 return f"✅ Double clicked at ({x}, {y}) with {button} button"
@@ -185,7 +182,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = ScrollRequest(x=x, y=y, scroll_x=scroll_x, scroll_y=scroll_y)
-            result = await self.browser_service.scroll(request)
+            result = await self.operator_browser_service.scroll(request)
             
             if result.success:
                 return f"✅ Scrolled at ({x}, {y}) with offsets ({scroll_x}, {scroll_y})"
@@ -201,7 +198,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         description="Type text at the current cursor position",
         type="Operator Browser Environment",
     )
-    async def type(self, text: str) -> str:
+    async def type_text(self, text: str) -> str:
         """Type text at the current cursor position.
         
         Args:
@@ -212,7 +209,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = TypeRequest(text=text)
-            result = await self.browser_service.type(request)
+            result = await self.operator_browser_service.type(request)
             
             if result.success:
                 return f"✅ Typed text: {text}"
@@ -239,7 +236,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = WaitRequest(ms=ms)
-            result = await self.browser_service.wait(request)
+            result = await self.operator_browser_service.wait(request)
             
             if result.success:
                 return f"✅ Waited for {ms} ms"
@@ -267,7 +264,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = MoveRequest(x=x, y=y)
-            result = await self.browser_service.move(request)
+            result = await self.operator_browser_service.move(request)
             
             if result.success:
                 return f"✅ Moved mouse to ({x}, {y})"
@@ -294,7 +291,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = KeypressRequest(keys=keys)
-            result = await self.browser_service.keypress(request)
+            result = await self.operator_browser_service.keypress(request)
             
             if result.success:
                 return f"✅ Pressed keys: {keys}"
@@ -321,7 +318,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = DragRequest(path=path)
-            result = await self.browser_service.drag(request)
+            result = await self.operator_browser_service.drag(request)
             
             if result.success:
                 return f"✅ Dragged along path: {path}"

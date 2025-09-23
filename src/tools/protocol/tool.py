@@ -1,5 +1,5 @@
 from typing import Any, Dict, Type
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model, ConfigDict
 import inflection
 from langchain.tools import BaseTool as LangchainBaseTool
 
@@ -10,6 +10,10 @@ class BaseTool(LangchainBaseTool):
     description: str = Field(description="The description of the tool.")
     args_schema: Type[BaseModel] = Field(description="The args schema of the tool.")
     metadata: Dict[str, Any] = Field(description="The metadata of the tool.")
+    
+    model_config = ConfigDict(
+        extra="allow"
+    )
 
 class WrappedTool(BaseTool):
     """MCP Tool for managing MCP server connections and tools."""

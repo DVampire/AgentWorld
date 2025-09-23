@@ -13,11 +13,11 @@ from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.logger import logger
 from src.infrastructures.models import model_manager
 from src.config import config
-from src.tools.protocol.types import ToolResponse
 from src.utils import make_image_url
 from src.utils import encode_image_base64
 from src.utils import assemble_project_path
 from src.tools.default_tools.web_searcher import SearchResult
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 
@@ -117,7 +117,7 @@ class DeepResearcherTool(BaseTool):
         self.research_history: List[SearchRound] = []
         self.all_insights: List[str] = []
 
-    async def _arun(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> str:
+    async def _arun(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> ToolResponse:
         """Execute deep research workflow."""
         try:
             logger.info(f"Starting deep research for task: {task}")
@@ -178,7 +178,7 @@ class DeepResearcherTool(BaseTool):
             
         except Exception as e:
             logger.error(f"Error in deep research: {e}")
-            return f"Error during deep research: {str(e)}"
+            return ToolResponse(content=f"Error during deep research: {str(e)}")
 
     async def _generate_search_query(self, task: str, round_num: int, image: Optional[str] = None) -> str:
         """Generate search query using LLM based on task, image, and round number."""
@@ -412,7 +412,7 @@ class DeepResearcherTool(BaseTool):
         
         return "INCOMPLETE: Need more information to provide a complete answer"
 
-    async def _format_final_result(self, summary: str, round_num: int) -> str:
+    async def _format_final_result(self, summary: str, round_num: int) -> ToolResponse:
         """Format the final successful result using LLM."""
         try:
             prompt = cleandoc(f"""You are formatting the final research results. Please create a well-structured, comprehensive summary.
@@ -443,7 +443,7 @@ class DeepResearcherTool(BaseTool):
             response = await self.model.ainvoke([message])
             
             if response and response.content.strip():
-                return response.content.strip()
+                return ToolResponse(content=response.content.strip())
             else:
                 return self._fallback_format_result(summary, round_num)
                 
@@ -452,7 +452,7 @@ class DeepResearcherTool(BaseTool):
             # Simple fallback
             return self._fallback_format_result(summary, round_num)
     
-    def _fallback_format_result(self, summary: str, round_num: int) -> str:
+    def _fallback_format_result(self, summary: str, round_num: int) -> ToolResponse:
         """Basic fallback formatting for successful results."""
         result = f"🎯 Research completed in {round_num} rounds!\n\n"
         result += "📋 Summary:\n"
@@ -466,9 +466,9 @@ class DeepResearcherTool(BaseTool):
         result += f"- Total rounds: {len(self.research_history)}\n"
         result += f"- Total insights: {len(self.all_insights)}\n"
         
-        return result
+        return ToolResponse(content=result) 
 
-    async def _format_failure_result(self, task: str) -> str:
+    async def _format_failure_result(self, task: str) -> ToolResponse:
         """Format the failure result when max rounds are reached using LLM."""
         try:
             prompt = cleandoc(f"""The research task was incomplete after maximum rounds. Please format a helpful failure report.
@@ -495,7 +495,7 @@ class DeepResearcherTool(BaseTool):
             response = await self.model.ainvoke([message])
             
             if response and response.content.strip():
-                return response.content.strip()
+                return ToolResponse(content=response.content.strip())
             else:
                 return self._fallback_format_failure_result(task)
                 
@@ -504,7 +504,7 @@ class DeepResearcherTool(BaseTool):
             # Simple fallback
             return self._fallback_format_failure_result(task)
     
-    def _fallback_format_failure_result(self, task: str) -> str:
+    def _fallback_format_failure_result(self, task: str) -> ToolResponse:
         """Basic fallback formatting for failure results."""
         result = f"❌ Research incomplete after maximum rounds reached.\n\n"
         result += f"📋 Task: {task}\n\n"
@@ -521,9 +521,9 @@ class DeepResearcherTool(BaseTool):
         else:
             result += "🔍 No insights collected. The task might be too specific or the information might not be available online."
         
-        return result
+        return ToolResponse(content=result)
 
-    def _run(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> str:
+    def _run(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> ToolResponse:
         """Execute deep research synchronously (fallback)."""
         try:
             # Run async version
@@ -535,12 +535,4 @@ class DeepResearcherTool(BaseTool):
                 loop.close()
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
-            return f"Error in synchronous execution: {e}"
-
-    def get_tool_config(self) -> Dict[str, Any]:
-        """Get tool configuration."""
-        return {
-            "name": self.name,
-            "description": self.description,
-            "type": "deep_researcher"
-        }
+            return ToolResponse(content=f"Error in synchronous execution: {e}")

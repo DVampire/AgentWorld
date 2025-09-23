@@ -22,34 +22,19 @@ class ECPServer:
         self._registered_environments: Dict[str, EnvironmentInfo] = {}  # env_name -> EnvironmentInfo
         self.environment_context_manager = EnvironmentContextManager()
     
-    def environment(self, 
-                    name: str = None,
-                    type: str = None, 
-                    description: str = "", 
-                    has_vision: bool = False,
-                    additional_rules: Optional[Dict[str, str]] = None,
-                    metadata: Optional[Dict[str, Any]] = None
-                    ):
-        """Decorator to register an environment class
-        
-        Args:
-            name (str): Environment name (defaults to class name)
-            env_type (str): Environment type (defaults to class name)
-            description (str): Environment description
-            has_vision (bool): Whether the environment has vision capabilities
-            additional_rules (Dict[str, str]): Dictionary with custom rules for 'state', 'vision', 'interaction'
-        """
+    def environment(self):
+        """Decorator to register an environment class"""
         def decorator(cls: Type[BaseEnvironment]):
-            env_name = name or cls.__name__
-            env_type = type or cls.__name__.lower()
+            model_fields = cls.model_fields
             
             # Store environment metadata
-            cls._env_name = env_name
-            cls._env_type = env_type
-            cls._env_description = description
-            cls._has_vision = has_vision
-            cls._additional_rules = additional_rules
-            cls._metadata = metadata
+            env_name = model_fields['name'].default
+            env_type = model_fields['type'].default
+            args_schema = model_fields['args_schema'].default
+            description = model_fields['description'].default
+            metadata = model_fields['metadata'].default
+            has_vision = metadata.get('has_vision', False)
+            additional_rules = metadata.get('additional_rules', None)
             
             # Collect all actions from the class
             actions = {}
@@ -87,6 +72,7 @@ class ECPServer:
                 name=env_name,
                 type=env_type,
                 description=description,
+                args_schema=args_schema,
                 rules=final_rules,
                 actions=actions,
                 cls=cls,
@@ -353,7 +339,7 @@ class ECPServer:
             str: Generated environment rules
         """
         # Start building the rules
-        rules_parts = [f"<environment_{env_type}>"]
+        rules_parts = [f"<environment_{inflection.underscore(env_type)}>"]
         
         # Add state section
         rules_parts.append("<state>")
@@ -426,7 +412,7 @@ class ECPServer:
         rules_parts.append("</interaction>")
         
         # Close the environment tag
-        rules_parts.append(f"</environment_{env_type}>")
+        rules_parts.append(f"</environment_{inflection.underscore(env_type)}>")
         
         return "\n".join(rules_parts)
     
@@ -464,12 +450,9 @@ class ECPServer:
             env_name: Environment name
             
         Returns:
-            Dict[str, Any]: State of the environment or None if not found
+            Optional[Dict[str, Any]]: State of the environment or None if not found
         """
-        env = self._registered_environments.get(env_name).instance
-        if not env:
-            raise ValueError(f"Environment '{env_name}' not found")
-        return await env.get_state()
+        return await self.environment_context_manager.get_state(env_name)
     
     def list(self) -> List[str]:
         """Get list of registered environments
@@ -477,7 +460,7 @@ class ECPServer:
         Returns:
             List[EnvironmentInfo]: List of registered environment information
         """
-        return [name for name in self._registered_environments.keys()]
+        return self.environment_context_manager.list()
     
     def get_info(self, env_name: str) -> Optional[EnvironmentInfo]:
         """Get environment information by name
@@ -488,7 +471,7 @@ class ECPServer:
         Returns:
             EnvironmentInfo: Environment information or None if not found
         """
-        return self._registered_environments.get(env_name)
+        return self.environment_context_manager.get_info(env_name)
     
     def get(self, env_name: str) -> Optional[BaseEnvironment]:
         """Get environment information by type
@@ -499,7 +482,7 @@ class ECPServer:
         Returns:
             EnvironmentInfo: Environment information or None if not found
         """
-        return self._registered_environments.get(env_name).instance
+        return self.environment_context_manager.get(env_name)
     
     def invoke(self, name: str, action: str, input: Any, **kwargs) -> Any:
         """Invoke an environment action using context manager.

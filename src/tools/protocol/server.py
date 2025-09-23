@@ -132,7 +132,7 @@ class TCPServer:
         Returns:
             List[Type[BaseModel]]: List of tool args schemas
         """
-        return [tool_info.args_schema for tool_info in self._registered_tools.values()]
+        return self.tool_context_manager.args_schemas()
     
     def invoke(self, name: str, input: Any, **kwargs) -> Any:
         """Synchronous invoke a tool using tool context manager.
@@ -153,16 +153,18 @@ class TCPServer:
         Returns:
             List[ToolInfo]: List of tool information
         """
-        names = [name for name in self._registered_tools.keys()]
-        return names
+        return self.tool_context_manager.list()
     
-    def to_string(self, tool_info: ToolInfo) -> str:
+    def to_string(self, tool_name: str) -> str:
         """Convert tool information to string
         
+        Args:
+            tool_name: Tool name
+            
         Returns:
             str: Tool information string
         """
-        return f"Tool: {tool_info.name}\nDescription: {tool_info.description}\nArgs Schema: {tool_info.args_schema}"
+        return self.tool_context_manager.to_string(tool_name)
     
     def get_info(self, tool_name: str) -> Optional[ToolInfo]:
         """Get tool information by name
@@ -173,7 +175,7 @@ class TCPServer:
         Returns:
             ToolInfo: Tool information or None if not found
         """
-        return self._registered_tools.get(tool_name)
+        return self.tool_context_manager.get_info(tool_name)
     
     def get(self, tool_name: str) -> Optional[Any]:
         """Get tool instance by name using tool context manager
@@ -184,7 +186,7 @@ class TCPServer:
         Returns:
             Tool instance or None if not found
         """
-        return self._registered_tools.get(tool_name).instance
+        return self.tool_context_manager.get(tool_name)
         
     async def cleanup(self):
         """Cleanup all tools"""

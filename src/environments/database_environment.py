@@ -1,6 +1,8 @@
 """Database Environment for AgentWorld - provides database operations as an environment."""
-from pathlib import Path
-from typing import Any, Dict, List, Union, Optional
+
+import os
+from typing import Any, Dict, List, Union, Optional, Type
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.environments.database.service import DatabaseService
 from src.environments.database.types import (
@@ -17,44 +19,50 @@ from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
 
-@ecp.environment(
-    name="database",
-    type="Database",
-    description="Database environment for SQLite database operations",
-    has_vision=False,
-    additional_rules={
-        "state": "The state of the database environment including tables and data.",
-    }
-)
+@ecp.environment()
 class DatabaseEnvironment(BaseEnvironment):
     """Database Environment that provides database operations as an environment interface."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="database", description="The name of the database environment.")
+    type: str = Field(default="Database", description="The type of the database environment.")
+    description: str = Field(default="Database environment for SQLite database operations", description="The description of the database environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the database environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": False,
+        "additional_rules": {
+            "state": "The state of the database environment including tables and data.",
+        }
+    }, description="The metadata of the database environment.")
     
     def __init__(
         self,
-        base_dir: Union[str, Path],
+        base_dir: str,
         auto_connect: bool = True,
         create_sample_tables: bool = True,
+        **kwargs
     ):
         """
         Initialize the database environment.
         
         Args:
-            db_path (Union[str, Path]): Path to the SQLite database file
+            base_dir (str): Base directory for database storage
             auto_connect (bool): Whether to automatically connect to the database
             create_sample_tables (bool): Whether to create sample tables for testing
         """
-        self.base_dir = Path(assemble_project_path(str(base_dir)))
-        self.db_path = self.base_dir / "database.db"
+        super().__init__(**kwargs)
+        
+        self.base_dir = assemble_project_path(base_dir)
         self.auto_connect = auto_connect
         self.create_sample_tables = create_sample_tables
         
         # Initialize database service
-        self.database_service = DatabaseService(db_path=self.db_path)
+        self.database_service = DatabaseService(db_path=os.path.join(self.base_dir, "database.db"))
         
         
     async def initialize(self) -> None:
         """Initialize the database environment."""
-        logger.info(f"| 🗄️ Database Environment initialized at: {self.db_path}")
+        logger.info(f"| 🗄️ Database Environment initialized at: {self.base_dir}")
         
         # Connect to database if auto_connect is enabled
         if self.auto_connect:
@@ -337,7 +345,8 @@ class DatabaseEnvironment(BaseEnvironment):
         try:
             db_info = await self.database_service.get_database_info()
             return {
-                "database_path": str(self.db_path),
+                "base_dir": str(self.base_dir),
+                "database_path": str(self.base_dir / "database.db"),
                 "is_connected": db_info.is_connected,
                 "total_tables": db_info.total_tables,
                 "tables": [
@@ -352,7 +361,8 @@ class DatabaseEnvironment(BaseEnvironment):
         except Exception as e:
             logger.error(f"Failed to get database state: {e}")
             return {
-                "database_path": str(self.db_path),
+                "base_dir": str(self.base_dir),
+                "database_path": str(self.base_dir / "database.db"),
                 "is_connected": False,
                 "error": str(e)
             }

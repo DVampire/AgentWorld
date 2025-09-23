@@ -47,7 +47,15 @@ async def test_browser_tool():
     
     try:
         # Invoke the browser tool
-        result = await tcp.ainvoke("browser", input={"task": task, "base_dir": base_dir})
+        input = {
+            "name": "browser",
+            "input": {
+                "task": task,
+                "base_dir": base_dir
+            }
+        }
+        
+        result = await tcp.ainvoke(**input)
         
         print("\n📋 Browser tool result:")
         print("=" * 50)

@@ -2,9 +2,10 @@
 
 import asyncio
 import atexit
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, Optional, List
 
 from src.logger import logger
+from src.environments.protocol.environment import BaseEnvironment
 from src.environments.protocol.types import EnvironmentInfo
 
 class EnvironmentContextManager:
@@ -92,6 +93,50 @@ class EnvironmentContextManager:
         except Exception as e:
             logger.error(f"| ❌ Failed to create environment {env_info.name}: {e}")
             raise
+        
+    async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
+        """Get the state of an environment
+        
+        Args:
+            env_name: Environment name
+            
+        Returns:
+            Optional[Dict[str, Any]]: State of the environment or None if not found
+        """
+        env = self._environment_info.get(env_name).instance
+        if not env:
+            raise ValueError(f"Environment '{env_name}' not found")
+        return await env.get_state()
+        
+    def list(self) -> List[str]:
+        """Get list of registered environments
+        
+        Returns:
+            List[EnvironmentInfo]: List of registered environment information
+        """
+        return [name for name in self._environment_info.keys()]
+    
+    def get_info(self, env_name: str) -> Optional[EnvironmentInfo]:
+        """Get environment information by name
+        
+        Args:
+            env_name: Environment name
+            
+        Returns:
+            EnvironmentInfo: Environment information or None if not found
+        """
+        return self._environment_info.get(env_name)
+    
+    def get(self, env_name: str) -> Optional[BaseEnvironment]:
+        """Get environment information by type
+        
+        Args:
+            env_name: Environment name
+            
+        Returns:
+            EnvironmentInfo: Environment information or None if not found
+        """
+        return self._environment_info.get(env_name).instance
     
     def cleanup(self):
         """Cleanup all environment instances and resources."""

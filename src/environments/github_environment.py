@@ -1,11 +1,12 @@
-"""GitHub environment implementation using simplified GitHub service."""
+"""GitHub Environment for AgentWorld - provides GitHub operations as an environment."""
+
 from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from pathlib import Path
-from typing import Any, Dict, Optional
-from pydantic import SecretStr
+from typing import Any, Dict, Optional, Type, Union
+from pydantic import BaseModel, Field, SecretStr, ConfigDict
 
 from src.logger import logger
 from src.environments.protocol.environment import BaseEnvironment
@@ -34,38 +35,58 @@ from src.environments.github.types import (
     GitDeleteBranchRequest,
     GitStatusRequest
 )
-from src.utils import dedent
-from src.utils import get_env
+from src.utils import dedent, get_env, assemble_project_path
 
-@ecp.environment(
-    name="github",
-    type="GitHub", 
-    description="GitHub environment for repository and Git operations. git_clone automatically forks repositories if they don't belong to you, then clones the forked version.",
-    has_vision=False,
-    additional_rules=None
-)
+@ecp.environment()
 class GitHubEnvironment(BaseEnvironment):
-    """GitHub environment using simplified GitHub service."""
-
+    """GitHub Environment that provides GitHub operations as an environment interface."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="github", description="The name of the GitHub environment.")
+    type: str = Field(default="GitHub", description="The type of the GitHub environment.")
+    description: str = Field(default="GitHub environment for repository and Git operations", description="The description of the GitHub environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the GitHub environment.")
+    metadata: Dict[str, Any] = Field(default={
+        "has_vision": False,
+        "additional_rules": {
+            "state": "The state of the GitHub environment including repositories and Git status.",
+        }
+    }, description="The metadata of the GitHub environment.")
+    
     def __init__(
         self,
-        token: SecretStr = get_env("GITHUB_TOKEN"),
-        username: SecretStr = get_env("GITHUB_USERNAME"),
-        base_dir: str = "workdir/github"
+        base_dir: str = None,
+        token: Optional[SecretStr] = None,
+        username: Optional[SecretStr] = None,
+        **kwargs
     ):
-        """Initialize GitHub environment.
+        """
+        Initialize the GitHub environment.
         
         Args:
-            token: GitHub Personal Access Token (PAT)
-            username: GitHub username (optional)
-            **kwargs: Additional configuration parameters
+            base_dir (str): Base directory for GitHub operations
+            token (Optional[SecretStr]): GitHub Personal Access Token (PAT)
+            username (Optional[SecretStr]): GitHub username
         """
-        self.token = token.get_secret_value()
-        self.username = username.get_secret_value()
-        self._service: Optional[GitHubService] = None
-        self.base_dir = Path(base_dir)
+        super().__init__(**kwargs)
         
-        logger.info(f"| 🚀 GitHub environment initialized for user: {self.username}")
+        self.base_dir = assemble_project_path(base_dir)
+        self.token = (token or get_env("GITHUB_TOKEN")).get_secret_value()
+        self.username = (username or get_env("GITHUB_USERNAME")).get_secret_value()
+        
+        # Initialize GitHub service
+        self.github_service = GitHubService(
+            token=self.token,
+            username=self.username
+        )
+        
+    async def initialize(self) -> None:
+        """Initialize the GitHub environment."""
+        logger.info(f"| 🚀 GitHub Environment initialized at: {self.base_dir}")
+        
+    async def cleanup(self) -> None:
+        """Cleanup the GitHub environment."""
+        logger.info("| 🧹 GitHub Environment cleanup completed")
 
     def _resolve_path(self, local_path: str) -> str:
         """Resolve local path relative to base_dir or as absolute path.
@@ -81,33 +102,6 @@ class GitHubEnvironment(BaseEnvironment):
             return str(path.resolve())
         return str((self.base_dir / path).resolve())
 
-    async def initialize(self) -> None:
-        """Initialize the GitHub environment."""
-        try:
-            self._service = GitHubService(self.token, self.username)
-            await self._service.initialize()
-            logger.info(f"| 🚀 GitHub environment initialized for user: {self._service.authenticated_user.login}")
-            
-        except AuthenticationError as e:
-            logger.error(f"| ❌ GitHub authentication failed: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"| ❌ Failed to initialize GitHub environment: {e}")
-            raise
-
-    async def cleanup(self) -> None:
-        """Cleanup the GitHub environment."""
-        if self._service:
-            await self._service.cleanup()
-            self._service = None
-        logger.info("| 🧹 GitHub environment cleaned up")
-
-    @property
-    def service(self) -> GitHubService:
-        """Get GitHub service instance."""
-        if self._service is None:
-            raise RuntimeError("GitHub environment not initialized")
-        return self._service
 
     def _resolve_path(self, local_path: str) -> str:
         """Resolve local path relative to base directory.
@@ -147,9 +141,9 @@ class GitHubEnvironment(BaseEnvironment):
         """
         try:
             # First check if repository already exists
-            current_user = self.service.authenticated_user.login
+            current_user = self.github_service.authenticated_user.login
             try:
-                existing_repo = await self.service.get_repository(current_user, name)
+                existing_repo = await self.github_service.get_repository(current_user, name)
                 return f"| 🔍 Repository '{existing_repo.full_name}' already exists. URL: {existing_repo.html_url}"
             except RepositoryError:
                 # Repository doesn't exist, proceed with creation
@@ -161,7 +155,7 @@ class GitHubEnvironment(BaseEnvironment):
                 private=private,
                 auto_init=auto_init
             )
-            result = await self.service.create_repository(request)
+            result = await self.github_service.create_repository(request)
             
             if result.success and result.repository:
                 return f"| 🎉 Repository '{result.repository.full_name}' created successfully. URL: {result.repository.html_url}"
@@ -186,9 +180,9 @@ class GitHubEnvironment(BaseEnvironment):
         """
         try:
             # Use authenticated user as owner
-            owner = self.service.authenticated_user.login
+            owner = self.github_service.authenticated_user.login
             request = GetRepositoryRequest(owner=owner, repo=repo)
-            result = await self.service.get_repository(request)
+            result = await self.github_service.get_repository(request)
             
             if not result.success or not result.repository:
                 return f"| ❌ {result.message}"
@@ -227,7 +221,7 @@ class GitHubEnvironment(BaseEnvironment):
         """
         try:
             request = ForkRepositoryRequest(owner=owner, repo=repo)
-            result = await self.service.fork_repository(request)
+            result = await self.github_service.fork_repository(request)
             
             if not result.success or not result.repository:
                 return f"| ❌ {result.message}"
@@ -253,9 +247,9 @@ class GitHubEnvironment(BaseEnvironment):
         """
         try:
             # Use authenticated user as owner
-            owner = self.service.authenticated_user.login
+            owner = self.github_service.authenticated_user.login
             request = DeleteRepositoryRequest(owner=owner, repo=repo)
-            result = await self.service.delete_repository(request)
+            result = await self.github_service.delete_repository(request)
             return result.message
         except RepositoryError as e:
             return str(e)
@@ -283,7 +277,7 @@ class GitHubEnvironment(BaseEnvironment):
         try:
             resolved_path = self._resolve_path(local_path)
             request = InitRepositoryRequest(local_path=resolved_path, remote_url=remote_url)
-            result = await self.service.init_repository(request)
+            result = await self.github_service.init_repository(request)
             return result.message
         except (GitError, RepositoryError) as e:
             return str(e)
@@ -316,7 +310,7 @@ class GitHubEnvironment(BaseEnvironment):
         """
         try:
             resolved_path = self._resolve_path(local_path)
-            current_user = self.service.authenticated_user.login
+            current_user = self.github_service.authenticated_user.login
             
             # If it's the user's own repository, clone directly
             if owner == current_user:
@@ -326,13 +320,13 @@ class GitHubEnvironment(BaseEnvironment):
                     local_path=resolved_path,
                     branch=branch
                 )
-                result = await self.service.clone_repository(request)
+                result = await self.github_service.clone_repository(request)
                 return result.message
             
             # If it's someone else's repository, fork it first
             try:
                 fork_request = ForkRepositoryRequest(owner=owner, repo=repo)
-                fork_result = await self.service.fork_repository(fork_request)
+                fork_result = await self.github_service.fork_repository(fork_request)
                 
                 if not fork_result.success or not fork_result.repository:
                     return f"| ❌ Failed to fork repository: {fork_result.message}"
@@ -347,7 +341,7 @@ class GitHubEnvironment(BaseEnvironment):
                     local_path=resolved_path,
                     branch=branch
                 )
-                clone_result = await self.service.clone_repository(clone_request)
+                clone_result = await self.github_service.clone_repository(clone_request)
                 
                 return fork_msg + clone_result.message
                 
@@ -356,7 +350,7 @@ class GitHubEnvironment(BaseEnvironment):
                 if "already be forked" in str(e).lower():
                     # Try to clone the user's existing fork
                     try:
-                        return await self.service.clone_repository(current_user, repo, resolved_path, branch)
+                        return await self.github_service.clone_repository(current_user, repo, resolved_path, branch)
                     except Exception:
                         pass
                 raise e
@@ -392,7 +386,7 @@ class GitHubEnvironment(BaseEnvironment):
                 message=message,
                 files=None if add_all else []
             )
-            result = await self.service.git_commit(request)
+            result = await self.github_service.git_commit(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -425,7 +419,7 @@ class GitHubEnvironment(BaseEnvironment):
                 remote=remote,
                 branch=branch
             )
-            result = await self.service.git_push(request)
+            result = await self.github_service.git_push(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -458,7 +452,7 @@ class GitHubEnvironment(BaseEnvironment):
                 remote=remote,
                 branch=branch
             )
-            result = await self.service.git_pull(request)
+            result = await self.github_service.git_pull(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -488,7 +482,7 @@ class GitHubEnvironment(BaseEnvironment):
                 local_path=resolved_path,
                 remote=remote
             )
-            result = await self.service.git_fetch(request)
+            result = await self.github_service.git_fetch(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -522,7 +516,7 @@ class GitHubEnvironment(BaseEnvironment):
                 branch_name=branch_name,
                 from_branch=None
             )
-            result = await self.service.git_create_branch(request)
+            result = await self.github_service.git_create_branch(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -552,7 +546,7 @@ class GitHubEnvironment(BaseEnvironment):
                 local_path=resolved_path,
                 branch_name=branch_name
             )
-            result = await self.service.git_checkout_branch(request)
+            result = await self.github_service.git_checkout_branch(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -574,7 +568,7 @@ class GitHubEnvironment(BaseEnvironment):
         try:
             resolved_path = self._resolve_path(local_path)
             request = GitListBranchesRequest(local_path=resolved_path)
-            result = await self.service.git_list_branches(request)
+            result = await self.github_service.git_list_branches(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -607,7 +601,7 @@ class GitHubEnvironment(BaseEnvironment):
                 branch_name=branch_name,
                 force=force
             )
-            result = await self.service.git_delete_branch(request)
+            result = await self.github_service.git_delete_branch(request)
             return result.message
         except GitError as e:
             return str(e)
@@ -629,7 +623,7 @@ class GitHubEnvironment(BaseEnvironment):
         try:
             resolved_path = self._resolve_path(local_path)
             request = GitStatusRequest(local_path=resolved_path)
-            result = await self.service.git_status(request)
+            result = await self.github_service.git_status(request)
             
             if not result.success or not result.status:
                 return f"| ❌ {result.message}"
@@ -653,18 +647,18 @@ class GitHubEnvironment(BaseEnvironment):
         """Get environment information."""
         return {
             "type": "github",
-            "username": self.service.authenticated_user.login if self._service else None,
-            "authenticated": self._service is not None,
+            "username": self.github_service.authenticated_user.login if self.github_service else None,
+            "authenticated": self.github_service is not None,
         }
 
     async def health_check(self) -> Dict[str, Any]:
         """Perform health check."""
         try:
-            if self._service is None:
+            if self.github_service is None:
                 return {"status": "unhealthy", "error": "Not initialized"}
             
             # Test service access
-            user = self.service.authenticated_user
+            user = self.github_service.authenticated_user
             return {
                 "status": "healthy",
                 "username": user.login,
@@ -677,9 +671,19 @@ class GitHubEnvironment(BaseEnvironment):
             }
 
     async def get_state(self) -> Dict[str, Any]:
-        """Get environment state."""
-        return {
-            "state": "GitHub environment is ready to use.",
-            "username": self.service.authenticated_user.login if self._service else None,
-            "authenticated": self._service is not None,
-        }
+        """Get the current state of the GitHub environment."""
+        try:
+            return {
+                "base_dir": str(self.base_dir),
+                "username": self.username,
+                "authenticated": bool(self.token),
+                "service_available": self.github_service is not None,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get GitHub state: {e}")
+            return {
+                "base_dir": str(self.base_dir),
+                "username": self.username,
+                "authenticated": False,
+                "error": str(e)
+            }

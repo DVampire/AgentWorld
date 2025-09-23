@@ -53,6 +53,7 @@ class EnvironmentInfo(BaseModel):
     type: str
     rules: str
     description: str
+    args_schema: Optional[Type[BaseModel]] = None
     actions: Dict[str, "ActionInfo"]
     cls: Optional[Type[BaseEnvironment]] = None
     instance: Optional[Any] = None

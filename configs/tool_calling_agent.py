@@ -14,20 +14,9 @@ log_path = "agent.log"
 use_local_proxy = False
 version = "0.1.0"
 
-env_names = [
-    "file_system",
-]
-agent_names = [
-    "tool_calling",
-]
-
-#-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
-file_system_environment.update(dict(
-    base_dir=workdir,
-))
-
-#-----------------AGENT CONFIG-----------------------------------
-tools = [
+env_names = ["file_system"]
+agent_names = ["tool_calling"]
+tool_names = [
     'bash',        
     'python_interpreter', 
     'done', 
@@ -38,8 +27,11 @@ tools = [
     'browser',
     'deep_researcher',
     'deep_analyzer',
-    ]
-tool_calling_agent.update(dict(
-    tools = tools,
-    env_names = env_names
+]
+
+#-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
+file_system_environment.update(dict(
+    base_dir=workdir,
 ))
+
+#-----------------AGENT CONFIG-----------------------------------

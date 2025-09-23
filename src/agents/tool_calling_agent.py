@@ -1,38 +1,38 @@
 """Tool calling agent implementation with manual agent logic."""
 
 import asyncio
-from typing import List, Optional, Union
-from langchain.tools import BaseTool
-from langchain_core.language_models import BaseLanguageModel
+from typing import List, Optional, Type, Dict, Any
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 from src.agents.protocol.agent import BaseAgent, ThinkOutput
 from src.logger import logger
-from src.infrastructures.memory import MemoryManager
 from src.utils import get_file_info, dedent
 from src.agents.protocol import acp
 from src.tools.protocol import tcp
 from src.tools.protocol.types import ToolResponse
 
-@acp.agent(
-    name="tool_calling",
-    type="Agent",
-    description="A tool calling agent that can call tools to complete tasks.",
-    metadata={}
-)
+class ToolCallingAgentArgs(BaseModel):
+    task: str = Field(description="The task to complete.")
+    files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
+
+@acp.agent()
 class ToolCallingAgent(BaseAgent):
     """Tool calling agent implementation with manual agent logic."""
+    name: str = Field(default="tool_calling", description="The name of the tool calling agent.")
+    type: str = Field(default="Agent", description="The type of the tool calling agent.")
+    description: str = Field(default="A tool calling agent that can call tools to complete tasks.", description="The description of the tool calling agent.")
+    args_schema: Type[BaseModel] = Field(default=ToolCallingAgentArgs, description="The args schema of the tool calling agent.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool calling agent.")
     
     def __init__(
         self,
-        name: str,
         model_name: Optional[str] = None,
-        model: Optional[BaseLanguageModel] = None,
         prompt_name: Optional[str] = None,
-        tools: Optional[List[Union[str, BaseTool]]] = None,
-        memory_manager: Optional[MemoryManager] = None,
-        env_names: Optional[List[str]] = None,
+        max_steps: int = 20,
+        review_steps: int = 5,
+        log_max_length: int = 1000,
         **kwargs
     ):
         # Set default prompt name for tool calling
@@ -40,13 +40,11 @@ class ToolCallingAgent(BaseAgent):
             prompt_name = "tool_calling"
         
         super().__init__(
-            name=name,
             model_name=model_name,
-            model=model,
             prompt_name=prompt_name,
-            tools=tools,
-            memory_manager=memory_manager,
-            env_names=env_names,
+            max_steps=max_steps,
+            review_steps=review_steps,
+            log_max_length=log_max_length,
             **kwargs)
         
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
