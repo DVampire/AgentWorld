@@ -2,12 +2,12 @@
 
 import asyncio
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 from typing import Type, Dict, Any
 
 from src.utils import fetch_url
 from src.logger import logger
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 _WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text content.
@@ -24,8 +24,9 @@ class WebFetcherTool(BaseTool):
     
     name: str = "web_fetcher"
     description: str = _WEB_FETCHER_DESCRIPTION
+    type: str = "Web Interaction"
     args_schema: Type[BaseModel] = WebFetcherToolArgs
-    metadata: Dict[str, Any] = {"type": "Web Interaction"}
+    metadata: Dict[str, Any] = {}
     
     def __init__(self, **kwargs):
         """A tool for fetching web content asynchronously."""

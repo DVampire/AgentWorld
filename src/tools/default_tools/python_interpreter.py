@@ -3,11 +3,11 @@
 import asyncio
 from typing import Optional, Dict, Any, List, Type
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 from typing import Type, Dict, Any
 
 from src.tools.default_tools.executor import LocalPythonExecutor, BASE_BUILTIN_MODULES, BASE_PYTHON_TOOLS
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 _PYTHON_INTERPRETER_TOOL_DESCRIPTION = """Execute Python code and return the output.
@@ -23,9 +23,10 @@ class PythonInterpreterTool(BaseTool):
     """A tool that can execute Python code."""
     
     name: str = "python_interpreter"
+    type: str = "Code Execution"
     description: str = _PYTHON_INTERPRETER_TOOL_DESCRIPTION
     args_schema: Type[BaseModel] = PythonInterpreterArgs
-    metadata: Dict[str, Any] = {"type": "Code Execution"}
+    metadata: Dict[str, Any] = {}
     
     authorized_imports: Optional[List[str]] = None
     base_python_tools: Optional[List[str]] = None

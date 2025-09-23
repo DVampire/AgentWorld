@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Type, List
 from pydantic import BaseModel, Field
 import tempfile
-from langchain.tools import BaseTool
 
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 from src.utils import assemble_project_path
 
@@ -105,9 +105,10 @@ class TodoTool(BaseTool):
     """A tool for managing a todo.md file with task decomposition and step tracking."""
     
     name: str = "todo"
+    type: str = "Task Management"
     description: str = _TODO_TOOL_DESCRIPTION
     args_schema: Type[BaseModel] = TodoToolArgs
-    metadata: Dict[str, Any] = {"type": "Task Management"}
+    metadata: Dict[str, Any] = {}
     
     todo_file: Optional[Path] = None
     steps_file: Optional[Path] = None

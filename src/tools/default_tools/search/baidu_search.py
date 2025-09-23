@@ -2,14 +2,14 @@ from __future__ import annotations
 from typing import Any, Optional, Dict, Type
 import asyncio
 import json
-from langchain_core.tools import BaseTool
 from pydantic import Field
 from baidusearch.baidusearch import search
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 
 class BaiduSearch(BaseTool):
     """Tool that queries the Baidu search engine.
@@ -32,12 +32,14 @@ class BaiduSearch(BaseTool):
     """
 
     name: str = "baidu_search"
+    type: str = "Search"
     description: str = (
         "a search engine. "
         "useful for when you need to answer questions about current events in Chinese or search Chinese content."
         " input should be a search query."
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     
     def __init__(self, **kwargs):

@@ -44,7 +44,7 @@ class TCPServer:
         description = model_fields['description'].default
         args_schema = model_fields['args_schema'].default
         metadata = model_fields['metadata'].default
-        type = metadata.get('type', name) if metadata else name
+        type = model_fields['type'].default if 'type' in model_fields else inflection.camelize(name)
         config = metadata.get('config', None)
         
         # Create ToolInfo with lazy instance creation

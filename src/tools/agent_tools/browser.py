@@ -3,7 +3,6 @@
 import asyncio
 import os
 from typing import Type, Dict, Any, Optional
-from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 from browser_use import Agent
 
@@ -11,7 +10,8 @@ from src.infrastructures.models import model_manager
 from src.utils import assemble_project_path
 from src.tools.protocol import tcp
 from src.config import config
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.logger import logger
 
 _BROWSER_TOOL_DESCRIPTION = """Use the browser to interact with the internet to complete the task."""
@@ -25,9 +25,10 @@ class BrowserTool(BaseTool):
     """A tool for interacting with the browser asynchronously."""
     
     name: str = "browser"
+    type: str = "Browser"
     description: str = _BROWSER_TOOL_DESCRIPTION
     args_schema: Type[BrowserToolArgs] = BrowserToolArgs
-    metadata: Dict[str, Any] = {"type": "Browser"}
+    metadata: Dict[str, Any] = {}
     
     model_name: str = Field(
         default="bs-gpt-4.1",

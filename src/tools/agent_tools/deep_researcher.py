@@ -3,7 +3,7 @@
 import asyncio
 from typing import List, Dict, Any, Optional, Type
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
+from src.tools.protocol.tool import BaseTool
 from langchain_core.messages import HumanMessage, SystemMessage
 from inspect import cleandoc
 from PIL import Image
@@ -13,6 +13,7 @@ from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.logger import logger
 from src.infrastructures.models import model_manager
 from src.config import config
+from src.tools.protocol.types import ToolResponse
 from src.utils import make_image_url
 from src.utils import encode_image_base64
 from src.utils import assemble_project_path
@@ -53,9 +54,10 @@ class DeepResearcherTool(BaseTool):
     """A deep research tool that performs multi-round web search and content analysis."""
 
     name: str = "deep_researcher"
+    type: str = "Deep Researcher"
     description: str = _DEEP_RESEARCHER_DESCRIPTION
     args_schema: Type[DeepResearcherArgs] = DeepResearcherArgs
-    metadata: Dict[str, Any] = {"type": "Deep Researcher"}
+    metadata: Dict[str, Any] = {}
     
     # Configuration parameters as class attributes
     max_rounds: int = Field(default=10, description="Maximum search rounds")

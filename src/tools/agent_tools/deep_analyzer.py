@@ -4,7 +4,6 @@ import asyncio
 import os
 from typing import List, Dict, Any, Optional, Type
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 from langchain_core.messages import HumanMessage, SystemMessage
 from PIL import Image
 
@@ -18,7 +17,8 @@ from src.tools.protocol import tcp
 from src.config import config
 from src.infrastructures.models import model_manager
 from src.tools.default_tools.mdify import MdifyTool
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 
 _DEEP_ANALYZER_DESCRIPTION = """Deep analysis tool that performs multi-step analysis of complex reasoning tasks with attached files.
 
@@ -76,9 +76,10 @@ class DeepAnalyzerTool(BaseTool):
     """A deep analysis tool that performs multi-step analysis of tasks with files."""
 
     name: str = "deep_analyzer"
+    type: str = "Deep Analyzer"
     description: str = _DEEP_ANALYZER_DESCRIPTION
     args_schema: Type[DeepAnalyzerArgs] = DeepAnalyzerArgs
-    metadata: Dict[str, Any] = {"type": "Deep Analyzer"}
+    metadata: Dict[str, Any] = {}
     
     # Configuration parameters as class attributes
     max_steps: int = Field(default=3, description="Maximum analysis steps")

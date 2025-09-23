@@ -9,11 +9,11 @@ from urllib.parse import unquote
 from time import sleep
 from pydantic import Field
 from googlesearch.user_agents import get_useragent
-from langchain_core.tools import BaseTool
+from src.tools.protocol.tool import BaseTool
 from langchain_core.utils import secret_from_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.types import ToolResponse
 
 
 class GoogleSearch(BaseTool):
@@ -30,12 +30,14 @@ class GoogleSearch(BaseTool):
     """
 
     name: str = "google_search"
+    type: str = "Search"
     description: str = (
         "a search engine. "
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     base_url: Optional[str] = Field(default_factory=secret_from_env(["SKYWORK_GOOGLE_SEARCH_BASE_URL"]))
     api_key: Optional[str] = Field(default=None, description="The API key to use for the Google search engine.")

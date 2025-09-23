@@ -3,7 +3,6 @@
 Server implementation for the Environment Context Protocol with decorator support.
 """
 
-import asyncio
 import inspect
 from typing import Any, Dict, List, Optional, Callable, Type, get_origin, get_args
 from pydantic import BaseModel, create_model, Field

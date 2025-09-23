@@ -4,13 +4,13 @@ import asyncio
 import json
 import requests
 from bs4 import BeautifulSoup
-from langchain_core.tools import BaseTool
 from pydantic import Field
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 
 
 ABSTRACT_MAX_LENGTH = 300
@@ -55,12 +55,14 @@ class BingSearch(BaseTool):
     """
 
     name: str = "bing_search"
+    type: str = "Search"
     description: str = (
         "a search engine. "
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     session: Optional[requests.Session] = None
 

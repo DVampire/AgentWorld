@@ -14,7 +14,14 @@ from src.infrastructures.memory import MemoryManager
 from src.utils import get_file_info, dedent
 from src.tools.protocol import tcp
 from src.tools.protocol.tool import ToolResponse
+from src.agents.protocol import acp
 
+@acp.agent(
+    name="tool_calling",
+    type="Agent",
+    description="A tool calling agent that can call tools to complete tasks.",
+    metadata={}
+)
 class ToolCallingAgent(BaseAgent):
     """Tool calling agent implementation with manual agent logic."""
     

@@ -3,12 +3,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tenacity import retry, stop_after_attempt, wait_exponential
 import time
 import asyncio
-from langchain.tools import BaseTool
 
 from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.tools.default_tools.search import FirecrawlSearch, SearchItem
 from src.logger import logger
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 _WEB_SEARCHER_DESCRIPTION = """Search the web for real-time information about any topic.
@@ -100,9 +100,10 @@ class WebSearcherTool(BaseTool):
     """Search the web for information using various search engines."""
     
     name: str = "web_searcher"
+    type: str = "Web Search"
     description: str = _WEB_SEARCHER_DESCRIPTION
     args_schema: Type[BaseModel] = WebSearcherToolArgs
-    metadata: Dict[str, Any] = {"type": "Web Search"}
+    metadata: Dict[str, Any] = {}
     
     max_length: int = Field(default=4096, description="The maximum length of the search results")
     retry_delay: int = Field(default=10, description="The delay between retries")

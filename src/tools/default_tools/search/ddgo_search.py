@@ -2,14 +2,14 @@ from __future__ import annotations
 from typing import Any, Optional, Dict, Type, List
 import asyncio
 import json
-from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, model_validator, Field
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 
 class DuckDuckGoSearchAPIWrapper(BaseModel):
     """Wrapper for DuckDuckGo Search API.
@@ -192,12 +192,14 @@ class DuckDuckGoSearch(BaseTool):
     """
 
     name: str = "duckduckgo_search"
+    type: str = "Search"
     description: str = (
         "a search engine. "
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     search_wrapper: DuckDuckGoSearchAPIWrapper = Field(default_factory=DuckDuckGoSearchAPIWrapper)
 

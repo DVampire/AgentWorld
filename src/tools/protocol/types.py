@@ -10,6 +10,15 @@ from enum import Enum
 import uuid
 from datetime import datetime
 
+class ToolResponse(BaseModel):
+    content: str = Field(description="The content of the tool response.")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra data of the tool response.")
+    
+    def __str__(self) -> str:
+        return f"ToolResponse(content={self.content}, extra={self.extra})"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
 
 class TCPErrorCode(Enum):
     """TCP error codes"""

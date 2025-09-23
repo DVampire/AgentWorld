@@ -322,6 +322,5 @@ class FaissService:
                 os.remove(self.index_path)
             if self.pkl_path.exists():
                 os.remove(self.pkl_path)
-            logger.info("| 🧹 FAISS service cleanup completed")
         except Exception as e:
             logger.warning(f"| ⚠️ Error during FAISS cleanup: {e}")

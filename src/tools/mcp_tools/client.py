@@ -3,9 +3,11 @@
 import logging
 import os
 import asyncio
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Type
+from pydantic import BaseModel, Field
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
+from src.tools.protocol.tool import BaseTool
 from src.utils import assemble_project_path
 from src.tools.protocol import tcp
 from src.logger import logger
@@ -13,6 +15,34 @@ from src.logger import logger
 # Configure logging
 logging.getLogger("mcp.os.posix.utilities").setLevel(logging.ERROR)
 logging.getLogger("mcp").setLevel(logging.ERROR)
+
+class MCPTool(BaseTool):
+    """MCP Tool for managing MCP server connections and tools."""
+    
+    name: str = Field(description="The name of the MCP Tool")
+    type: str = Field(description="The type of the MCP Tool")
+    description: str = Field(description="The description of the MCP Tool")
+    args_schema: Type[BaseModel] = Field(description="The args schema of the MCP Tool")
+    metadata: Dict[str, Any] = Field(description="The metadata of the MCP Tool")
+    
+    tool: BaseTool = Field(description="The tool of the MCP Tool")
+    
+    def __init__(self, tool: BaseTool, **kwargs):
+        """Initialize MCP Tool."""
+        super().__init__(tool=tool, **kwargs)
+        self.name = tool.name
+        self.type = "MCP Tool"
+        self.description = tool.description
+        self.args_schema = tool.args_schema
+        self.metadata = tool.metadata
+        self.tool = tool
+        
+    def _run(self, **kwargs):
+        return self.tool._run(**kwargs)
+    
+    async def _arun(self, **kwargs):
+        return await self.tool._arun(**kwargs)
+
 
 class MCPClient:
     """MCP Client for managing MCP server connections and tools."""
@@ -94,12 +124,9 @@ class MCPClient:
             try:
                 tools = loop.run_until_complete(self.client.get_tools())
                 for tool in tools:
-                    metadata = dict(type="Mcp Tool")
-                    # Ensure metadata exists before updating
-                    if tool.metadata is None:
-                        tool.metadata = {}
-                    tool.metadata.update(metadata)
+                    tool = MCPTool(tool=tool)
                     tcp.tool(tool=tool)
+                    logger.info(f"Registered MCP tool: {tool.name}")
             finally:
                 loop.close()
         except Exception as e:

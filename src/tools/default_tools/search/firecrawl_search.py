@@ -2,13 +2,13 @@ from __future__ import annotations
 from typing import Any, Optional, Dict, List, Type
 import asyncio
 import json
-from langchain_core.tools import BaseTool
 from pydantic import Field, SecretStr
 from firecrawl import AsyncFirecrawlApp
 from src.utils import get_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 
 class FirecrawlSearch(BaseTool):
     """Tool that queries the Firecrawl search engine.
@@ -24,12 +24,14 @@ class FirecrawlSearch(BaseTool):
     """
 
     name: str = "firecrawl_search"
+    type: str = "Search"
     description: str = (
         "a search engine. "
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     search_kwargs: Dict[str, Any] = Field(default_factory=dict)
     api_key: Optional[SecretStr] = Field(default=get_env("FIRECRAWL_API_KEY"))
 

@@ -4,7 +4,7 @@ import pandas as pd
 import asyncio
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
-from langchain.tools import BaseTool
+from src.tools.protocol.tool import BaseTool
 from langchain_core.language_models import BaseLanguageModel
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage

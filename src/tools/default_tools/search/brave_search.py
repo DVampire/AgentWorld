@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Any, Optional, Dict, Type, List
 import asyncio
 import json
-from langchain_core.tools import BaseTool
 from pydantic import Field, SecretStr, BaseModel
 import requests
 
@@ -10,7 +9,8 @@ from langchain_core.documents import Document
 from src.utils import get_env
 
 from src.tools.default_tools.search.base import SearchItem, SearchToolArgs
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 
 class BraveSearchWrapper(BaseModel):
     """Wrapper around the Brave search engine."""
@@ -132,12 +132,14 @@ class BraveSearch(BaseTool):
     """
 
     name: str = "brave_search"
+    type: str = "Search"
     description: str = (
         "a search engine. "
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
     args_schema: Type[SearchToolArgs] = SearchToolArgs
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     search_wrapper: BraveSearchWrapper = Field(default_factory=BraveSearchWrapper)
     
     def __init__(self, **kwargs):

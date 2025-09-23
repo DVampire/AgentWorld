@@ -1,23 +1,19 @@
 """Agent Context Protocol (ACP)
 
-A unified protocol for managing agent contexts, bridging ECP and MCP protocols,
-and providing seamless integration between agents, environments, and tools.
+A protocol for managing agents and their capabilities.
 """
 
 from .types import *
 from .server import ACPServer, acp
-from .context_manager import ACPContextManager
+from .context import AgentContextManager
 
 __all__ = [
     "ACPServer",
     "acp",
-    "ACPContextManager",
+    "AgentContextManager",
     # Types
     "ACPRequest",
     "ACPResponse",
     "ACPError",
-    "AgentContext",
-    "ContextAction",
-    "ContextState",
     "AgentInfo",
 ]

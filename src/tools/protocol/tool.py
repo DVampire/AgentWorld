@@ -1,12 +1,12 @@
-from typing import Any, Optional, List, Dict
+from typing import Any, Dict, Type
 from pydantic import BaseModel, Field
+from langchain.tools import BaseTool as LangchainBaseTool
 
-class ToolResponse(BaseModel):
-    content: str = Field(description="The content of the tool response.")
-    extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra data of the tool response.")
-    
-    def __str__(self) -> str:
-        return f"ToolResponse(content={self.content}, extra={self.extra})"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
+class BaseTool(LangchainBaseTool):
+    """Base tool for the Tool Context Protocol."""
+    name: str = Field(description="The name of the tool.")
+    type: str = Field(description="The type of the tool.")
+    description: str = Field(description="The description of the tool.")
+    args_schema: Type[BaseModel] = Field(description="The args schema of the tool.")
+    metadata: Dict[str, Any] = Field(description="The metadata of the tool.")
+        

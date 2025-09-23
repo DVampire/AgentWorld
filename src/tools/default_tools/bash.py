@@ -2,10 +2,10 @@
 import asyncio
 import shlex
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 from typing import Type, Dict, Any
 
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
@@ -22,9 +22,10 @@ class BashToolArgs(BaseModel):
 class BashTool(BaseTool):
     """A tool for executing bash commands asynchronously."""
     name: str = "bash"
+    type: str = "Bash"
     description: str = _BASH_TOOL_DESCRIPTION
     args_schema: Type[BaseModel] = BashToolArgs
-    metadata: Dict[str, Any] = {"type": "System Management"}
+    metadata: Dict[str, Any] = {}
     
     timeout: int = Field(description="Timeout in seconds for command execution", default=30)
     

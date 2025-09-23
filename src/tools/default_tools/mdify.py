@@ -4,10 +4,10 @@ import asyncio
 import os
 from typing import Optional
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 from typing import Type, Dict, Any
 
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 from src.tools.default_tools.markdown.mdconvert import MarkitdownConverter
 from src.logger import logger
@@ -40,9 +40,10 @@ class MdifyToolArgs(BaseModel):
 class MdifyTool(BaseTool):
     """A tool for converting various file formats to markdown text asynchronously."""
     name: str = "mdify"
+    type: str = "Markdown Conversion"
     description: str = _MDIFY_TOOL_DESCRIPTION
     args_schema: Type[BaseModel] = MdifyToolArgs
-    metadata: Dict[str, Any] = {"type": "Markdown Conversion"}
+    metadata: Dict[str, Any] = {}
     
     timeout: int = Field(description="Timeout in seconds for file conversion", default=60)
     converter: MarkitdownConverter = Field(description="The converter to use for file conversion", default=None)

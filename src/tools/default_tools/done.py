@@ -1,9 +1,9 @@
 """Done tool for indicating that the task has been completed."""
 from pydantic import BaseModel, Field
-from langchain.tools import BaseTool
 from typing import Type, Dict, Any
 
-from src.tools.protocol.tool import ToolResponse
+from src.tools.protocol.tool import BaseTool
+from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
@@ -19,9 +19,10 @@ class DoneTool(BaseTool):
     """A tool for indicating that the task has been completed."""
     
     name: str = "done"
+    type: str = "Done"
     description: str = _DONE_TOOL_DESCRIPTION
     args_schema: Type[BaseModel] = DoneToolArgs
-    metadata: Dict[str, Any] = {"type": "Task Completion"}
+    metadata: Dict[str, Any] = {}
     
     def __init__(self, **kwargs):
         """A tool for indicating that the task has been completed."""
