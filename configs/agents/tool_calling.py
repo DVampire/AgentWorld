@@ -4,5 +4,5 @@ tool_calling_agent = dict(
     type = "Agent",
     model_name = "gpt-4.1",
     prompt_name = "tool_calling",
-    max_steps = 10
+    max_steps = 50
 )

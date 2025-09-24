@@ -99,6 +99,8 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
 
 class ModelManager(metaclass=Singleton):
     def __init__(self):
+        self._max_tokens = 32768
+        
         self.registed_models: Dict[str, Any] = {}
         self.registed_models_info: Dict[str, Any] = {}
         self.use_local_proxy = False
@@ -151,6 +153,7 @@ class ModelManager(metaclass=Singleton):
             model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
+                max_tokens=self._max_tokens,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
                 callbacks=[TokenUsageCallbackHandler(model_name)],
@@ -185,6 +188,7 @@ class ModelManager(metaclass=Singleton):
             model = ChatOpenAI(
                 model=model_id,
                 api_key=api_key,
+                max_tokens=self._max_tokens,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
                 use_responses_api=True,
@@ -431,6 +435,7 @@ class ModelManager(metaclass=Singleton):
                     model=model_id,
                     api_key=api_key,
                     base_url=api_base,
+                    max_tokens=self._max_tokens,
                     callbacks=[TokenUsageCallbackHandler(model_name)],
                 )
                 self.registed_models[model_name] = model

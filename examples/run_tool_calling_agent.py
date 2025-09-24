@@ -17,6 +17,7 @@ from src.infrastructures.models import model_manager
 from src.tools import tcp
 from src.environments import ecp
 from src.agents import acp
+from src.transformation import transformation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -62,8 +63,13 @@ async def main():
     await acp.initialize(config.agent_names)
     logger.info(f"| ✅ Agents initialized: {acp.list()}")
     
+    # Transformation ECP to TCP
+    logger.info("| 🔄 Transformation start...")
+    await transformation.transform(type="e2t", env_names=config.env_names)
+    logger.info(f"| ✅ Transformation completed: {tcp.list()}")
+    
     # Example task
-    task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
+    task = "Create a simple HTML Sokoban web mini-game and submit it to GitHub."
     files = []
     
     logger.info(f"| 📋 Task: {task}")

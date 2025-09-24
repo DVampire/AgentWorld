@@ -17,7 +17,6 @@ from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 
-
 def format_actions(actions: List[BaseModel]) -> str:
     """Format actions as a Markdown table using pandas."""
     rows = []
@@ -149,6 +148,12 @@ class ToolCallingAgent(BaseAgent):
         
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
         """Think and action for one step."""
+        
+        # If the new tool is added, rebuild the ThinkOutput model
+        args_schema = tcp.args_schemas()
+        if set(args_schema.keys()) & set(self.think_output_builder.schemas.keys()):
+            self.think_output_builder.register(args_schema)
+            self.ThinkOutput = self.think_output_builder.build()
         
         # Get structured output for thinking
         structured_llm = self.no_fc_model.with_structured_output(

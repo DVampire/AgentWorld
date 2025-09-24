@@ -118,7 +118,6 @@ class ToolContextManager:
             )
             
             await self._faiss_service.add_documents(request)
-            logger.info(f"| 📝 Tool {tool_info.name} added to FAISS index")
             
         except Exception as e:
             logger.warning(f"| ⚠️ Failed to add tool {tool_info.name} to FAISS index: {e}")
@@ -163,6 +162,21 @@ class ToolContextManager:
         except Exception as e:
             logger.error(f"| ❌ Failed to get tool candidates: {e}")
             return []
+        
+    async def add(self, tool_info: ToolInfo):
+        """Add a tool to the tool context manager
+        
+        Args:
+            tool_info: Tool information
+        """
+        if tool_info.name not in self._tool_info:
+            self._tool_info[tool_info.name] = tool_info
+            
+            # Add tool to embedding index
+            await self._store(tool_info)
+            
+        else:
+            logger.info(f"| 📝 Tool {tool_info.name} already exists")
         
     def get(self, tool_name: str) -> Optional[ToolInfo]:
         """Get tool information by name

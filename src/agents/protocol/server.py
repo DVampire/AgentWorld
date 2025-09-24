@@ -44,7 +44,7 @@ class ACPServer:
                 args_schema=args_schema,
                 cls=cls,
                 instance=None,
-                metadata=metadata
+                metadata=metadata if metadata is not None else {}
             )
             
             self._registered_agents[name] = agent_info

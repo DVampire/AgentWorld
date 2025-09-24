@@ -2,6 +2,7 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory
     from .environments.file_system import environment as file_system_environment
+    from .environments.github import environment as github_environment
     from .environments.operator_browser import environment as operator_browser_environment
     from .tools.browser import browser_tool
     from .tools.deep_researcher import deep_researcher_tool
@@ -17,6 +18,7 @@ version = "0.1.0"
 
 env_names = [
     "file_system", 
+    "github",
     # "operator_browser"
 ]
 agent_names = ["tool_calling"]
@@ -35,6 +37,11 @@ tool_names = [
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
 file_system_environment.update(dict(
+    base_dir=workdir,
+))
+
+#-----------------GITHUB ENVIRONMENT CONFIG-----------------
+github_environment.update(dict(
     base_dir=workdir,
 ))
 

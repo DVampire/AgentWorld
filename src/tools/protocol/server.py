@@ -51,7 +51,7 @@ class TCPServer:
             type=type,
             description=description,
             args_schema=args_schema,
-            metadata=metadata,
+            metadata=metadata if metadata is not None else {},
             cls=cls,  # Store the class for lazy instantiation
             instance=None
         )
@@ -78,7 +78,7 @@ class TCPServer:
             type=type,
             description=description,
             args_schema=args_schema,
-            metadata=metadata,
+            metadata=metadata if metadata is not None else {},
             cls=WrappedTool,
             instance=tool
         )
@@ -125,6 +125,16 @@ class TCPServer:
             Tool execution result
         """
         return await self.tool_context_manager.ainvoke(name, input, **kwargs)
+    
+    async def add(self, tool_info: ToolInfo):
+        """Add a tool to the tool context manager
+        
+        Args:
+            tool_info: Tool information
+        """
+        if tool_info.name not in self._registered_tools:
+            self._registered_tools[tool_info.name] = tool_info
+        await self.tool_context_manager.add(tool_info)
     
     def args_schemas(self) -> Dict[str, Type[BaseModel]]:
         """List all registered tool args schemas

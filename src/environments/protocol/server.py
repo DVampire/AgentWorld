@@ -52,7 +52,7 @@ class ECPServer:
                         description=getattr(attr, '_action_description', ''),
                         args_schema=getattr(attr, '_args_schema', None),
                         function=getattr(attr, '_action_function', None),
-                        metadata=getattr(attr, '_metadata', None)
+                        metadata=getattr(attr, '_metadata', {})
                     )
                     
                     actions[getattr(attr, '_action_name')] = action_info
@@ -111,7 +111,7 @@ class ECPServer:
             func._action_description = description
             func._args_schema = args_schema
             func._action_function = func
-            func._metadata = metadata
+            func._metadata = metadata if metadata is not None else {}
             
             return func
         return decorator
