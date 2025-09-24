@@ -146,9 +146,6 @@ class ToolCallingAgent(BaseAgent):
         tcp_args_schema = tcp.args_schemas()
         agent_args_schema = self.think_output_builder.schemas
         
-        if 'git_init' in tcp_args_schema:
-            print(tcp_args_schema['git_init'].model_json_schema())
-        
         logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
         
         if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
