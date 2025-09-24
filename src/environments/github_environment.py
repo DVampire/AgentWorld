@@ -50,6 +50,10 @@ class GitHubEnvironment(BaseEnvironment):
         "has_vision": False,
         "additional_rules": {
             "state": "The state of the GitHub environment including repositories and Git status.",
+            "interaction": dedent(f"""
+                Guidelines for interacting with the GitHub environment:
+                - If DO NOT have remote URL, you should `create_repository` first. Then you can `git_clone` the repository.
+            """),
         }
     }, description="The metadata of the GitHub environment.")
     

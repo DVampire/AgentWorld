@@ -55,20 +55,13 @@ class ThinkOutputBuilder:
 
         # -------- Dynamically generate Action --------
         schemas = self.schemas
-        ActionArgs = Union[tuple(schemas.values())] if schemas else Any
+        ActionArgs = Union[tuple(schemas.values())]
 
         class Action(BaseModel):
             name: str = Field(description="The name of the action.")
             args: ActionArgs = Field(description="The arguments of the action.")
             output: Optional[str] = Field(default=None, description="The output of the action.")
             
-            @model_validator(mode="after")
-            def validate_args(self):
-                schema = schemas.get(self.name)
-                if schema:
-                    self.args = schema.model_validate(self.args)
-                return self
-
             def __str__(self):
                 return f"Action: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
             
@@ -150,9 +143,16 @@ class ToolCallingAgent(BaseAgent):
         """Think and action for one step."""
         
         # If the new tool is added, rebuild the ThinkOutput model
-        args_schema = tcp.args_schemas()
-        if set(args_schema.keys()) & set(self.think_output_builder.schemas.keys()):
-            self.think_output_builder.register(args_schema)
+        tcp_args_schema = tcp.args_schemas()
+        agent_args_schema = self.think_output_builder.schemas
+        
+        if 'git_init' in tcp_args_schema:
+            print(tcp_args_schema['git_init'].model_json_schema())
+        
+        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
+        
+        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
+            self.think_output_builder.register(tcp_args_schema)
             self.ThinkOutput = self.think_output_builder.build()
         
         # Get structured output for thinking
