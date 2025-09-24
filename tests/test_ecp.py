@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
@@ -63,6 +64,82 @@ async def test_operator_browser():
     
     state = await ecp.get_state("operator_browser")
     
+async def test_github():
+    """Test GitHub environment workflow with proper Git workflow"""
+    
+    print("🚀 Starting GitHub Environment Workflow Test")
+    print("=" * 50)
+    
+    # Step 1: Create a new GitHub repository (remote)
+    print("\n📝 Step 1: Create a new GitHub repository")
+    repo_name = f"ecp-test-{int(time.time())}"  # Unique repo name
+    res1 = await ecp.ainvoke(
+        name="github",
+        action="create_repository",
+        input={
+            "name": repo_name,
+            "description": "Test repository created by ECP workflow",
+            "private": False,
+            "auto_init": True
+        }
+    )
+    print(f"Result: {res1}")
+    
+    # Step 2: Clone the remote repository to local
+    print("\n📥 Step 2: Clone the remote repository to local")
+    res2 = await ecp.ainvoke(
+        name="github",
+        action="git_clone",
+        input={
+            "owner": os.getenv("GITHUB_USERNAME"),  # Replace with actual GitHub username
+            "repo": repo_name,
+            "local_path": assemble_project_path(f"workdir/{repo_name}"),
+            "branch": "main"
+        }
+    )
+    print(f"Result: {res2}")
+    
+    # Step 3: Create a test file using file system environment
+    print("\n📄 Step 3: Create a test file")
+    res3 = await ecp.ainvoke(
+        name="file_system",
+        action="write",
+        input={
+            "file_path": assemble_project_path(f"workdir/{repo_name}/test.txt"),
+            "content": "Hello from ECP workflow test!\nThis is a test file created by the workflow."
+        }
+    )
+    print(f"Result: {res3}")
+    
+    # Step 4: Add, commit and push changes to remote
+    print("\n💾 Step 4: Add, commit and push changes to remote")
+    res4 = await ecp.ainvoke(
+        name="github",
+        action="git_commit",
+        input={
+            "local_path": assemble_project_path(f"workdir/{repo_name}"),
+            "message": "Add test file from ECP workflow",
+            "add_all": True
+        }
+    )
+    print(f"Commit Result: {res4}")
+    
+    # Push changes to remote repository
+    res5 = await ecp.ainvoke(
+        name="github",
+        action="git_push",
+        input={
+            "local_path": assemble_project_path(f"workdir/{repo_name}"),
+            "remote": "origin",
+            "branch": "main"
+        }
+    )
+    print(f"Push Result: {res5}")
+    
+    print("\n✅ GitHub Environment Workflow Test Completed!")
+    print("=" * 50)
+    
+    
     
 async def main():
     
@@ -90,7 +167,7 @@ async def main():
     
     # Test file system
     # await test_file_system()
-    await test_operator_browser()
+    await test_github()
     
 
 if __name__ == "__main__":

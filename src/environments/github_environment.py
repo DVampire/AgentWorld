@@ -82,26 +82,13 @@ class GitHubEnvironment(BaseEnvironment):
         
     async def initialize(self) -> None:
         """Initialize the GitHub environment."""
+        await self.github_service.initialize()
         logger.info(f"| 🚀 GitHub Environment initialized at: {self.base_dir}")
         
     async def cleanup(self) -> None:
         """Cleanup the GitHub environment."""
+        await self.github_service.cleanup()
         logger.info("| 🧹 GitHub Environment cleanup completed")
-
-    def _resolve_path(self, local_path: str) -> str:
-        """Resolve local path relative to base_dir or as absolute path.
-        
-        Args:
-            local_path: Path to resolve (can be relative or absolute)
-            
-        Returns:
-            Resolved absolute path
-        """
-        path = Path(local_path)
-        if path.is_absolute():
-            return str(path.resolve())
-        return str((self.base_dir / path).resolve())
-
 
     def _resolve_path(self, local_path: str) -> str:
         """Resolve local path relative to base directory.
@@ -143,8 +130,13 @@ class GitHubEnvironment(BaseEnvironment):
             # First check if repository already exists
             current_user = self.github_service.authenticated_user.login
             try:
-                existing_repo = await self.github_service.get_repository(current_user, name)
-                return f"| 🔍 Repository '{existing_repo.full_name}' already exists. URL: {existing_repo.html_url}"
+                
+                request = GetRepositoryRequest(owner=current_user, repo=name)
+                existing_repo = await self.github_service.get_repository(request)
+                
+                if existing_repo.success and existing_repo.repository:
+                    return f"Repository '{existing_repo.repository.full_name}' already exists. URL: {existing_repo.repository.html_url}"
+            
             except RepositoryError:
                 # Repository doesn't exist, proceed with creation
                 pass
@@ -156,11 +148,8 @@ class GitHubEnvironment(BaseEnvironment):
                 auto_init=auto_init
             )
             result = await self.github_service.create_repository(request)
-            
-            if result.success and result.repository:
-                return f"| 🎉 Repository '{result.repository.full_name}' created successfully. URL: {result.repository.html_url}"
-            else:
-                return f"| ❌ {result.message}"
+            return result.message
+        
         except RepositoryError as e:
             return str(e)
         except Exception as e:
@@ -222,12 +211,7 @@ class GitHubEnvironment(BaseEnvironment):
         try:
             request = ForkRepositoryRequest(owner=owner, repo=repo)
             result = await self.github_service.fork_repository(request)
-            
-            if not result.success or not result.repository:
-                return f"| ❌ {result.message}"
-            
-            forked_repo = result.repository
-            return f"Successfully forked repository '{owner}/{repo}' to '{forked_repo.full_name}'. URL: {forked_repo.html_url}"
+            return result.message
         except RepositoryError as e:
             return str(e)
         except Exception as e:
@@ -331,13 +315,12 @@ class GitHubEnvironment(BaseEnvironment):
                 if not fork_result.success or not fork_result.repository:
                     return f"| ❌ Failed to fork repository: {fork_result.message}"
                 
-                forked_repo = fork_result.repository
-                fork_msg = f"Forked repository '{owner}/{repo}' to '{forked_repo.full_name}'. "
+                fork_msg = fork_result.message
                 
                 # Clone the forked repository
                 clone_request = CloneRepositoryRequest(
-                    owner=forked_repo.owner,
-                    repo=forked_repo.name,
+                    owner=fork_result.repository.owner,
+                    repo=fork_result.repository.name,
                     local_path=resolved_path,
                     branch=branch
                 )
@@ -350,7 +333,14 @@ class GitHubEnvironment(BaseEnvironment):
                 if "already be forked" in str(e).lower():
                     # Try to clone the user's existing fork
                     try:
-                        return await self.github_service.clone_repository(current_user, repo, resolved_path, branch)
+                        clone_request = CloneRepositoryRequest(
+                            owner=current_user,
+                            repo=repo,
+                            local_path=resolved_path,
+                            branch=branch
+                        )
+                        clone_result = await self.github_service.clone_repository(clone_request)
+                        return clone_result.message
                     except Exception:
                         pass
                 raise e
@@ -673,17 +663,21 @@ class GitHubEnvironment(BaseEnvironment):
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the GitHub environment."""
         try:
+            git_status = await self.git_status(self.base_dir)
+            
+            state = dedent(f"""
+                GitHub Environment:
+                Username: {self.username}
+                Authenticated: {bool(self.token)}
+                Service Available: {self.github_service is not None}
+                Git Status: {git_status}
+            """)
+            
             return {
-                "base_dir": str(self.base_dir),
-                "username": self.username,
-                "authenticated": bool(self.token),
-                "service_available": self.github_service is not None,
+                "state": state
             }
         except Exception as e:
             logger.error(f"Failed to get GitHub state: {e}")
             return {
-                "base_dir": str(self.base_dir),
-                "username": self.username,
-                "authenticated": False,
-                "error": str(e)
+                "state": str(e)
             }

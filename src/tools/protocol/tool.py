@@ -79,7 +79,7 @@ class WrappedTool(BaseTool):
             type=type,
             description=description,
             args_schema=args_schema,
-            metadata=metadata,
+            metadata=metadata if metadata is not None else {},
             **kwargs
             )
         

@@ -1,7 +1,7 @@
 """GitHub service implementation using PyGithub + GitPython."""
 import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Tuple
 
 from github import Github, GithubException
 from git import Repo, InvalidGitRepositoryError, GitCommandError
@@ -9,7 +9,6 @@ from git import Repo, InvalidGitRepositoryError, GitCommandError
 from src.environments.github.types import (
     GitHubRepository,
     GitHubUser, 
-    GitHubBranch,
     GitStatus,
     CreateRepositoryRequest, 
     CreateRepositoryResult,
@@ -210,7 +209,7 @@ class GitHubService:
             return ForkRepositoryResult(
                 repository=repository,
                 success=True,
-                message=f"Successfully forked repository {request.owner}/{request.repo}"
+                message=f"Successfully forked repository from {request.owner}/{request.repo} to {repository.full_name}/{repository.name}"
             )
             
         except GithubException as e:
@@ -304,6 +303,23 @@ class GitHubService:
                 message=f"Failed to get repository '{request.owner}/{request.repo}': {e}"
             )
 
+    def _execute_git_command(self, args: List[str], cwd: str = None) -> Tuple[bool, str, str]:
+        """Execute a git command and return (success, stdout, stderr)."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ['git'] + args,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            return result.returncode == 0, result.stdout, result.stderr
+        except subprocess.TimeoutExpired:
+            return False, "", "Git command timed out"
+        except Exception as e:
+            return False, "", str(e)
+
     async def clone_repository(self, request: CloneRepositoryRequest) -> CloneRepositoryResult:
         """Clone a repository to local directory."""
         try:
@@ -317,21 +333,28 @@ class GitHubService:
                     message=f"Directory '{request.local_path}' already exists"
                 )
             
-            # Clone repository
+            # Clone repository using git command
             if request.branch:
-                Repo.clone_from(repo_url, local_path, branch=request.branch)
-                return CloneRepositoryResult(
-                    local_path=request.local_path,
-                    success=True,
-                    message=f"Repository '{request.owner}/{request.repo}' cloned to '{request.local_path}' (branch: {request.branch})"
-                )
+                success, stdout, stderr = self._execute_git_command([
+                    'clone', '-b', request.branch, repo_url, str(local_path)
+                ])
             else:
-                Repo.clone_from(repo_url, local_path)
+                success, stdout, stderr = self._execute_git_command([
+                    'clone', repo_url, str(local_path)
+                ])
+            
+            if not success:
                 return CloneRepositoryResult(
                     local_path=request.local_path,
-                    success=True,
-                    message=f"Repository '{request.owner}/{request.repo}' cloned to '{request.local_path}'"
+                    success=False,
+                    message=f"Failed to clone repository: {stderr}"
                 )
+            
+            return CloneRepositoryResult(
+                local_path=request.local_path,
+                success=True,
+                message=f"Repository '{request.owner}/{request.repo}' cloned to '{request.local_path}'"
+            )
                 
         except GitCommandError as e:
             return CloneRepositoryResult(
@@ -366,16 +389,22 @@ class GitHubService:
                 )
             
             # Initialize repository
-            repo = Repo.init(local_path)
+            success, stdout, stderr = self._execute_git_command(['init'], cwd=request.local_path)
+            if not success:
+                return InitRepositoryResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Failed to initialize repository: {stderr}"
+                )
             
             message = f"Git repository initialized in '{request.local_path}'"
             
             if request.remote_url:
-                try:
-                    repo.create_remote('origin', request.remote_url)
+                success, stdout, stderr = self._execute_git_command(['remote', 'add', 'origin', request.remote_url], cwd=request.local_path)
+                if success:
                     message += f" with remote origin: {request.remote_url}"
-                except Exception as e:
-                    message += f" (failed to add remote: {str(e)})"
+                else:
+                    message += f" (failed to add remote: {stderr})"
             
             return InitRepositoryResult(
                 local_path=request.local_path,
@@ -395,31 +424,51 @@ class GitHubService:
     async def git_commit(self, request: GitCommitRequest) -> GitCommitResult:
         """Commit changes to local repository."""
         try:
-            repo = Repo(request.local_path)
-            
-            # Add files
+            # Add files using git command
             if request.files is None:  # add_all
-                repo.git.add(A=True)
+                success, stdout, stderr = self._execute_git_command(['add', '-A'], cwd=request.local_path)
             elif request.files:
-                for file in request.files:
-                    repo.git.add(file)
+                success, stdout, stderr = self._execute_git_command(['add'] + request.files, cwd=request.local_path)
+            else:
+                success, stdout, stderr = True, "", ""
             
-            # Check if there are changes to commit
-            if not repo.is_dirty() and not repo.untracked_files:
+            if not success:
                 return GitCommitResult(
                     local_path=request.local_path,
                     commit_hash=None,
-                    success=True,
+                    success=False,
+                    message=f"Failed to add files: {stderr}"
+                )
+            
+            # Check if there are changes to commit
+            success, stdout, stderr = self._execute_git_command(['diff', '--cached', '--quiet'], cwd=request.local_path)
+            if success:  # No changes to commit
+                return GitCommitResult(
+                    local_path=request.local_path,
+                    commit_hash=None,
+                    success=False,
                     message="No changes to commit"
                 )
             
             # Commit changes
-            commit = repo.index.commit(request.message)
+            success, stdout, stderr = self._execute_git_command(['commit', '-m', request.message], cwd=request.local_path)
+            if not success:
+                return GitCommitResult(
+                    local_path=request.local_path,
+                    commit_hash=None,
+                    success=False,
+                    message=f"Failed to commit: {stderr}"
+                )
+            
+            # Get commit hash
+            success, commit_hash, stderr = self._execute_git_command(['rev-parse', 'HEAD'], cwd=request.local_path)
+            commit_hash = commit_hash.strip() if success else "unknown"
+            
             return GitCommitResult(
                 local_path=request.local_path,
-                commit_hash=commit.hexsha,
+                commit_hash=commit_hash,
                 success=True,
-                message=f"Commit created: {commit.hexsha[:8]} - {request.message}"
+                message=f"Commit created: {commit_hash[:8]} - {request.message}"
             )
             
         except InvalidGitRepositoryError:
@@ -447,15 +496,36 @@ class GitHubService:
     async def git_push(self, request: GitPushRequest) -> GitPushResult:
         """Push changes to remote repository."""
         try:
-            repo = Repo(request.local_path)
+            # Get current branch if not specified
+            if request.branch is None:
+                success, branch, stderr = self._execute_git_command(['branch', '--show-current'], cwd=request.local_path)
+                if not success:
+                    return GitPushResult(
+                        local_path=request.local_path,
+                        success=False,
+                        message=f"Failed to get current branch: {stderr}"
+                    )
+                branch = branch.strip()
+            else:
+                branch = request.branch
             
-            branch = request.branch
-            if branch is None:
-                branch = repo.active_branch.name
+            # Check if remote exists
+            success, stdout, stderr = self._execute_git_command(['remote', 'get-url', request.remote], cwd=request.local_path)
+            if not success:
+                return GitPushResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Remote named '{request.remote}' didn't exist"
+                )
             
             # Push to remote
-            origin = repo.remote(request.remote)
-            origin.push(branch)
+            success, stdout, stderr = self._execute_git_command(['push', request.remote, branch], cwd=request.local_path)
+            if not success:
+                return GitPushResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Failed to push: {stderr}"
+                )
             
             return GitPushResult(
                 local_path=request.local_path,
@@ -494,15 +564,27 @@ class GitHubService:
             str: Pull result message
         """
         try:
-            repo = Repo(request.local_path)
-            
-            branch = request.branch
-            if branch is None:
-                branch = repo.active_branch.name
+            # Get current branch if not specified
+            if request.branch is None:
+                success, branch, stderr = self._execute_git_command(['branch', '--show-current'], cwd=request.local_path)
+                if not success:
+                    return GitPullResult(
+                        local_path=request.local_path,
+                        success=False,
+                        message=f"Failed to get current branch: {stderr}"
+                    )
+                branch = branch.strip()
+            else:
+                branch = request.branch
             
             # Pull from remote
-            origin = repo.remote(request.remote)
-            origin.pull(branch)
+            success, stdout, stderr = self._execute_git_command(['pull', request.remote, branch], cwd=request.local_path)
+            if not success:
+                return GitPullResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Failed to pull: {stderr}"
+                )
             
             return GitPullResult(
                 local_path=request.local_path,
@@ -540,11 +622,14 @@ class GitHubService:
             str: Fetch result message
         """
         try:
-            repo = Repo(request.local_path)
-            
             # Fetch from remote
-            origin = repo.remote(request.remote)
-            origin.fetch()
+            success, stdout, stderr = self._execute_git_command(['fetch', request.remote], cwd=request.local_path)
+            if not success:
+                return GitFetchResult(
+                    local_path=request.local_path,
+                    success=False,
+                    message=f"Failed to fetch: {stderr}"
+                )
             
             return GitFetchResult(
                 local_path=request.local_path,
@@ -573,148 +658,213 @@ class GitHubService:
 
     # --------------- Branch Operations ---------------
 
-    async def git_create_branch(
-        self,
-        local_path: str,
-        branch_name: str,
-        checkout: bool = True
-    ) -> str:
+    async def git_create_branch(self, request: GitCreateBranchRequest) -> GitCreateBranchResult:
         """Create a new branch.
         
         Args:
-            local_path: Local repository path
-            branch_name: New branch name
-            checkout: Whether to checkout the new branch
+            request: GitCreateBranchRequest with local_path, branch_name, from_branch
             
         Returns:
-            str: Branch creation result message
+            GitCreateBranchResult: Branch creation result
         """
         try:
-            repo = Repo(local_path)
-            
             # Check if branch already exists
-            if branch_name in [branch.name for branch in repo.branches]:
-                return f"Branch '{branch_name}' already exists"
+            success, stdout, stderr = self._execute_git_command(['branch', '--list', request.branch_name], cwd=request.local_path)
+            if success and stdout.strip():
+                return GitCreateBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=False,
+                    message=f"Branch '{request.branch_name}' already exists"
+                )
             
             # Create new branch
-            new_branch = repo.create_head(branch_name)
-            
-            if checkout:
-                new_branch.checkout()
-                return f"Branch '{branch_name}' created and checked out"
+            if request.from_branch:
+                success, stdout, stderr = self._execute_git_command(['checkout', '-b', request.branch_name, request.from_branch], cwd=request.local_path)
             else:
-                return f"Branch '{branch_name}' created"
+                success, stdout, stderr = self._execute_git_command(['checkout', '-b', request.branch_name], cwd=request.local_path)
+            
+            if not success:
+                return GitCreateBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=False,
+                    message=f"Failed to create and checkout branch '{request.branch_name}': {stderr}"
+                )
+            
+            return GitCreateBranchResult(
+                local_path=request.local_path,
+                branch_name=request.branch_name,
+                success=True,
+                message=f"Branch '{request.branch_name}' created and checked out"
+            )
                 
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            raise GitError(f"'{request.local_path}' is not a valid Git repository")
         except GitCommandError as e:
-            raise GitError(f"Failed to create branch '{branch_name}': {str(e)}")
+            raise GitError(f"Failed to create branch '{request.branch_name}': {str(e)}")
         except Exception as e:
-            raise GitError(f"Failed to create branch '{branch_name}': {str(e)}")
+            raise GitError(f"Failed to create branch '{request.branch_name}': {str(e)}")
 
-    async def git_checkout_branch(
-        self,
-        local_path: str,
-        branch_name: str
-    ) -> str:
+    async def git_checkout_branch(self, request: GitCheckoutBranchRequest) -> GitCheckoutBranchResult:
         """Checkout an existing branch.
         
         Args:
-            local_path: Local repository path
-            branch_name: Branch name to checkout
+            request: GitCheckoutBranchRequest with local_path, branch_name
             
         Returns:
-            str: Checkout result message
+            GitCheckoutBranchResult: Checkout result
         """
         try:
-            repo = Repo(local_path)
-            
-            # Check if branch exists
-            if branch_name not in [branch.name for branch in repo.branches]:
-                return f"Branch '{branch_name}' does not exist"
-            
             # Checkout branch
-            repo.git.checkout(branch_name)
+            success, stdout, stderr = self._execute_git_command(['checkout', request.branch_name], cwd=request.local_path)
+            if not success:
+                return GitCheckoutBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=False,
+                    message=f"Failed to checkout branch '{request.branch_name}': {stderr}"
+                )
             
-            return f"Checked out branch '{branch_name}'"
+            return GitCheckoutBranchResult(
+                local_path=request.local_path,
+                branch_name=request.branch_name,
+                success=True,
+                message=f"Checked out branch '{request.branch_name}'"
+            )
             
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            raise GitError(f"'{request.local_path}' is not a valid Git repository")
         except GitCommandError as e:
-            raise GitError(f"Failed to checkout branch '{branch_name}': {str(e)}")
+            raise GitError(f"Failed to checkout branch '{request.branch_name}': {str(e)}")
         except Exception as e:
-            raise GitError(f"Failed to checkout branch '{branch_name}': {str(e)}")
+            raise GitError(f"Failed to checkout branch '{request.branch_name}': {str(e)}")
 
-    async def git_list_branches(self, local_path: str) -> str:
+    async def git_list_branches(self, request: GitListBranchesRequest) -> GitListBranchesResult:
         """List all branches.
         
         Args:
-            local_path: Local repository path
+            request: GitListBranchesRequest with local_path
             
         Returns:
-            str: List of branches
+            GitListBranchesResult: List of branches
         """
         try:
-            repo = Repo(local_path)
+            # Get current branch
+            success, current_branch, stderr = self._execute_git_command(['branch', '--show-current'], cwd=request.local_path)
+            if not success:
+                return GitListBranchesResult(
+                    local_path=request.local_path,
+                    branches=[],
+                    current_branch=None,
+                    success=False,
+                    message=f"Failed to get current branch: {stderr}"
+                )
+            current_branch = current_branch.strip()
+            
+            # Get all branches
+            success, stdout, stderr = self._execute_git_command(['branch', '-a'], cwd=request.local_path)
+            if not success:
+                return GitListBranchesResult(
+                    local_path=request.local_path,
+                    branches=[],
+                    current_branch=current_branch,
+                    success=False,
+                    message=f"Failed to list branches: {stderr}"
+                )
             
             branches = []
-            current_branch = repo.active_branch.name
+            for line in stdout.split('\n'):
+                line = line.strip()
+                if line:
+                    # Remove * and remote/ prefix
+                    branch_name = line.replace('*', '').strip()
+                    if branch_name.startswith('remotes/'):
+                        continue  # Skip remote branches for now
+                    
+                    branches.append(branch_name)
             
-            for branch in repo.branches:
-                status = " (current)" if branch.name == current_branch else ""
-                branches.append(f"- {branch.name}{status}")
-            
-            if not branches:
-                return "No branches found"
-            
-            return f"Branches:\n" + "\n".join(branches)
+            return GitListBranchesResult(
+                local_path=request.local_path,
+                branches=branches,
+                current_branch=current_branch,
+                success=True,
+                message=f"Found {len(branches)} branches"
+            )
             
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            raise GitError(f"'{request.local_path}' is not a valid Git repository")
         except Exception as e:
             raise GitError(f"Failed to list branches: {str(e)}")
 
-    async def git_delete_branch(
-        self,
-        local_path: str,
-        branch_name: str,
-        force: bool = False
-    ) -> str:
+    async def git_delete_branch(self, request: GitDeleteBranchRequest) -> GitDeleteBranchResult:
         """Delete a branch.
         
         Args:
-            local_path: Local repository path
-            branch_name: Branch name to delete
-            force: Force delete even if not merged
+            request: GitDeleteBranchRequest with local_path, branch_name, force
             
         Returns:
-            str: Delete result message
+            GitDeleteBranchResult: Delete result
         """
         try:
-            repo = Repo(local_path)
-            
-            # Check if branch exists
-            if branch_name not in [branch.name for branch in repo.branches]:
-                return f"Branch '{branch_name}' does not exist"
+            # Get current branch
+            success, current_branch, stderr = self._execute_git_command(['branch', '--show-current'], cwd=request.local_path)
+            if not success:
+                return GitDeleteBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=False,
+                    message=f"Failed to get current branch: {stderr}"
+                )
+            current_branch = current_branch.strip()
             
             # Check if trying to delete current branch
-            if branch_name == repo.active_branch.name:
-                return f"Cannot delete current branch '{branch_name}'. Switch to another branch first."
+            if request.branch_name == current_branch:
+                return GitDeleteBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=False,
+                    message=f"Cannot delete current branch '{request.branch_name}'. Switch to another branch first."
+                )
             
             # Delete branch
-            if force:
-                repo.git.branch('-D', branch_name)
-                return f"Branch '{branch_name}' force deleted"
+            if request.force:
+                success, stdout, stderr = self._execute_git_command(['branch', '-D', request.branch_name], cwd=request.local_path)
+                if not success:
+                    return GitDeleteBranchResult(
+                        local_path=request.local_path,
+                        branch_name=request.branch_name,
+                        success=False,
+                        message=f"Failed to force delete branch '{request.branch_name}': {stderr}"
+                    )
+                return GitDeleteBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=True,
+                    message=f"Branch '{request.branch_name}' force deleted"
+                )
             else:
-                repo.git.branch('-d', branch_name)
-                return f"Branch '{branch_name}' deleted"
+                success, stdout, stderr = self._execute_git_command(['branch', '-d', request.branch_name], cwd=request.local_path)
+                if not success:
+                    return GitDeleteBranchResult(
+                        local_path=request.local_path,
+                        branch_name=request.branch_name,
+                        success=False,
+                        message=f"Failed to delete branch '{request.branch_name}': {stderr}"
+                    )
+                return GitDeleteBranchResult(
+                    local_path=request.local_path,
+                    branch_name=request.branch_name,
+                    success=True,
+                    message=f"Branch '{request.branch_name}' deleted"
+                )
                 
         except InvalidGitRepositoryError:
-            raise GitError(f"'{local_path}' is not a valid Git repository")
+            raise GitError(f"'{request.local_path}' is not a valid Git repository")
         except GitCommandError as e:
-            raise GitError(f"Failed to delete branch '{branch_name}': {str(e)}")
+            raise GitError(f"Failed to delete branch '{request.branch_name}': {str(e)}")
         except Exception as e:
-            raise GitError(f"Failed to delete branch '{branch_name}': {str(e)}")
+            raise GitError(f"Failed to delete branch '{request.branch_name}': {str(e)}")
 
     async def git_status(self, local_path: str) -> GitStatus:
         """Get Git repository status.
@@ -726,15 +876,57 @@ class GitHubService:
             GitStatus: Repository status information
         """
         try:
-            repo = Repo(local_path)
+            # Get current branch
+            success, current_branch, stderr = self._execute_git_command(['branch', '--show-current'], cwd=local_path)
+            if not success:
+                raise GitError(f"Failed to get current branch: {stderr}")
+            current_branch = current_branch.strip()
+            
+            # Get all branches
+            success, stdout, stderr = self._execute_git_command(['branch'], cwd=local_path)
+            if not success:
+                raise GitError(f"Failed to get branches: {stderr}")
+            
+            branches = []
+            for line in stdout.split('\n'):
+                line = line.strip()
+                if line:
+                    branch_name = line.replace('*', '').strip()
+                    branches.append(branch_name)
+            
+            # Get status information
+            success, stdout, stderr = self._execute_git_command(['status', '--porcelain'], cwd=local_path)
+            if not success:
+                raise GitError(f"Failed to get status: {stderr}")
+            
+            modified_files = []
+            staged_files = []
+            untracked_files = []
+            
+            for line in stdout.split('\n'):
+                line = line.strip()
+                if line:
+                    status = line[:2]
+                    filename = line[3:]
+                    
+                    if status.startswith('M') or status.startswith('A') or status.startswith('D'):
+                        if status[0] != ' ':
+                            staged_files.append(filename)
+                        if status[1] != ' ':
+                            modified_files.append(filename)
+                    elif status.startswith('??'):
+                        untracked_files.append(filename)
+            
+            # Check if repository is dirty
+            is_dirty = len(modified_files) > 0 or len(untracked_files) > 0 or len(staged_files) > 0
             
             return GitStatus(
-                is_dirty=repo.is_dirty(),
-                untracked_files=repo.untracked_files,
-                modified_files=[item.a_path for item in repo.index.diff(None)],
-                staged_files=[item.a_path for item in repo.index.diff("HEAD")],
-                current_branch=repo.active_branch.name,
-                branches=[branch.name for branch in repo.branches]
+                is_dirty=is_dirty,
+                untracked_files=untracked_files,
+                modified_files=modified_files,
+                staged_files=staged_files,
+                current_branch=current_branch,
+                branches=branches
             )
             
         except InvalidGitRepositoryError:

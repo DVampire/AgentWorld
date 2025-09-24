@@ -17,7 +17,8 @@ from src.environments.filesystem.types import (
     FileListRequest, 
     FileTreeRequest, 
     FileSearchRequest, 
-    FileStatRequest
+    FileStatRequest,
+    FileChangePermissionsRequest
 )
 from src.logger import logger
 from src.utils import assemble_project_path
@@ -66,6 +67,10 @@ class FileSystemEnvironment(BaseEnvironment):
     async def initialize(self) -> None:
         """Initialize the file system environment."""
         logger.info(f"| 🗂️ File System Environment initialized at: {self.base_dir}")
+        
+    async def cleanup(self) -> None:
+        """Cleanup the file system environment."""
+        logger.info("| 🧹 File System Environment cleanup completed")
         
     @ecp.action(name = "read", 
                 type = "File System", 
@@ -179,38 +184,13 @@ class FileSystemEnvironment(BaseEnvironment):
         Args:
             src_path (str): The absolute path of the source file.
             dst_path (str): The absolute path of the destination file.
-        """
-        request = FileCopyRequest(src_path=Path(src_path), dst_path=Path(dst_path))
-        result = await self.file_system_service.copy(request)
-        return result.message
-    
-    @ecp.action(name = "copy", 
-                type = "File System", 
-                description = "Copy a file from source to destination.")
-    async def copy(self, src_path: str, dst_path: str) -> str:
-        """Copy a file from source to destination.
-        
-        Args:
-            src_path (str): The absolute path of the source file.
-            dst_path (str): The absolute path of the destination file.
         
         Returns:
             str: The result of the copy operation.
         """
-        # For copy operation, we need to read the source file and write to destination
-        read_request = FileReadRequest(path=Path(src_path))
-        read_result = await self.file_system_service.read(read_request)
-        
-        if not read_result.content_bytes:
-            return f"Failed to read source file: {src_path}"
-        
-        write_request = FileWriteRequest(
-            path=Path(dst_path),
-            content=read_result.content_bytes.decode('utf-8', errors='ignore'),
-            mode="w"
-        )
-        write_result = await self.file_system_service.write(write_request)
-        return write_result.message
+        request = FileCopyRequest(src_path=Path(src_path), dst_path=Path(dst_path))
+        result = await self.file_system_service.copy(request)
+        return result.message
     
     @ecp.action(name = "move",
                 type = "File System", 
@@ -458,7 +438,7 @@ class FileSystemEnvironment(BaseEnvironment):
             case_sensitive=case_sensitive,
             max_results=max_results
         )
-        result = await self.file_system_service .search(request)
+        result = await self.file_system_service.search(request)
         
         if result.results:
             search_str = f"Search results for '{query}' in {search_path}:\n"
@@ -488,7 +468,9 @@ class FileSystemEnvironment(BaseEnvironment):
         Returns:
             str: The result of the permissions change operation.
         """
-        return await self.file_system_service.change_permissions(file_path, permissions)
+        request = FileChangePermissionsRequest(path=Path(file_path), permissions=permissions)
+        result = await self.file_system_service.change_permissions(request)
+        return result.message
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the file system environment."""
