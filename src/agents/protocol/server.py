@@ -4,7 +4,6 @@ Server implementation for the Agent Context Protocol.
 """
 
 from typing import Any, Dict, List, Optional, Type
-from pydantic import create_model, Field
 
 from src.agents.protocol.types import AgentInfo
 from src.agents.protocol.agent import BaseAgent
@@ -29,26 +28,26 @@ class ACPServer:
             metadata (Dict[str, Any]): Additional metadata
         """
         def decorator(cls: Type[BaseAgent]):
-            agent_name = cls.name or cls.__name__
-            agent_type = cls.type or cls.__name__.lower()
-            
-            # Store agent metadata
-            cls._agent_name = agent_name
-            cls._agent_type = agent_type
-            cls._agent_description = cls.description
-            cls._agent_metadata = cls.metadata
+            model_fields = cls.model_fields
+        
+            name = model_fields['name'].default
+            description = model_fields['description'].default
+            args_schema = model_fields['args_schema'].default
+            metadata = model_fields['metadata'].default
+            type = model_fields['type'].default
             
             # Create AgentInfo and store it
             agent_info = AgentInfo(
-                name=agent_name,
-                type=agent_type,
+                name=name,
+                type=type,
                 description=description,
+                args_schema=args_schema,
                 cls=cls,
                 instance=None,
                 metadata=metadata
             )
             
-            self._registered_agents[agent_name] = agent_info
+            self._registered_agents[name] = agent_info
             
             return cls
         return decorator
@@ -88,7 +87,7 @@ class ACPServer:
         Returns:
             AgentInfo: Agent information or None if not found
         """
-        return self._registered_agents.get(agent_name)
+        return self.agent_context_manager.get_info(agent_name)
     
     
     def list(self) -> Dict[str, AgentInfo]:
@@ -97,7 +96,7 @@ class ACPServer:
         Returns:
             Dict[str, AgentInfo]: Dictionary of agent names and their information
         """
-        return [name for name in self._registered_agents.keys()]
+        return self.agent_context_manager.list()
     
     def get_info(self, agent_name: str) -> Optional[AgentInfo]:
         """Get agent information by name
@@ -108,7 +107,7 @@ class ACPServer:
         Returns:
             AgentInfo: Agent information or None if not found
         """
-        return self._registered_agents.get(agent_name)
+        return self.agent_context_manager.get_info(agent_name)
     
     def get(self, agent_name: str) -> Optional[BaseAgent]:
         """Get agent instance by name
@@ -119,7 +118,7 @@ class ACPServer:
         Returns:
             BaseAgent: Agent instance or None if not found
         """
-        agent_info = self._registered_agents.get(agent_name)
+        agent_info = self.agent_context_manager.get(agent_name)
         return agent_info.instance if agent_info else None
     
     def invoke(self, name: str, input: Any, **kwargs) -> Any:

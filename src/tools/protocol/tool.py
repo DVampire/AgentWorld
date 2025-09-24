@@ -12,7 +12,7 @@ class BaseTool(LangchainBaseTool):
     metadata: Dict[str, Any] = Field(description="The metadata of the tool.")
     
     model_config = ConfigDict(
-        extra="allow"
+        arbitrary_types_allowed=True,
     )
 
 class WrappedTool(BaseTool):

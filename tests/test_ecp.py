@@ -50,6 +50,20 @@ async def test_file_system():
     res = await ecp.ainvoke(**input)
     logger.info(f"| ✅ Action result: {res}")
     
+async def test_operator_browser():
+    
+    res = await ecp.ainvoke(
+        name="operator_browser",
+        action="type",
+        input={
+            "text": "www.google.com"
+        }
+    )
+    print(res)
+    
+    state = await ecp.get_state("operator_browser")
+    
+    
 async def main():
     
     args = parse_args()
@@ -75,7 +89,8 @@ async def main():
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
     # Test file system
-    await test_file_system()
+    # await test_file_system()
+    await test_operator_browser()
     
 
 if __name__ == "__main__":

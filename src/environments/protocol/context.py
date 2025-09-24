@@ -56,7 +56,7 @@ class EnvironmentContextManager:
             instance = env_info.instance
             action_function = env_info.actions.get(action).function
             
-            return await action_function(instance, **input, **kwargs)  # type: ignore
+            return await action_function(instance, **input)
         else:
             raise ValueError(f"Environment {name} not found")
     
@@ -80,6 +80,10 @@ class EnvironmentContextManager:
         try:
             # Create environment instance
             instance = env_factory()
+            
+            # Initialize environment
+            if hasattr(instance, "initialize"):
+                await instance.initialize()
             
             # Store instance
             env_info.instance = instance

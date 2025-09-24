@@ -194,13 +194,13 @@ class ToolContextManager:
         """
         return [name for name in self._tool_info.keys()]
     
-    def args_schemas(self) -> List[Type[BaseModel]]:
+    def args_schemas(self) -> Dict[str, Type[BaseModel]]:
         """Get list of registered tool args schemas
         
         Returns:
-            List[Type[BaseModel]]: List of tool args schemas
+            Dict[str, Type[BaseModel]]: Dictionary of tool args schemas
         """
-        return [tool_info.args_schema for tool_info in self._tool_info.values()]
+        return {tool_info.name: tool_info.args_schema for tool_info in self._tool_info.values()}
     
     def to_string(self, tool_name: str) -> str:
         """Convert tool information to string

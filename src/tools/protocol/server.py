@@ -126,11 +126,11 @@ class TCPServer:
         """
         return await self.tool_context_manager.ainvoke(name, input, **kwargs)
     
-    def args_schemas(self) -> List[Type[BaseModel]]:
+    def args_schemas(self) -> Dict[str, Type[BaseModel]]:
         """List all registered tool args schemas
         
         Returns:
-            List[Type[BaseModel]]: List of tool args schemas
+            Dict[str, Type[BaseModel]]: Dictionary of tool args schemas
         """
         return self.tool_context_manager.args_schemas()
     
@@ -186,7 +186,7 @@ class TCPServer:
         Returns:
             Tool instance or None if not found
         """
-        return self.tool_context_manager.get(tool_name)
+        return self.tool_context_manager.get(tool_name).instance
         
     async def cleanup(self):
         """Cleanup all tools"""

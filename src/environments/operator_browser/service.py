@@ -83,6 +83,10 @@ class OperatorBrowserService:
                 "Accept-Language": "en-US,en;q=0.9"
             })
             
+            # Go to google
+            await self.page.goto("https://www.google.com")
+            await self.page.wait_for_load_state("networkidle", timeout=5000)
+            
             logger.info("| 🌐 Operator started successfully")
             
         except Exception as e:
@@ -213,7 +217,8 @@ class OperatorBrowserService:
             Type result
         """
         try:
-            response = await self.page.type(action.text)
+            # Type text at the current focused element
+            await self.page.keyboard.type(action.text)
             return TypeResult(success=True, message=f"Typed {action.text}")
         except Exception as e:
             logger.error(f"| ❌ Failed to type: {e}")

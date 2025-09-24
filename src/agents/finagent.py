@@ -6,7 +6,7 @@ from langchain.tools import BaseTool
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage
 
-from src.agents.protocol.agent import BaseAgent, ThinkOutput
+from src.agents.protocol.agent import BaseAgent
 from src.logger import logger
 from src.infrastructures.memory import MemoryManager
 

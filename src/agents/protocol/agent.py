@@ -1,28 +1,25 @@
 """Base agent class for multi-agent system."""
 from typing import List, Optional, Type, Dict, Any
-from langchain_core.language_models import BaseLanguageModel
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.config import config
 from src.infrastructures.models import model_manager
 from src.agents.prompts import PromptManager
 from src.infrastructures.memory import MemoryManager
 
 class BaseAgent(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
     name: str = Field(description="The name of the agent.")
     type: str = Field(description="The type of the agent.")
     description: str = Field(description="The description of the agent.")
     args_schema: Type[BaseModel] = Field(description="The args schema of the agent.")
     metadata: Dict[str, Any] = Field(description="The metadata of the agent.")
     
-    model_config = ConfigDict(
-        extra="allow"
-    )
-    
     def __init__(
         self,
+        workdir: str,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         max_steps: int = 20,
@@ -32,7 +29,7 @@ class BaseAgent(BaseModel):
     ):
         super().__init__(**kwargs)
         
-        self.workdir = getattr(config, 'workdir', 'workdir')
+        self.workdir = workdir
         logger.info(f"| 📁 Agent working directory: {self.workdir}")
         
         self.prompt_manager = PromptManager(prompt_name=prompt_name)

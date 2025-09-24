@@ -2,10 +2,11 @@
 
 import asyncio
 import atexit
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, Optional, List
 
 from src.logger import logger
 from src.agents.protocol.types import AgentInfo
+from src.agents.protocol.agent import BaseAgent
 
 class AgentContextManager:
     """Global context manager for all agents."""
@@ -88,6 +89,30 @@ class AgentContextManager:
         except Exception as e:
             logger.error(f"| ❌ Failed to create agent {agent_info.name}: {e}")
             raise
+        
+    async def get(self, name: str) -> Optional[BaseAgent]:
+        """Get an agent instance by name
+        
+        Args:
+            name: Name of the agent
+        """
+        return self._agent_info.get(name).instance if self._agent_info.get(name) else None
+    
+    def get_info(self, name: str) -> Optional[AgentInfo]:
+        """Get an agent information by name
+        
+        Args:
+            name: Name of the agent
+        """
+        return self._agent_info.get(name)
+    
+    def list(self) -> List[str]:
+        """Get list of registered agents
+        
+        Returns:
+            List[str]: List of agent names
+        """
+        return [name for name in self._agent_info.keys()]
     
     def cleanup(self):
         """Cleanup all agent instances and resources."""

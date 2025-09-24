@@ -39,7 +39,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
     def __init__(
         self,
         base_dir: str = None,
-        headless: bool = True,
+        headless: bool = False,
         viewport: Optional[Dict[str, int]] = None,
         **kwargs
     ):
@@ -69,6 +69,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
     
     async def initialize(self) -> None:
         """Initialize the Operator Browser environment."""
+        await self.operator_browser_service.start()
         logger.info(f"| 🌐 Operator Browser Environment initialized at: {self.base_dir}")
         
     async def cleanup(self) -> None:

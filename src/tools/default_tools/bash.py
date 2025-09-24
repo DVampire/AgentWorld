@@ -9,10 +9,12 @@ from src.tools.protocol.types import ToolResponse
 from src.tools.protocol import tcp
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
-Use this tool to run system commands, scripts, or any bash operations. 
-Be careful with commands that modify the system or require elevated privileges. 
-For file operations, ALWAYS use absolute paths to avoid path-related issues. 
-Input should be a valid bash command string.
+
+IMPORTANT:
+- Use this tool to run system commands, scripts, or any bash operations. 
+- Be careful with commands that modify the system or require elevated privileges. 
+- For file operations, ALWAYS use ABSOLUTE paths to avoid path-related issues. 
+- Input should be a VALID bash command string.
 """
 
 class BashToolArgs(BaseModel):
@@ -40,14 +42,9 @@ class BashTool(BaseTool):
             if not command.strip():
                 return ToolResponse(content="Error: Empty command provided")
             
-            # Parse command and arguments
-            command = shlex.split(command)
-            if not command:
-                return ToolResponse(content="Error: Invalid command format")
-            
-            # Create process with timeout
-            process = await asyncio.create_subprocess_exec(
-                *command,
+            # Use shell=True to handle complex commands properly
+            process = await asyncio.create_subprocess_shell(
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
