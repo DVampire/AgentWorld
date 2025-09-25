@@ -4,7 +4,7 @@ Server implementation for the Tool Context Protocol.
 """
 from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import BaseModel
-
+from copy import deepcopy
 from src.logger import logger
 from src.config import config
 from src.tools.protocol.tool import BaseTool, WrappedTool

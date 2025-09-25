@@ -4,6 +4,8 @@ Server implementation for the Agent Context Protocol.
 """
 
 from typing import Any, Dict, List, Optional, Type
+from pydantic import BaseModel
+from copy import deepcopy
 
 from src.agents.protocol.types import AgentInfo
 from src.agents.protocol.agent import BaseAgent
@@ -87,6 +89,37 @@ class ACPServer:
         if agent_info.name not in self._registered_agents:
             self._registered_agents[agent_info.name] = agent_info
         await self.agent_context_manager.register(agent_info)
+        
+    async def copy(self,
+             agent_info: AgentInfo, 
+             name: str,
+             type: Optional[str] = None,
+             description: Optional[str] = None,
+             args_schema: Optional[Type[BaseModel]] = None,
+             metadata: Optional[Dict[str, Any]] = None,
+             ):
+        
+        new_agent_info = AgentInfo(
+            name=name,
+            type=type if type is not None else agent_info.type,
+            description=description if description is not None else agent_info.description,
+            args_schema=args_schema if args_schema is not None else agent_info.args_schema,
+            metadata=metadata if metadata is not None else agent_info.metadata,
+            cls=agent_info.cls,
+            instance=None,
+        )
+        
+        def agent_factory():
+            agent_config = config.get(f"{new_agent_info.name}_agent", None)
+            if agent_config:
+                return new_agent_info.cls(**agent_config)
+            else:
+                return new_agent_info.cls()
+        
+        # Build agent instance
+        new_agent_info = await self.agent_context_manager.build(new_agent_info, agent_factory)
+        
+        return new_agent_info
     
     def get_info(self, agent_name: str) -> Optional[AgentInfo]:
         """Get agent information by name

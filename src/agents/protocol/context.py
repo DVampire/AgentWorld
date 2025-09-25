@@ -79,6 +79,8 @@ class AgentContextManager:
             
             # Store instance
             agent_info.instance = instance
+            agent_info.name = instance.name
+            agent_info.description = instance.description
             
             # Store metadata
             self._agent_info[agent_info.name] = agent_info
