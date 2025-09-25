@@ -126,7 +126,7 @@ class TCPServer:
         """
         return await self.tool_context_manager.ainvoke(name, input, **kwargs)
     
-    async def add(self, tool_info: ToolInfo):
+    async def register(self, tool_info: ToolInfo):
         """Add a tool to the tool context manager
         
         Args:
@@ -134,7 +134,7 @@ class TCPServer:
         """
         if tool_info.name not in self._registered_tools:
             self._registered_tools[tool_info.name] = tool_info
-        await self.tool_context_manager.add(tool_info)
+        await self.tool_context_manager.register(tool_info)
     
     def args_schemas(self) -> Dict[str, Type[BaseModel]]:
         """List all registered tool args schemas

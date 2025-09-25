@@ -58,7 +58,7 @@ class ECPServer:
                     actions[getattr(attr, '_action_name')] = action_info
             
             # Generate rules
-            final_rules = self._generate_environment_rules(
+            final_rules = self.genetate_rules(
                 env_name,
                 env_type,
                 description,
@@ -318,13 +318,13 @@ class ECPServer:
         
         return False
     
-    def _generate_environment_rules(self, 
-                                   env_name: str, 
-                                   env_type: str, 
-                                   description: str, 
-                                   actions: Dict[str, ActionInfo],
-                                   has_vision: bool = False,
-                                   additional_rules: Optional[Dict[str, str]] = None) -> str:
+    def genetate_rules(self, 
+            env_name: str, 
+            env_type: str, 
+            description: str, 
+            actions: Dict[str, ActionInfo],
+            has_vision: bool = False,
+            additional_rules: Optional[Dict[str, str]] = None) -> str:
         """Generate environment rules from actions and metadata
         
         Args:
@@ -442,6 +442,15 @@ class ECPServer:
                 
         logger.info("| ✅ Environments initialization completed")
         
+    async def register(self, env_info: EnvironmentInfo):
+        """Register an environment
+        
+        Args:
+            env_info: Environment information
+        """
+        if env_info.name not in self._registered_environments:
+            self._registered_environments[env_info.name] = env_info
+        await self.environment_context_manager.register(env_info)
     
     async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment

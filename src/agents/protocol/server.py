@@ -77,6 +77,16 @@ class ACPServer:
                 logger.info(f"| ⏭️ Agent {agent_name} not found")
                 
         logger.info("| ✅ Agents initialization completed")
+        
+    async def register(self, agent_info: AgentInfo):
+        """Register an agent
+        
+        Args:
+            agent_info: Agent information
+        """
+        if agent_info.name not in self._registered_agents:
+            self._registered_agents[agent_info.name] = agent_info
+        await self.agent_context_manager.register(agent_info)
     
     def get_info(self, agent_name: str) -> Optional[AgentInfo]:
         """Get agent information by name

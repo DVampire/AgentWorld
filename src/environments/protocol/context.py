@@ -98,6 +98,26 @@ class EnvironmentContextManager:
             logger.error(f"| ❌ Failed to create environment {env_info.name}: {e}")
             raise
         
+    async def register(self, env_info: EnvironmentInfo):
+        """Register an environment
+        
+        Args:
+            env_info: Environment information
+        """
+        if env_info.name not in self._environment_info:
+            
+            env_class = env_info.cls
+            instance = env_class()
+            
+            if hasattr(instance, "initialize"):
+                await instance.initialize()
+            
+            env_info.instance = instance
+            
+            self._environment_info[env_info.name] = env_info
+        else:
+            logger.info(f"| 📝 Environment {env_info.name} already exists")
+        
     async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
         

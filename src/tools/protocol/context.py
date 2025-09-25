@@ -163,7 +163,7 @@ class ToolContextManager:
             logger.error(f"| ❌ Failed to get tool candidates: {e}")
             return []
         
-    async def add(self, tool_info: ToolInfo):
+    async def register(self, tool_info: ToolInfo):
         """Add a tool to the tool context manager
         
         Args:

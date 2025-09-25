@@ -15,7 +15,8 @@ class BaseEnvironment(BaseModel):
     metadata: Dict[str, Any] = Field(description="The metadata of the environment.")
     
     model_config = ConfigDict(
-        arbitrary_types_allowed=True,
+        arbitrary_types_allowed=True, 
+        extra="allow"
     )
     
     def __init__(self, **kwargs):

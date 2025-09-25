@@ -29,3 +29,53 @@ class E2TResponse(BaseModel):
     """ECP to TCP transformation response."""
     success: bool = Field(default=True, description="Whether the transformation was successful.")
     message: str = Field(default="", description="The message of the transformation.")
+    
+class T2ERequest(BaseModel):
+    """TCP to ECP transformation request."""
+    type: str = Field(default="t2e", description="The type of transformation.")
+    tool_names: List[str] = Field(default=[], description="The names of the tools to transform.")
+    
+class T2EResponse(BaseModel):
+    """TCP to ECP transformation response."""
+    success: bool = Field(default=True, description="Whether the transformation was successful.")
+    message: str = Field(default="", description="The message of the transformation.")
+    
+class T2ARequest(BaseModel):
+    """TCP to ACP transformation request."""
+    type: str = Field(default="t2a", description="The type of transformation.")
+    tool_names: List[str] = Field(default=[], description="The names of the tools to transform.")
+    
+class T2AResponse(BaseModel):
+    """TCP to ACP transformation response."""
+    success: bool = Field(default=True, description="Whether the transformation was successful.")
+    message: str = Field(default="", description="The message of the transformation.")
+    
+class E2ARequest(BaseModel):
+    """ECP to ACP transformation request."""
+    type: str = Field(default="e2a", description="The type of transformation.")
+    env_names: List[str] = Field(default=[], description="The names of the environments to transform.")
+    
+class E2AResponse(BaseModel):
+    """ECP to ACP transformation response."""
+    success: bool = Field(default=True, description="Whether the transformation was successful.")
+    message: str = Field(default="", description="The message of the transformation.")
+    
+class A2TRequest(BaseModel):
+    """ACP to TCP transformation request."""
+    type: str = Field(default="a2t", description="The type of transformation.")
+    agent_names: List[str] = Field(default=[], description="The names of the agents to transform.")
+    
+class A2TResponse(BaseModel):
+    """ACP to TCP transformation response."""
+    success: bool = Field(default=True, description="Whether the transformation was successful.")
+    message: str = Field(default="", description="The message of the transformation.")
+    
+class A2ERequest(BaseModel):
+    """ACP to ECP transformation request."""
+    type: str = Field(default="a2e", description="The type of transformation.")
+    agent_names: List[str] = Field(default=[], description="The names of the agents to transform.")
+    
+class A2EResponse(BaseModel):
+    """ACP to ECP transformation response."""
+    success: bool = Field(default=True, description="Whether the transformation was successful.")
+    message: str = Field(default="", description="The message of the transformation.")

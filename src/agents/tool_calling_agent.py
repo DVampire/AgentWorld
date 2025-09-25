@@ -5,7 +5,7 @@ from typing import List, Optional, Type, Dict, Any, Union
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict
 import pandas as pd
 
 from src.agents.protocol.agent import BaseAgent
@@ -92,7 +92,7 @@ class ThinkOutputBuilder:
 
         return ThinkOutput
 
-class ToolCallingAgentArgs(BaseModel):
+class ToolCallingAgentInputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
     files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
 
@@ -104,7 +104,7 @@ class ToolCallingAgent(BaseAgent):
     name: str = Field(default="tool_calling", description="The name of the tool calling agent.")
     type: str = Field(default="Agent", description="The type of the tool calling agent.")
     description: str = Field(default="A tool calling agent that can call tools to complete tasks.", description="The description of the tool calling agent.")
-    args_schema: Type[ToolCallingAgentArgs] = Field(default=ToolCallingAgentArgs, description="The args schema of the tool calling agent.")
+    args_schema: Type[ToolCallingAgentInputArgs] = Field(default=ToolCallingAgentInputArgs, description="The args schema of the tool calling agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool calling agent.")
     
     def __init__(

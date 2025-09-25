@@ -90,6 +90,17 @@ class AgentContextManager:
             logger.error(f"| ❌ Failed to create agent {agent_info.name}: {e}")
             raise
         
+    async def register(self, agent_info: AgentInfo):
+        """Register an agent
+        
+        Args:
+            agent_info: Agent information
+        """
+        if agent_info.name not in self._agent_info:
+            self._agent_info[agent_info.name] = agent_info
+        else:
+            logger.info(f"| 📝 Agent {agent_info.name} already registered")
+        
     async def get(self, name: str) -> Optional[BaseAgent]:
         """Get an agent instance by name
         
