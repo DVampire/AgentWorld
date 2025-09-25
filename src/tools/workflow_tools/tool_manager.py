@@ -8,9 +8,9 @@ from typing import List, Dict, Any, Optional, Type, Union
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-from src.tools.protocol.tool import BaseTool, WrappedTool
+from src.tools.protocol.tool import BaseTool
 from src.tools.protocol.types import ToolInfo, ToolResponse
-from src.tools.protocol.server import tcp
+from src.tools.protocol import tcp
 from src.logger import logger
 from src.config import config
 from src.infrastructures.models import model_manager
@@ -454,49 +454,44 @@ Format as JSON with these fields: complexity, use_cases, integration_tips, perfo
         logger.info("| 🧹 Tool manager workflow cleaned up")
 
 
+_TOOL_MANAGER_DESCRIPTION = """Tool Manager for automatic discovery and registration of tools to TCP.
+    
+This tool provides comprehensive tool management capabilities:
+
+1. **Discover Tools**: Scan directories for tool classes and validate them
+    - Scans Python files for BaseTool subclasses
+    - Validates tool structure and requirements
+    - Supports recursive directory scanning
+    - Filters files by patterns (include/exclude)
+
+2. **Register Tools**: Register discovered tools to TCP
+    - Registers valid tools to the TCP server
+    - Handles duplicate registration gracefully
+    - Provides detailed registration results
+
+3. **Analyze Tools**: Get detailed analysis of tool usage and recommendations
+    - Uses LLM to analyze tool complexity and use cases
+    - Provides integration recommendations
+    - Identifies performance and security considerations
+
+4. **Summary**: Get comprehensive summary of discovery and registration results
+    - Shows statistics of discovered vs registered tools
+    - Lists validation errors and registration failures
+    - Provides overview of tool management operations
+
+5. **Cleanup**: Clean up tool manager state
+    - Clears discovered tools cache
+    - Resets registration results
+    - Frees up memory resources
+"""
+
 @tcp.tool()
-class ToolManagerTCPTool(BaseTool):
+class ToolManagerTool(BaseTool):
     """TCP tool for automatic tool discovery and registration."""
     
     name: str = "tool_manager"
     type: str = "Tool Manager"
-    description: str = """Tool Manager for automatic discovery and registration of tools to TCP.
-    
-    This tool provides comprehensive tool management capabilities:
-    
-    1. **Discover Tools**: Scan directories for tool classes and validate them
-       - Scans Python files for BaseTool subclasses
-       - Validates tool structure and requirements
-       - Supports recursive directory scanning
-       - Filters files by patterns (include/exclude)
-    
-    2. **Register Tools**: Register discovered tools to TCP
-       - Registers valid tools to the TCP server
-       - Handles duplicate registration gracefully
-       - Provides detailed registration results
-    
-    3. **Analyze Tools**: Get detailed analysis of tool usage and recommendations
-       - Uses LLM to analyze tool complexity and use cases
-       - Provides integration recommendations
-       - Identifies performance and security considerations
-    
-    4. **Summary**: Get comprehensive summary of discovery and registration results
-       - Shows statistics of discovered vs registered tools
-       - Lists validation errors and registration failures
-       - Provides overview of tool management operations
-    
-    5. **Cleanup**: Clean up tool manager state
-       - Clears discovered tools cache
-       - Resets registration results
-       - Frees up memory resources
-    
-    Operations:
-    - discover: Scan directory for tools
-    - register: Register discovered tools to TCP
-    - analyze: Analyze specific tool
-    - summary: Get operation summary
-    - cleanup: Clean up manager state
-    """
+    description: str = _TOOL_MANAGER_DESCRIPTION
     args_schema: Type[ToolManagerArgs] = ToolManagerArgs
     metadata: Dict[str, Any] = {}
     
@@ -660,7 +655,3 @@ class ToolManagerTCPTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
             return ToolResponse(content=f"Error in synchronous execution: {e}")
-
-
-# Global tool manager workflow instance
-tool_manager_workflow = ToolManagerWorkflow()
