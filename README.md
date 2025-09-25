@@ -1,103 +1,103 @@
-# AgentWorld
+# AgentOrchestra
 
-A flexible **asynchronous** multi-agent system built with LangGraph, supporting custom prompt templates, multiple language models, and comprehensive tool management.
+A comprehensive **asynchronous** multi-agent system built with LangGraph, featuring advanced tool management, multiple language models, and specialized environments for various use cases.
 
-## Features
+## ✨ Key Features
 
-- **🔄 Asynchronous Architecture**: Full async/await support for better performance and concurrency
-- **🤖 Multi-Agent Coordination**: Coordinate multiple specialized agents using LangGraph
-- **📝 Prompt Management System**: Centralized prompt template management with PromptManager
-- **🧠 Model Management System**: Unified management of OpenAI and Anthropic models with ModelManager
-- **🔧 Tool Management System**: Comprehensive tool management with ToolManager
-- **🛣️ Flexible Routing**: Multiple routing strategies (keyword-based, round-robin, LLM-based)
-- **⚡ Concurrent Processing**: Process multiple messages and tools concurrently
-- **🔌 Extensible Design**: Easy to add new agents, tools, models, and routing strategies
-- **🔍 Advanced Research Tools**: Multi-round research workflow with DeepResearcherTool
-- **🖼️ Multimodal Support**: Image and text analysis capabilities in research tools
+- **🔄 Full Async Architecture**: Complete async/await implementation for optimal performance
+- **🤖 Multi-Agent Coordination**: Sophisticated agent orchestration with LangGraph
+- **🧠 Unified Model Management**: Support for OpenAI, Anthropic, Google, and custom models
+- **🔧 Comprehensive Tool System**: 50+ tools across multiple categories (web, file, browser, research)
+- **🌍 Rich Environment Support**: File system, GitHub, database, trading, browser automation
+- **📝 Advanced Prompt Management**: Centralized template system with specialized prompts
+- **🔍 Deep Research Capabilities**: Multi-round research workflows with multimodal support
+- **⚡ High Performance**: Concurrent processing and optimized resource utilization
+- **🔌 Extensible Design**: Easy integration of new agents, tools, and environments
 
-## Architecture
+## 🏗️ Architecture Overview
 
 ```
-AgentWorld/
+AgentOrchestra/
 ├── src/
-│   ├── agents/
-│   │   ├── base_agent.py      # Async base agent class
-│   │   ├── interactive_agent.py    # Interactive agent implementation
-│   │   ├── tool_calling_agent.py   # Tool calling agent implementation
-│   │   └── __init__.py
-│   ├── models/
-│   │   ├── model_manager.py   # Model management system
-│   │   ├── message_manager.py # Message management
-│   │   └── __init__.py
-│   ├── tools/
-│   │   ├── tool_manager.py    # Central tool management system
-│   │   ├── default_tools/     # Basic utility tools
-│   │   │   ├── web_searcher.py    # Web search functionality
-│   │   │   ├── web_fetcher.py     # Web content fetching
-│   │   │   └── default_tool_set.py # Default tool collection
-│   │   ├── environment_tools/ # Environment-specific tools
-│   │   │   └── environment_tool_set.py # Environment tool collection
-│   │   ├── agent_tools/       # Workflow and agent-specific tools
-│   │   │   ├── browser.py         # Browser automation tool
-│   │   │   ├── deep_researcher.py # Multi-round research workflow
-│   │   │   └── agent_tool_set.py  # Agent tool collection
-│   │   ├── mcp_tools/         # MCP protocol tools
-│   │   │   └── mcp_tool_set.py    # MCP tool collection
-│   │   └── __init__.py
-│   ├── prompts/
-│   │   ├── prompt_manager.py  # Centralized prompt management
-│   │   ├── system_prompt.py   # System prompt templates
-│   │   ├── agent_message_prompt.py # Agent message prompts
-│   │   └── templates/         # Prompt template files
-│   ├── config/                # Configuration management
-│   ├── datasets/              # Data loading and processing
-│   ├── environments/          # Trading and simulation environments
-│   ├── memory/                # Memory management system
-│   ├── metric/                # Performance metrics
-│   ├── logger/                # Logging system
-│   ├── filesystem/            # File system utilities
-│   └── utils/                 # Utility functions
+│   ├── agents/                 # Agent implementations
+│   │   ├── tool_calling_agent.py    # Tool-calling agent with async support
+│   │   ├── simple_chat_agent.py    # Conversational agent
+│   │   ├── debate_manager.py        # Multi-agent debate coordination
+│   │   ├── finagent.py             # Financial analysis agent
+│   │   └── prompts/                 # Prompt templates and management
+│   ├── environments/           # Specialized environments
+│   │   ├── file_system_environment.py    # File operations
+│   │   ├── github_environment.py         # GitHub integration
+│   │   ├── database_environment.py       # Database operations
+│   │   ├── trading_offline_environment.py # Financial trading
+│   │   ├── playwright_environment.py    # Browser automation
+│   │   └── faiss_environment.py         # Vector search
+│   ├── tools/                  # Comprehensive tool system
+│   │   ├── default_tools/      # Core utilities (web, file, bash, etc.)
+│   │   ├── workflow_tools/      # Advanced workflows (research, analysis)
+│   │   └── mcp_tools/          # Model Context Protocol tools
+│   ├── infrastructures/        # Core infrastructure
+│   │   ├── models/             # Model management (OpenAI, Anthropic, Google)
+│   │   └── memory/            # Memory and state management
+│   ├── supports/              # Supporting utilities
+│   │   ├── datasets/          # Data processing
+│   │   ├── metric/            # Performance metrics
+│   │   └── calen/             # Calendar utilities
+│   └── utils/                 # Common utilities
 ├── configs/                   # Configuration files
-├── examples/                  # Usage examples
-├── datasets/                  # Data files
-└── requirements.txt
+├── examples/                  # Usage examples and demos
+├── datasets/                  # Sample data
+└── tests/                     # Comprehensive test suite
 ```
 
-## Quick Start
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.8+
+- Git
+- API keys for your preferred LLM providers
 
 ### Installation
 
-1. Clone the repository:
+1. **Clone the repository:**
 ```bash
 git clone <repository-url>
-cd AgentWorld
+cd AgentOrchestra
 ```
 
-2. Install dependencies:
+2. **Install dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set up your API keys:
+3. **Set up environment variables:**
 ```bash
+# Required API keys
 export OPENAI_API_KEY="your-openai-key-here"
 export ANTHROPIC_API_KEY="your-anthropic-key-here"
+
+# Optional API keys for additional features
+export GOOGLE_API_KEY="your-google-key-here"
+export GITHUB_TOKEN="your-github-token-here"
+export BRAVE_SEARCH_API_KEY="your-brave-key-here"
+export FIRECRAWL_API_KEY="your-firecrawl-key-here"
 ```
 
-**Important**: The `use_local_proxy` parameter in configuration files determines whether to use local proxy services:
-- Set to `False` when using official OpenAI/Anthropic APIs directly
-- Set to `True` when using local proxy services (like localhost:8000)
+### 🔧 Configuration
 
-### Basic Usage
+The `use_local_proxy` parameter in configuration files controls API connectivity:
 
+- **`use_local_proxy = False`**: Use official APIs directly (recommended for production)
+- **`use_local_proxy = True`**: Use local proxy services (useful for development/testing)
+
+### 🎯 Basic Usage
+
+**Simple Chat Agent:**
 ```python
 import asyncio
-import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv(verbose=True)
+import sys
 
 # Add project root to path
 root = str(Path(__file__).resolve().parents[1])
@@ -105,32 +105,85 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.registry import AGENTS
-from src.models import model_manager
-from src.tools import tool_manager
+from src.infrastructures.models import model_manager
+from src.agents import acp
 
 async def main():
     # Initialize configuration
-    config.init_config("configs/tool_calling_agent.py")
+    config.init_config("configs/simple_chat_agent.py")
     logger.init_logger(config)
     
-    # Initialize models and tools
-    # Note: use_local_proxy is read from config file
-    await model_manager.init_models(use_local_proxy=config.use_local_proxy)
-    await tool_manager.init_tools()
+    # Initialize models and agents
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    await acp.initialize(config.agent_names)
     
-    # Create agent using registry
-    agent = AGENTS.build(config.agent)
-    
-    # Run the agent
-    task = "Search for information about AI"
-    await agent.run(task)
+    # Run simple chat
+    result = await acp.ainvoke(
+        name="simple_chat",
+        input={"task": "Hello, how are you?"}
+    )
+    print(result)
 
-# Run the async function
 asyncio.run(main())
 ```
 
-## Model Management System
+**Tool-Calling Agent:**
+```python
+import asyncio
+from pathlib import Path
+import sys
+
+root = str(Path(__file__).resolve().parents[1])
+sys.path.append(root)
+
+from src.config import config
+from src.logger import logger
+from src.infrastructures.models import model_manager
+from src.tools import tcp
+from src.agents import acp
+
+async def main():
+    # Initialize with tool-calling configuration
+    config.init_config("configs/tool_calling_agent.py")
+    logger.init_logger(config)
+    
+    # Initialize all systems
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    await tcp.initialize(config.tool_names)
+    await acp.initialize(config.agent_names)
+    
+    # Run tool-calling agent
+    result = await acp.ainvoke(
+        name="tool_calling",
+        input={"task": "Search for the latest AI news and summarize it"}
+    )
+    print(result)
+
+asyncio.run(main())
+```
+
+## 🛠️ Available Tools & Environments
+
+### Core Tools (Default Tools)
+- **Web Operations**: `web_searcher`, `web_fetcher` - Multi-engine search and content extraction
+- **File Operations**: `file`, `bash`, `python_interpreter` - File system and code execution
+- **Project Management**: `project`, `todo`, `done` - Task and project organization
+- **Utilities**: `weather`, `mdify` - Weather info and document conversion
+
+### Advanced Workflow Tools
+- **Deep Researcher**: Multi-round research with LLM-optimized queries
+- **Deep Analyzer**: Advanced content analysis and insights
+- **Browser Automation**: Full browser control with Playwright
+
+### Specialized Environments
+- **File System**: Complete file operations and management
+- **GitHub**: Repository management, cloning, commits, and collaboration
+- **Database**: SQL operations with multiple database support
+- **Trading**: Financial market simulation and analysis
+- **Browser**: Web automation and interaction
+- **Vector Search**: FAISS-based similarity search
+
+## 🧠 Model Management System
 
 ### ModelManager
 
@@ -626,21 +679,37 @@ deep_researcher_tool = dict(
 )
 ```
 
-## Running Demos
+## 🎮 Running Examples
 
-### ModelManager & ToolManager Demo
+### Quick Start Examples
 ```bash
-python run_manager_demo.py
+# Simple chat agent
+python examples/run_simple_chat_agent.py
+
+# Tool-calling agent with full capabilities
+python examples/run_tool_calling_agent.py
+
+# Multi-agent debate system
+python examples/run_multi_agent_debate.py
 ```
 
-### PromptManager Demo
+### Advanced Examples
 ```bash
-python run_prompt_demo.py
+# Financial analysis agent
+python examples/run_finagent.py
+
+# Browser automation demo
+python examples/run_browser_agent.py
+
+# Research workflow demo
+python examples/run_research_agent.py
 ```
 
-### Full Async Demo
+### Web Interface
 ```bash
-python examples/model_tool_manager_example.py
+# Start debate frontend
+python examples/debate/debate_frontend.py
+# Access at http://localhost:5000
 ```
 
 ## Performance Benefits
@@ -677,53 +746,98 @@ The async architecture provides several performance benefits:
 1. Create async routing function that takes `(message, state)` and returns agent name
 2. Set as routing function in your custom agent system
 
-## Testing
+## 🧪 Testing
 
-Run the tests:
+### Run All Tests
 ```bash
-# Test agents
-pytest tests/test_agent.py -v
+# Run complete test suite
+pytest tests/ -v
 
-# Test tools
-pytest tests/test_browser_tool.py -v
-
-# Test models
-pytest tests/test_models.py -v
-
-# Test prompt management
-pytest tests/test_prompt_management.py -v
+# Run with coverage
+pytest tests/ --cov=src --cov-report=html
 ```
 
-## Troubleshooting
+### Specific Test Categories
+```bash
+# Agent tests
+pytest tests/test_agent.py tests/test_finagent.py -v
+
+# Tool tests
+pytest tests/test_browser.py tests/test_file_system.py -v
+
+# Environment tests
+pytest tests/test_github_system.py tests/test_faiss.py -v
+
+# Model and infrastructure tests
+pytest tests/test_models.py tests/test_memory_system.py -v
+```
+
+### Test Coverage
+```bash
+# Generate coverage report
+pytest tests/ --cov=src --cov-report=term-missing
+```
+
+## 🔧 Troubleshooting
 
 ### Common Issues
 
 #### API Connection Problems
 - **Error**: "Failed to connect to OpenAI API"
-  - **Solution**: Check if `use_local_proxy` is set correctly in your config file
+  - **Solution**: Check `use_local_proxy` setting in config files
   - For official APIs: `use_local_proxy = False`
   - For local proxy: `use_local_proxy = True` (ensure proxy server is running)
 
 #### Model Initialization Failures
 - **Error**: "Model initialization failed"
-  - **Solution**: Verify your API keys are set correctly in environment variables
-  - Check if the model name exists in your ModelManager
-  - Ensure network connectivity to API endpoints
+  - **Solution**: Verify API keys in environment variables
+  - Check model availability in ModelManager
+  - Ensure network connectivity
 
 #### Tool Loading Issues
 - **Error**: "Tool not found" or "Tool initialization failed"
-  - **Solution**: Check if the tool is properly registered in the appropriate tool set
-  - Verify tool dependencies are installed
-  - Check tool configuration in base.py
+  - **Solution**: Verify tool registration in appropriate tool sets
+  - Check tool dependencies installation
+  - Review tool configuration in base.py
 
-## Contributing
+#### Environment Setup Issues
+- **Error**: "Environment initialization failed"
+  - **Solution**: Check environment-specific dependencies
+  - Verify environment configuration files
+  - Ensure required services are running (e.g., database, browser)
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes (prefer async implementations)
-4. Add tests
-5. Submit a pull request
+### Getting Help
+- Check the [Issues](https://github.com/your-repo/issues) page for known problems
+- Review the test files for usage examples
+- Examine the example scripts in the `examples/` directory
 
-## License
+## 🤝 Contributing
 
-MIT License - see LICENSE file for details.
+We welcome contributions! Please follow these steps:
+
+1. **Fork the repository**
+2. **Create a feature branch**: `git checkout -b feature/your-feature-name`
+3. **Make your changes**: Prefer async implementations for consistency
+4. **Add tests**: Ensure your changes are properly tested
+5. **Submit a pull request**: Include a clear description of your changes
+
+### Development Guidelines
+- Follow the existing code style and patterns
+- Add comprehensive tests for new features
+- Update documentation as needed
+- Ensure all tests pass before submitting
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built with [LangGraph](https://github.com/langchain-ai/langgraph) for agent orchestration
+- Powered by [LangChain](https://github.com/langchain-ai/langchain) for LLM integration
+- Uses [Playwright](https://playwright.dev/) for browser automation
+- Integrates with [FAISS](https://github.com/facebookresearch/faiss) for vector search
+
+---
+
+**AgentOrchestra** - Empowering AI agents with comprehensive tools and environments for real-world applications.
