@@ -1,44 +1,73 @@
 # AgentOrchestra
 
-A comprehensive **asynchronous** multi-agent system built with LangGraph, featuring advanced tool management, multiple language models, and specialized environments for various use cases.
+A comprehensive multi-agent system implementing the **TEA Protocol** (Tool-Environment-Agent Protocol), built with LangChain and featuring advanced tool management, multiple language models, and specialized environments for various use cases.
 
 ## ✨ Key Features
 
+- **🔧 TEA Protocol Implementation**: Complete implementation of Tool-Environment-Agent Protocol with seamless interoperability
 - **🔄 Full Async Architecture**: Complete async/await implementation for optimal performance
-- **🤖 Multi-Agent Coordination**: Sophisticated agent orchestration with LangGraph
-- **🧠 Unified Model Management**: Support for OpenAI, Anthropic, Google, and custom models
-- **🔧 Comprehensive Tool System**: 50+ tools across multiple categories (web, file, browser, research)
-- **🌍 Rich Environment Support**: File system, GitHub, database, trading, browser automation
+- **🤖 Multi-Agent Coordination**: Sophisticated agent orchestration with protocol-based communication
+- **🧠 Unified Model Management**: Support for OpenAI, Anthropic, Google, and custom models with local proxy support
+- **🛠️ Comprehensive Tool System**: 50+ tools or actions across multiple categories (web, file, browser, research, MCPactions
+- **🌍 Rich Environment Support**: File system, GitHub, database, trading, browser automation, vector search
 - **📝 Advanced Prompt Management**: Centralized template system with specialized prompts
 - **🔍 Deep Research Capabilities**: Multi-round research workflows with multimodal support
 - **⚡ High Performance**: Concurrent processing and optimized resource utilization
 - **🔌 Extensible Design**: Easy integration of new agents, tools, and environments
+- **🔄 Protocol Transformations**: Dynamic resource orchestration with A2T, T2A, E2T, T2E, A2E, E2A transformations
+
+## 🔧 The TEA Protocol
+
+AgentOrchestra implements the **TEA Protocol** (Tool-Environment-Agent Protocol), a unified framework for managing tools, environments, and agents with seamless interoperability.
+
+### Core Components
+
+- **🛠️ Tool Context Protocol (TCP)**: Unified tool management with semantic relationships and context-aware execution
+- **🌍 Environment Context Protocol (ECP)**: Standardized environment interfaces across diverse domains  
+- **🤖 Agent Context Protocol (ACP)**: Comprehensive agent orchestration with persistent state management
+
+### Protocol Transformations
+
+The TEA Protocol supports six key transformations for dynamic resource orchestration:
+
+- **A2T**: Agent-to-Tool (encapsulate agent capabilities as tools)
+- **T2A**: Tool-to-Agent (designate tools as agent actuators)
+- **E2T**: Environment-to-Tool (convert environment actions to tool interfaces)
+- **T2E**: Tool-to-Environment (elevate tool sets to environment abstractions)
+- **A2E**: Agent-to-Environment (encapsulate agents as interactive environments)
+- **E2A**: Environment-to-Agent (infuse reasoning into environment dynamics)
+
+This enables seamless transitions between computational entities, supporting adaptive architectures that reconfigure components based on task requirements.
 
 ## 🏗️ Architecture Overview
 
 ```
 AgentOrchestra/
 ├── src/
-│   ├── agents/                 # Agent implementations
+│   ├── agents/                 # Agent implementations (TEA Protocol ACP)
 │   │   ├── tool_calling_agent.py    # Tool-calling agent with async support
 │   │   ├── simple_chat_agent.py    # Conversational agent
 │   │   ├── debate_manager.py        # Multi-agent debate coordination
 │   │   ├── finagent.py             # Financial analysis agent
-│   │   └── prompts/                 # Prompt templates and management
-│   ├── environments/           # Specialized environments
+│   │   ├── prompts/                 # Prompt templates and management
+│   │   └── protocol/               # Agent Context Protocol (ACP)
+│   ├── environments/           # Specialized environments (TEA Protocol ECP)
 │   │   ├── file_system_environment.py    # File operations
 │   │   ├── github_environment.py         # GitHub integration
 │   │   ├── database_environment.py       # Database operations
 │   │   ├── trading_offline_environment.py # Financial trading
 │   │   ├── playwright_environment.py    # Browser automation
-│   │   └── faiss_environment.py         # Vector search
-│   ├── tools/                  # Comprehensive tool system
+│   │   ├── faiss_environment.py         # Vector search
+│   │   └── protocol/                    # Environment Context Protocol (ECP)
+│   ├── tools/                  # Comprehensive tool system (TEA Protocol TCP)
 │   │   ├── default_tools/      # Core utilities (web, file, bash, etc.)
 │   │   ├── workflow_tools/      # Advanced workflows (research, analysis)
-│   │   └── mcp_tools/          # Model Context Protocol tools
+│   │   ├── mcp_tools/          # Model Context Protocol tools
+│   │   └── protocol/           # Tool Context Protocol (TCP)
 │   ├── infrastructures/        # Core infrastructure
 │   │   ├── models/             # Model management (OpenAI, Anthropic, Google)
 │   │   └── memory/            # Memory and state management
+│   ├── transformation/         # Protocol transformations (A2T, T2A, E2T, T2E, A2E, E2A)
 │   ├── supports/              # Supporting utilities
 │   │   ├── datasets/          # Data processing
 │   │   ├── metric/            # Performance metrics
@@ -46,8 +75,8 @@ AgentOrchestra/
 │   └── utils/                 # Common utilities
 ├── configs/                   # Configuration files
 ├── examples/                  # Usage examples and demos
-├── datasets/                  # Sample data
-└── tests/                     # Comprehensive test suite
+├── tests/                     # Comprehensive test suite
+└── libs/                     # External libraries (browser-use, langchain-community)
 ```
 
 ## 🚀 Quick Start
@@ -82,6 +111,7 @@ export GOOGLE_API_KEY="your-google-key-here"
 export GITHUB_TOKEN="your-github-token-here"
 export BRAVE_SEARCH_API_KEY="your-brave-key-here"
 export FIRECRAWL_API_KEY="your-firecrawl-key-here"
+export AO_API_KEY="your-ao-key-here"  # For local proxy support
 ```
 
 ### 🔧 Configuration
@@ -171,49 +201,62 @@ asyncio.run(main())
 - **Utilities**: `weather`, `mdify` - Weather info and document conversion
 
 ### Advanced Workflow Tools
-- **Deep Researcher**: Multi-round research with LLM-optimized queries
+- **Deep Researcher**: Multi-round research with LLM-optimized queries and multimodal support
 - **Deep Analyzer**: Advanced content analysis and insights
-- **Browser Automation**: Full browser control with Playwright
+- **Browser Tool**: Full browser control with Playwright integration
+
+### MCP Tools (Model Context Protocol)
+- **MCP Client/Server**: Integration with external MCP services
+- **File Operations**: MCP-based file system operations
+- **External Services**: Integration with various external services via MCP
 
 ### Specialized Environments
-- **File System**: Complete file operations and management
-- **GitHub**: Repository management, cloning, commits, and collaboration
-- **Database**: SQL operations with multiple database support
-- **Trading**: Financial market simulation and analysis
-- **Browser**: Web automation and interaction
-- **Vector Search**: FAISS-based similarity search
+- **File System Environment**: Complete file operations and management with path policies
+- **GitHub Environment**: Repository management, cloning, commits, and collaboration
+- **Database Environment**: SQL operations with multiple database support
+- **Trading Environment**: Financial market simulation and analysis with offline trading
+- **Playwright Environment**: Web automation and interaction with browser control
+- **FAISS Environment**: Vector search and similarity operations
+- **Operator Browser Environment**: Advanced browser operations and automation
 
 ## 🧠 Model Management System
 
 ### ModelManager
 
-The `ModelManager` provides centralized management of all language models:
+The `ModelManager` provides centralized management of all language models with local proxy support:
 
 ```python
-from src.models import ModelManager, OpenAIAsyncModel, AnthropicAsyncModel
+from src.infrastructures.models import model_manager
 
 # Initialize ModelManager
-model_manager = ModelManager()
+await model_manager.initialize(use_local_proxy=False)  # Use official APIs
+# await model_manager.initialize(use_local_proxy=True)  # Use local proxy
 
 # List all available models
-models = model_manager.list_models()
+models = model_manager.list()
 print(f"Available models: {models}")
 
 # Get a specific model
 model = model_manager.get("gpt-4")
 
-# Create new models
-custom_model = model_manager.create_openai_model(
-    "custom-gpt4",
+# Create new models with different configurations
+openai_model = model_manager.create_openai_model(
+    "gpt-4",
     model_name="gpt-4",
     temperature=0.5,
     max_tokens=1000
 )
 
 claude_model = model_manager.create_anthropic_model(
-    "custom-claude",
+    "claude-3-sonnet",
     model_name="claude-3-sonnet-20240229",
     temperature=0.7
+)
+
+google_model = model_manager.create_google_model(
+    "gemini-pro",
+    model_name="gemini-pro",
+    temperature=0.3
 )
 ```
 
@@ -223,6 +266,7 @@ claude_model = model_manager.create_anthropic_model(
 - `gpt-4`: GPT-4 model
 - `gpt-3.5-turbo`: GPT-3.5 Turbo model
 - `gpt-4-turbo`: GPT-4 Turbo model
+- `gpt-4.1`: Enhanced GPT-4 model
 
 #### Anthropic Models
 - `claude-3-sonnet`: Claude 3 Sonnet model
@@ -230,59 +274,64 @@ claude_model = model_manager.create_anthropic_model(
 - `claude-3-haiku`: Claude 3 Haiku model
 - `claude-2`: Claude 2 model
 
+#### Google Models
+- `gemini-pro`: Google Gemini Pro model
+- `gemini-pro-vision`: Google Gemini Pro Vision model
+
+#### Browser-Specific Models
+- `bs-gpt-4.1`: Browser-specific GPT-4 model for web automation
+- `o3`: Advanced model for research tasks
+
 ### Using Models with Agents
 
 ```python
 # Create agent with specific model
 agent = ToolCallingAgent(
-    name="researcher",
+    workdir="./workdir/researcher",
     model_name="gpt-4",  # Use OpenAI model
-    tools=["web_searcher_tool", "web_fetcher_tool"]
+    prompt_name="tool_calling"
 )
 
 # Create agent with Anthropic model
 agent = ToolCallingAgent(
-    name="writer",
+    workdir="./workdir/writer", 
     model_name="claude-3-sonnet",  # Use Anthropic model
-    tools=["web_searcher_tool", "web_fetcher_tool"]
+    prompt_name="tool_calling"
 )
 
-# Change model dynamically
-agent.change_model("gpt-3.5-turbo")
-
 # Get model information
-model_info = agent.get_model_info()
-print(f"Current model: {model_info['model_name']}")
+print(f"Current model: {agent.model}")
+print(f"Agent name: {agent.name}")
 ```
 
-## Tool Management System
+## Tool Management System (TCP)
 
-### ToolManager
+### Tool Context Protocol (TCP)
 
-The `ToolManager` provides comprehensive management of all tools organized into specialized categories:
+The Tool Context Protocol provides comprehensive management of all tools organized into specialized categories:
 
 ```python
-from src.tools import ToolManager
+from src.tools.protocol import tcp
 
-# Initialize ToolManager
-tool_manager = ToolManager()
+# Initialize TCP
+await tcp.initialize()
 
 # List all available tools
-tools = tool_manager.list_tools()
+tools = tcp.list()
 print(f"Available tools: {tools}")
 
 # Get a specific tool
-tool = tool_manager.get_tool("web_searcher_tool")
+tool = tcp.get("web_searcher")
 
 # Execute tools asynchronously
-result = await tool_manager.execute_tool("web_fetcher_tool", "https://example.com")
+result = await tcp.execute("web_fetcher", "https://example.com")
 
 # Execute multiple tools concurrently
 tool_calls = [
-    {"name": "web_searcher_tool", "args": ["AI research"], "kwargs": {}},
-    {"name": "web_fetcher_tool", "args": ["https://example.com"], "kwargs": {}},
+    {"name": "web_searcher", "args": ["AI research"], "kwargs": {}},
+    {"name": "web_fetcher", "args": ["https://example.com"], "kwargs": {}},
 ]
-results = await tool_manager.execute_multiple_tools(tool_calls)
+results = await tcp.execute_multiple(tool_calls)
 ```
 
 ### Tool Categories
@@ -316,16 +365,37 @@ Advanced workflow and agent-specific tools:
 Model Context Protocol tools for external service integration:
 - `mcp_tool_set.py`: Collection and management of MCP protocol tools
 
+## Environment Management System (ECP)
+
+### Environment Context Protocol (ECP)
+
+The Environment Context Protocol provides unified management of specialized environments:
+
+```python
+from src.environments.protocol import ecp
+
+# Initialize ECP
+await ecp.initialize(["github", "file_system", "database"])
+
+# List all available environments
+environments = ecp.list()
+print(f"Available environments: {environments}")
+
+# Get a specific environment
+env = ecp.get("github")
+
+# Execute environment operations
+result = await ecp.execute("github", "clone_repository", {
+    "repository_url": "https://github.com/user/repo.git",
+    "local_path": "./local_repo"
+})
+```
+
 ### Using Tools with Agents
 
 ```python
 # Create agent with specific tools
-agent = AGENTS.build(dict(
-    type="ToolCallingAgent",
-    name="researcher",
-    model_name="gpt-4",
-    tools=["web_searcher", "web_fetcher", "browser", "deep_researcher"]
-))
+agent = acp.get("tool_calling")
 
 # Tools are configured in the config file and loaded automatically
 available_tools = agent.list_available_tools()
@@ -335,7 +405,7 @@ print(f"Available tools: {available_tools}")
 ### Deep Researcher Tool Example
 
 ```python
-from src.tools.agent_tools import DeepResearcherTool
+from src.tools.workflow_tools import DeepResearcherTool
 
 # Initialize the deep researcher tool
 researcher = DeepResearcherTool(model_name="o3")
@@ -350,6 +420,31 @@ result = await researcher.arun(
 print(result)  # Comprehensive research summary
 ```
 
+## Agent Management System (ACP)
+
+### Agent Context Protocol (ACP)
+
+The Agent Context Protocol provides comprehensive management of all agents:
+
+```python
+from src.agents.protocol import acp
+
+# Initialize ACP
+await acp.initialize(["tool_calling", "simple_chat", "debate_manager"])
+
+# List all available agents
+agents = acp.list()
+print(f"Available agents: {agents}")
+
+# Get a specific agent
+agent = acp.get("tool_calling")
+
+# Invoke agent
+result = await acp.ainvoke("tool_calling", {
+    "task": "Search for the latest AI news and summarize it"
+})
+```
+
 ## Prompt Management System
 
 ### PromptManager
@@ -357,7 +452,7 @@ print(result)  # Comprehensive research summary
 The `PromptManager` provides centralized management of all prompt templates:
 
 ```python
-from src.agents import PromptManager
+from src.agents.prompts.prompt_manager import PromptManager
 
 # Initialize PromptManager
 prompt_manager = PromptManager()
@@ -426,23 +521,21 @@ print(f"Agent tools: {agent_info['tools']}")
 ### Advanced Tool Usage with Different Models
 
 ```python
-from src.registry import AGENTS
-from src.tools.agent_tools import DeepResearcherTool
+from src.tools.workflow_tools import DeepResearcherTool
+from src.agents import ToolCallingAgent
 
 # Create specialized agents with different models
-researcher_agent = AGENTS.build(dict(
-    type="ToolCallingAgent",
+researcher_agent = ToolCallingAgent(
     name="researcher",
     model_name="gpt-4",
     tools=["web_searcher", "web_fetcher", "deep_researcher"]
-))
+)
 
-writer_agent = AGENTS.build(dict(
-    type="ToolCallingAgent",
+writer_agent = ToolCallingAgent(
     name="writer",
     model_name="claude-3-sonnet",
     tools=["web_searcher", "web_fetcher"]
-))
+)
 
 # Use deep researcher tool directly
 deep_researcher = DeepResearcherTool(model_name="o3")
@@ -457,9 +550,10 @@ print(f"Research completed: {research_result}")
 ### Concurrent Tool Execution
 
 ```python
-from src.tools import ToolManager
+from src.tools.protocol import tcp
 
-tool_manager = ToolManager()
+# Initialize TCP
+await tcp.initialize()
 
 # Execute multiple tools concurrently
 tool_calls = [
@@ -468,7 +562,7 @@ tool_calls = [
     {"name": "deep_researcher_tool", "args": ["Quantum computing"], "kwargs": {}},
 ]
 
-results = await tool_manager.execute_multiple_tools(tool_calls)
+results = await tcp.execute_multiple(tool_calls)
 for i, result in enumerate(results):
     print(f"Tool {i+1} result: {result}")
 ```
@@ -509,7 +603,7 @@ tool_calls = [
     {"name": "deep_researcher_tool", "args": ["Quantum computing"], "kwargs": {}},
 ]
 
-results = await tool_manager.execute_multiple_tools(tool_calls)
+results = await tcp.execute_multiple(tool_calls)
 ```
 
 ### Async Model Invocation
@@ -525,53 +619,64 @@ responses = await model.agenerate(messages)
 
 ## Agent Types
 
-### InteractiveAgent (Async)
-An interactive agent implementation that supports:
+### SimpleChatAgent
+A conversational agent for human interaction that supports:
 - Model management via ModelManager
 - Prompt templates via PromptManager
-- Tool management via ToolManager
-- Async tool usage (LangChain and MCP tools)
-- Interactive conversation capabilities
+- Async conversation capabilities
 - State management and memory
+- Simple chat interface without tool usage
 
-### ToolCallingAgent (Async)
+### ToolCallingAgent
 A specialized agent for tool execution that supports:
 - Model management via ModelManager
-- Tool management via ToolManager
+- Tool management via TCP protocol
 - Async tool usage with proper error handling
 - Structured tool calling and response processing
 - Integration with all tool categories (default, environment, agent, MCP)
 - Support for complex workflow tools like DeepResearcherTool
+- ThinkOutputBuilder for structured output formatting
+
+### FinAgent
+A financial analysis agent specialized for trading tasks that supports:
+- Financial data analysis and processing
+- Trading strategy implementation
+- Market simulation and backtesting
+- Financial metrics and performance evaluation
+- Integration with trading environments
+
+### DebateManagerAgent
+A multi-agent coordination agent that supports:
+- Coordinating multiple agents in debate sessions
+- Managing debate rounds and turn-taking
+- Facilitating agent-to-agent communication
+- Debate topic management and moderation
+- Async debate session handling
 
 ## Tool Integration
 
 ### Async Custom Tools
 ```python
-from src.tools import ToolManager
+from src.tools.protocol import tcp
 
-tool_manager = ToolManager()
-available_tools = tool_manager.list_tools()
+# Initialize TCP
+await tcp.initialize()
+available_tools = tcp.list()
 # Includes: web_searcher_tool, web_fetcher_tool, browser_tool, 
 #          deep_researcher_tool, and MCP tools
 ```
 
 ### Async MCP Tools
 ```python
-from src.tools import ToolManager
+from src.tools.protocol import tcp
 
-tool_manager = ToolManager()
+# Initialize TCP
+await tcp.initialize()
 
-# Register MCP server
-tool_manager.register_mcp_server("file_server", {
-    "host": "localhost",
-    "port": 8000
-})
-
-# Add MCP tool
-tool = tool_manager.add_mcp_tool("file_server", "file_operations", {
-    "name": "file_operations",
-    "description": "File system operations"
-})
+# MCP tools are managed through the TCP protocol
+# Tools are automatically loaded from the mcp_tools directory
+mcp_tools = tcp.list()
+print(f"MCP tools available: {mcp_tools}")
 ```
 
 ## Tool Integration Examples
@@ -595,7 +700,7 @@ print(f"Content length: {len(content)}")
 
 ### Browser Automation
 ```python
-from src.tools.agent_tools import BrowserTool
+from src.tools.workflow_tools import BrowserTool
 
 # Initialize browser tool
 browser = BrowserTool(model_name="gpt-4")
@@ -640,6 +745,7 @@ use_local_proxy = False  # Set to False for official OpenAI/Anthropic APIs
 # use_local_proxy = True   # Set to True for local proxy services (localhost:8000)
 version = "0.1.0"
 
+# Agent configuration
 agent = dict(
     type = "ToolCallingAgent",
     name = "tool_calling_agent",
@@ -659,6 +765,15 @@ agent = dict(
     ],
     max_iterations = 10
 )
+
+# Environment names
+env_names = ["file_system", "github", "database"]
+
+# Tool names (auto-loaded from tools directory)
+tool_names = []
+
+# Agent names
+agent_names = ["tool_calling"]
 ```
 
 ### Base Configuration
@@ -689,25 +804,13 @@ python examples/run_simple_chat_agent.py
 # Tool-calling agent with full capabilities
 python examples/run_tool_calling_agent.py
 
-# Multi-agent debate system
-python examples/run_multi_agent_debate.py
+# Financial analysis agent
+python examples/run_finagent.py
 ```
 
 ### Advanced Examples
 ```bash
-# Financial analysis agent
-python examples/run_finagent.py
-
-# Browser automation demo
-python examples/run_browser_agent.py
-
-# Research workflow demo
-python examples/run_research_agent.py
-```
-
-### Web Interface
-```bash
-# Start debate frontend
+# Multi-agent debate system
 python examples/debate/debate_frontend.py
 # Access at http://localhost:5000
 ```
@@ -735,7 +838,7 @@ The async architecture provides several performance benefits:
 1. Inherit from `langchain.tools.BaseTool`
 2. Implement required async methods (`_arun`, `_run`)
 3. Add to appropriate tool set (`default_tools`, `environment_tools`, `agent_tools`, or `mcp_tools`)
-4. Register with `ToolManager`
+4. Register with TCP protocol
 
 ### Adding New Prompt Templates
 1. Create Python file in `src/agents/prompts/templates/`
@@ -748,34 +851,41 @@ The async architecture provides several performance benefits:
 
 ## 🧪 Testing
 
-### Run All Tests
+### Run Test Scripts
 ```bash
-# Run complete test suite
-pytest tests/ -v
+# Protocol tests
+python tests/test_acp.py
+python tests/test_tcp.py
+python tests/test_ecp.py
 
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-```
-
-### Specific Test Categories
-```bash
 # Agent tests
-pytest tests/test_agent.py tests/test_finagent.py -v
+python tests/test_agent.py
+python tests/test_finagent.py
 
 # Tool tests
-pytest tests/test_browser.py tests/test_file_system.py -v
+python tests/test_browser.py
+python tests/test_file_system.py
 
 # Environment tests
-pytest tests/test_github_system.py tests/test_faiss.py -v
+python tests/test_github_system.py
+python tests/test_faiss.py
 
 # Model and infrastructure tests
-pytest tests/test_models.py tests/test_memory_system.py -v
+python tests/test_models.py
+python tests/test_memory_system.py
+
+# Transformation tests
+python tests/test_transformation.py
 ```
 
-### Test Coverage
+### Test Configuration
+Most test scripts support configuration options:
 ```bash
-# Generate coverage report
-pytest tests/ --cov=src --cov-report=term-missing
+# Run with specific config
+python tests/test_acp.py --config configs/simple_chat_agent.py
+
+# Run with custom options
+python tests/test_models.py --cfg-options use_local_proxy=False
 ```
 
 ## 🔧 Troubleshooting
@@ -794,6 +904,12 @@ pytest tests/ --cov=src --cov-report=term-missing
   - Check model availability in ModelManager
   - Ensure network connectivity
 
+#### Protocol Initialization Issues
+- **Error**: "TCP/ECP/ACP initialization failed"
+  - **Solution**: Check protocol configuration in config files
+  - Verify tool/environment/agent names are correct
+  - Ensure all dependencies are installed
+
 #### Tool Loading Issues
 - **Error**: "Tool not found" or "Tool initialization failed"
   - **Solution**: Verify tool registration in appropriate tool sets
@@ -805,6 +921,12 @@ pytest tests/ --cov=src --cov-report=term-missing
   - **Solution**: Check environment-specific dependencies
   - Verify environment configuration files
   - Ensure required services are running (e.g., database, browser)
+
+#### Transformation Issues
+- **Error**: "Transformation failed"
+  - **Solution**: Check transformation configuration
+  - Verify source and target entities exist
+  - Review transformation logic in transformation module
 
 ### Getting Help
 - Check the [Issues](https://github.com/your-repo/issues) page for known problems
