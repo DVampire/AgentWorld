@@ -812,7 +812,7 @@ python examples/run_finagent.py
 ```bash
 # Multi-agent debate system
 python examples/debate/debate_frontend.py
-# Access at http://localhost:5000
+# Access at http://localhost:8000
 ```
 
 ## Performance Benefits
