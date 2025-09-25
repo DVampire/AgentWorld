@@ -100,9 +100,14 @@ class SimpleChatAgent(BaseAgent):
         system_input_variables = {}
         system_message = self.prompt_manager.get_system_message(system_input_variables)
         
+        # Use global conversation history if available
+        conversation_history = ""
+        if hasattr(self, '_current_global_history') and self._current_global_history:
+            conversation_history = self._format_global_history(self._current_global_history)
+        
         agent_input_variables = {
             "user_message": message,
-            "conversation_history": await self._get_agent_history(),
+            "conversation_history": conversation_history,
             "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
@@ -117,48 +122,32 @@ class SimpleChatAgent(BaseAgent):
     async def _should_continue_conversation(self, current_message: str, conversation_history: str = "", last_response: str = "") -> tuple[bool, str]:
         """Let LLM decide whether the conversation should continue based on current message and context."""
         decision_prompt = f"""
-You are a helpful AI assistant in a multi-turn conversation. 
+You are a helpful AI assistant participating in a debate or discussion. 
 
-Current user message: "{current_message}"
+Current message: "{current_message}"
 {conversation_history}
-{f"Last assistant response: {last_response}" if last_response else ""}
+{f"Last response: {last_response}" if last_response else ""}
 
-Please decide whether you should respond to this message and continue the conversation. Consider:
-1. Is the message appropriate for a conversation?
-2. Is the message clear and understandable?
-3. Would responding be helpful to the user?
-4. Are there any safety concerns?
-5. Is this a natural continuation of the conversation?
-6. Does the user seem satisfied with previous responses?
-7. Has the user's question been fully answered?
-8. Are there natural follow-up questions or topics?
+Please decide whether you should respond to this message. In a debate context, you should be MORE LIKELY to respond to:
+- Questions or statements about topics
+- Arguments or counter-arguments
+- Requests for opinions or analysis
+- Discussion points
+- Any substantive content
+
+Only decline to respond if:
+- The message is completely inappropriate or harmful
+- The message is pure spam or gibberish
+- The message is completely unrelated to any discussion topic
 
 Respond with a JSON format:
 {{
     "should_continue": true/false,
     "reasoning": "Brief explanation of your decision",
-    "response_type": "helpful/decline/redirect/end" (if should_continue is true, what type of response)
+    "response_type": "helpful/decline/redirect/end"
 }}
 
-Examples of when NOT to continue:
-- Spam or gibberish
-- Inappropriate content
-- Messages that are too vague to understand
-- Requests that are beyond your capabilities
-- User says "thanks", "ok", "got it" indicating satisfaction
-- User says "bye", "goodbye", "see you" indicating end of conversation
-- User seems satisfied and conversation has reached natural conclusion
-- The question has been fully answered and user seems satisfied
-
-Examples of when TO continue:
-- Questions or requests for help
-- Normal conversation continuation
-- Clarifications needed
-- Friendly greetings
-- User asks follow-up questions
-- User seems to want more information
-- The topic has more depth to explore
-- Natural conversation flow suggests continuation
+Remember: In debates, it's better to engage and provide your perspective rather than decline to respond.
 
 """
 
@@ -419,3 +408,50 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             "content": response_content,
             "should_continue": True
         }
+
+    async def ainvoke_simple(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None):
+        """Simple single response for debate scenarios."""
+        logger.info(f"| 💬 {self.name} responding to: {task[:self.log_max_length]}...")
+        
+        # Set global conversation history for this agent
+        self._current_global_history = global_conversation_history or []
+        
+        # Get conversation history for decision making
+        if global_conversation_history:
+            conversation_history = self._format_global_history(global_conversation_history)
+        else:
+            conversation_history = ""
+        
+        # Let LLM decide whether to respond
+        should_continue, reasoning = await self._should_continue_conversation(task, conversation_history)
+        logger.info(f"| 🤔 {self.name} decision: {reasoning}")
+        
+        if not should_continue:
+            logger.info(f"| 🚫 {self.name} decided not to respond")
+            return None
+        
+        try:
+            # Generate response
+            logger.info(f"| 🔧 {self.name} getting messages...")
+            messages = await self._get_messages(task)
+            logger.info(f"| 🔧 {self.name} got {len(messages)} messages")
+            
+            logger.info(f"| 🔧 {self.name} calling model...")
+            response = await self.model.ainvoke(messages)
+            logger.info(f"| 🔧 {self.name} got response: {type(response)}")
+            
+            # Extract response content
+            if hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            logger.info(f"| 🤖 {self.name} response: {response_text[:self.log_max_length]}...")
+            
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error in ainvoke_simple for {self.name}: {e}")
+            import traceback
+            logger.error(f"| ❌ Traceback: {traceback.format_exc()}")
+            return None

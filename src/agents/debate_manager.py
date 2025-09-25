@@ -61,6 +61,12 @@ class DebateManagerAgent(BaseAgent):
         self.name = name
         self.description = description
         
+        # Initialize debate-specific attributes
+        self.global_conversation_history: List[Dict] = []
+        self.current_round = 0
+        self.active_agents = []
+        self.max_rounds = max_rounds
+        
         # No tools needed for simple chat
         self.tools = []
         self.model = self.model  # Use the base model without tool binding
@@ -159,28 +165,47 @@ class DebateManagerAgent(BaseAgent):
         """Let an agent speak in the debate."""
         logger.info(f"| 🎤 {agent_name} is speaking...")
         
+        # Emit agent start speaking event
+        yield {
+            "agent": agent_name,
+            "type": "agent_thinking",
+            "content": f"{agent_name} is thinking...",
+            "should_continue": True
+        }
+        
         try:
-            # Call agent through acp
-            result = await acp.ainvoke(
-                name=agent_name,
-                input={
-                    "task": message,
-                    "files": []
-                }
-            )
+            # Get agent instance and call ainvoke_simple for debate
+            agent_info = acp.get_info(agent_name)
+            if agent_info and hasattr(agent_info, 'instance') and agent_info.instance:
+                agent = agent_info.instance
+                result = await agent.ainvoke_simple(
+                    task=message,
+                    files=[],
+                    global_conversation_history=self.global_conversation_history
+                )
+            else:
+                # Fallback to regular acp call
+                result = await acp.ainvoke(
+                    name=agent_name,
+                    input={
+                        "task": message,
+                        "files": []
+                    }
+                )
             
             # Process the result
-            if result:
+            if result and str(result).strip():
+                # Emit agent response event
                 yield {
                     "agent": agent_name,
-                    "type": "response_complete",
+                    "type": "agent_response",
                     "content": str(result),
                     "should_continue": True
                 }
             else:
                 yield {
                     "agent": agent_name,
-                    "type": "decision",
+                    "type": "agent_decline",
                     "content": f"{agent_name} decided not to respond",
                     "should_continue": False
                 }

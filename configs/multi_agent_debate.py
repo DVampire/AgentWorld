@@ -21,6 +21,7 @@ alice_agent.update(
     workdir=workdir,
     name="alice",
     description="Alice is a helpful assistant. She is an expert with professional knowledge in the field of finance and stocks.",
+    prompt_name="debate_chat",  # Use debate-specific prompts
 )
 
 #-----------------BOB AGENT CONFIG-----------------
@@ -29,6 +30,7 @@ bob_agent.update(
     workdir=workdir,
     name="bob",
     description="Bob is a helpful assistant. He is an expert with professional knowledge in the field of mathematics.",
+    prompt_name="debate_chat",  # Use debate-specific prompts
 )
 
 #-----------------DEBATE MANAGER CONFIG-----------------
