@@ -75,7 +75,7 @@ AgentWorld/
 
 ## 🤖 AgentOrchestra: A Multi-Agent Instance
 
-**AgentOrchestra** is a hierarchical multi-agent system built on AgentWorld, designed to solve general-purpose tasks through coordinated agent collaboration.
+**AgentOrchestra** is a hierarchical multi-agent system built on TEA, designed to solve general-purpose tasks through coordinated agent collaboration.
 
 ![AgentOrchestra Architecture](docs/architecture.png)
 
