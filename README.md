@@ -121,17 +121,34 @@ cd AgentWorld
 2. **Install dependencies:**
 ```bash
 pip install -r requirements.txt
+cd libs/
+git clone git@github.com:browser-use/browser-use.git
+cd browser-use
+pip install -e .
 ```
 
 3. **Set up environment variables:**
 ```bash
-# Required API keys
-export OPENAI_API_KEY="your-openai-key-here"
-export ANTHROPIC_API_KEY="your-anthropic-key-here"
+# Setup `.env` in your project root path, the keys should be like:
+PYTHONWARNINGS=ignore # ignore warnings
+ANONYMIZED_TELEMETRY=false # disable telemetry
 
-# Optional API keys for additional features
-export GOOGLE_API_KEY="your-google-key-here"
-export GITHUB_TOKEN="your-github-token-here"
+# OpenAI API Key
+OPENAI_API_BASE=https://api.openai.com/v1
+OPENAI_API_KEY=abcabcabc
+# Anthropic API Key
+ANTHROPIC_API_BASE=https://api.anthropic.com
+ANTHROPIC_API_KEY=abcabcabc
+# Google
+GOOGLE_API_BASE="xxx"
+GOOGLE_API_KEY="xxx"
+
+#Search API
+BRAVE_SEARCH_API_KEY=abcabcabc
+FIRECRAWL_API_KEY=abcabcabc
+#Github
+GITHUB_TOKEN=abcabcabc
+GITHUB_USERNAME=your-github-username
 ```
 
 ### 🎯 Basic Usage
@@ -157,6 +174,7 @@ async def main():
     logger.init_logger(config)
     
     # Initialize models and agents
+    # use_local_proxy = False, will use the official openai api
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     await acp.initialize(config.agent_names)
     
