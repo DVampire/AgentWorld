@@ -360,7 +360,6 @@ agent = ToolCallingAgent(
 )
 
 # Add new tools dynamically
-agent.add_tool("browser_tool")
 agent.add_tool("deep_researcher_tool")
 
 # Get agent information
@@ -427,7 +426,6 @@ for i, result in enumerate(results):
 agent.change_model("claude-3-opus")
 
 # Add new tools dynamically
-agent.add_tool("browser_tool")
 agent.add_tool("deep_researcher_tool")
 
 # Remove tools
@@ -498,7 +496,7 @@ from src.tools import ToolManager
 
 tool_manager = ToolManager()
 available_tools = tool_manager.list_tools()
-# Includes: web_searcher_tool, web_fetcher_tool, browser_tool, 
+# Includes: web_searcher_tool, web_fetcher_tool, 
 #          deep_researcher_tool, and MCP tools
 ```
 
@@ -541,16 +539,7 @@ print(f"Content length: {len(content)}")
 ```
 
 ### Browser Automation
-```python
-from src.tools.agent_tools import BrowserTool
-
-# Initialize browser tool
-browser = BrowserTool(model_name="gpt-4")
-
-# Perform browser automation
-result = await browser.arun("Navigate to example.com and take a screenshot")
-print(result)
-```
+This feature has been removed. Please use other automation tools as needed.
 
 ## Configuration
 
@@ -576,7 +565,7 @@ The `use_local_proxy` parameter is crucial for proper API connectivity:
 # configs/tool_calling_agent.py
 from mmengine.config import read_base
 with read_base():
-    from .base import browser_tool, deep_researcher_tool
+    from .base import deep_researcher_tool
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
@@ -617,10 +606,6 @@ with read_base():
     from .environments.trading_offline import dataset, environment, metric
 
 # Tool-specific configurations
-browser_tool = dict(
-    model_name = "bs-gpt-4.1",  # Browser-specific model
-)
-
 deep_researcher_tool = dict(
     model_name = "o3",  # Research-specific model
 )
@@ -685,7 +670,7 @@ Run the tests:
 pytest tests/test_agent.py -v
 
 # Test tools
-pytest tests/test_browser_tool.py -v
+# Browser tool tests have been removed
 
 # Test models
 pytest tests/test_models.py -v

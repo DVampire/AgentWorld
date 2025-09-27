@@ -50,9 +50,17 @@ async def main():
     # Initialize controllers
     logger.info("| 🎮 Initializing controllers...")
     controllers = []
+    
+    # File system controller
     file_system_controller_config = config.file_system_controller
     file_system_controller = CONTROLLERS.build(file_system_controller_config)
     controllers.append(file_system_controller)
+    
+    # Browser controller
+    browser_controller_config = config.browser_controller
+    browser_controller = CONTROLLERS.build(browser_controller_config)
+    controllers.append(browser_controller)
+    
     logger.info(f"| ✅ Controllers initialized: {controllers}")
     
     # Initialize tool manager
@@ -69,10 +77,10 @@ async def main():
     agent = AGENTS.build(agent_config)
     logger.info(f"| ✅ Agent built: {agent}")
     
-    """Test streaming execution mode."""
-    logger.info("| 🚀 Testing streaming execution mode")
+    """Test browser tool integration."""
+    logger.info("| 🚀 Testing browser tool integration")
     
-    task = "生成一个Python脚本, 计算斐波那契数列。"
+    task = "使用browser中的工具，访问百度网站，搜索北京明天天气预报，给出答案"
     logger.info(f"| 📋 Task: {task}")
     
     await agent.run(task)

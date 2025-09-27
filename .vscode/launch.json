@@ -10,8 +10,17 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
+            
             "console": "integratedTerminal",
-            "justMyCode": falses
+            "justMyCode": false
+        },
+        {
+            "name": "Python Debugger: test run_tool_calling_agent.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/run_tool_calling_agent.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
         }
     ]
 }

@@ -50,3 +50,8 @@ python-dotenv>=1.1.1
 iopath>=0.1.10
 gymnasium>=1.2.0
 numpy>=2.3.2
+
+# Browser automation
+browser-use>=0.7.3
+playwright>=1.40.0
+cdp-use>=0.1.0

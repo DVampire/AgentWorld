@@ -2,7 +2,6 @@
 from typing import List, Dict, Any, Optional
 from langchain.tools import BaseTool
 
-from src.tools.agent_tools.browser import BrowserTool
 from src.tools.agent_tools.deep_researcher import DeepResearcherTool
 from src.config import config
 
@@ -20,13 +19,6 @@ class AgentToolSet:
     
     async def _load_agent_tools(self):
         """Load all agent tools asynchronously."""
-        # Load browser tool
-        browser_tool = BrowserTool(
-            model_name=config.browser_tool.model_name,
-        )
-        self._tools["browser"] = browser_tool
-        self._tool_configs["browser"] = browser_tool.get_tool_config()
-        
         # Load deep researcher tool
         deep_researcher_tool = DeepResearcherTool(
             model_name=config.deep_researcher_tool.model_name,

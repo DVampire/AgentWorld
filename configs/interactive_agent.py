@@ -1,6 +1,6 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import browser_tool
+    pass
 
 # System settings
 tag = "interactive_agent"

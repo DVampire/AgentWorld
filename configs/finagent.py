@@ -1,6 +1,5 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import browser_tool
     from .environments.trading_offline import environment, dataset, metric, controller
 
 tag = "finagent"
@@ -9,11 +8,6 @@ log_path = "agent.log"
 
 use_local_proxy = False
 version = "0.1.0"
-
-#---------------BROWSER TOOL CONFIG-----------------------
-browser_tool.update(
-    model_name="bs-gpt-4.1"
-)
 
 #---------------TRADING OFFLINE ENVIRONMENT CONFIG--------
 symbol = "AAPL"
