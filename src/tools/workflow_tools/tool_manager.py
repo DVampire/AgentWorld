@@ -495,14 +495,22 @@ class ToolManagerTool(BaseTool):
     args_schema: Type[ToolManagerArgs] = ToolManagerArgs
     metadata: Dict[str, Any] = {}
     
+    model_name: str = Field(
+        default="o3",
+        description="The model to use for the tool manager."
+    )
+    
     def __init__(self, model_name: Optional[str] = None, **kwargs):
         """Initialize the tool manager TCP tool."""
-        model_name = model_name or config.tool_manager_tool.get("model_name", "o3")
-        super().__init__(model_name=model_name, **kwargs)
-        self.model_name = model_name
+        super().__init__(**kwargs)
+        if model_name is not None:
+            self.model_name = model_name
+        else:
+            if "tool_manager_tool" in config:
+                self.model_name = config.tool_manager_tool.get("model_name", "o3")
         
         # Initialize the workflow
-        self.workflow = ToolManagerWorkflow(model_name=model_name)
+        self.workflow = ToolManagerWorkflow(model_name=self.model_name)
     
     async def _arun(self, 
                    operation: str,

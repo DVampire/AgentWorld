@@ -36,9 +36,15 @@ class BrowserTool(BaseTool):
     )
     
     def __init__(self, model_name: Optional[str] = None, **kwargs):
-        model_name = model_name or config.browser_tool.get("model_name", "bs-gpt-4.1")
-        super().__init__(model_name=model_name, **kwargs)
-        self.model_name = model_name
+        
+        super().__init__(**kwargs)
+        
+        if model_name is not None:
+            self.model_name = model_name
+        else:
+            if "browser_tool" in config:
+                self.model_name = config.browser_tool.get("model_name", "bs-gpt-4.1")
+        
         
     async def _arun(self, task: str, base_dir: str) -> ToolResponse:
         agent = None

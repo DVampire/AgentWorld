@@ -10,10 +10,8 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
-import uuid
 import json
 from datetime import datetime
-from inspect import cleandoc
 
 from langchain.schema import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -21,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from src.logger import logger
 from src.infrastructures.models import model_manager
+from src.utils import dedent
 
 class EventType(Enum):
     TASK_START = "task_start"
@@ -38,16 +37,16 @@ class ChatEvent(BaseModel):
     task_id: Optional[str] = Field(None, description="The task ID of the event.")
     
     def __str__(self):
-        string = cleandoc(f"""<chat_event>
-ID: {self.id}
-Step Number: {self.step_number}
-Event Type: {self.event_type}
-Timestamp: {self.timestamp}
-Agent Name: {self.agent_name}
-Session ID: {self.session_id}
-Task ID: {self.task_id}
-Data: {json.dumps(self.data)}
-</chat_event>""")
+        string = dedent(f"""<chat_event>
+            ID: {self.id}
+            Step Number: {self.step_number}
+            Event Type: {self.event_type}
+            Timestamp: {self.timestamp}
+            Agent Name: {self.agent_name}
+            Session ID: {self.session_id}
+            Task ID: {self.task_id}
+            Data: {json.dumps(self.data)}
+            </chat_event>""")
         return string
     
     def __repr__(self):
@@ -74,13 +73,13 @@ class Insight(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Tags for categorization")
     
     def __str__(self):
-        string = cleandoc(f"""<insight>
-ID: {self.id}
-Content: {self.content}
-Importance: {self.importance}
-Source Event ID: {self.source_event_id}
-Tags: {self.tags}
-</insight>""")
+        string = dedent(f"""<insight>
+            ID: {self.id}
+            Content: {self.content}
+            Importance: {self.importance}
+            Source Event ID: {self.source_event_id}
+            Tags: {self.tags}
+            </insight>""")
         return string
     
     def __repr__(self):
@@ -92,11 +91,11 @@ class Summary(BaseModel):
     content: str = Field(..., description="The summary content")
     
     def __str__(self):
-        string = cleandoc(f"""<summary>
-ID: {self.id}
-Importance: {self.importance}
-Content: {self.content}
-</summary>""")
+        string = dedent(f"""<summary>
+            ID: {self.id}
+            Importance: {self.importance}
+            Content: {self.content}
+            </summary>""")
         return string
     
     def __repr__(self):
@@ -173,19 +172,19 @@ class CombinedMemory:
         for msg in self.candidate_chat_history.messages:
             if isinstance(msg, HumanMessage):
                 new_lines.append(
-cleandoc(f"""
-<human>
-{msg.content}
-</human>
-""")
+                dedent(f"""
+                <human>
+                {msg.content}
+                </human>
+                """)
                 )
             elif isinstance(msg, AIMessage):
                 new_lines.append(
-cleandoc(f"""
-<ai>
-{msg.content}
-</ai>
-""")
+                dedent(f"""
+                <ai>
+                {msg.content}
+                </ai>
+                """)
                 )
         new_lines_text = chr(10).join(new_lines)
         
@@ -193,12 +192,12 @@ cleandoc(f"""
     
     async def _get_current_memory_text(self) -> str:
         """Get current memory text"""
-        current_memory = cleandoc(f"""<summaries>
-{chr(10).join([str(summary) for summary in self.summaries])}
-</summaries>
-<insights>
-{chr(10).join([str(insight) for insight in self.insights])}
-</insights>""")
+        current_memory = dedent(f"""<summaries>
+            {chr(10).join([str(summary) for summary in self.summaries])}
+            </summaries>
+            <insights>
+            {chr(10).join([str(insight) for insight in self.insights])}
+            </insights>""")
         return current_memory
 
     async def _check_should_process_memory(self) -> bool:
@@ -210,24 +209,24 @@ cleandoc(f"""
         current_memory = await self._get_current_memory_text()
         
         # Create decision prompt
-        decision_prompt = cleandoc(f"""You are analyzing a conversation to decide whether to process it and generate summaries and insights.
+        decision_prompt = dedent(f"""You are analyzing a conversation to decide whether to process it and generate summaries and insights.
 
-Current conversation has {self.size()} events.
+        Current conversation has {self.size()} events.
 
-Decision criteria:
-1. If there are fewer than 3 events, do not process the memory.
-2. If the conversation is repetitive or doesn't add new information, do not process the memory.
-3. If there are significant new insights, decisions, or learnings, process the memory.
-4. If the conversation is getting long (more than 5 events), process the memory.
+        Decision criteria:
+        1. If there are fewer than 3 events, do not process the memory.
+        2. If the conversation is repetitive or doesn't add new information, do not process the memory.
+        3. If there are significant new insights, decisions, or learnings, process the memory.
+        4. If the conversation is getting long (more than 5 events), process the memory.
 
-Current memory:
-{current_memory}
+        Current memory:
+        {current_memory}
 
-New conversation events:
-{new_lines}
+        New conversation events:
+        {new_lines}
 
-Decide if you should process the memory.""")
-        
+        Decide if you should process the memory.""")
+                
         try:
             # Use structured LLM for reliable JSON output
             structured_llm = self.llm.with_structured_output(ProcessDecision)
@@ -248,46 +247,46 @@ Decide if you should process the memory.""")
         current_memory = await self._get_current_memory_text()
         
         # Create processing prompt using the combined template
-        prompt = cleandoc(f"""Analyze the conversation events and extract both summaries and insights.
+        prompt = dedent(f"""Analyze the conversation events and extract both summaries and insights.
 
-<intro>
-For summaries, focus on:
-1. Key decisions and actions taken
-2. Important information exchanged
-3. Task progress and outcomes
+        <intro>
+        For summaries, focus on:
+        1. Key decisions and actions taken
+        2. Important information exchanged
+        3. Task progress and outcomes
 
-For insights, look for:
-1. Successful strategies and patterns
-2. Mistakes or failures to avoid
-3. Key learnings and realizations
-4. Actionable insights that could help improve future performance
+        For insights, look for:
+        1. Successful strategies and patterns
+        2. Mistakes or failures to avoid
+        3. Key learnings and realizations
+        4. Actionable insights that could help improve future performance
 
-Avoid repeating information already in the summaries or insights.
-If there is nothing new, do not add a new entry.
-</intro>
+        Avoid repeating information already in the summaries or insights.
+        If there is nothing new, do not add a new entry.
+        </intro>
 
-<output_format>
-You must respond with a valid JSON object containing both "summaries" and "insights" arrays.
-- "summaries": array of objects, each with:
-    - "id": string (the unique identifier for the summary)
-    - "importance": string ("high", "medium", or "low")
-    - "content": string (the summary content)
-- "insights": array of objects, each with:
-    - "id": string (the unique identifier for the insight)
-    - "importance": string ("high", "medium", or "low")
-    - "content": string (the insight text)
-    - "source_event_id": string (the ID of the event that generated this insight)
-    - "tags": array of strings (categorization tags)
-</output_format>
+        <output_format>
+        You must respond with a valid JSON object containing both "summaries" and "insights" arrays.
+        - "summaries": array of objects, each with:
+            - "id": string (the unique identifier for the summary)
+            - "importance": string ("high", "medium", or "low")
+            - "content": string (the summary content)
+        - "insights": array of objects, each with:
+            - "id": string (the unique identifier for the insight)
+            - "importance": string ("high", "medium", or "low")
+            - "content": string (the insight text)
+            - "source_event_id": string (the ID of the event that generated this insight)
+            - "tags": array of strings (categorization tags)
+        </output_format>
 
-Current memory:
-{current_memory}
+        Current memory:
+        {current_memory}
 
-New conversation events:
-{new_lines}
+        New conversation events:
+        {new_lines}
 
-Based on the current memory and new conversation events, generate new summaries and insights.
-""")
+        Based on the current memory and new conversation events, generate new summaries and insights.
+        """)
         
         try:
             structured_llm = self.llm.with_structured_output(CombinedMemoryOutput)

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 pd.set_option('display.max_columns', 100000)
 pd.set_option('display.max_rows', 100000)
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from typing import Dict, List, Any, Union
 from datasets import load_dataset
 from pandas import DataFrame
@@ -14,7 +14,6 @@ from src.utils import get_tag_name
 from src.supports.registry import DATASETS
 from src.supports.registry import SCALER
 from src.utils import assemble_project_path
-from src.supports.datasets.collate_fn import SingleAssetPriceTextCollateFn
 from src.utils import get_start_end_timestamp, TimeLevel, TimeLevelFormat
 
 @DATASETS.register_module(force=True)
@@ -638,73 +637,3 @@ class SingleAssetDataset(Dataset):
 __all__ = [
     "SingleAssetDataset"
 ]
-
-if __name__ == '__main__':
-
-    dataset = dict(
-        type="SingleAssetDataset",
-        symbol="AAPL",
-        data_path="datasets/exp",
-        enabled_data_configs = [
-            {
-                "asset_name": "exp",
-                "source": "fmp",
-                "data_type": "price",
-                "level": "1day",
-            },
-            {
-                "asset_name": "exp",
-                "source": "fmp",
-                "data_type": "feature",
-                "level": "1day",
-            },
-            {
-                "asset_name": "exp",
-                "source": "fmp",
-                "data_type": "news",
-                "level": "1day",
-            },
-            {
-                "asset_name": "exp",
-                "source": "alpaca",
-                "data_type": "news",
-                "level": "1day",
-            }
-        ],
-        if_norm=True,
-        if_use_temporal=True,
-        if_use_future=False,
-        if_norm_temporal=False,
-        scaler_cfg = dict(
-            type="WindowedScaler"
-        ),
-        history_timestamps = 64,
-        future_timestamps = 32,
-        start_timestamp="2015-05-01",
-        end_timestamp="2025-05-01",
-        level="1day",
-    )
-    dataset = DATASETS.build(dataset)
-    print(dataset)
-
-    subdataset = deepcopy(dataset)
-    subdataset.crop(
-        start_timestamp="2015-05-01",
-        end_timestamp="2023-05-01"
-    )
-    print(subdataset)
-
-    collate_fn = SingleAssetPriceTextCollateFn()
-    dataloader = DataLoader(dataset,
-                            batch_size=4,
-                            shuffle=False,
-                            num_workers=0,
-                            collate_fn=collate_fn)
-    item = next(iter(dataloader))
-    history = item["history"]
-    print(history["prices"].shape)
-    print(history["features"].shape)
-    print("times", history['times'])
-    print(history["start_timestamp"])
-    print(history["end_timestamp"])
-    print(history["timestamps"])

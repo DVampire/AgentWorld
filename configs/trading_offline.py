@@ -1,8 +1,9 @@
 from mmengine.config import read_base
 with read_base():
     from .environments.trading_offline import environment as trading_offline_environment, dataset as trading_offline_dataset
+    from .agents.trading_offline import trading_offline_agent
 
-tag = "finagent"
+tag = "trading_offline"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
@@ -22,7 +23,9 @@ trading_offline_dataset.update(
     level=level
 )
 trading_offline_environment.update(
+    base_dir=workdir,
     mode="test",
+    dataset_cfg=trading_offline_dataset,
     start_timestamp=split_timestamp,
     end_timestamp=end_timestamp
 )
@@ -30,16 +33,10 @@ trading_offline_environment.update(
 env_names = [
     "trading_offline"
 ]
+agent_names = ["trading_offline"]
+tool_names = []
 
-agent = dict(
-    type = "FinAgent",
-    name = "finagent",
-    model_name = "gpt-4.1",
-    prompt_name = "finagent",  # Use explicit tool usage template
-    tools = [
-        # trading offline tools
-        "step",
-    ],
-    max_steps = -1, # unlimited steps
-    env_names = env_names
+#-----------------TRADING OFFLINE AGENT CONFIG-----------------
+trading_offline_agent.update(
+    workdir=workdir,
 )

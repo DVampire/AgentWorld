@@ -1,105 +1,22 @@
-"""Trading Offline Environment for AgentWorld - provides trading operations as an environment."""
-
 import warnings
 warnings.filterwarnings("ignore")
 from copy import deepcopy
 from pandas import DataFrame
-from typing import Any, Optional, Dict, Type, Union
+from typing import Any, Dict, Type
 import random
 import numpy as np
-import pandas as pd
-from dataclasses import asdict
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.utils import TradingRecords, Record
-from src.utils import get_token_count
+from src.utils import TradingRecords
 from src.utils import get_start_end_timestamp
 from src.environments.protocol import ecp
 from src.logger import logger
-from src.utils import dedent, assemble_project_path
-
+from src.utils import dedent
 from src.environments.protocol.environment import BaseEnvironment
 from src.supports.metric import ARR, SR, MDD, SOR, CR, VOL
+from src.supports.registry import DATASETS
 
-_STATE_RULES = """
-The environment state includes:
-1. Name: Asset name, Symbol: Asset symbol
-2. Price: Price information of the asset
-3. News: News information of the asset
-4. Record: Trading record of the asset
-5. History Valid Action: Valid action of the asset
-6. Current State: Current price, cash, and position.
-
-Trading record fields:
-1. `timestamp`: the timestamp of the record
-2. `close`: Close price
-3. `high`: High price
-4. `low`: Low price
-5. `open`: Open price
-6. `volume`: Volume of the asset traded
-7. `price`: Current price (adj_close price)
-8. `cash`: Current cash
-9. `position`: Current position
-10. `pre_value`: Previous total value, `value = cash + position * price`
-11. `action`: Action taken, `BUY`, `SELL`, or `HOLD`
-12. `post_value`: Current total value
-13. `ret`: Return, `ret = (post_value - pre_value) / pre_value`
-"""
-
-
-def sample_news(df: pd.DataFrame, sample_texts: int = 2):
-    """
-    Sample news from the news_df.
-    :param news_df: DataFrame of news
-    :param sample_texts: number of texts to sample
-    :return: sampled news
-    """
-    if len(df) == 0:
-        return None
-    else:
-        df = df.reset_index(drop=False)
-        df['date'] = df['timestamp'].apply(lambda x: x.strftime('%Y-%m-%d'))
-        df = df.groupby('date').apply(lambda x: x.sample(n=min(sample_texts, len(x)), random_state=0)).reset_index(drop=True)
-        df.drop(columns=['date'], inplace=True)
-        df.set_index('timestamp', inplace=True)
-        return df
-
-def convert_dataframe_to_markdown(
-        price: pd.DataFrame,
-        news: pd.DataFrame,
-        record: pd.DataFrame,
-        valid_action: pd.DataFrame,
-    ):
-
-    price_string = price.to_markdown(index=False)
-
-    news_string = f"**Timestamp | Title | Content**\n"
-    if news is None:
-        news_string += f"**No news available**\n"
-    else:
-        for row in news.iterrows():
-            timestamp = row[0]
-            values = row[1]
-
-            content = values["summary"] if "summary" in values else values["content"]
-
-            if content is not None:
-                content = content.replace('\n', '')
-            title = row[1]['title']
-            news_string += f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')} | {title} | {content}\n"
-
-    record_string = record.to_markdown(index=False)
-
-    valid_action_string = valid_action.to_markdown(index=False)
-
-    res_strings = dict(
-        price=price_string,
-        news=news_string,
-        record=record_string,
-        valid_action=valid_action_string,
-    )
-
-    return res_strings
+_STATE_RULES = """"""
 
 @ecp.environment()
 class TradingOfflineEnvironment(BaseEnvironment):
@@ -119,27 +36,46 @@ class TradingOfflineEnvironment(BaseEnvironment):
     
     def __init__(
         self,
+        base_dir: str = None,
         mode: str = "train",
         dataset: Any = None,
+        dataset_cfg: Dict[str, Any] = None,
         initial_amount: float = 1e3,
         transaction_cost_pct: float = 1e-3,
-        history_timestamps: int = 5,
+        history_timestamps: int = 1,
         step_timestamps: int = 1,
         future_timestamps: int = 1,
         start_timestamp='2008-04-01',
         end_timestamp='2021-04-01',
         gamma: float = 0.99,
-        record_max_len: int = 5,
-        valid_action_max_len: int = 8,
-        single_text_max_tokens: int = 1024,
-        single_text_min_tokens: int = 256,
-        daily_sample_texts: int = 2,
+        valid_review_actions: int = 5,
+        valid_review_trends: int = 32,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
+        self.base_dir = base_dir
         self.mode = mode
         self.dataset = dataset
+        self.dataset_cfg = dataset_cfg
+        self.initial_amount = initial_amount
+        self.transaction_cost_pct = transaction_cost_pct
+        self.start_timestamp = start_timestamp
+        self.end_timestamp = end_timestamp
+        self.history_timestamps = history_timestamps
+        self.step_timestamps = step_timestamps
+        self.future_timestamps = future_timestamps
+        self.gamma = gamma
+        self.valid_review_actions = valid_review_actions
+        self.valid_review_trends = valid_review_trends
+        
+    async def initialize(self) -> None:
+        """Initialize the Trading Offline environment."""
+        
+        # Initialize dataset
+        if self.dataset is None:
+            self.dataset = DATASETS.build(self.dataset_cfg)
+        
         self.symbol = self.dataset.symbol
         self.level = self.dataset.level
         self.level_format = self.dataset.level_format
@@ -169,26 +105,11 @@ class TradingOfflineEnvironment(BaseEnvironment):
         )
         self.metrics = dict()
 
-        self.initial_amount = initial_amount
-        self.transaction_cost_pct = transaction_cost_pct
-
-        self.start_timestamp = start_timestamp
-        self.end_timestamp = end_timestamp
         self.start_timestamp, self.end_timestamp = get_start_end_timestamp(
             start_timestamp=self.start_timestamp,
             end_timestamp=self.end_timestamp,
             level=self.level
         )
-
-        self.history_timestamps = history_timestamps
-        self.step_timestamps = step_timestamps
-        self.future_timestamps = future_timestamps
-        self.gamma = gamma
-        self.record_max_len = record_max_len
-        self.valid_action_max_len = valid_action_max_len
-        self.single_text_max_tokens = single_text_max_tokens
-        self.single_text_min_tokens = single_text_min_tokens
-        self.daily_sample_texts = daily_sample_texts
 
         self.res_info = self._init_features()
         self.timestamp_info = self.res_info['timestamp_info']
@@ -200,21 +121,11 @@ class TradingOfflineEnvironment(BaseEnvironment):
         self.action_labels = ['SELL', 'HOLD', 'BUY']  # 0, 1, 2
         self.action_dim = len(self.action_labels)
 
-        self.record_df = pd.DataFrame() # record the trading history
-        self.valid_action_df = pd.DataFrame() # record the valid action
         self.trading_records = TradingRecords()
 
-        self.state, self.info = self.reset()
-        self.trading_records.add(
-            dict(
-                timestamp=self.info["timestamp"],
-                price=self.info["price"],
-                cash=self.info["cash"],
-                position=self.info["position"],
-                value=self.info["value"],
-            )
-        )
+        state, info = self.reset()
         
+        logger.info(f"| 📈 Trading Offline Environment initialized at: {self.base_dir}")
 
     def _init_features(self):
 
@@ -305,100 +216,47 @@ class TradingOfflineEnvironment(BaseEnvironment):
                                           prices["open"],
                                           prices["volume"])
         price = close
+        
+        res = {
+            "close": close,
+            "high": high,
+            "low": low,
+            "open": open,
+            "volume": volume,
+            "price": price,
+        }
 
-        return price
-
-    def get_price_full_df(self):
-        start_timestamp_index = self.timestamp_min_index
-        end_timestamp_index = self.timestamp_max_index
-
-        start_timestamp = self.timestamp_info[start_timestamp_index]["end_timestamp"]
-        end_timestamp = self.timestamp_info[end_timestamp_index]["end_timestamp"]
-
-        original_prices_df = self._get_dataitem(self.original_prices_df,
-                                       start_timestamp,
-                                       end_timestamp)
-        return original_prices_df
-
-    def get_price_full(self, timestamp_index: int):
-
-        timestamp_info = self.timestamp_info[timestamp_index]
-        start_timestamp = timestamp_info["start_timestamp"]
-        end_timestamp = timestamp_info["end_timestamp"]
-        original_prices_df = self._get_dataitem(self.original_prices_df,
-                                       start_timestamp,
-                                       end_timestamp)
-
-        prices = original_prices_df.iloc[-1].to_dict()
-
-        # close, high, low, open, volume
-        close, high, low, open, volume = (prices["close"],
-                                          prices["high"],
-                                          prices["low"],
-                                          prices["open"],
-                                          prices["volume"])
-
-        return close, high, low, open, volume
+        return res
 
     def get_state_data(self, timestamp_index: int):
         timestamp_info = self.timestamp_info[timestamp_index]
+        timestamp_string = self.get_timestamp_string(timestamp_index)
 
         start_timestamp = timestamp_info['start_timestamp']
         end_timestamp = timestamp_info['end_timestamp']
 
-        price = self._get_dataitem(self.original_prices_df, start_timestamp, end_timestamp)
+        prices = self._get_dataitem(self.original_prices_df, start_timestamp, end_timestamp)
         news = self._get_dataitem(self.news_df, start_timestamp, end_timestamp)
-
-        record = self.record_df
-        valid_action = self.valid_action_df
-
-        sampled_news = sample_news(df=news, sample_texts=self.daily_sample_texts)
-
-        # convert to markdown
-        strings = convert_dataframe_to_markdown(
-            price=price,
-            news=sampled_news,
-            record=record,
-            valid_action=valid_action,
-        )
-        price_string = strings['price']
-        news_string = strings['news']
-        record_string = strings['record']
-        valid_action_string = strings['valid_action']
         
-        prompt = dedent(f"""
-            <symbol>
-            Name: {self.asset_info['asset_name']}
-            Symbol: {self.asset_info['asset_symbol']}
-            </symbol>
-            <price>
-            {price_string}
-            </price>
-            <news>
-            {news_string}
-            </news>
-            <record>
-            {record_string}
-            </record>
-            <history_valid_action>
-            {valid_action_string}
-            </history_valid_action>
-            <current_state>
-            Today is {end_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, and the current price, cash, and position are {self.price:.2f}, {self.cash:.2f}, and {self.position:04d}.
-            </current_state>
-            <environment_status>
-            The environment status is {'done' if self.done else 'running'}.
-            </environment_status>
-            """)
+        # Get valid records
+        records_df = self.trading_records.to_dataframe()
+        if records_df.empty:
+            review_trends = review_actions = None
+        else:
+            review_trends = records_df.tail(self.valid_review_trends)
+            if review_trends.empty:
+                review_trends = None
+            review_actions = records_df[records_df["action_label"] != "HOLD"].tail(self.valid_review_actions)
+            if review_actions.empty:
+                review_actions = None
         
-        prompt_token_nums = get_token_count(prompt)
-
-        state = dict(
-            timestamp=end_timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            prompt=prompt,
-            prompt_token_nums=prompt_token_nums,
-        )
-        state.update(self.asset_info)
+        state = {
+            "timestamp": timestamp_string,
+            "prices": prices,
+            "news": news,
+            "review_actions": review_actions,
+            "review_trends": review_trends,
+        }
 
         return state
 
@@ -501,90 +359,6 @@ class TradingOfflineEnvironment(BaseEnvironment):
         }
 
         return res_info
-
-    def _init_record(self):
-
-        timestamp_info = self.timestamp_info[self.timestamp_index]
-
-        start_timestamp = timestamp_info['start_timestamp']
-        end_timestamp = timestamp_info['end_timestamp']
-
-        price = self._get_dataitem(self.original_prices_df, start_timestamp, end_timestamp)
-
-        rows = list(price.iterrows())
-
-        for row in rows[:-1]:
-            timestamp = row[0]
-            timestamp_string = timestamp.strftime(self.level_format.value)
-            close, high, low, open, volume = row[1].values
-            self.last_record = Record(
-                timestamp=timestamp_string,
-                open=open,
-                high=high,
-                low=low,
-                close=close,
-                volume=volume,
-                price=self.price,
-                cash=self.cash,
-                position=self.position,
-                pre_value=self.initial_amount,
-                action='HOLD',
-                post_value=self.initial_amount,
-                ret=0.0,
-            )
-            self.record_df = pd.concat([self.record_df, pd.DataFrame([asdict(self.last_record)])], ignore_index=True)
-
-        # last record, because the action is not predicted, so the pre_value, action, post_value, ret are None
-        timestamp = rows[-1][0]
-        timestamp_string = timestamp.strftime(self.level_format.value)
-        close, high, low, open, volume = rows[-1][1].values
-        self.last_record = Record(
-            timestamp=timestamp_string,
-            open=open,
-            high=high,
-            low=low,
-            close=close,
-            volume=volume,
-            price=self.price,
-            cash=self.cash,
-            position=self.position,
-            pre_value=None,
-            action=None,
-            post_value=None,
-            ret=None,
-        )
-        self.record_df = pd.concat([self.record_df, pd.DataFrame([asdict(self.last_record)])], ignore_index=True)
-
-        self.valid_action_df = self.record_df[self.record_df['action'] != 'HOLD']
-
-    def _add_record(self, record):
-        self.record_df = pd.concat([self.record_df, pd.DataFrame([asdict(record)])], ignore_index=True)
-
-        record_max_len = min(self.record_max_len, len(self.record_df))
-        self.record_df = self.record_df[-record_max_len:]
-        self.valid_action_df = self.record_df[self.record_df['action'] != 'HOLD']
-
-        valid_action_max_len = min(self.valid_action_max_len, len(self.valid_action_df))
-        self.valid_action_df = self.valid_action_df[-valid_action_max_len:]
-
-    def _update_record(self, record):
-
-        last_record = self.record_df.iloc[-1]
-
-        last_record['pre_value'] = record.pre_value
-        last_record['action'] = record.action
-        last_record['post_value'] = record.post_value
-        last_record['ret'] = record.ret
-
-        self.record_df.iloc[-1] = last_record
-
-        self.valid_action_df = self.record_df[self.record_df['action'] != 'HOLD']
-        valid_action_max_len = min(self.valid_action_max_len, len(self.valid_action_df))
-        self.valid_action_df = self.valid_action_df[-valid_action_max_len:]
-        
-    async def initialize(self) -> None:
-        """Initialize the Trading Offline environment."""
-        logger.info(f"| 📈 Trading Offline Environment initialized at: {self.base_dir}")
         
     async def cleanup(self) -> None:
         """Cleanup the Trading Offline environment."""
@@ -593,7 +367,13 @@ class TradingOfflineEnvironment(BaseEnvironment):
     def reset(self, **kwargs):
         self.timestamp_index = self._init_timestamp_index()
         self.timestamp_string = self.get_timestamp_string(timestamp_index=self.timestamp_index)
-        self.price = self.get_price(timestamp_index=self.timestamp_index)
+        self.price_info = self.get_price(timestamp_index=self.timestamp_index)
+        self.close = self.price_info['close']
+        self.high = self.price_info['high']
+        self.low = self.price_info['low']
+        self.open = self.price_info['open']
+        self.volume = self.price_info['volume']
+        self.price = self.price_info['price']
 
         self.ret = 0.0
         self.cash = self.initial_amount
@@ -607,15 +387,14 @@ class TradingOfflineEnvironment(BaseEnvironment):
         self.action_label = 'HOLD'
         self.done = False
 
-        # init record
-        self._init_record()
-
-        # after init record, get the state
-        self.state = self.get_state_data(timestamp_index=self.timestamp_index)
-
         info = dict(
             timestamp=self.timestamp_string,
             ret=self.ret,
+            close=self.close,
+            high=self.high,
+            low=self.low,
+            open=self.open,
+            volume=self.volume,
             price=self.price,
             cash=self.cash,
             position=self.position,
@@ -628,8 +407,27 @@ class TradingOfflineEnvironment(BaseEnvironment):
             action_label=self.action_label,
             done=self.done,
         )
+        
+        self.trading_records.add(
+            dict(
+                timestamp=info["timestamp"],
+                close=info["close"],
+                high=info["high"],
+                low=info["low"],
+                open=info["open"],
+                volume=info["volume"],
+                price=info["price"],
+                cash=info["cash"],
+                position=info["position"],
+                value=info["value"],
+            )
+        )
 
-        return self.state, info
+        # after init record, get the state
+        state = self.get_state_data(timestamp_index=self.timestamp_index)
+        self.state = state
+        
+        return state, info
 
     def _extract_action(self, action: str):
         for index, label in enumerate(self.action_labels):
@@ -637,7 +435,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 return index
         return 1 # HOLD
 
-    def step(self, action: str):
+    def _step(self, action: str):
 
         action = self._extract_action(action)
 
@@ -667,13 +465,6 @@ class TradingOfflineEnvironment(BaseEnvironment):
 
         ret = (self.value - self.pre_value) / (self.pre_value + 1e-6)
 
-        # update record
-        self.last_record.pre_value = self.pre_value
-        self.last_record.action = self.action_label
-        self.last_record.post_value = self.value
-        self.last_record.ret = ret
-        self._update_record(self.last_record)
-
         self.ret = ret
         self.discount *= 0.99
         self.total_return += self.discount * ret
@@ -690,33 +481,22 @@ class TradingOfflineEnvironment(BaseEnvironment):
             self.truncted = True
 
         self.timestamp_string = self.get_timestamp_string(timestamp_index=self.timestamp_index)
-        self.price = self.get_price(timestamp_index=self.timestamp_index)
-
-        # next record
-        close, high, low, open, volume = self.get_price_full(timestamp_index=self.timestamp_index)
-        self.last_record = Record(
-            timestamp=self.timestamp_string,
-            open=open,
-            high=high,
-            low=low,
-            close=close,
-            volume=volume,
-            price=self.price,
-            cash=self.cash,
-            position=self.position,
-            pre_value=None,
-            action=None,
-            post_value=None,
-            ret=None,
-        )
-        self._add_record(self.last_record)
-
-        # after update record, get the state
-        self.state = self.get_state_data(timestamp_index=self.timestamp_index)
+        self.price_info = self.get_price(timestamp_index=self.timestamp_index)
+        self.close = self.price_info['close']
+        self.high = self.price_info['high']
+        self.low = self.price_info['low']
+        self.open = self.price_info['open']
+        self.volume = self.price_info['volume']
+        self.price = self.price_info['price']
 
         info = dict(
             timestamp=self.timestamp_string,
             ret=self.ret,
+            close=self.close,
+            high=self.high,
+            low=self.low,
+            open=self.open,
+            volume=self.volume,
             price=self.price,
             cash=self.cash,
             position=self.position,
@@ -729,15 +509,45 @@ class TradingOfflineEnvironment(BaseEnvironment):
             action_label=self.action_label,
             done=self.done,
         )
-
+        
+        # add the trading record
+        self.trading_records.add(
+            dict(
+                action=info["action"],
+                action_label=info["action_label"],
+                ret=info["ret"],
+                total_profit=info["total_profit"],
+                timestamp=info["timestamp"], # next timestamp
+                close=info["close"], # next close
+                high=info["high"], # next high
+                low=info["low"], # next low
+                open=info["open"], # next open
+                volume=info["volume"], # next volume
+                price=info["price"],  # next price
+                cash=info["cash"],  # next cash
+                position=info["position"],  # next position
+                value=info["value"],  # next value
+            ),
+        )
+        
+        if self.done:
+            self.trading_records.add(
+                dict(
+                    action=1,
+                    action_label="HOLD",
+                    ret=0.0,
+                    total_profit=info['total_profit'],
+                )
+            )
+            
+        # after update record, get the state
+        state = self.get_state_data(timestamp_index=self.timestamp_index)
+        self.state = state
+        
         # update the pre_value
         self.pre_value = self.value
 
-        return self.state, reward, self.done, self.truncted, info
-    
-    async def initialize(self) -> None:
-        """Initialize the trading offline environment."""
-        logger.info(f"| 💰 Trading Offline Environment initialized")
+        return state, reward, self.done, self.truncted, info
     
     @ecp.action(name = "step",
                 type = "Trading Offline",
@@ -751,31 +561,16 @@ class TradingOfflineEnvironment(BaseEnvironment):
         Returns:
             str: The state of the trading environment.
         """
-        state, reward, done, truncted, info = self.step(action)
-        self.trading_records.add(
-            dict(
-                action=info["action"],
-                action_label=info["action_label"],
-                ret=info["ret"],
-                total_profit=info["total_profit"],
-                timestamp=info["timestamp"],  # next timestamp
-                price=info["price"],  # next price
-                cash=info["cash"],  # next cash
-                position=info["position"],  # next position
-                value=info["value"],  # next value
-            ),
-        )
+        state, reward, done, truncted, info = self._step(action)
         
         if not done:
-            logger.info(f"| Prompt Token Numbers: {state['prompt_token_nums']}")
-        
             res = dedent(f"""
                 <info>
                 Name: {self.asset_info['asset_name']}
                 Symbol: {self.asset_info['asset_symbol']}
                 Start timestamp: {self.start_timestamp}
                 End timestamp: {self.end_timestamp}
-                Current timestamp: {info['timestamp']}
+                Current timestamp: {self.state['timestamp']}
                 Environment status: running
                 </info>
                 <action>
@@ -787,19 +582,9 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 Reward: {reward:.4f}
                 </result>
                 """)
-            
             return res
         
         else:
-            self.trading_records.add(
-                dict(
-                    action=1,
-                    action_label="HOLD",
-                    ret=0.0,
-                    total_profit=info['total_profit'],
-                )
-            )
-            
             rets = np.array(self.trading_records.data['ret'])
             for metric_name, metric in self.metrics_functions.items():
                 self.metrics[metric_name] = metric(rets)
@@ -814,7 +599,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 Symbol: {self.asset_info['asset_symbol']}
                 Start timestamp: {self.start_timestamp}
                 End timestamp: {self.end_timestamp}
-                Current timestamp: {info['timestamp']}
+                Current timestamp: {self.state['timestamp']}
                 Environment status: done
                 </info>
                 <action>
@@ -849,26 +634,17 @@ class TradingOfflineEnvironment(BaseEnvironment):
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Trading Offline environment."""
         try:
-            return {
-                "base_dir": str(self.base_dir),
-                "mode": self.mode,
-                "symbol": self.symbol,
-                "asset_info": self.asset_info,
-                "current_timestamp": self.timestamp_string,
-                "current_price": self.price,
-                "cash": self.cash,
-                "position": self.position,
-                "value": self.value,
-                "total_return": self.total_return,
-                "total_profit": self.total_profit,
-                "action": self.action_label,
-                "state_prompt": self.state['prompt'] if hasattr(self, 'state') else None
-            }
+            state = {}
+            state.update(
+                {
+                    "timestamp": self.state["timestamp"],
+                    "prices": self.state["prices"],
+                    "news": self.state["news"],
+                    "review_actions": self.state["review_actions"],
+                    "review_trends": self.state["review_trends"],
+                }
+            )
+            return state
         except Exception as e:
             logger.error(f"Failed to get trading state: {e}")
-            return {
-                "base_dir": str(self.base_dir),
-                "mode": self.mode,
-                "symbol": self.symbol,
-                "error": str(e)
-            }
+            return {}

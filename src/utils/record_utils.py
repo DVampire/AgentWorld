@@ -24,6 +24,11 @@ class TradingRecords():
         self.data = dict(
             # state (action-before)
             timestamp = [],
+            close = [],
+            high = [],
+            low = [],
+            open = [],
+            volume = [],
             price = [],
             position = [],
             cash = [],
@@ -49,7 +54,21 @@ class TradingRecords():
         Convert the trading records to a pandas DataFrame.
         :return: A pandas DataFrame containing the trading records.
         """
-        df = pd.DataFrame(self.data, index=range(len(self.data['timestamp'])))
+        # Check if we have any data
+        if not self.data['timestamp']:
+            return pd.DataFrame()
+        
+        # Filter out empty lists and ensure all lists have the same length
+        filtered_data = {}
+        base_length = len(self.data['timestamp'])
+        
+        for key, values in self.data.items():
+            if len(values) == base_length:
+                filtered_data[key] = values
+            else: # fill the missing values with None
+                filtered_data[key] = values + [None] * (base_length - len(values))
+        
+        df = pd.DataFrame(filtered_data, index=range(base_length))
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['timestamp'] = df['timestamp'].apply(lambda x: x.strftime('%Y-%m-%d %H:%M:%S'))
         df.set_index('timestamp', inplace=True)

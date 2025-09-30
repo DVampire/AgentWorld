@@ -1,4 +1,4 @@
-"""Example of running the InteractiveAgent with Cursor-style interaction."""
+"""Example of running the Trading Offline Agent."""
 
 import os
 import sys
@@ -18,9 +18,10 @@ from src.logger import logger
 from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.tools import tcp
+from src.agents import acp
 
 def parse_args():
-        parser = argparse.ArgumentParser(description='Tool Calling Agent Example')
+        parser = argparse.ArgumentParser(description='Trading Offline Agent Example')
         parser.add_argument("--config", default=os.path.join(root, "configs", "trading_offline.py"), help="config file path")
         
         parser.add_argument(
@@ -35,30 +36,6 @@ def parse_args():
             'is allowed.')
         args = parser.parse_args()
         return args
-
-async def test_trading_offline():
-    
-    state = await ecp.get_state("trading_offline")
-    for key, value in state.items():
-        print(f"| {key}:")
-        print(value)
-    
-    input = {
-        "name": "trading_offline",
-        "action": "step",
-        "input": {
-            "action": "BUY"
-        }
-    }
-    
-    res = await ecp.ainvoke(**input)
-    logger.info(f"| ✅ Action result: {res}")
-    
-    state = await ecp.get_state("trading_offline")
-    for key, value in state.items():
-        print(f"| {key}:")
-        print(value)
-    
     
 async def main():
     
@@ -74,18 +51,36 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize tool manager
-    logger.info("| 🛠️ Initializing tool manager...")
-    await tcp.initialize()
-    logger.info(f"| ✅ Tool manager initialized: {tcp.list()}")
-    
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
+    await tcp.initialize()
+    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
+
+    # Initialize agents
+    logger.info("| 🤖 Initializing agents...")
+    await acp.initialize(config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {acp.list()}")
+    
     # Test trading offline
-    await test_trading_offline()
+    task = "Trade on AAPL until the environment is done, and then save the trading records."
+    files = []
+    
+    logger.info(f"| 📋 Task: {task}")
+    logger.info(f"| 📂 Files: {files}")
+    
+    input = {
+        "name": "trading_offline",
+        "input": {
+            "task": task,
+            "files": files
+        }
+    }
+    await acp.ainvoke(**input)
     
 
 if __name__ == "__main__":

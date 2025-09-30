@@ -102,9 +102,15 @@ class DeepResearcherTool(BaseTool):
     )
 
     def __init__(self, model_name: Optional[str] = None, **kwargs):
-        model_name = model_name or config.deep_researcher_tool.get("model_name", "o3")
-        super().__init__(model_name=model_name, **kwargs)
-        self.model_name = model_name
+        """Initialize the deep researcher tool."""
+        
+        super().__init__(**kwargs)
+        
+        if model_name is not None:
+            self.model_name = model_name
+        else:
+            if "deep_researcher_tool" in config:
+                self.model_name = config.deep_researcher_tool.get("model_name", "o3")
         
         # Initialize tools
         self.web_searcher = WebSearcherTool()
