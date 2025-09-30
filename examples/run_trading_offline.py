@@ -19,6 +19,7 @@ from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.tools import tcp
 from src.agents import acp
+from src.transformation import transformation
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Trading Offline Agent Example')
@@ -58,13 +59,18 @@ async def main():
     
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
-    await tcp.initialize()
+    await tcp.initialize(config.tool_names)
     logger.info(f"| ✅ Tools initialized: {tcp.list()}")
 
     # Initialize agents
     logger.info("| 🤖 Initializing agents...")
     await acp.initialize(config.agent_names)
     logger.info(f"| ✅ Agents initialized: {acp.list()}")
+    
+    # Transformation ECP to TCP
+    logger.info("| 🔄 Transformation start...")
+    await transformation.transform(type="e2t", env_names=config.env_names)
+    logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
     # Test trading offline
     task = "Trade on AAPL until the environment is done, and then save the trading records."

@@ -16,10 +16,10 @@ from src.tools.protocol.server import tcp
 from src.environments.protocol.environment import BaseEnvironment
 from src.environments.protocol.types import ActionInfo, EnvironmentInfo
 from src.environments.protocol.server import ecp
-from src.agents.protocol.agent import BaseAgent
+from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.agents.protocol.types import AgentInfo
 from src.agents.protocol.server import acp
-from src.agents import ToolCallingAgent, ThinkOutputBuilder
+from src.agents import ToolCallingAgent
 from src.infrastructures.models import model_manager
 from src.utils import dedent
 from src.transformation.protocol.types import (

@@ -34,7 +34,9 @@ env_names = [
     "trading_offline"
 ]
 agent_names = ["trading_offline"]
-tool_names = []
+tool_names = [
+    "todo"
+]
 
 #-----------------TRADING OFFLINE AGENT CONFIG-----------------
 trading_offline_agent.update(

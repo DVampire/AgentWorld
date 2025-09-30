@@ -85,7 +85,7 @@ class TCPServer:
         
         self._registered_tools[name] = tool_info
     
-    async def initialize(self):
+    async def initialize(self, tool_names: List[str]):
         """Initialize tools by names using tool context manager
         
         Args:
@@ -94,11 +94,9 @@ class TCPServer:
         logger.info(f"| 🛠️ Initializing {len(self._registered_tools)} tools with context manager...")
         
         for tool_name, tool_info in self._registered_tools.items():
-            # Check if tool instance needs initialization
-            if tool_info.instance is None and tool_info.cls is not None:
+            if tool_name in tool_names:
                 logger.debug(f"| 🔧 Initializing tool: {tool_name}")
-                
-                # Create tool factory function
+
                 def tool_factory():
                     tool_config = config.get(f"{tool_name}_tool", None)
                     if tool_config:

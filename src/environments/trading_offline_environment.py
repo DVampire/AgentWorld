@@ -15,8 +15,35 @@ from src.utils import dedent
 from src.environments.protocol.environment import BaseEnvironment
 from src.supports.metric import ARR, SR, MDD, SOR, CR, VOL
 from src.supports.registry import DATASETS
+from src.utils import get_token_count
 
-_STATE_RULES = """"""
+_STATE_RULES = """The state of the trading environment will be provided with the following information:
+1. Info: Information of the trading environment.
+    - Timestamp: Current timestamp.
+    - Prices: Current prices. (close, high, low, open, volume)
+2. News: Current news. (title, summary)
+    - If no news available, it will be None.
+    - The news will be a list of news with the following information: timestamp, title, summary.
+3. History Valid Actions: History of trading valid actions. 
+    - If no valid actions available, it will be None.
+    - The valide actions will be a table with the following columns:
+        - `timestamp` is the timestamp of the action.
+        - `price` is the close price of the action.
+        - `cash` is the cash of the action.
+        - `position` is the position of the action.
+        - `value` is the value of the action. value = cash + position * price
+        - `action` is the action label of the action. (e.g., BUY, SELL, HOLD)
+        - `profit` is the result total profit of the action. profit = (value - initial_amount) / initial_amount * 100
+4. History Price Trends: History of price trends.
+    - If no price trends available, it will be None.
+    - The price trend will be a table with the following columns:
+        - `timestamp` is the timestamp.
+        - `close` is the close price.
+        - `high` is the high price.
+        - `low` is the low price.
+        - `open` is the open price.
+        - `volume` is the volume.
+"""
 
 @ecp.environment()
 class TradingOfflineEnvironment(BaseEnvironment):
@@ -236,7 +263,9 @@ class TradingOfflineEnvironment(BaseEnvironment):
         end_timestamp = timestamp_info['end_timestamp']
 
         prices = self._get_dataitem(self.original_prices_df, start_timestamp, end_timestamp)
+        prices = prices if not prices.empty else None
         news = self._get_dataitem(self.news_df, start_timestamp, end_timestamp)
+        news = news if not news.empty else None
         
         # Get valid records
         records_df = self.trading_records.to_dataframe()
@@ -244,11 +273,9 @@ class TradingOfflineEnvironment(BaseEnvironment):
             review_trends = review_actions = None
         else:
             review_trends = records_df.tail(self.valid_review_trends)
-            if review_trends.empty:
-                review_trends = None
+            review_trends = review_trends if not review_trends.empty else None
             review_actions = records_df[records_df["action_label"] != "HOLD"].tail(self.valid_review_actions)
-            if review_actions.empty:
-                review_actions = None
+            review_actions = review_actions if not review_actions.empty else None
         
         state = {
             "timestamp": timestamp_string,
@@ -634,17 +661,96 @@ class TradingOfflineEnvironment(BaseEnvironment):
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Trading Offline environment."""
         try:
-            state = {}
-            state.update(
-                {
-                    "timestamp": self.state["timestamp"],
-                    "prices": self.state["prices"],
-                    "news": self.state["news"],
-                    "review_actions": self.state["review_actions"],
-                    "review_trends": self.state["review_trends"],
-                }
-            )
-            return state
+            timestamp = self.state["timestamp"]
+            timestamp_string = f"{timestamp}" 
+            
+            prices = self.state["prices"] # close, high, low, open, volume
+            if prices is not None:
+                close = prices["close"][-1]
+                high = prices["high"][-1]
+                low = prices["low"][-1]
+                open = prices["open"][-1]
+                volume = prices["volume"][-1]
+                prices_string = f"close={close:.2f}, high={high:.2f}, low={low:.2f}, open={open:.2f}, volume={volume:02d}"
+            else:
+                prices_string = "No prices available"
+
+            news = self.state["news"]
+            if news is not None:
+                news_string = ""
+                news = news[['title', 'summary']]
+                news['title'] = news['title'].apply(lambda x: x.replace("\n", ""))
+                news['summary'] = news['summary'].apply(lambda x: x.replace("\n", ""))
+                
+                for index, row in news.iterrows():
+                    news_string += f"Timestamp: {index}\n"
+                    news_string += f"Title: {row['title']}\n"
+                    news_string += f"Summary: {row['summary']}\n"
+                    news_string += "\n"
+                
+            else:
+                news_string = "No news available"
+            
+            review_actions = self.state["review_actions"]
+            if review_actions is not None:
+                review_actions_string = ""
+                review_actions = review_actions[['price', 'cash', 'position', 'value', 'action_label', 'total_profit']]
+                review_actions = review_actions.rename(columns={
+                    "action_label": "action",
+                    "total_profit": "profit",
+                })
+                review_actions = review_actions.round(2)
+                review_actions_string += review_actions.to_markdown(index=True)
+            else:
+                review_actions_string = "No valid actions available"
+            
+            review_trends = self.state["review_trends"]
+            if review_trends is not None:
+                review_trends_string = ""
+                review_trends = review_trends[['close', 'high', 'low', 'open', 'volume']]
+                review_trends = review_trends.round(2)
+                review_trends_string += review_trends.to_markdown(index=True)
+            else:
+                review_trends_string = "No price trend available"
+            
+            state = dedent(f"""
+                <info>
+                Timestamp: {timestamp_string}
+                Prices: {prices_string}
+                </info>
+                <news>
+                {news_string}
+                </news>
+                <history_trading_actions>
+                {review_actions_string}
+                </history_trading_actions>
+                <history_price_trends>
+                {review_trends_string}
+                </history_price_trends>
+            """)
+            
+            token_count = get_token_count(state)
+            logger.info(f"| 🔢 Token count: {token_count}")
+            
+            extra = {
+                "timestamp": timestamp,
+                "prices": prices,
+                "news": news,
+                "review_actions": review_actions,
+                "review_trends": review_trends,
+                "token_count": token_count,
+            }
+            
+            return {
+                "state": state,
+                "extra": extra,
+            }
+            
         except Exception as e:
             logger.error(f"Failed to get trading state: {e}")
-            return {}
+            return {
+                "state": "Failed to get trading state",
+                "extra": {
+                    "error": str(e),
+                },
+            }

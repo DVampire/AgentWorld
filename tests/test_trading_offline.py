@@ -39,9 +39,8 @@ def parse_args():
 async def test_trading_offline():
     
     state = await ecp.get_state("trading_offline")
-    for key, value in state.items():
-        print(f"| {key}:")
-        print(value)
+    print(state["state"])
+    exit()
     
     input = {
         "name": "trading_offline",
@@ -76,7 +75,7 @@ async def main():
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
-    await tcp.initialize()
+    await tcp.initialize(config.tool_names)
     logger.info(f"| ✅ Tool manager initialized: {tcp.list()}")
     
     # Initialize environments

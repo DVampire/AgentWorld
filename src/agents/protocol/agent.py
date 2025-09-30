@@ -1,12 +1,88 @@
 """Base agent class for multi-agent system."""
-from typing import List, Optional, Type, Dict, Any
+from typing import List, Optional, Type, Dict, Any, Union
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field, ConfigDict
+import pandas as pd
 
 from src.logger import logger
 from src.infrastructures.models import model_manager
 from src.agents.prompts import PromptManager
 from src.infrastructures.memory import MemoryManager
+
+def format_actions(actions: List[BaseModel]) -> str:
+    """Format actions as a Markdown table using pandas."""
+    rows = []
+    for action in actions:
+        if isinstance(action.args, dict):
+            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
+        else:
+            args_str = str(action.args)
+
+        rows.append({
+            "Action": action.name,
+            "Args": args_str,
+            "Output": action.output if action.output is not None else None
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    if df["Output"].isna().all():
+        df = df.drop(columns=["Output"])
+    else:
+        df["Output"] = df["Output"].fillna("None")
+    
+    return df.to_markdown(index=True)
+
+class ThinkOutputBuilder:
+    def __init__(self):
+        self.schemas: Dict[str, type[BaseModel]] = {}
+
+    def register(self, schema: Dict[str, type[BaseModel]]):
+        """Register new args schema"""
+        self.schemas.update(schema)
+        return self  # Support chaining
+
+    def build(self):
+        """Generate Action and ThinkOutput models"""
+
+        # -------- Dynamically generate Action --------
+        schemas = self.schemas
+        ActionArgs = Union[tuple(schemas.values())]
+
+        class Action(BaseModel):
+            name: str = Field(description="The name of the action.")
+            args: ActionArgs = Field(description="The arguments of the action.")
+            output: Optional[str] = Field(default=None, description="The output of the action.")
+            
+            def __str__(self):
+                return f"Action: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
+            
+            def __repr__(self):
+                return self.__str__()
+
+        # -------- Dynamically generate ThinkOutput --------
+        class ThinkOutput(BaseModel):
+            thinking: str = Field(description="A structured <think>-style reasoning block.")
+            evaluation_previous_goal: str = Field(description="One-sentence analysis of your last action.")
+            memory: str = Field(description="1-3 sentences of specific memory.")
+            next_goal: str = Field(description="State the next immediate goals and actions.")
+            action: List[Action] = Field(
+                description='[{"name": "action_name", "args": {...}}, ...]'
+            )
+
+            def __str__(self):
+                return (
+                    f"Thinking: {self.thinking}\n"
+                    f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
+                    f"Memory: {self.memory}\n"
+                    f"Next Goal: {self.next_goal}\n"
+                    f"Action:\n{format_actions(self.action)}\n"
+                )
+            
+            def __repr__(self):
+                return self.__str__()
+
+        return ThinkOutput
 
 class BaseAgent(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
