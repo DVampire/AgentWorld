@@ -21,6 +21,9 @@ _STATE_RULES = """The state of the trading environment will be provided with the
 1. Info: Information of the trading environment.
     - Timestamp: Current timestamp.
     - Prices: Current prices. (close, high, low, open, volume)
+    - Current cash: Current cash.
+    - Current position: Current position.
+    - Current profit: Current profit.
 2. News: Current news. (title, summary)
     - If no news available, it will be None.
     - The news will be a list of news with the following information: timestamp, title, summary.
@@ -45,6 +48,11 @@ _STATE_RULES = """The state of the trading environment will be provided with the
         - `volume` is the volume.
 """
 
+_INTERACTION_RULES = """Interaction guidelines:
+1. If you DO NOT have enough current cash, you CAN NOT execute the `BUY` action.
+2. If you DO NOT have enough current position, you CAN NOT execute the `SELL` action.
+"""
+
 @ecp.environment()
 class TradingOfflineEnvironment(BaseEnvironment):
     """Trading Offline Environment that provides trading operations as an environment interface."""
@@ -58,6 +66,7 @@ class TradingOfflineEnvironment(BaseEnvironment):
         "has_vision": False,
         "additional_rules": {
             "state": _STATE_RULES,
+            "interaction": _INTERACTION_RULES,
         }
     }, description="The metadata of the Trading Offline environment.")
     
@@ -452,7 +461,9 @@ class TradingOfflineEnvironment(BaseEnvironment):
 
         # after init record, get the state
         state = self.get_state_data(timestamp_index=self.timestamp_index)
+        
         self.state = state
+        self.info = info
         
         return state, info
 
@@ -569,7 +580,9 @@ class TradingOfflineEnvironment(BaseEnvironment):
             
         # after update record, get the state
         state = self.get_state_data(timestamp_index=self.timestamp_index)
+        
         self.state = state
+        self.info = info
         
         # update the pre_value
         self.pre_value = self.value
@@ -603,10 +616,10 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 <action>
                 Expected executed action of assistant: {action}
                 Actual executed action because of cash or position constraint: {info['action_label']}
+                Action result: The action return is {info['ret'] * 100:.2f}%.
                 </action>
                 <result>
-                Total profit: {info['total_profit']:.4f}%
-                Reward: {reward:.4f}
+                Total profit: {info['total_profit']:.2f}%
                 </result>
                 """)
             return res
@@ -632,10 +645,10 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 <action>
                 Expected executed action of assistant: {action}
                 Actual executed action because of cash or position constraint: {info['action_label']}
+                Action result: The action return is {info['ret'] * 100:.2f}%.
                 </action>
                 <result>
-                Total profit: {info['total_profit']:.4f}%
-                Reward: {reward:.4f}
+                Total profit: {info['total_profit']:.2f}%
                 Trading metrics: 
                 {metrics_string}
                 </result>
@@ -662,7 +675,11 @@ class TradingOfflineEnvironment(BaseEnvironment):
         """Get the current state of the Trading Offline environment."""
         try:
             timestamp = self.state["timestamp"]
-            timestamp_string = f"{timestamp}" 
+            timestamp_string = f"{timestamp}"
+            
+            cash = self.info["cash"]
+            position = self.info["position"]
+            profit = self.info["total_profit"]
             
             prices = self.state["prices"] # close, high, low, open, volume
             if prices is not None:
@@ -717,6 +734,9 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 <info>
                 Timestamp: {timestamp_string}
                 Prices: {prices_string}
+                Current cash: {cash:.2f}
+                Current position: {position:04d}
+                Current profit: {profit:.2f}%
                 </info>
                 <news>
                 {news_string}
