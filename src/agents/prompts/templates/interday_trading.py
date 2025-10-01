@@ -52,6 +52,7 @@ Memory: Your memory of this step
 Next Goal: Your goal for this step
 Action Results: Your trading actions and their results
 </step_[step_number]>
+
 <summaries>
 This is a list of summaries of the agent's trading memory.
 </summaries>

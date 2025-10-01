@@ -1,3 +1,4 @@
+from tkinter import N
 import warnings
 warnings.filterwarnings("ignore")
 from copy import deepcopy
@@ -681,10 +682,23 @@ class InterdayTradingEnvironment(BaseEnvironment):
                 prices_string = f"close={close:.2f}, high={high:.2f}, low={low:.2f}, open={open:.2f}, volume={volume:02d}"
             else:
                 prices_string = "No prices available"
+            
+            # 1. info string
+            info_string = dedent(f"""
+                <info>
+                Timestamp: {timestamp_string}
+                Prices: {prices_string}
+                Current cash: {cash:.2f}
+                Current position: {position:04d}
+                Current profit: {profit:.2f}%
+                </info>
+            """)
 
+            # 2. news string
             news = self.state["news"]
-            if news is not None:
-                news_string = ""
+            has_news = news is not None
+            if has_news:
+                news_string = "<news>"
                 news = news[['title', 'summary']]
                 news['title'] = news['title'].apply(lambda x: x.replace("\n", ""))
                 news['summary'] = news['summary'].apply(lambda x: x.replace("\n", ""))
@@ -694,13 +708,14 @@ class InterdayTradingEnvironment(BaseEnvironment):
                     news_string += f"Title: {row['title']}\n"
                     news_string += f"Summary: {row['summary']}\n"
                     news_string += "\n"
-                
+                news_string += "</news>"
             else:
-                news_string = "No news available"
+                news_string = "<news>No news available</news>"
             
+            # 3. review actions string
             review_actions = self.state["review_actions"]
             if review_actions is not None:
-                review_actions_string = ""
+                review_actions_string = "<history_trading_actions>"
                 review_actions = review_actions[['price', 'cash', 'position', 'value', 'action_label', 'total_profit']]
                 review_actions = review_actions.rename(columns={
                     "action_label": "action",
@@ -708,35 +723,26 @@ class InterdayTradingEnvironment(BaseEnvironment):
                 })
                 review_actions = review_actions.round(2)
                 review_actions_string += review_actions.to_markdown(index=True)
+                review_actions_string += "</history_trading_actions>"
             else:
-                review_actions_string = "No valid actions available"
+                review_actions_string = "<history_trading_actions>No valid actions available</history_trading_actions>"
             
+            # 4. review trends string
             review_trends = self.state["review_trends"]
             if review_trends is not None:
-                review_trends_string = ""
+                review_trends_string = "<history_price_trends>"
                 review_trends = review_trends[['close', 'high', 'low', 'open', 'volume']]
                 review_trends = review_trends.round(2)
                 review_trends_string += review_trends.to_markdown(index=True)
+                review_trends_string += "</history_price_trends>"
             else:
-                review_trends_string = "No price trend available"
+                review_trends_string = "<history_price_trends>No price trend available</history_price_trends>"
             
             state = dedent(f"""
-                <info>
-                Timestamp: {timestamp_string}
-                Prices: {prices_string}
-                Current cash: {cash:.2f}
-                Current position: {position:04d}
-                Current profit: {profit:.2f}%
-                </info>
-                <news>
+                {info_string}
                 {news_string}
-                </news>
-                <history_trading_actions>
                 {review_actions_string}
-                </history_trading_actions>
-                <history_price_trends>
                 {review_trends_string}
-                </history_price_trends>
             """)
             
             token_count = get_token_count(state)
@@ -745,9 +751,14 @@ class InterdayTradingEnvironment(BaseEnvironment):
             extra = {
                 "timestamp": timestamp,
                 "prices": prices,
+                "prices_string": prices_string,
                 "news": news,
+                "news_string": news_string,
+                "has_news": has_news,
                 "review_actions": review_actions,
+                "review_actions_string": review_actions_string,
                 "review_trends": review_trends,
+                "review_trends_string": review_trends_string,
                 "token_count": token_count,
             }
             
