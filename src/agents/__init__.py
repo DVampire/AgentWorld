@@ -2,6 +2,7 @@
 
 from .tool_calling_agent import ToolCallingAgent
 from .interday_trading_agent import InterdayTradingAgent
+from .intraday_trading_agent import IntradayTradingAgent
 from .simple_chat_agent import SimpleChatAgent
 from .debate_manager import DebateManagerAgent
 from .protocol import acp
@@ -10,6 +11,7 @@ from .protocol import acp
 __all__ = [
     "ToolCallingAgent",
     "InterdayTradingAgent",
+    "IntradayTradingAgent",
     "SimpleChatAgent",
     "DebateManagerAgent",
     "acp",

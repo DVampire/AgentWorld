@@ -8,12 +8,12 @@ future_timestamps = 1
 start_timestamp = "2015-05-01"
 split_timestamp = "2023-05-01"
 end_timestamp = "2025-05-01"
-level = "1day"
+level = "1min"
 initial_amount = float(1e5)
 transaction_cost_pct = float(1e-4)
 gamma = 0.99
 valid_review_actions = 5
-valid_review_trends = 32
+valid_review_trends = 60
 
 dataset = dict(
     type="SingleAssetDataset",
@@ -24,13 +24,13 @@ dataset = dict(
             "asset_name": "exp",
             "source": "fmp",
             "data_type": "price",
-            "level": "1day",
+            "level": "1min",
         },
         {
             "asset_name": "exp",
             "source": "fmp",
             "data_type": "feature",
-            "level": "1day",
+            "level": "1min",
         },
         {
             "asset_name": "exp",
