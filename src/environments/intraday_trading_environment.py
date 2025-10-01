@@ -6,6 +6,7 @@ from typing import Any, Dict, Type
 import random
 import os
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import TradingRecords
@@ -283,6 +284,10 @@ class IntradayTradingEnvironment(BaseEnvironment):
         
         # Get valid records
         records_df = self.trading_records.to_dataframe()
+        records_df.index = pd.to_datetime(records_df.index)
+        current_date = pd.to_datetime(end_timestamp).date()
+        records_df = records_df[records_df.index.date == current_date]
+        records_df.index = records_df.index.strftime('%Y-%m-%d %H:%M:%S')
         if records_df.empty:
             review_trends = review_actions = None
         else:
