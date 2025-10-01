@@ -1,4 +1,4 @@
-"""Example of running the Trading Offline Agent."""
+"""Example of running the Interday Trading Agent."""
 
 import os
 import sys
@@ -22,8 +22,8 @@ from src.agents import acp
 from src.transformation import transformation
 
 def parse_args():
-        parser = argparse.ArgumentParser(description='Trading Offline Agent Example')
-        parser.add_argument("--config", default=os.path.join(root, "configs", "trading_offline.py"), help="config file path")
+        parser = argparse.ArgumentParser(description='Interday Trading Agent Example')
+        parser.add_argument("--config", default=os.path.join(root, "configs", "interday_trading.py"), help="config file path")
         
         parser.add_argument(
             '--cfg-options',
@@ -72,15 +72,15 @@ async def main():
     await transformation.transform(type="e2t", env_names=config.env_names)
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
-    # Test trading offline
-    task = "Trade on AAPL until the environment is done, and then save the trading records."
+    # Test interday trading
+    task = "Trade on AAPL and maximize the profit until the environment is done"
     files = []
     
     logger.info(f"| 📋 Task: {task}")
     logger.info(f"| 📂 Files: {files}")
     
     input = {
-        "name": "trading_offline",
+        "name": "interday_trading",
         "input": {
             "task": task,
             "files": files

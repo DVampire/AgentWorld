@@ -1,6 +1,6 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import memory
+    from .base import memory_config
     from .environments.file_system import environment as file_system_environment
     from .environments.github import environment as github_environment
     from .environments.operator_browser import environment as operator_browser_environment
@@ -53,4 +53,5 @@ github_environment.update(dict(
 #-----------------TOOL CALLING AGENT CONFIG-----------------
 tool_calling_agent.update(
     workdir=workdir,
+    memory_config=memory_config,
 )

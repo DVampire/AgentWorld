@@ -21,7 +21,7 @@ from src.tools import tcp
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Tool Calling Agent Example')
-        parser.add_argument("--config", default=os.path.join(root, "configs", "trading_offline.py"), help="config file path")
+        parser.add_argument("--config", default=os.path.join(root, "configs", "interday_trading.py"), help="config file path")
         
         parser.add_argument(
             '--cfg-options',
@@ -36,14 +36,14 @@ def parse_args():
         args = parser.parse_args()
         return args
 
-async def test_trading_offline():
+async def test_interday_trading():
     
-    state = await ecp.get_state("trading_offline")
+    state = await ecp.get_state("interday_trading")
     print(state["state"])
     exit()
     
     input = {
-        "name": "trading_offline",
+        "name": "interday_trading",
         "action": "step",
         "input": {
             "action": "BUY"
@@ -53,7 +53,7 @@ async def test_trading_offline():
     res = await ecp.ainvoke(**input)
     logger.info(f"| ✅ Action result: {res}")
     
-    state = await ecp.get_state("trading_offline")
+    state = await ecp.get_state("interday_trading")
     for key, value in state.items():
         print(f"| {key}:")
         print(value)
@@ -83,8 +83,8 @@ async def main():
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
-    # Test trading offline
-    await test_trading_offline()
+    # Test interday trading
+    await test_interday_trading()
     
 
 if __name__ == "__main__":

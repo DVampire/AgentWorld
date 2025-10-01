@@ -1,12 +1,11 @@
 """Tool calling agent implementation with manual agent logic."""
 
 import asyncio
-from typing import List, Optional, Type, Dict, Any, Union
+from typing import List, Optional, Type, Dict, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
-import pandas as pd
 
 from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.logger import logger
@@ -37,6 +36,7 @@ class ToolCallingAgent(BaseAgent):
         workdir: str,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
+        memory_config: Optional[Dict[str, Any]] = None,
         max_steps: int = 20,
         review_steps: int = 5,
         log_max_length: int = 1000,
@@ -50,6 +50,7 @@ class ToolCallingAgent(BaseAgent):
             workdir=workdir,
             model_name=model_name,
             prompt_name=prompt_name,
+            memory_config=memory_config,
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,

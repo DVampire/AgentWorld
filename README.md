@@ -46,7 +46,7 @@ AgentWorld/
 │   │   ├── file_system_environment.py    # File operations
 │   │   ├── github_environment.py         # GitHub integration
 │   │   ├── database_environment.py       # Database operations
-│   │   ├── trading_offline_environment.py # Financial trading
+│   │   ├── interday_trading_environment.py # Financial trading
 │   │   ├── playwright_environment.py    # Browser automation
 │   │   ├── faiss_environment.py         # Vector search
 │   │   └── protocol/                     # Environment Context Protocol (ECP)

@@ -4,6 +4,7 @@ from copy import deepcopy
 from pandas import DataFrame
 from typing import Any, Dict, Type
 import random
+import os
 import numpy as np
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -54,13 +55,13 @@ _INTERACTION_RULES = """Interaction guidelines:
 """
 
 @ecp.environment()
-class TradingOfflineEnvironment(BaseEnvironment):
+class InterdayTradingEnvironment(BaseEnvironment):
     """Trading Offline Environment that provides trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = Field(default="trading_offline", description="The name of the Trading Offline environment.")
+    name: str = Field(default="interday_trading", description="The name of the Trading Offline environment.")
     type: str = Field(default="Trading Offline", description="The type of the Trading Offline environment.")
-    description: str = Field(default="Trading offline environment for trading", description="The description of the Trading Offline environment.")
+    description: str = Field(default="Interday trading environment for trading", description="The description of the Trading Offline environment.")
     args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Trading Offline environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
@@ -632,7 +633,11 @@ class TradingOfflineEnvironment(BaseEnvironment):
             metrics_string = f"**Metric | Value**\n"
             for metric_name, metric_value in self.metrics.items():
                 metrics_string += f"{metric_name} | {metric_value:.4f}\n"
-                
+            
+            df = self.trading_records.to_dataframe()
+            df.to_csv(os.path.join(self.base_dir, "trading_records.csv"), index=True)
+            logger.info(f"| 📊 Trading records saved to {os.path.join(self.base_dir, 'trading_records.csv')}")
+            
             res = dedent(f"""
                 <info>
                 Name: {self.asset_info['asset_name']}
@@ -651,25 +656,10 @@ class TradingOfflineEnvironment(BaseEnvironment):
                 Total profit: {info['total_profit']:.2f}%
                 Trading metrics: 
                 {metrics_string}
+                Trading records saved to {os.path.join(self.base_dir, 'trading_records.csv')}
                 </result>
                 """) 
             return res
-        
-    @ecp.action(name = "save",
-                type = "Trading Offline",
-                description = "Save the trading records.")
-    async def save(self, file_path: str) -> str:
-        """Save the trading records.
-        
-        Args:
-            file_path (str): The absolute path to save the trading records.
-
-        Returns:
-            str: The message of the trading records saved successfully.
-        """
-        df = self.trading_records.to_dataframe()
-        df.to_csv(file_path, index=False)
-        return f"Trading records saved successfully to {file_path}."
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Trading Offline environment."""

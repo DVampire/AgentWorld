@@ -1,11 +1,10 @@
-"""Trading offline agent implementation for single stock trading tasks."""
+"""Interday trading agent implementation for single stock trading tasks."""
 
 from typing import List, Optional, Type, Dict, Any, Union
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
-import pandas as pd
 
 from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.logger import logger
@@ -16,38 +15,40 @@ from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 
-class TradingOfflineAgentInputArgs(BaseModel):
+class InterdayTradingAgentInputArgs(BaseModel):
     task: str = Field(description="The trading task to complete.")
 
 @acp.agent()
-class TradingOfflineAgent(BaseAgent):
-    """Trading offline agent implementation for single stock trading tasks."""
+class InterdayTradingAgent(BaseAgent):
+    """Interday trading agent implementation for single stock trading tasks."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="trading_offline", description="The name of the trading offline agent.")
-    type: str = Field(default="Agent", description="The type of the trading offline agent.")
-    description: str = Field(default="A trading offline agent that can perform single stock trading tasks.", description="The description of the trading offline agent.")
-    args_schema: Type[TradingOfflineAgentInputArgs] = Field(default=TradingOfflineAgentInputArgs, description="The args schema of the trading offline agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the trading offline agent.")
+    name: str = Field(default="interday_trading", description="The name of the interday trading agent.")
+    type: str = Field(default="Agent", description="The type of the interday trading agent.")
+    description: str = Field(default="A interday trading agent that can perform single stock trading tasks.", description="The description of the interday trading agent.")
+    args_schema: Type[InterdayTradingAgentInputArgs] = Field(default=InterdayTradingAgentInputArgs, description="The args schema of the interday trading agent.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the interday trading agent.")
     
     def __init__(
         self,
         workdir: str,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
+        memory_config: Optional[Dict[str, Any]] = None,
         max_steps: int = -1,  # -1 means unlimited steps for trading
         review_steps: int = 5,
         log_max_length: int = 1000,
         **kwargs
     ):
-        # Set default prompt name for trading offline
+        # Set default prompt name for interday trading
         if not prompt_name:
-            prompt_name = "trading_offline"
+            prompt_name = "interday_trading"
         
         super().__init__(
             workdir=workdir,
             model_name=model_name,
             prompt_name=prompt_name,
+            memory_config=memory_config,
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
@@ -94,7 +95,7 @@ class TradingOfflineAgent(BaseAgent):
             next_goal = think_output.next_goal
             actions = think_output.action
             
-            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
+            logger.info(f"| 💭 Thinking: {thinking}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Actions to execute: {len(actions)}")
             
@@ -117,7 +118,7 @@ class TradingOfflineAgent(BaseAgent):
                     tool_result = str(tool_result)
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                logger.info(f"| 📄 Results: {str(tool_result)}...")
                 
                 # Update action with result
                 action_dict = action.model_dump()
@@ -289,8 +290,8 @@ class TradingOfflineAgent(BaseAgent):
                   task: str, 
                   files: List[str] = [],
                   ):
-        """Run the trading offline agent with loop."""
-        logger.info(f"| 🚀 Starting TradingOfflineAgent: {task}")
+        """Run the interday trading agent with loop."""
+        logger.info(f"| 🚀 Starting InterdayTradingAgent: {task}")
         
         session_info = await self._generate_session_info(task)
         session_id = session_info.session_id

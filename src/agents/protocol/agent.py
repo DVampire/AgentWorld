@@ -98,6 +98,7 @@ class BaseAgent(BaseModel):
         workdir: str,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
+        memory_config: Dict[str, Any] = None,
         max_steps: int = 20,
         review_steps: int = 5,
         log_max_length: int = 1000,
@@ -109,7 +110,7 @@ class BaseAgent(BaseModel):
         logger.info(f"| 📁 Agent working directory: {self.workdir}")
         
         self.prompt_manager = PromptManager(prompt_name=prompt_name)
-        self.memory_manager = MemoryManager()
+        self.memory_manager = MemoryManager(memory_config=memory_config)
         
         # Setup model
         self.model = self._setup_model(model_name)

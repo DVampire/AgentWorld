@@ -54,8 +54,8 @@ async def test_general_models():
     ]
     
     for model_name in [
-        "gpt-4o", 
-        # "gpt-4.1", 
+        # "gpt-4o", 
+        "gpt-4.1", 
         # "gpt-5", 
         # "o1", 
         # "o3",
@@ -119,10 +119,10 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| Models: {model_manager.list()}")
     
-    # await test_general_models()
+    await test_general_models()
     # await test_deep_research_models()
     # await test_transcribe_models()
-    await test_embedding_models()
+    # await test_embedding_models()
     
     
 if __name__ == "__main__":

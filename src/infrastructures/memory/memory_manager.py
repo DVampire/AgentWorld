@@ -1,14 +1,13 @@
 """Memory manager for session-based memory operations."""
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 
-from src.infrastructures.memory.memory_system import MemorySystem
+from src.infrastructures.registry import MEMORY_SYSTEM
 from src.logger import logger
 
 class MemoryManager:
     """Session-based memory manager for agent execution history."""
-    def __init__(self, **memory_config):
-        # MemorySystem can work as basic memory store or with LangChain enhancements
-        self.memory_system = MemorySystem(**memory_config)
+    def __init__(self, memory_config: Dict[str, Any]):
+        self.memory_system = MEMORY_SYSTEM.build(memory_config)
     
     async def start_session(self, 
                             session_id: str, 

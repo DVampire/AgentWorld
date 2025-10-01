@@ -1,7 +1,7 @@
 """Agents module for multi-agent system."""
 
 from .tool_calling_agent import ToolCallingAgent
-from .trading_offline_agent import TradingOfflineAgent
+from .interday_trading_agent import InterdayTradingAgent
 from .simple_chat_agent import SimpleChatAgent
 from .debate_manager import DebateManagerAgent
 from .protocol import acp
@@ -9,7 +9,7 @@ from .protocol import acp
 
 __all__ = [
     "ToolCallingAgent",
-    "TradingOfflineAgent",
+    "InterdayTradingAgent",
     "SimpleChatAgent",
     "DebateManagerAgent",
     "acp",
