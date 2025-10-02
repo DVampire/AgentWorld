@@ -14,9 +14,9 @@ version = "0.1.0"
 #---------------INTRADAY TRADING ENVIRONMENT CONFIG--------
 symbol = "AAPL"
 start_timestamp = "2015-05-01"
-split_timestamp = "2025-01-01"
-end_timestamp = "2025-05-01"
-level = "1day"
+split_timestamp = "2025-01-02"
+end_timestamp = "2025-01-03"
+level = "1min"
 intraday_trading_dataset.update(
     symbol=symbol,
     start_timestamp=start_timestamp,    

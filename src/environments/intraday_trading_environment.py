@@ -758,6 +758,10 @@ class IntradayTradingEnvironment(BaseEnvironment):
             
             extra = {
                 "timestamp": timestamp,
+                "cash": cash,
+                "position": position,
+                "profit": profit,
+                "info_string": info_string,
                 "prices": prices,
                 "prices_string": prices_string,
                 "news": news,

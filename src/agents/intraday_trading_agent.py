@@ -1,12 +1,18 @@
-"""Intraday trading agent implementation for single stock trading tasks."""
+"""Intraday trading agent - three-agent architecture in one file.
 
-from typing import List, Optional, Type, Dict, Any, Union
-from langchain_core.prompts import ChatPromptTemplate
+This file contains three agents:
+1. IntradayDayAnalysisAgent - Deep daily trend analysis
+2. IntradayMinuteTradingAgent - Fast minute-level trading decisions  
+3. IntradayTradingAgent - Orchestrator that coordinates the above two agents
+"""
+
+from typing import List, Optional, Type, Dict, Any, Tuple, Union
 from langchain_core.messages import BaseMessage
+from langchain_core.prompts import ChatPromptTemplate
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.agents.protocol.agent import BaseAgent
 from src.logger import logger
 from src.utils import dedent
 from src.agents.protocol import acp
@@ -15,19 +21,26 @@ from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 
-class IntradayTradingAgentInputArgs(BaseModel):
-    task: str = Field(description="The trading task to complete.")
+class DayAnalysisOutput(BaseModel):
+    """Output schema for day analysis."""
+    trend_type: str = Field(description="Intraday trend pattern: Uptrend/Downtrend/Up then down/Down then up/Sideways/Volatile")
+    confidence: str = Field(description="Confidence level: high/medium/low")
+    reasoning: str = Field(description="5-8 sentences explaining the forecast and why this pattern is expected")
 
-@acp.agent()
-class IntradayTradingAgent(BaseAgent):
-    """Interday trading agent implementation for single stock trading tasks."""
+class IntradayDayAnalysisAgentInputArgs(BaseModel):
+    """Input args for day analysis agent."""
+    data: str = Field(description="The data for the day analysis agent.")
+
+
+class IntradayDayAnalysisAgent(BaseAgent):
+    """Intraday day analysis agent - performs deep daily trend analysis."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="intraday_trading", description="The name of the intraday trading agent.")
-    type: str = Field(default="Agent", description="The type of the interday trading agent.")
-    description: str = Field(default="A intraday trading agent that can perform single stock trading tasks.", description="The description of the intraday trading agent.")
-    args_schema: Type[IntradayTradingAgentInputArgs] = Field(default=IntradayTradingAgentInputArgs, description="The args schema of the intraday trading agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the intraday trading agent.")
+    name: str = Field(default="intraday_day_analysis", description="The name of the day analysis agent.")
+    type: str = Field(default="Agent", description="The type of the day analysis agent.")
+    description: str = Field(default="An agent that performs deep daily trend analysis for intraday trading.", description="The description of the day analysis agent.")
+    args_schema: Type[IntradayDayAnalysisAgentInputArgs] = Field(default=IntradayDayAnalysisAgentInputArgs, description="The args schema.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
     
     def __init__(
         self,
@@ -35,15 +48,447 @@ class IntradayTradingAgent(BaseAgent):
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         memory_config: Optional[Dict[str, Any]] = None,
-        max_steps: int = -1,  # -1 means unlimited steps for trading
+        **kwargs
+    ):
+        # Set default prompt name
+        if not prompt_name:
+            prompt_name = "intraday_day_analysis"
+        
+        super().__init__(
+            workdir=workdir,
+            model_name=model_name,
+            prompt_name=prompt_name,
+            memory_config=memory_config,
+            **kwargs
+        )
+        
+        # Bind model with structured output
+        self.structured_model = self.model.with_structured_output(
+            DayAnalysisOutput,
+            method="function_calling",
+            include_raw=False
+        )
+        
+    async def start(self, 
+                    task: str, 
+                    session_id: str, 
+                    task_id: str, 
+                    description: str):
+        """Start the day analysis agent."""
+        # Start session
+        await self.memory_manager.start_session(session_id, description)
+        await self.memory_manager.add_event(step_number=self.step_number, 
+            event_type="task_start", 
+            data=dict(task=task),
+            agent_name=self.name,
+            task_id=task_id
+        )
+    
+    async def end(self, session_id: str):
+        """End the day analysis agent."""
+        await self.memory_manager.end_session(session_id=session_id)
+        
+    async def _get_agent_history(self) -> Dict[str, Any]:
+        """Get the agent history."""
+        state = await self.memory_manager.get_state(n=self.review_steps)
+        
+        events = state["events"]
+        summaries = state["summaries"]
+        insights = state["insights"]
+        
+        agent_history = ""
+        for event in events:
+            agent_history += f"<step_{event.step_number}>\n"
+            if event.event_type == EventType.TASK_START:
+                agent_history += f"Task Start: {event.data['task']}\n"
+            elif event.event_type == EventType.TASK_END:
+                agent_history += f"Task End: {event.data['result']}\n"
+            elif event.event_type == EventType.ACTION_STEP:
+                agent_history += f"Trend Type: {event.data['trend_type']}\n"
+                agent_history += f"Confidence: {event.data['confidence']}\n"
+                agent_history += f"Reasoning: {event.data['reasoning']}\n"
+            agent_history += "\n"
+            agent_history += f"</step_{event.step_number}>\n"
+        
+        agent_history += dedent(f"""
+            <summaries>
+            {chr(10).join([str(summary) for summary in summaries])}
+            </summaries>
+            <insights>
+            {chr(10).join([str(insight) for insight in insights])}
+            </insights>
+        """)
+        
+        return {
+            "agent_history": agent_history,
+        }
+        
+    
+    async def _get_environment_state(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the environment state."""
+        environment_state = data['news_string']
+        return {
+            "environment_state": environment_state,
+        }
+    
+    async def _get_messages(self, data: Dict[str, Any]) -> List[BaseMessage]:
+        """Get messages for the day analysis agent."""
+        system_input_variables = {}
+        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        
+        agent_input_variables = {}
+        agent_history = await self._get_agent_history()
+        environment_state = await self._get_environment_state(data)
+        agent_input_variables.update(agent_history)
+        agent_input_variables.update(environment_state)
+        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        
+        messages = [
+            system_message,
+            agent_message,
+        ]
+        
+        return messages
+        
+    async def ainvoke(self, data: Dict[str, Any], task_id: str):
+        """Invoke the day analysis agent."""
+        
+        messages = await self._get_messages(data)
+        
+        try:
+            response = await self.structured_model.ainvoke(messages)
+            
+            trend_type = response.trend_type
+            confidence = response.confidence
+            reasoning = response.reasoning
+            
+            logger.info(f"| 📝 Trend Type: {trend_type}")
+            logger.info(f"| 📝 Confidence: {confidence}")
+            logger.info(f"| 📝 Reasoning: {reasoning}")
+            
+        except Exception as e:
+            logger.error(f"| 🚨 Error: {e}")
+        
+        event_data = {
+            "trend_type": trend_type,
+            "confidence": confidence,
+            "reasoning": reasoning,
+        }
+        
+        await self.memory_manager.add_event(
+            step_number=self.step_number,
+            event_type="action_step",
+            data=event_data,
+            agent_name=self.name,
+            task_id=task_id
+        )
+        
+        return response
+
+
+# ============================================
+# Agent 2: Minute Trading Agent
+# ============================================
+
+class MinuteTradingOutputBuilder:
+    def __init__(self):
+        self.schemas: Dict[str, type[BaseModel]] = {}
+
+    def register(self, schema: Dict[str, type[BaseModel]]):
+        """Register new args schema"""
+        self.schemas.update(schema)
+        return self  # Support chaining
+
+    def build(self):
+        """Generate Action and MinuteTradingOutput models"""
+
+        # -------- Dynamically generate Action --------
+        schemas = self.schemas
+        ActionArgs = Union[tuple(schemas.values())]
+
+        class Action(BaseModel):
+            name: str = Field(description="The name of the action.")
+            args: ActionArgs = Field(description="The arguments of the action.")
+            output: Optional[str] = Field(default=None, description="The output of the action.")
+            
+            def __str__(self):
+                return f"Action: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
+            
+            def __repr__(self):
+                return self.__str__()
+
+        # -------- Dynamically generate MinuteTradingOutput --------
+        class MinuteTradingOutput(BaseModel):
+            analysis: str = Field(description="2-3 sentences: current price action vs daily trend")
+            position_check: str = Field(description="cash/long - duration if holding")
+            decision: str = Field(description="BUY/SELL/HOLD")
+            reasoning: str = Field(description="Why this decision? Align with daily forecast")
+            action: Action = Field(
+                description='{"name": "action_name", "args": {...}}'
+            )
+
+            def __str__(self):
+                return (
+                    f"Analysis: {self.analysis}\n"
+                    f"Position Check: {self.position_check}\n"
+                    f"Decision: {self.decision}\n"
+                    f"Reasoning: {self.reasoning}\n"
+                    f"Action: {self.action.model_dump()}\n"
+                )
+            
+            def __repr__(self):
+                return self.__str__()
+
+        return MinuteTradingOutput
+
+
+class IntradayMinuteTradingAgentInputArgs(BaseModel):
+    """Input args for minute trading agent."""
+    data: str = Field(description="The data for the minute trading agent.")
+
+
+@acp.agent()
+class IntradayMinuteTradingAgent(BaseAgent):
+    """Intraday minute trading agent - fast execution based on day analysis."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="intraday_minute_trading", description="The name of the minute trading agent.")
+    type: str = Field(default="Agent", description="The type of the minute trading agent.")
+    description: str = Field(default="An agent that makes fast trading decisions based on daily forecast.", description="The description.")
+    args_schema: Type[IntradayMinuteTradingAgentInputArgs] = Field(default=IntradayMinuteTradingAgentInputArgs, description="The args schema.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
+    
+    def __init__(
+        self,
+        workdir: str,
+        model_name: Optional[str] = None,
+        prompt_name: Optional[str] = None,
+        memory_config: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ):
+        # Set default prompt name
+        if not prompt_name:
+            prompt_name = "intraday_minute_trading"
+        
+        super().__init__(
+            workdir=workdir,
+            model_name=model_name,
+            prompt_name=prompt_name,
+            memory_config=memory_config,
+            **kwargs
+        )
+        
+        self.minute_trading_output_builder = MinuteTradingOutputBuilder()
+        self.minute_trading_output_builder.register(tcp.args_schemas())
+        self.MinuteTradingOutput = self.minute_trading_output_builder.build()
+        
+        # Bind model with structured output
+        self.structured_model = self.model.with_structured_output(
+            self.MinuteTradingOutput,
+            method="function_calling",
+            include_raw=False
+        )
+    
+    async def start(self, 
+                    task: str, 
+                    session_id: str, 
+                    task_id: str, 
+                    description: str):
+        """Start the minute trading agent."""
+        # Start session
+        await self.memory_manager.start_session(session_id, description)
+        await self.memory_manager.add_event(step_number=self.step_number, 
+                                      event_type="task_start", 
+                                      data=dict(task=task),
+                                      agent_name=self.name,
+                                      task_id=task_id
+                                      )
+    
+    async def end(self, session_id: str):
+        """End the minute trading agent."""
+        await self.memory_manager.end_session(session_id=session_id)
+    
+    async def _get_agent_history(self) -> Dict[str, Any]:
+        """Get the agent history."""
+        state = await self.memory_manager.get_state(n=self.review_steps)
+        
+        events = state["events"]
+        summaries = state["summaries"]
+        insights = state["insights"]
+        
+        agent_history = ""
+        for event in events:
+            agent_history += f"<step_{event.step_number}>\n"
+            if event.event_type == EventType.TASK_START:
+                agent_history += f"Task Start: {event.data['task']}\n"
+            elif event.event_type == EventType.TASK_END:
+                agent_history += f"Task End: {event.data['result']}\n"
+            elif event.event_type == EventType.ACTION_STEP:
+                agent_history += f"Analysis: {event.data['analysis']}\n"
+                agent_history += f"Position Check: {event.data['position_check']}\n"
+                agent_history += f"Decision: {event.data['decision']}\n"
+                agent_history += f"Reasoning: {event.data['reasoning']}\n"
+                agent_history += f"Action: {event.data['action']}\n"
+            agent_history += "\n"
+            agent_history += f"</step_{event.step_number}>\n"
+        
+        agent_history += dedent(f"""
+            <summaries>
+            {chr(10).join([str(summary) for summary in summaries])}
+            </summaries>
+            <insights>
+            {chr(10).join([str(insight) for insight in insights])}
+            </insights>
+        """)
+        
+        return {
+            "agent_history": agent_history,
+        }
+        
+    async def _get_agent_state(self) -> Dict[str, Any]:
+        """Get the agent state."""
+        available_actions_description = [tcp.to_string(tool) for tool in tcp.list()]
+        available_actions_description = "\n".join(available_actions_description)
+        
+        return {
+            "available_actions": available_actions_description,
+        }
+    
+    async def _get_environment_state(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the environment state."""
+        
+        environment_state = ""
+        info_string = data['info_string']
+        environment_state += f"{info_string}\n"
+        review_actions_string = data['review_actions_string']
+        environment_state += f"{review_actions_string}\n"
+        review_trends_string = data['review_trends_string']
+        environment_state += f"{review_trends_string}\n"
+        
+        return {
+            "environment_state": environment_state,
+        }
+    
+    async def _get_messages(self, data: Dict[str, Any], daily_trend_forecast: str) -> List[BaseMessage]:
+        """Get messages for the minute trading agent."""
+        system_input_variables = {}
+        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        
+        agent_input_variables = {}
+        agent_history = await self._get_agent_history()
+        environment_state = await self._get_environment_state(data)
+        agent_input_variables.update(agent_history)
+        agent_input_variables.update(environment_state)
+        agent_input_variables.update(dict(daily_trend_forecast=daily_trend_forecast))
+        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        
+        messages = [
+            system_message,
+            agent_message,
+        ]
+        
+        return messages
+    
+    async def ainvoke(self, data: Dict[str, Any], task_id: str, daily_trend_forecast: str):
+        """Invoke the minute trading agent."""
+        messages = await self._get_messages(data, daily_trend_forecast)
+        
+        done = False
+        final_result = None
+        action_result = None
+        
+        try:
+            minute_trading_output = await self.structured_model.ainvoke(messages)
+            
+            analysis = minute_trading_output.analysis
+            position_check = minute_trading_output.position_check
+            decision = minute_trading_output.decision
+            reasoning = minute_trading_output.reasoning
+            action = minute_trading_output.action
+            
+            logger.info(f"| 📝 Analysis: {analysis}")
+            logger.info(f"| 📝 Position Check: {position_check}")
+            logger.info(f"| 📝 Decision: {decision}")
+            logger.info(f"| 📝 Reasoning: {reasoning}")
+            logger.info(f"| 📝 Action: {action}")
+            
+            # Execute action
+            tool_name = action.name
+            tool_args = action.args.model_dump()
+            tool_result = await tcp.ainvoke(tool_name, input=tool_args)
+            if isinstance(tool_result, ToolResponse):
+                tool_result = tool_result.content
+            else:
+                tool_result = str(tool_result)
+            
+            logger.info(f"| ✅ Action {tool_name} completed successfully")
+            logger.info(f"| 📄 Results: {tool_result}")
+            
+            # Update action with result
+            action_dict = action.model_dump()
+            action_dict["output"] = tool_result
+            action_result = action_dict
+            
+            # Check if trading environment is done
+            if tool_name == "step" and "Environment status: done" in str(tool_result):
+                done = True
+                final_result = tool_result
+        
+        except Exception as e:
+            logger.error(f"| 🚨 Error: {e}")
+            done = True
+            final_result = str(e)
+        
+        event_data = {
+            "analysis": analysis,
+            "position_check": position_check,
+            "decision": decision,
+            "reasoning": reasoning,
+            "action": action_result
+        }
+        
+        await self.memory_manager.add_event(
+            step_number=self.step_number,
+            event_type="action_step",
+            data=event_data,
+            agent_name=self.name,
+            task_id=task_id
+        )
+        
+        return done, final_result
+
+
+# ============================================
+# Agent 3: Main Intraday Trading Agent (Orchestrator)
+# ============================================
+
+class IntradayTradingAgentInputArgs(BaseModel):
+    """Input args for intraday trading agent."""
+    task: str = Field(description="The trading task to complete.")
+
+
+@acp.agent()
+class IntradayTradingAgent(BaseAgent):
+    """Intraday trading agent - coordinates day analysis and minute trading agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="intraday_trading", description="The name of the intraday trading agent.")
+    type: str = Field(default="Agent", description="The type of the intraday trading agent.")
+    description: str = Field(default="An intraday trading agent with two-stage decision making.", description="The description.")
+    args_schema: Type[IntradayTradingAgentInputArgs] = Field(default=IntradayTradingAgentInputArgs, description="The args schema.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
+    
+    def __init__(
+        self,
+        workdir: str,
+        model_name: Optional[str] = None,
+        prompt_name: Optional[str] = None,
+        memory_config: Optional[Dict[str, Any]] = None,
+        max_steps: int = -1,  # -1 means unlimited
         review_steps: int = 5,
         log_max_length: int = 1000,
         **kwargs
     ):
-        # Set default prompt name for interday trading
-        if not prompt_name:
-            prompt_name = "interday_trading"
-        
         super().__init__(
             workdir=workdir,
             model_name=model_name,
@@ -52,114 +497,27 @@ class IntradayTradingAgent(BaseAgent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
-            **kwargs)
-        
-        self.think_output_builder = ThinkOutputBuilder()
-        self.think_output_builder.register(tcp.args_schemas())
-        self.ThinkOutput = self.think_output_builder.build()
-        
-        # Bind tools to model
-        self.tools = [tcp.get(tool) for tool in tcp.list()]
-        self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
-        self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
-        
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
-        """Think and action for one step."""
-        
-        # If the new tool is added, rebuild the ThinkOutput model
-        tcp_args_schema = tcp.args_schemas()
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
-        
-        # Get structured output for thinking
-        structured_llm = self.no_fc_model.with_structured_output(
-            self.ThinkOutput,
-            method="function_calling",
-            include_raw=False
+            **kwargs
         )
         
-        done = False
-        final_result = None
+        # Initialize sub-agents
+        self.day_analysis_agent = IntradayDayAnalysisAgent(
+            workdir=workdir,
+            model_name=model_name,
+            prompt_name="intraday_day_analysis",
+            memory_config=memory_config
+        )   
         
-        try:
-            think_output = await structured_llm.ainvoke(messages)
-            
-            thinking = think_output.thinking
-            evaluation_previous_goal = think_output.evaluation_previous_goal
-            memory = think_output.memory
-            next_goal = think_output.next_goal
-            actions = think_output.action
-            
-            logger.info(f"| 💭 Thinking: {thinking}...")
-            logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
-            
-            # Execute actions sequentially
-            action_results = []
-            
-            for i, action in enumerate(actions):
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action.name}")
-                
-                # Execute the tool
-                tool_name = action.name
-                tool_args = action.args.model_dump()
-                
-                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
-                
-                tool_result = await tcp.ainvoke(tool_name, input=tool_args)
-                if isinstance(tool_result, ToolResponse):
-                    tool_result = tool_result.content
-                else:
-                    tool_result = str(tool_result)
-                
-                logger.info(f"| ✅ Action {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)}...")
-                
-                # Update action with result
-                action_dict = action.model_dump()
-                action_dict["output"] = tool_result
-                action_results.append(action_dict)
-                    
-                # Check if trading environment is done
-                if tool_name == "step" and "Environment status: done" in str(tool_result):
-                    done = True
-                    final_result = tool_result
-                    break
-            
-            event_data = {
-                "thinking": thinking,
-                "evaluation_previous_goal": evaluation_previous_goal,
-                "memory": memory,
-                "next_goal": next_goal,
-                "action": action_results
-            }
-            await self.memory_manager.add_event(
-                step_number=self.step_number,
-                event_type="action_step",
-                data=event_data,
-                agent_name=self.name,
-                task_id=task_id
-            )
-            self.step_number += 1
-            
-            if done:
-                await self.memory_manager.add_event(
-                    step_number=self.step_number,
-                    event_type="task_end",
-                    data=dict(result=final_result),
-                    agent_name=self.name,
-                    task_id=task_id
-                )
-            
-        except Exception as e:
-            logger.error(f"| Error in thinking and action step: {e}")
+        self.minute_trading_agent = IntradayMinuteTradingAgent(
+            workdir=workdir,
+            model_name=model_name,
+            prompt_name="intraday_minute_trading",
+            memory_config=memory_config
+        )
         
-        return done, final_result
+        self.daily_trend_forecast = "No news available. Stay neutral."
+        
+        logger.info("| 🤖 Intraday Trading Agent initialized with two-stage system")
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
@@ -194,123 +552,48 @@ class IntradayTradingAgent(BaseAgent):
         
         return SessionInfo(session_id=session_id, description=description)
     
-    async def _get_agent_history(self) -> Dict[str, Any]:
-        """Get the agent history."""
-        state = await self.memory_manager.get_state(n=self.review_steps)
-        
-        events = state["events"]
-        summaries = state["summaries"]
-        insights = state["insights"]
-        
-        agent_history = ""
-        for event in events:
-            agent_history += f"<step_{event.step_number}>\n"
-            if event.event_type == EventType.TASK_START:
-                agent_history += f"Task Start: {event.data['task']}\n"
-            elif event.event_type == EventType.TASK_END:
-                agent_history += f"Task End: {event.data['result']}\n"
-            elif event.event_type == EventType.ACTION_STEP:
-                agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
-                agent_history += f"Memory: {event.data['memory']}\n"
-                agent_history += f"Next Goal: {event.data['next_goal']}\n"
-                agent_history += f"Action Results: {event.data['action']}\n"
-            agent_history += "\n"
-            agent_history += f"</step_{event.step_number}>\n"
-        
-        agent_history += dedent(f"""
-            <summaries>
-            {chr(10).join([str(summary) for summary in summaries])}
-            </summaries>
-            <insights>
-            {chr(10).join([str(insight) for insight in insights])}
-            </insights>
-        """)
-        
-        return {
-            "agent_history": agent_history,
-        }
     
-    async def _get_agent_state(self, task: str) -> Dict[str, Any]:
-        """Get the agent state."""
-        step_info_description = f'Step {self.step_number + 1}'
-        if self.max_steps > 0:
-            step_info_description += f' of {self.max_steps} max possible steps'
-        step_info_description += '\n'
-        time_str = datetime.now().isoformat()
-        step_info_description += f'Current date and time: {time_str}'
+    async def _think_and_action(self, data: Dict[str, Any], task_id: str) -> Tuple[bool, Any]:
+        """Think and action."""
         
-        available_actions_description = [tcp.to_string(tool) for tool in tcp.list()]
-        available_actions_description = "\n".join(available_actions_description)
+        has_news = data['has_news']
         
-        return {
-            "task": task,
-            "step_info": step_info_description,
-            "available_actions": available_actions_description,
-        }
+        if has_news:
+            # Get daily trend forecast
+            response = await self.day_analysis_agent.ainvoke(data, task_id)
+            daily_trend_forecast = dedent(f"""
+                Trend Type: {response.trend_type}
+                Confidence: {response.confidence}
+                Reasoning: {response.reasoning}
+            """)
+            logger.info(f"| 📝 Daily Trend Forecast: {daily_trend_forecast}")
+            
+            self.daily_trend_forecast = daily_trend_forecast
+            
+        # Get minute trading decision
+        done, final_result = await self.minute_trading_agent.ainvoke(data, task_id, self.daily_trend_forecast)
         
-    async def _get_environment_state(self) -> Dict[str, Any]:
-        """Get the environment state."""
-        environment_state = ""
-        for env_name in ecp.list():
-            state = await ecp.get_state(env_name)
-            state_string = state.get("state", "")
-            environment_state += f"{state_string}\n"
-        return {
-            "environment_state": environment_state,
-        }
+        return done, final_result
         
-    async def _get_messages(self, task: str) -> List[BaseMessage]:
-        
-        system_input_variables = {}
-        environment_rules = ""
-        for env_name in ecp.list():
-            environment_rules += f"{ecp.get_info(env_name).rules}\n"
-        system_input_variables.update(dict(
-            environment_rules=environment_rules,
-        ))
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
-        
-        agent_input_variables = {}
-        agent_history = await self._get_agent_history()
-        agent_state = await self._get_agent_state(task)
-        environment_state = await self._get_environment_state()
-        agent_input_variables.update(agent_history)
-        agent_input_variables.update(agent_state)
-        agent_input_variables.update(environment_state)
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
-        
-        messages = [
-            system_message,
-            agent_message,
-        ]
-        
-        return messages
-        
-    async def ainvoke(self, 
-                  task: str, 
-                  files: List[str] = [],
-                  ):
-        """Run the interday trading agent with loop."""
-        logger.info(f"| 🚀 Starting InterdayTradingAgent: {task}")
+    
+    async def ainvoke(
+        self, 
+        task: str, 
+        files: Optional[List[str]] = None,
+    ):
+        """Run the intraday trading agent with loop."""
+        logger.info(f"| 🚀 Starting IntradayTradingAgent: {task}")
         
         session_info = await self._generate_session_info(task)
         session_id = session_info.session_id
         description = session_info.description
         
-        # Start session
-        await self.memory_manager.start_session(session_id, description)
-        
         # Add task start event
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        await self.memory_manager.add_event(step_number=self.step_number, 
-                                      event_type="task_start", 
-                                      data=dict(task=task),
-                                      agent_name=self.name,
-                                      task_id=task_id
-                                      )
         
-        # Initialize messages
-        messages = await self._get_messages(task)
+        # Start
+        await self.day_analysis_agent.start(task, session_id, task_id, description)
+        await self.minute_trading_agent.start(task, session_id, task_id, description)
         
         # Main loop
         step_number = 0
@@ -321,11 +604,12 @@ class IntradayTradingAgent(BaseAgent):
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}")
             
-            # Execute one step
-            done, final_result = await self._think_and_action(messages, task_id)
-            self.step_number += 1
+            state = await ecp.get_state("intraday_trading")
+            data = state["extra"]
             
-            messages = await self._get_messages(task)
+            # Execute one step
+            done, final_result = await self._think_and_action(data, task_id)
+            step_number += 1
             
             if done:
                 break
@@ -335,17 +619,9 @@ class IntradayTradingAgent(BaseAgent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             final_result = "Reached maximum number of steps"
         
-        # Add task end event
-        await self.memory_manager.add_event(
-            step_number=self.step_number,
-            event_type="task_end",
-            data=dict(result=final_result),
-            agent_name=self.name,
-            task_id=task_id
-        )
-        
         # End session
-        await self.memory_manager.end_session(session_id=session_id)
+        await self.day_analysis_agent.end(session_id)
+        await self.minute_trading_agent.end(session_id)
         
         logger.info(f"| ✅ Agent completed after {step_number} steps")
         

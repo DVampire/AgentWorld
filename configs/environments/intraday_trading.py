@@ -29,12 +29,6 @@ dataset = dict(
         {
             "asset_name": "exp",
             "source": "fmp",
-            "data_type": "feature",
-            "level": "1min",
-        },
-        {
-            "asset_name": "exp",
-            "source": "fmp",
             "data_type": "news",
             "level": "1day",
         },
