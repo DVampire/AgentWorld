@@ -193,7 +193,6 @@ PROMPT_TEMPLATES = {
         "input_variables": [
             "agent_history",
             "task",
-            "file_system",
             "todo_contents",
             "step_info",
             "available_actions",

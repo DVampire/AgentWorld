@@ -118,7 +118,7 @@ class TodoTool(BaseTool):
         """A tool for managing a todo.md file with task decomposition and step tracking."""
         super().__init__(**kwargs)
         # Use temporary file for todo.md
-        temp_dir = Path(assemble_project_path(tempfile.gettempdir()))
+        temp_dir = Path(assemble_project_path(tempfile.mkdtemp()))
         self.todo_file = Path(assemble_project_path(temp_dir / "todo.md"))
         self.steps_file = Path(assemble_project_path(temp_dir / "todo_steps.json"))
         self.steps: List[Step] = []

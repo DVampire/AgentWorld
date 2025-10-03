@@ -17,8 +17,10 @@ from src.environments.operator_browser.types import (
 )
 from src.logger import logger
 from src.utils import assemble_project_path
+from src.utils import dedent
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
+from src.environments.protocol.types import EnvironmentState
 
 @ecp.environment()
 class OperatorBrowserEnvironment(BaseEnvironment):
@@ -77,7 +79,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         await self.operator_browser_service.stop()
         logger.info("| 🧹 Operator Browser Environment cleanup completed")
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self) -> EnvironmentState:
         """Get the current state of the browser environment.
         
         Returns:
@@ -85,26 +87,44 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         
         try:
-            screenshot_b64 = await self.operator_browser_service.screenshot(save_path=os.path.join(self.base_dir, f"step_{self.step_number:04d}.png"))
+            screenshot_path = os.path.join(self.base_dir, f"step_{self.step_number:04d}.png")
+            screenshot_b64 = await self.operator_browser_service.screenshot(save_path=screenshot_path)
             self.step_number += 1
             
-            return {
+            state = dedent(f"""
+                <info>
+                Current URL: {self.operator_browser_service.page.url if self.operator_browser_service.page else None}
+                Current Title: {self.operator_browser_service.page.title() if self.operator_browser_service.page else None}
+                Browser Ready: {self.operator_browser_service.browser is not None}
+                Page Ready: {self.operator_browser_service.page is not None}
+                Viewport: {self.viewport}
+                </info>
+                <img src={screenshot_path}>
+            """)
+            
+            extra = {
                 "environment": "operator_browser_environment",
                 "headless": self.headless,
                 "viewport": self.viewport,
                 "screenshot": screenshot_b64,
+                "screenshot_path": screenshot_path,
                 "base_dir": self.base_dir,
                 "browser_ready": self.operator_browser_service.browser is not None,
                 "page_ready": self.operator_browser_service.page is not None,
                 "current_url": self.operator_browser_service.page.url if self.operator_browser_service.page else None,
                 "current_title": self.operator_browser_service.page.title() if self.operator_browser_service.page else None,
             }
+            
+            return EnvironmentState(
+                state=state,
+                extra=extra,
+            )
         except Exception as e:
             logger.error(f"| ❌ Error getting browser state: {e}")
-            return {
-                "environment": "operator_browser_environment",
-                "error": str(e)
-            }
+            return EnvironmentState(
+                state="Failed to get browser state",
+                extra=dict(error=str(e)),
+            )
     
     @ecp.action(
         name="click",

@@ -10,6 +10,8 @@ import argparse
 from mmengine import DictAction
 import asyncio
 from PIL import Image
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -109,6 +111,44 @@ async def test_embedding_models():
         response = np.array(response)
         logger.info(f"| {model_name} Response: {response.shape}")
         
+
+async def test_computer_browser_use_models():
+    """Test computer-use-preview model with responses API.
+    
+    Note: computer-use-preview uses OpenAI's responses API, not chat completions.
+    The model is already bound with computer_use_preview tool in model_manager.
+    Do not use response_format with structured output, as it conflicts with the responses API.
+    """
+    
+    for model_name in [
+        "computer-browser-use",
+    ]:
+        # Create message with proper format for responses API
+        messages = [
+            HumanMessage(content=[
+                {
+                    "type": "input_text",
+                    "text": "What is the next action to search 'python programming' on google?"
+                },
+                {
+                    "type": "input_image",
+                    "image_url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/google.png"))))
+                }
+            ])
+        ]
+        
+        # Get the model (already configured with computer_use_preview tool)
+        model = model_manager.get(model_name)
+        
+        # Invoke with reasoning parameter for computer-use-preview
+        # Changed from "generate_summary" to "summary" as per OpenAI API
+        response = await model.ainvoke(
+            messages,
+            reasoning={"summary": "concise"},
+        )
+        
+        logger.info(f"| {model_name} Response: {response}")
+        
 async def main():
     args = parse_args()
     
@@ -119,10 +159,11 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| Models: {model_manager.list()}")
     
-    await test_general_models()
+    # await test_general_models()
     # await test_deep_research_models()
     # await test_transcribe_models()
     # await test_embedding_models()
+    await test_computer_browser_use_models()
     
     
 if __name__ == "__main__":

@@ -1,14 +1,12 @@
 """Agent message prompt management for dynamic task-related prompts."""
 
-import importlib
-from typing import Dict, List, Any, Optional, Literal
+from typing import Dict, List, Any
 from langchain_core.messages import HumanMessage
 from datetime import datetime
 from jinja2 import Template
 
 from src.logger import logger
 from src.agents.prompts.templates import PROMPT_TEMPLATES
-
 
 class AgentMessagePrompt:
     """Agent message prompt manager for dynamic task-related prompts (tool-calling agents)."""
@@ -41,6 +39,8 @@ class AgentMessagePrompt:
             # Use Jinja2 for template rendering
             jinja_template = Template(self.template_str)
             formatted_content = jinja_template.render(**variables)
+            print(formatted_content)
+            exit()
             
             return HumanMessage(content=formatted_content, cache=True)
             
@@ -73,10 +73,3 @@ class AgentMessagePrompt:
         except Exception as e:
             logger.warning(f"Failed to load agent message template: {e}")
             raise e
-        
-
-    
-    
-    
-    
-    

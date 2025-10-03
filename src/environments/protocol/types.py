@@ -81,33 +81,14 @@ class ActionInfo(BaseModel):
     
     def __repr__(self):
         return self.__str__()
-
-
-class ActionResult(BaseModel):
-    """Action execution result"""
-    success: bool
-    result: Optional[Any] = None
-    error: Optional[str] = None
-    execution_time: Optional[float] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class EnvironmentAction(BaseModel):
-    """Environment action definition"""
-    operation: str
-    args: Dict[str, Any] = Field(default_factory=dict)
-
-
-class EnvironmentStatus(BaseModel):
-    """Environment status information"""
-    name: str
-    status: Literal["initializing", "ready", "running", "error", "shutdown"]
-    last_action: Optional[str] = None
-    last_action_time: Optional[datetime] = None
-    action_count: int = 0
-    error_count: int = 0
+    
+class EnvironmentState(BaseModel):
+    """Environment state"""
+    state: str
+    extra: Optional[Dict[str, Any]] = None
 
 
 # Update forward references
 EnvironmentInfo.model_rebuild()
 ActionInfo.model_rebuild()
+EnvironmentState.model_rebuild()

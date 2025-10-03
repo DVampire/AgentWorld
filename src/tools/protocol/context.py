@@ -12,6 +12,7 @@ from src.environments.faiss.service import FaissService
 from src.environments.faiss.types import FaissAddRequest, FaissSearchRequest
 from src.utils import assemble_project_path
 from src.tools.protocol.types import ToolInfo
+from src.utils import dedent
 
 class ToolContextManager:
     """Global context manager for all tools."""
@@ -226,9 +227,26 @@ class ToolContextManager:
             str: Tool information string
         """
         tool_info = self._tool_info.get(tool_name)
+        tool_index = list(self._tool_info.keys()).index(tool_name) + 1
         if not tool_info:
             raise ValueError(f"Tool {tool_name} not found")
-        return f"Tool: {tool_info.name}\nDescription: {tool_info.description}\nArgs Schema: {tool_info.args_schema}"
+        
+        tool_name = tool_info.name
+        tool_type = tool_info.type
+        tool_description = tool_info.description
+        tool_args_schema = tool_info.args_schema.model_json_schema()
+        
+        tool_string = f"{tool_index:04d}. {tool_name} ({tool_type}): {tool_description}\n"
+        tool_string += " Args:\n"
+        for field, info in tool_args_schema["properties"].items():
+            if 'type' in info and info['type'] is not None:
+                tool_string += f"  - {field} ({info.get('type')}): {info.get('description', '')}"
+            else:
+                tool_string += f"  - {field}: {info.get('description', '')}"
+            if 'default' in info and info['default'] is not None:
+                tool_string += f" ({info.get('default')})"
+            tool_string += "\n"
+        return tool_string
     
     def cleanup(self):
         """Cleanup all active tools."""
