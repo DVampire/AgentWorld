@@ -10,12 +10,14 @@ import base64
 
 from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.logger import logger
+from src.infrastructures.models import model_manager
 from src.utils import get_file_info, dedent
 from src.agents.protocol import acp
 from src.tools.protocol import tcp
 from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
+from src.agents.prompts.prompt_manager import PromptManager
 
 class OperatorBrowserAgentInputArgs(BaseModel):
     task: str = Field(description="The web browsing task to complete.")
@@ -41,6 +43,7 @@ class OperatorBrowserAgent(BaseAgent):
         max_steps: int = 30,
         review_steps: int = 5,
         log_max_length: int = 500,
+        if_correct_action: bool = True,
         **kwargs
     ):
         """Initialize the Operator Browser Agent.
@@ -53,6 +56,7 @@ class OperatorBrowserAgent(BaseAgent):
             max_steps: Maximum number of steps
             review_steps: Number of steps to review in history
             log_max_length: Maximum log length
+            if_correct_action: If True, correct the action
         """
         # Set default prompt name for operator browser
         if not prompt_name:
@@ -68,6 +72,13 @@ class OperatorBrowserAgent(BaseAgent):
             log_max_length=log_max_length,
             **kwargs)
         
+        self.if_correct_action = if_correct_action
+        
+        self.prompt_manager = PromptManager(
+            prompt_name=prompt_name,
+            max_actions_per_step=1, # Max actions per step is 1 for operator browser agent
+        )
+        
         self.think_output_builder = ThinkOutputBuilder()
         self.think_output_builder.register(tcp.args_schemas())
         self.ThinkOutput = self.think_output_builder.build()
@@ -76,6 +87,11 @@ class OperatorBrowserAgent(BaseAgent):
         self.tools = [tcp.get(tool) for tool in tcp.list()]
         self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
         self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
+        
+        self.cua_model = model_manager.get(model_name="computer-browser-use")
+        self.cua_prompt_manager = PromptManager(
+            prompt_name="operator_browser_cua",
+        )
     
     async def _extract_file_content(self, file: str) -> str:
         """Extract file information."""
@@ -174,14 +190,18 @@ class OperatorBrowserAgent(BaseAgent):
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         
-        agent_history += dedent(f"""
-            <summaries>
-            {chr(10).join([str(summary) for summary in summaries])}
-            </summaries>
-            <insights>
-            {chr(10).join([str(insight) for insight in insights])}
-            </insights>
-        """)
+        if len(summaries) > 0:
+            agent_history += dedent(f"""
+                <summaries>
+                {chr(10).join([str(summary) for summary in summaries])}
+                </summaries>
+            """)
+        if len(insights) > 0:
+            agent_history += dedent(f"""
+                <insights>
+                {chr(10).join([str(insight) for insight in insights])}
+                </insights>
+            """)
         
         return {
             "agent_history": agent_history,
@@ -217,7 +237,11 @@ class OperatorBrowserAgent(BaseAgent):
         for env_name in ecp.list():
             env_state = await ecp.get_state(env_name)
             state_string = env_state.state
-            environment_state += f"{state_string}\n"
+            environment_state += dedent(f"""
+                <{env_name}_state>
+                {state_string}
+                </{env_name}_state>
+            """)
         
         return {
             "environment_state": environment_state,
@@ -252,6 +276,168 @@ class OperatorBrowserAgent(BaseAgent):
         
         return messages
     
+    async def _get_cua_messages(self, proposed_action: Any) -> Dict[str, Any]:
+        """Correct the action."""
+        system_input_variables = {}
+        system_message = self.cua_prompt_manager.get_system_message(system_input_variables)
+        
+        agent_input_variables = {}
+        environment_state = await self._get_environment_state()
+        agent_input_variables.update(environment_state)
+        
+        thinking = proposed_action.thinking
+        evaluation_previous_goal = proposed_action.evaluation_previous_goal
+        memory = proposed_action.memory
+        next_goal = proposed_action.next_goal
+        action = proposed_action.action
+        
+        proposed_action_string = dedent(f"""
+            - Thinking: {thinking}
+            - Evaluation of Previous Goal: {evaluation_previous_goal}
+            - Memory: {memory}
+            - Next Goal: {next_goal}
+            - Action: {action}
+        """)
+        agent_input_variables["proposed_action"] = proposed_action_string
+        
+        agent_message = self.cua_prompt_manager.get_agent_message(agent_input_variables)
+
+        messages = [
+            system_message,
+            agent_message,
+        ]
+        return messages
+        
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
+        """Think and action for one step."""
+        
+        # If the new tool is added, rebuild the ThinkOutput model
+        tcp_args_schema = tcp.args_schemas()
+        agent_args_schema = self.think_output_builder.schemas
+        
+        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
+        
+        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
+            self.think_output_builder.register(tcp_args_schema)
+            self.ThinkOutput = self.think_output_builder.build()
+        
+        # Get structured output for thinking
+        structured_llm = self.no_fc_model.with_structured_output(
+            self.ThinkOutput,
+            method="function_calling",
+            include_raw=False
+        )
+        
+        done = False
+        final_result = None
+        
+        try:
+            think_output = await structured_llm.ainvoke(messages)
+            
+            thinking = think_output.thinking
+            evaluation_previous_goal = think_output.evaluation_previous_goal
+            memory = think_output.memory
+            next_goal = think_output.next_goal
+            actions = think_output.action
+            
+            action = actions[0] # First action
+            action = action.model_dump() # Convert to dict
+            
+            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
+            logger.info(f"| 🔧 Evaluation of Previous Goal: {evaluation_previous_goal}")
+            logger.info(f"| 🔧 Memory: {memory}")
+            logger.info(f"| 🎯 Next Goal: {next_goal}")
+            logger.info(f"| 📝 Action: {action}")
+            
+            extra_thinking = ""
+            corrected_action = {}
+            if self.if_correct_action:
+            # Correct the action
+                try:
+                    messages = await self._get_cua_messages(think_output)
+
+                    cua_output = await self.cua_model.ainvoke(messages, reasoning={"summary": "concise"})
+                    
+                    contents = cua_output.content
+                    for content in contents:
+                        if content['type'] == 'text':
+                            extra_thinking += content["text"]
+                        elif content['type'] == 'reasoning':
+                            summary = " ".join([item['text'] for item in content["summary"]])
+                            extra_thinking += summary
+                        elif content['type'] == 'computer_call':
+                            action_dict = content['action']
+                            corrected_action['name'] = action_dict['type']
+                            corrected_action['args'] = {
+                                key: value for key, value in action_dict.items() if key != 'type'
+                            }
+                    
+                    logger.info(f"| 📝 Corrected Action: {corrected_action}")
+                    
+                except Exception as e:
+                    logger.error(f"| Error in correcting action: {e}")
+            
+            if extra_thinking:
+                thinking += extra_thinking
+            if corrected_action:
+                action.update(corrected_action)
+                
+            # Get tool name and args
+            tool_name = action['name']
+            tool_args = action['args']
+                
+            # Execute the first action
+            action_results = []
+            
+            logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
+            
+            tool_result = await tcp.ainvoke(tool_name, input=tool_args)
+            if isinstance(tool_result, ToolResponse):
+                tool_result = tool_result.content
+            else:
+                tool_result = str(tool_result)
+            
+            logger.info(f"| ✅ Action completed successfully")
+            logger.info(f"| 📄 Results: {str(tool_result)}...")
+            
+            # Update action with result
+            action["output"] = tool_result
+            action_results.append(action)
+                
+            if tool_name == "done":
+                done = True
+                final_result = tool_result
+            
+            event_data = {
+                "thinking": thinking,
+                "evaluation_previous_goal": evaluation_previous_goal,
+                "memory": memory,
+                "next_goal": next_goal,
+                "action": action_results
+            }
+            await self.memory_manager.add_event(
+                step_number=self.step_number,
+                event_type="action_step",
+                data=event_data,
+                agent_name=self.name,
+                task_id=task_id
+            )
+            self.step_number += 1
+            
+            if done:
+                await self.memory_manager.add_event(
+                    step_number=self.step_number,
+                    event_type="task_end",
+                    data=dict(result=final_result),
+                    agent_name=self.name,
+                    task_id=task_id
+                )
+            
+        except Exception as e:
+            logger.error(f"| Error in thinking and action step: {e}")
+        
+        return done, final_result
+    
     async def ainvoke(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
@@ -284,4 +470,42 @@ class OperatorBrowserAgent(BaseAgent):
         
         # Initialize messages
         messages = await self._get_messages(enhanced_task)
-        exit(0)
+
+         # Main loop
+        step_number = 0
+        done = False
+        final_result = None
+        
+        while step_number < self.max_steps:
+            step_number += 1
+            logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
+            
+            # Execute one step
+            done, final_result = await self._think_and_action(messages, task_id)
+            self.step_number += 1
+            
+            messages = await self._get_messages(enhanced_task)
+            
+            if done:
+                break
+        
+        # Handle max steps reached
+        if step_number >= self.max_steps:
+            logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
+            final_result = "Reached maximum number of steps"
+        
+        # Add task end event
+        await self.memory_manager.add_event(
+            step_number=self.step_number,
+            event_type="task_end",
+            data=dict(result=final_result),
+            agent_name=self.name,
+            task_id=task_id
+        )
+        
+        # End session
+        await self.memory_manager.end_session(session_id=session_id)
+        
+        logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
+        
+        return final_result

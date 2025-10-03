@@ -259,14 +259,22 @@ class ToolCallingAgent(BaseAgent):
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         
-        agent_history += dedent(f"""
-            <summaries>
-            {chr(10).join([str(summary) for summary in summaries])}
-            </summaries>
-            <insights>
-            {chr(10).join([str(insight) for insight in insights])}
-            </insights>
-        """)
+        if len(summaries) > 0:
+            agent_history += dedent(f"""
+                <summaries>
+                {chr(10).join([str(summary) for summary in summaries])}
+                </summaries>
+            """)
+        else:
+            agent_history += "<summaries>[Current summaries are empty.]</summaries>\n"
+        if len(insights) > 0:
+            agent_history += dedent(f"""
+                <insights>
+                {chr(10).join([str(insight) for insight in insights])}
+                </insights>
+            """)
+        else:
+            agent_history += "<insights>[Current insights are empty.]</insights>\n"
         
         return {
             "agent_history": agent_history,

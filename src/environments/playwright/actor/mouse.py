@@ -6,7 +6,7 @@ if TYPE_CHECKING:
 	from cdp_use.cdp.input.commands import DispatchMouseEventParameters, SynthesizeScrollGestureParameters
 	from cdp_use.cdp.input.types import MouseButton
 
-	from browser_use.browser.session import BrowserSession
+	from src.environments.playwright.browser.session import BrowserSession
 
 
 class Mouse:

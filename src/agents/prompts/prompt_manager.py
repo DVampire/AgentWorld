@@ -9,15 +9,23 @@ from src.agents.prompts.templates import PROMPT_TEMPLATES
 class PromptManager():
     """Manager for SystemPrompt and AgentMessagePrompt instances."""
     
-    def __init__(self, prompt_name: str = "tool_calling", **kwargs):
+    def __init__(self, 
+                 prompt_name: str = "tool_calling",
+                 max_actions_per_step: int = 10,
+                 **kwargs):
         super().__init__(**kwargs)
         self.prompt_name = prompt_name
+        self.max_actions_per_step = max_actions_per_step
         
         self.system_prompt_name = f"{prompt_name}_system_prompt"
         self.agent_message_prompt_name = f"{prompt_name}_agent_message_prompt"
         
-        self.system_prompt = SystemPrompt(prompt_name=self.system_prompt_name, **kwargs)
-        self.agent_message_prompt = AgentMessagePrompt(prompt_name=self.agent_message_prompt_name, **kwargs)
+        self.system_prompt = SystemPrompt(prompt_name=self.system_prompt_name, 
+                                          max_actions_per_step=self.max_actions_per_step,
+                                          **kwargs)
+        self.agent_message_prompt = AgentMessagePrompt(prompt_name=self.agent_message_prompt_name, 
+                                                       max_actions_per_step=self.max_actions_per_step,
+                                                       **kwargs)
     
     def get_system_message(self, input_variables: Dict[str, Any], **kwargs) -> SystemMessage:
         """Get a system message using SystemPrompt."""

@@ -127,12 +127,14 @@ async def test_computer_browser_use_models():
         messages = [
             HumanMessage(content=[
                 {
-                    "type": "input_text",
+                    "type": "text",
                     "text": "What is the next action to search 'python programming' on google?"
                 },
                 {
-                    "type": "input_image",
-                    "image_url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/google.png"))))
+                    "type": "image_url",
+                    "image_url": {
+                        "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/google.png"))))
+                    }
                 }
             ])
         ]

@@ -157,7 +157,7 @@ async def main():
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
-    await tcp.initialize()
+    await tcp.initialize(config.tcp_names)
     logger.info(f"| ✅ Tool manager initialized: {tcp.list()}")
     
     # Initialize environments

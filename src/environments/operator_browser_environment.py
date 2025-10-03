@@ -88,32 +88,34 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         
         try:
             screenshot_path = os.path.join(self.base_dir, f"step_{self.step_number:04d}.png")
-            screenshot_b64 = await self.operator_browser_service.screenshot(save_path=screenshot_path)
-            self.step_number += 1
+            
+            browser_state = await self.operator_browser_service.get_state(screenshot_path=screenshot_path)
             
             state = dedent(f"""
                 <info>
-                Current URL: {self.operator_browser_service.page.url if self.operator_browser_service.page else None}
-                Current Title: {self.operator_browser_service.page.title() if self.operator_browser_service.page else None}
-                Browser Ready: {self.operator_browser_service.browser is not None}
-                Page Ready: {self.operator_browser_service.page is not None}
-                Viewport: {self.viewport}
+                Current URL: {browser_state.get('url', 'Unknown')}
+                Current Title: {browser_state.get('title', 'Unknown')}
+                Tabs: {browser_state.get('tabs', [])}
+                Page Info: {browser_state.get('page_info', 'Unknown')}
                 </info>
-                <img src={screenshot_path}>
-            """)
+                <img src={screenshot_path} alt="Screenshot of the operator browser environment."/>
+                """)
             
             extra = {
+                "step_number": self.step_number,
                 "environment": "operator_browser_environment",
                 "headless": self.headless,
                 "viewport": self.viewport,
-                "screenshot": screenshot_b64,
+                "screenshot": browser_state.get('screenshot', 'Unknown'),
                 "screenshot_path": screenshot_path,
                 "base_dir": self.base_dir,
-                "browser_ready": self.operator_browser_service.browser is not None,
-                "page_ready": self.operator_browser_service.page is not None,
-                "current_url": self.operator_browser_service.page.url if self.operator_browser_service.page else None,
-                "current_title": self.operator_browser_service.page.title() if self.operator_browser_service.page else None,
+                "tabs": browser_state.get('tabs', []),
+                "page_info": browser_state.get('page_info', 'Unknown'),
+                "current_url": browser_state.get('url', 'Unknown'),
+                "current_title": browser_state.get('title', 'Unknown'),
             }
+            
+            self.step_number += 1
             
             return EnvironmentState(
                 state=state,

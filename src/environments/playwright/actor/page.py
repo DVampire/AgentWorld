@@ -1,12 +1,12 @@
 """Page class for page-level operations."""
 
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, Any
 
 from pydantic import BaseModel
+from langchain_core.messages import SystemMessage, HumanMessage
 
-from browser_use.dom.serializer.serializer import DOMTreeSerializer
-from browser_use.dom.service import DomService
-from browser_use.llm.messages import SystemMessage, UserMessage
+from src.environments.playwright.dom.serializer.serializer import DOMTreeSerializer
+from src.environments.playwright.dom.service import DomService
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -27,25 +27,25 @@ if TYPE_CHECKING:
 	)
 	from cdp_use.cdp.target.types import TargetInfo
 
-	from browser_use.browser.session import BrowserSession
-	from browser_use.llm.base import BaseChatModel
+	from src.environments.playwright.browser.session import BrowserSession
 
 	from .element import Element
 	from .mouse import Mouse
+	from .keyboard import Keyboard
 
 
 class Page:
 	"""Page operations (tab or iframe)."""
 
 	def __init__(
-		self, browser_session: 'BrowserSession', target_id: str, session_id: str | None = None, llm: 'BaseChatModel | None' = None
+		self, browser_session: 'BrowserSession', target_id: str, session_id: str | None = None, llm: Any = None
 	):
 		self._browser_session = browser_session
 		self._client = browser_session.cdp_client
 		self._target_id = target_id
 		self._session_id: str | None = session_id
 		self._mouse: 'Mouse | None' = None
-
+		self._keyboard: 'Keyboard | None' = None
 		self._llm = llm
 
 	async def _ensure_session(self) -> str:
@@ -84,6 +84,15 @@ class Page:
 
 			self._mouse = Mouse(self._browser_session, session_id, self._target_id)
 		return self._mouse
+
+	@property
+	async def keyboard(self) -> 'Keyboard':
+		"""Get the keyboard interface for this target."""
+		if not self._keyboard:
+			session_id = await self._ensure_session()
+			from .keyboard import Keyboard
+			self._keyboard = Keyboard(self._browser_session, session_id, self._target_id)
+		return self._keyboard
 
 	async def reload(self) -> None:
 		"""Reload the target."""
@@ -362,7 +371,7 @@ class Page:
 		"""Get the DOM service for this target."""
 		return DomService(self._browser_session)
 
-	async def get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element | None':
+	async def get_element_by_prompt(self, prompt: str, llm: Any = None) -> 'Element | None':
 		"""Get an element by a prompt."""
 		await self._ensure_session()
 		llm = llm or self._llm
@@ -406,7 +415,7 @@ If non of the elements matches the, return None.
 Before you return the element index, reason about the state and elements for a sentence or two."""
 		)
 
-		state_message = UserMessage(
+		state_message = HumanMessage(
 			content=f"""
 			<browser_state>
 			{llm_representation}
@@ -441,7 +450,7 @@ Before you return the element index, reason about the state and elements for a s
 
 		return Element_(self._browser_session, element.backend_node_id, self._session_id)
 
-	async def must_get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element':
+	async def must_get_element_by_prompt(self, prompt: str, llm: Any = None) -> 'Element':
 		"""Get an element by a prompt.
 
 		@dev LLM can still return None, this just raises an error if the element is not found.
@@ -452,7 +461,7 @@ Before you return the element index, reason about the state and elements for a s
 
 		return element
 
-	async def extract_content(self, prompt: str, structured_output: type[T], llm: 'BaseChatModel | None' = None) -> T:
+	async def extract_content(self, prompt: str, structured_output: type[T], llm: Any = None) -> T:
 		"""Extract structured content from the current page using LLM.
 
 		Extracts clean markdown from the page and sends it to LLM for structured data extraction.
@@ -543,7 +552,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 		try:
 			response = await asyncio.wait_for(
 				llm.ainvoke(
-					[SystemMessage(content=system_prompt), UserMessage(content=prompt_content)], output_format=structured_output
+					[SystemMessage(content=system_prompt), HumanMessage(content=prompt_content)], output_format=structured_output
 				),
 				timeout=120.0,
 			)
