@@ -18,6 +18,7 @@ from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 from src.agents.prompts.prompt_manager import PromptManager
+from src.environments.protocol.types import ScreenshotInfo
 
 class OperatorBrowserAgentInputArgs(BaseModel):
     task: str = Field(description="The web browsing task to complete.")
@@ -237,6 +238,12 @@ class OperatorBrowserAgent(BaseAgent):
         for env_name in ecp.list():
             env_state = await ecp.get_state(env_name)
             state_string = env_state.state
+            extra = env_state.extra
+            
+            if "screenshots" in extra:
+                for screenshot in extra["screenshots"]:
+                    state_string += f"\n<img src={screenshot.screenshot_path} alt={screenshot.screenshot_description}/>"
+                    
             environment_state += dedent(f"""
                 <{env_name}_state>
                 {state_string}
@@ -282,8 +289,26 @@ class OperatorBrowserAgent(BaseAgent):
         system_message = self.cua_prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
-        environment_state = await self._get_environment_state()
-        agent_input_variables.update(environment_state)
+        # Get environment state
+        environment_state = ""
+        for env_name in ecp.list():
+            env_state = await ecp.get_state(env_name)
+            state_string = env_state.state
+            extra = env_state.extra
+            
+            # CUA only supports the one latest screenshot
+            if "screenshots" in extra:
+                last_screenshot = extra["screenshots"][-1]
+                state_string += f"\n<img src={last_screenshot.screenshot_path} alt={last_screenshot.screenshot_description}/>"
+                    
+            environment_state += dedent(f"""
+                <{env_name}_state>
+                {state_string}
+                </{env_name}_state>
+            """)
+        agent_input_variables.update(dict(
+            environment_state=environment_state,
+        ))
         
         thinking = proposed_action.thinking
         evaluation_previous_goal = proposed_action.evaluation_previous_goal

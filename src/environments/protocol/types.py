@@ -86,9 +86,15 @@ class EnvironmentState(BaseModel):
     """Environment state"""
     state: str
     extra: Optional[Dict[str, Any]] = None
+    
+class ScreenshotInfo(BaseModel):
+    """Screenshot information"""
+    screenshot_path: str = Field(default="Screenshot path")
+    screenshot_description: str = Field(default="Screenshot description")
 
 
 # Update forward references
 EnvironmentInfo.model_rebuild()
 ActionInfo.model_rebuild()
 EnvironmentState.model_rebuild()
+ScreenshotInfo.model_rebuild()

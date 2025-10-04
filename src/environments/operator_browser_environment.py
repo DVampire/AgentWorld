@@ -20,7 +20,7 @@ from src.utils import assemble_project_path
 from src.utils import dedent
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
-from src.environments.protocol.types import EnvironmentState
+from src.environments.protocol.types import EnvironmentState, ScreenshotInfo
 
 @ecp.environment()
 class OperatorBrowserEnvironment(BaseEnvironment):
@@ -62,6 +62,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         
         # Initialize the browser service
         self.operator_browser_service = OperatorBrowserService(
+            base_dir=self.base_dir,
             headless=self.headless,
             viewport=self.viewport
         )
@@ -87,9 +88,18 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         
         try:
-            screenshot_path = os.path.join(self.base_dir, f"step_{self.step_number:04d}.png")
             
-            browser_state = await self.operator_browser_service.get_state(screenshot_path=screenshot_path)
+            browser_state = await self.operator_browser_service.get_state(step_number=self.step_number)
+            
+            previous_screenshot_info = ScreenshotInfo(
+                screenshot_path=browser_state.get('previous_screenshot_path', 'Unknown'),
+                screenshot_description=browser_state.get('previous_screenshot_description', 'Unknown'),
+            )
+            screenshot_info = ScreenshotInfo(
+                screenshot_path=browser_state.get('screenshot_path', 'Unknown'),
+                screenshot_description=browser_state.get('screenshot_description', 'Unknown'),
+            )
+            screenshots = [previous_screenshot_info, screenshot_info]
             
             state = dedent(f"""
                 <info>
@@ -98,7 +108,6 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 Tabs: {browser_state.get('tabs', [])}
                 Page Info: {browser_state.get('page_info', 'Unknown')}
                 </info>
-                <img src={screenshot_path} alt="Screenshot of the operator browser environment."/>
                 """)
             
             extra = {
@@ -106,8 +115,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 "environment": "operator_browser_environment",
                 "headless": self.headless,
                 "viewport": self.viewport,
-                "screenshot": browser_state.get('screenshot', 'Unknown'),
-                "screenshot_path": screenshot_path,
+                "screenshots": screenshots,
                 "base_dir": self.base_dir,
                 "tabs": browser_state.get('tabs', []),
                 "page_info": browser_state.get('page_info', 'Unknown'),
