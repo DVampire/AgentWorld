@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 import os
 
 from src.logger import logger
-from src.environments.playwright import Browser 
+from src.environments.cdp_browser import Browser 
 from src.environments.operator_browser.types import (
     ClickRequest,
     ClickResult,
@@ -25,9 +25,9 @@ from src.environments.operator_browser.types import (
     DragRequest,
     DragResult,
 )
-from src.environments.playwright.browser.session import DEFAULT_BROWSER_PROFILE
-from src.environments.playwright.browser.profile import ViewportSize
-from src.environments.playwright.screenshots.service import ScreenshotService
+from src.environments.cdp_browser.browser.session import DEFAULT_BROWSER_PROFILE
+from src.environments.cdp_browser.browser.profile import ViewportSize
+from src.environments.cdp_browser.screenshots.service import ScreenshotService
 
 class OperatorBrowserService:
     """Browser implementation compatible with OpenAI Operator Browser API."""
@@ -65,6 +65,9 @@ class OperatorBrowserService:
                 headless=self.headless,
                 viewport=self.viewport,
                 highlight_elements=False,
+                record_video_dir=os.path.join(self.base_dir, "videos"),
+                record_video_framerate=30,
+                record_video_size=self.viewport,
             )
             await self.browser.start()
             
