@@ -1,9 +1,9 @@
 """OpenAI Computer Use API compatible browser implementation."""
 
 import base64
-from typing import Dict, Any, Optional, Union
-from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional
 import os
+import asyncio
 
 from src.logger import logger
 from src.environments.cdp_browser import Browser 
@@ -26,8 +26,8 @@ from src.environments.operator_browser.types import (
     DragResult,
 )
 from src.environments.cdp_browser.browser.session import DEFAULT_BROWSER_PROFILE
-from src.environments.cdp_browser.browser.profile import ViewportSize
 from src.environments.cdp_browser.screenshots.service import ScreenshotService
+from src.environments.protocol.types import ScreenshotInfo
 
 class OperatorBrowserService:
     """Browser implementation compatible with OpenAI Operator Browser API."""
@@ -64,6 +64,7 @@ class OperatorBrowserService:
                 browser_profile=DEFAULT_BROWSER_PROFILE,
                 headless=self.headless,
                 viewport=self.viewport,
+                window_size=self.viewport,
                 highlight_elements=False,
                 record_video_dir=os.path.join(self.base_dir, "videos"),
                 record_video_framerate=30,
@@ -305,7 +306,7 @@ class OperatorBrowserService:
             if not self.browser or not self.page:
                 return WaitResult(success=False, message="Browser not available")
             
-            await self.page.wait_for_timeout(action.ms)
+            await asyncio.sleep(int(action.ms / 1000.0))  # Convert ms to seconds
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
