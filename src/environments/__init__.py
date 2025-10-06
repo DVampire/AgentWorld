@@ -6,6 +6,7 @@ from .database_environment import DatabaseEnvironment
 from .faiss_environment import FaissEnvironment
 from .cdp_browser_environment import CDPBrowserEnvironment
 from .operator_browser_environment import OperatorBrowserEnvironment
+from .mobile_environment import MobileEnvironment
 from .protocol import ecp
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "FaissEnvironment",
     "CDPBrowserEnvironment",
     "OperatorBrowserEnvironment",
+    "MobileEnvironment",
     "ecp",
 ]

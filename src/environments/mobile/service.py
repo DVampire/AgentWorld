@@ -9,7 +9,7 @@ from pathlib import Path
 from src.environments.mobile.types import (
     MobileDeviceInfo, TapRequest, TapResult,
     SwipeRequest, SwipeResult, PressRequest, PressResult,
-    TypeRequest, TypeResult, KeyEventRequest, KeyEventResult,
+    TypeTextRequest, TypeTextResult, KeyEventRequest, KeyEventResult, ScrollRequest, ScrollResult,
     ScreenshotRequest, ScreenshotResult, SwipePathRequest, SwipePathResult,
     MobileDeviceState
 )
@@ -210,26 +210,26 @@ class MobileService:
         except Exception as e:
             return PressResult(success=False, message=f"Long press failed: {e}")
     
-    async def type(self, action: TypeRequest) -> TypeResult:
+    async def type_text(self, action: TypeTextRequest) -> TypeTextResult:
         """Input text on the device."""
         try:
             if not self.is_connected:
-                return TypeResult(success=False, message="Device not connected")
+                return TypeTextResult(success=False, message="Device not connected")
             
             # Use ADB for text input (like adb_scrcpy.py)
-            await self.adb.type(action.text)
+            await self.adb.type_text(action.text)
             
             # Take screenshot
             screenshot_path = await self._take_screenshot()
             
-            return TypeResult(
+            return TypeTextResult(
                 success=True,
                 message=f"Input text: {action.text}",
                 screenshot_path=screenshot_path
             )
             
         except Exception as e:
-            return TypeResult(success=False, message=f"Text input failed: {e}")
+            return TypeTextResult(success=False, message=f"Text input failed: {e}")
     
     async def key_event(self, action: KeyEventRequest) -> KeyEventResult:
         """Press a key on the device."""
@@ -291,6 +291,19 @@ class MobileService:
             
         except Exception as e:
             return SwipePathResult(success=False, message=f"Swipe path failed: {e}")
+        
+    async def scroll(self, action: ScrollRequest) -> ScrollResult:
+        """Perform a scroll action on the device."""
+        try:
+            if not self.is_connected:
+                return ScrollResult(success=False, message="Device not connected")
+            
+            await self.adb.scroll(action.direction, action.distance)
+            
+            return ScrollResult(success=True, message=f"Scrolled {action.direction} by {action.distance} pixels")
+            
+        except Exception as e:
+            return ScrollResult(success=False, message=f"Scroll failed: {e}")
     
     async def take_screenshot(self, action: ScreenshotRequest) -> ScreenshotResult:
         """Take a screenshot of the device."""

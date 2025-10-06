@@ -104,7 +104,7 @@ class AdbDriver:
         """Swipe gesture from start to end coordinates."""
         await self.shell(f"input swipe {start_x} {start_y} {end_x} {end_y} {duration}")
 
-    async def type(self, text: str):
+    async def type_text(self, text: str):
         """Type text on device."""
         encoded_text = urllib.parse.quote(text)
         await self.shell(f"input text {encoded_text}")
@@ -115,29 +115,27 @@ class AdbDriver:
         await self.shell("input keyevent KEYCODE_DEL")
         
     # ==================== SCROLL ACTIONS ====================
-    async def scroll_up(self, distance: int = 500):
-        """Scroll up on screen."""
+    async def scroll(self, direction: str, distance: int = 500):
+        """
+        Scroll on screen in specified direction.
+        
+        Args:
+            direction: Scroll direction ("up", "down", "left", "right")
+            distance: Scroll distance in pixels
+        """
         screen_size = await self.get_screen_size()
         x, y = screen_size[0] // 2, screen_size[1] // 2
-        await self.shell(f"input swipe {x} {y} {x} {y - distance} 300")
-
-    async def scroll_down(self, distance: int = 500):
-        """Scroll down on screen."""
-        screen_size = await self.get_screen_size()
-        x, y = screen_size[0] // 2, screen_size[1] // 2
-        await self.shell(f"input swipe {x} {y} {x} {y + distance} 300")
-
-    async def scroll_left(self, distance: int = 500):
-        """Scroll left on screen."""
-        screen_size = await self.get_screen_size()
-        x, y = screen_size[0] // 2, screen_size[1] // 2
-        await self.shell(f"input swipe {x} {y} {x - distance} {y} 300")
-
-    async def scroll_right(self, distance: int = 500):
-        """Scroll right on screen."""
-        screen_size = await self.get_screen_size()
-        x, y = screen_size[0] // 2, screen_size[1] // 2
-        await self.shell(f"input swipe {x} {y} {x + distance} {y} 300")
+        
+        if direction.lower() == "up":
+            await self.shell(f"input swipe {x} {y} {x} {y - distance} 300")
+        elif direction.lower() == "down":
+            await self.shell(f"input swipe {x} {y} {x} {y + distance} 300")
+        elif direction.lower() == "left":
+            await self.shell(f"input swipe {x} {y} {x - distance} {y} 300")
+        elif direction.lower() == "right":
+            await self.shell(f"input swipe {x} {y} {x + distance} {y} 300")
+        else:
+            raise ValueError(f"Invalid scroll direction: {direction}. Use 'up', 'down', 'left', or 'right'")
 
     # ==================== SYSTEM ACTIONS ====================
     async def wake_up(self):

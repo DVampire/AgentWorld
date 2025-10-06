@@ -36,7 +36,7 @@ class PressRequest(BaseModel):
     duration: int = Field(default=1000, description="Press duration in milliseconds")
 
 
-class TypeRequest(BaseModel):
+class TypeTextRequest(BaseModel):
     """Type text request."""
     text: str = Field(description="Text to input")
 
@@ -55,6 +55,11 @@ class SwipePathRequest(BaseModel):
     """Swipe along a path request."""
     path: List[List[int]] = Field(description="Path coordinates as [[x1, y1], [x2, y2], ...]")
     duration: int = Field(default=300, description="Total swipe duration in milliseconds")
+
+class ScrollRequest(BaseModel):
+    """Scroll request."""
+    direction: str = Field(description="Scroll direction")
+    distance: int = Field(default=500, description="Scroll distance in pixels")
 
 
 # Response types
@@ -80,7 +85,7 @@ class PressResult(MobileActionResult):
     pass
 
 
-class TypeResult(MobileActionResult):
+class TypeTextResult(MobileActionResult):
     """Type text result."""
     pass
 
@@ -97,6 +102,11 @@ class ScreenshotResult(MobileActionResult):
 
 class SwipePathResult(MobileActionResult):
     """Swipe path result."""
+    pass
+
+
+class ScrollResult(MobileActionResult):
+    """Scroll result."""
     pass
 
 
