@@ -107,7 +107,7 @@ class ScrcpyDriver:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         os.makedirs(self.video_save_path, exist_ok=True)
         chunk_path = os.path.join(
-            self.video_save_path, f"{self.video_save_name}_{timestamp}.mkv"
+            self.video_save_path, f"{self.video_save_name}_{timestamp}.mp4"
         )
         self.output_container = av.open(chunk_path, "w")
         self.output_stream = self.output_container.add_stream("libx264", rate=self.fps)

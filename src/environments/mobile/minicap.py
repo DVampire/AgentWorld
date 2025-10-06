@@ -209,7 +209,7 @@ class MinicapDriver:
 
     def _get_output_path(self) -> str:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"{self.video_save_name}_{timestamp}_{self.chunk_count + 1}.mkv"
+        filename = f"{self.video_save_name}_{timestamp}_{self.chunk_count + 1}.mp4"
         return os.path.join(self.video_save_path, filename)
 
     def _record_loop(self):
