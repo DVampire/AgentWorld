@@ -1,4 +1,4 @@
-"""Tool calling agent implementation with manual agent logic."""
+"""Mobile Agent implementation for mobile device automation tasks using vision-enabled LLM."""
 
 import asyncio
 from typing import List, Optional, Type, Dict, Any
@@ -6,6 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
+import base64
 
 from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.logger import logger
@@ -15,36 +16,48 @@ from src.tools.protocol import tcp
 from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
+from src.agents.prompts.prompt_manager import PromptManager
 
-class ToolCallingAgentInputArgs(BaseModel):
-    task: str = Field(description="The task to complete.")
-    files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
+class MobileAgentInputArgs(BaseModel):
+    task: str = Field(description="The mobile device automation task to complete.")
+
 
 @acp.agent()
-class ToolCallingAgent(BaseAgent):
-    """Tool calling agent implementation with manual agent logic."""
+class MobileAgent(BaseAgent):
+    """Mobile Agent implementation with visual understanding capabilities for mobile device control."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="tool_calling", description="The name of the tool calling agent.")
-    type: str = Field(default="Agent", description="The type of the tool calling agent.")
-    description: str = Field(default="A tool calling agent that can call tools to complete tasks.", description="The description of the tool calling agent.")
-    args_schema: Type[ToolCallingAgentInputArgs] = Field(default=ToolCallingAgentInputArgs, description="The args schema of the tool calling agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool calling agent.")
+    name: str = Field(default="mobile", description="The name of the mobile agent.")
+    type: str = Field(default="Agent", description="The type of the mobile agent.")
+    description: str = Field(default="A mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
+    args_schema: Type[MobileAgentInputArgs] = Field(default=MobileAgentInputArgs, description="The args schema of the mobile agent.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the mobile agent.")
     
     def __init__(
         self,
         workdir: str,
-        model_name: Optional[str] = None,
+        model_name: Optional[str] = "gpt-4.1",
         prompt_name: Optional[str] = None,
         memory_config: Optional[Dict[str, Any]] = None,
-        max_steps: int = 20,
+        max_steps: int = 30,
         review_steps: int = 5,
-        log_max_length: int = 1000,
+        log_max_length: int = 500,
         **kwargs
     ):
-        # Set default prompt name for tool calling
+        """Initialize the Mobile Agent.
+        
+        Args:
+            workdir: Working directory for logs and screenshots
+            model_name: LLM model name (should support vision, default: gpt-4.1)
+            prompt_name: Name of the prompt template (default: mobile)
+            memory_config: Memory configuration
+            max_steps: Maximum number of steps
+            review_steps: Number of steps to review in history
+            log_max_length: Maximum log length
+        """
+        # Set default prompt name for mobile
         if not prompt_name:
-            prompt_name = "tool_calling"
+            prompt_name = "mobile"
         
         super().__init__(
             workdir=workdir,
@@ -56,6 +69,11 @@ class ToolCallingAgent(BaseAgent):
             log_max_length=log_max_length,
             **kwargs)
         
+        self.prompt_manager = PromptManager(
+            prompt_name=prompt_name,
+            max_actions_per_step=1, # Max actions per step is 1 for mobile agent
+        )
+        
         self.think_output_builder = ThinkOutputBuilder()
         self.think_output_builder.register(tcp.args_schemas())
         self.ThinkOutput = self.think_output_builder.build()
@@ -65,103 +83,6 @@ class ToolCallingAgent(BaseAgent):
         self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
         self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
-        """Think and action for one step."""
-        
-        # If the new tool is added, rebuild the ThinkOutput model
-        tcp_args_schema = tcp.args_schemas()
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
-        
-        # Get structured output for thinking
-        structured_llm = self.no_fc_model.with_structured_output(
-            self.ThinkOutput,
-            method="function_calling",
-            include_raw=False
-        )
-        
-        done = False
-        final_result = None
-        
-        try:
-            think_output = await structured_llm.ainvoke(messages)
-            
-            thinking = think_output.thinking
-            evaluation_previous_goal = think_output.evaluation_previous_goal
-            memory = think_output.memory
-            next_goal = think_output.next_goal
-            actions = think_output.action
-            
-            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
-            logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
-            
-            # Execute actions sequentially
-            action_results = []
-            
-            for i, action in enumerate(actions):
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action.name}")
-                
-                # Execute the tool
-                tool_name = action.name
-                tool_args = action.args.model_dump()
-                
-                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
-                
-                tool_result = await tcp.ainvoke(tool_name, input=tool_args)
-                if isinstance(tool_result, ToolResponse):
-                    tool_result = tool_result.content
-                else:
-                    tool_result = str(tool_result)
-                
-                logger.info(f"| ✅ Action {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
-                
-                # Update action with result
-                action_dict = action.model_dump()
-                action_dict["output"] = tool_result
-                action_results.append(action_dict)
-                    
-                if tool_name == "done":
-                    done = True
-                    final_result = tool_result
-                    break
-            
-            event_data = {
-                "thinking": thinking,
-                "evaluation_previous_goal": evaluation_previous_goal,
-                "memory": memory,
-                "next_goal": next_goal,
-                "action": action_results
-            }
-            await self.memory_manager.add_event(
-                step_number=self.step_number,
-                event_type="action_step",
-                data=event_data,
-                agent_name=self.name,
-                task_id=task_id
-            )
-            self.step_number += 1
-            
-            if done:
-                await self.memory_manager.add_event(
-                    step_number=self.step_number,
-                    event_type="task_end",
-                    data=dict(result=final_result),
-                    agent_name=self.name,
-                    task_id=task_id
-                )
-            
-        except Exception as e:
-            logger.error(f"| Error in thinking and action step: {e}")
-        
-        return done, final_result
-    
     async def _extract_file_content(self, file: str) -> str:
         """Extract file information."""
         
@@ -265,16 +186,12 @@ class ToolCallingAgent(BaseAgent):
                 {chr(10).join([str(summary) for summary in summaries])}
                 </summaries>
             """)
-        else:
-            agent_history += "<summaries>[Current summaries are empty.]</summaries>\n"
         if len(insights) > 0:
             agent_history += dedent(f"""
                 <insights>
                 {chr(10).join([str(insight) for insight in insights])}
                 </insights>
             """)
-        else:
-            agent_history += "<insights>[Current insights are empty.]</insights>\n"
         
         return {
             "agent_history": agent_history,
@@ -341,9 +258,11 @@ class ToolCallingAgent(BaseAgent):
         agent_history = await self._get_agent_history()
         agent_state = await self._get_agent_state(task)
         environment_state = await self._get_environment_state()
+        
         agent_input_variables.update(agent_history)
         agent_input_variables.update(agent_state)
         agent_input_variables.update(environment_state)
+        
         agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
@@ -352,13 +271,111 @@ class ToolCallingAgent(BaseAgent):
         ]
         
         return messages
+    
         
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
+        """Think and action for one step."""
+        
+        # If the new tool is added, rebuild the ThinkOutput model
+        tcp_args_schema = tcp.args_schemas()
+        agent_args_schema = self.think_output_builder.schemas
+        
+        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
+        
+        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
+            self.think_output_builder.register(tcp_args_schema)
+            self.ThinkOutput = self.think_output_builder.build()
+        
+        # Get structured output for thinking
+        structured_llm = self.no_fc_model.with_structured_output(
+            self.ThinkOutput,
+            method="function_calling",
+            include_raw=False
+        )
+        
+        done = False
+        final_result = None
+        
+        try:
+            think_output = await structured_llm.ainvoke(messages)
+            
+            thinking = think_output.thinking
+            evaluation_previous_goal = think_output.evaluation_previous_goal
+            memory = think_output.memory
+            next_goal = think_output.next_goal
+            actions = think_output.action
+            
+            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
+            logger.info(f"| 🎯 Next Goal: {next_goal}")
+            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
+            
+            # Execute actions sequentially
+            action_results = []
+            
+            for i, action in enumerate(actions):
+                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action.name}")
+                
+                # Execute the tool
+                tool_name = action.name
+                tool_args = action.args.model_dump()
+                
+                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
+                
+                tool_result = await tcp.ainvoke(tool_name, input=tool_args)
+                if isinstance(tool_result, ToolResponse):
+                    tool_result = tool_result.content
+                else:
+                    tool_result = str(tool_result)
+                
+                logger.info(f"| ✅ Action {i+1} completed successfully")
+                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                
+                # Update action with result
+                action_dict = action.model_dump()
+                action_dict["output"] = tool_result
+                action_results.append(action_dict)
+                    
+                if tool_name == "done":
+                    done = True
+                    final_result = tool_result
+                    break
+            
+            event_data = {
+                "thinking": thinking,
+                "evaluation_previous_goal": evaluation_previous_goal,
+                "memory": memory,
+                "next_goal": next_goal,
+                "action": action_results
+            }
+            await self.memory_manager.add_event(
+                step_number=self.step_number,
+                event_type="action_step",
+                data=event_data,
+                agent_name=self.name,
+                task_id=task_id
+            )
+            self.step_number += 1
+            
+            if done:
+                await self.memory_manager.add_event(
+                    step_number=self.step_number,
+                    event_type="task_end",
+                    data=dict(result=final_result),
+                    agent_name=self.name,
+                    task_id=task_id
+                )
+            
+        except Exception as e:
+            logger.error(f"| Error in thinking and action step: {e}")
+        
+        return done, final_result
+    
     async def ainvoke(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
                   ):
-        """Run the tool calling agent with loop."""
-        logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
+        """Run the mobile agent with loop."""
+        logger.info(f"| 🚀 Starting MobileAgent: {task}")
         
         if files:
             logger.info(f"| 📂 Attached files: {files}")
@@ -385,8 +402,8 @@ class ToolCallingAgent(BaseAgent):
         
         # Initialize messages
         messages = await self._get_messages(enhanced_task)
-        
-        # Main loop
+
+         # Main loop
         step_number = 0
         done = False
         final_result = None

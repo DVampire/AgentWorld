@@ -9,11 +9,10 @@ from src.environments.mobile.types import (
     TapRequest, TapResult,
     SwipeRequest, SwipeResult,
     PressRequest, PressResult,
-    TypeRequest, TypeResult,
+    TypeTextRequest, TypeTextResult,
     KeyEventRequest, KeyEventResult,
     ScreenshotRequest, ScreenshotResult,
     SwipePathRequest, SwipePathResult,
-    MobileDeviceState
 )
 
 __all__ = [
@@ -25,9 +24,8 @@ __all__ = [
     'TapRequest', 'TapResult',
     'SwipeRequest', 'SwipeResult',
     'PressRequest', 'PressResult',
-    'TypeRequest', 'TypeResult',
+    'TypeTextRequest', 'TypeTextResult',
     'KeyEventRequest', 'KeyEventResult',
     'ScreenshotRequest', 'ScreenshotResult',
     'SwipePathRequest', 'SwipePathResult',
-    'MobileDeviceState'
 ]

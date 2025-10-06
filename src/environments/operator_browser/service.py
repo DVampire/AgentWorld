@@ -26,8 +26,6 @@ from src.environments.operator_browser.types import (
     DragResult,
 )
 from src.environments.cdp_browser.browser.session import DEFAULT_BROWSER_PROFILE
-from src.environments.cdp_browser.screenshots.service import ScreenshotService
-from src.environments.protocol.types import ScreenshotInfo
 
 class OperatorBrowserService:
     """Browser implementation compatible with OpenAI Operator Browser API."""
@@ -47,13 +45,6 @@ class OperatorBrowserService:
         self.headless = headless
         self.viewport = viewport or {"width": 1280, "height": 720}
         self.browser: Optional[Browser] = None
-        self.screenshot_service = ScreenshotService(agent_directory=base_dir)
-        
-        self.current_screenshot_path = None # This is the screenshot of the current page
-        self.current_screenshot_description = None # This is the description of the current screenshot
-        self.previous_screenshot_path = None # This is the screenshot of the previous action result
-        self.previous_screenshot_description = None # This is the description of the previous action result
-        self.step_number = 0
         
         
     async def start(self):
@@ -162,25 +153,20 @@ class OperatorBrowserService:
             # Use BrowserSession's click functionality
             await mouse.click(action.x, action.y, button=action.button, click_count=1)
             
-            # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after clicking at ({action.x}, {action.y}) with {action.button} button."
             
-            # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_click.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # Draw a cursor on the screenshot
-            action_result_screenshot_path = await self.screenshot_service.draw_cursor(action_result_screenshot_path, action.x, action.y)
+            result = ClickResult(success=True, 
+                              message=f"Clicked at ({action.x}, {action.y}) with {action.button} button", 
+                              screenshot=screenshot, 
+                              screenshot_description=screenshot_description
+                              )
+            return result
             
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action click(x={action.x}, y={action.y}, button={action.button}) result screenshot."
-            
-            return ClickResult(success=True, message=f"Clicked at ({action.x}, {action.y}) with {action.button} button")
         except Exception as e:
             logger.error(f"| ❌ Failed to click: {e}")
-            return ClickResult(success=False, message=f"Failed to click: {e}")
+            return ClickResult(success=False, message=f"Failed to click: {e}", screenshot=None, screenshot_description=None)
         
     async def double_click(self, action: DoubleClickRequest) -> DoubleClickResult:
         """Double click on the current page.
@@ -201,23 +187,17 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after double clicking at ({action.x}, {action.y}) with {action.button} button."
             
-            # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_double_click.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # Draw a cursor on the screenshot
-            action_result_screenshot_path = await self.screenshot_service.draw_cursor(action_result_screenshot_path, action.x, action.y)
-            
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action double_click(x={action.x}, y={action.y}, button={action.button}) result screenshot."
-            
-            return DoubleClickResult(success=True, message=f"Double clicked at ({action.x}, {action.y}) with {action.button} button")
+            result = DoubleClickResult(success=True, 
+                                      message=f"Double clicked at ({action.x}, {action.y}) with {action.button} button", 
+                                      screenshot=screenshot, 
+                                      screenshot_description=screenshot_description)
+            return result
         except Exception as e:
             logger.error(f"| ❌ Failed to double click: {e}")
-            return DoubleClickResult(success=False, message=f"Failed to double click: {e}")
+            return DoubleClickResult(success=False, message=f"Failed to double click: {e}", screenshot=None, screenshot_description=None)
         
     async def scroll(self, action: ScrollRequest) -> ScrollResult:
         """Scroll on the current page.
@@ -238,23 +218,18 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after scrolling at ({action.x}, {action.y}) with {action.scroll_x} and {action.scroll_y}."
             
-            # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_scroll.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # Draw a scroll on the screenshot
-            action_result_screenshot_path = await self.screenshot_service.draw_scroll(action_result_screenshot_path, action.x, action.y, action.scroll_x, action.scroll_y)
+            result = ScrollResult(success=True, 
+                                  message=f"Scrolled at ({action.x}, {action.y}) with {action.scroll_x} and {action.scroll_y}", 
+                                  screenshot=screenshot, 
+                                  screenshot_description=screenshot_description)
+            return result
             
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action scroll(x={action.x}, y={action.y}, scroll_x={action.scroll_x}, scroll_y={action.scroll_y}) result screenshot."
-            
-            return ScrollResult(success=True, message=f"Scrolled at ({action.x}, {action.y}) with {action.scroll_x} and {action.scroll_y}")
         except Exception as e:
             logger.error(f"| ❌ Failed to scroll: {e}")
-            return ScrollResult(success=False, message=f"Failed to scroll: {e}")
+            return ScrollResult(success=False, message=f"Failed to scroll: {e}", screenshot=None, screenshot_description=None)
         
     async def type(self, action: TypeRequest) -> TypeResult:
         """Type on the current page.
@@ -276,22 +251,18 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
-            
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after typing {action.text}."
             # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_type.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # DO NOT need to draw anything on the screenshot
-            
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action type(text={action.text}) result screenshot."
-            
-            return TypeResult(success=True, message=f"Typed {action.text}")
+            result = TypeResult(success=True, 
+                                message=f"Typed {action.text}", 
+                                screenshot=screenshot, 
+                                screenshot_description=screenshot_description)
+            return result
+        
         except Exception as e:
             logger.error(f"| ❌ Failed to type: {e}")
-            return TypeResult(success=False, message=f"Failed to type: {e}")
+            return TypeResult(success=False, message=f"Failed to type: {e}", screenshot=None, screenshot_description=None)
     
     async def wait(self, action: WaitRequest) -> WaitResult:
         """Wait for the current page.
@@ -310,23 +281,18 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
-            
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after waiting for {action.ms} ms."
             # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_wait.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # DO NOT need to draw anything on the screenshot
-                
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action wait(ms={action.ms}) result screenshot."
-            
-            return WaitResult(success=True, message=f"Waited for {action.ms} ms")
+            result = WaitResult(success=True, 
+                                message=f"Waited for {action.ms} ms", 
+                                screenshot=screenshot, 
+                                screenshot_description=screenshot_description)
+            return result
         
         except Exception as e:
             logger.error(f"| ❌ Failed to wait: {e}")
-            return WaitResult(success=False, message=f"Failed to wait: {e}")
+            return WaitResult(success=False, message=f"Failed to wait: {e}", screenshot=None, screenshot_description=None)
     
     async def move(self, action: MoveRequest) -> MoveResult:
         """Move the current page.
@@ -347,23 +313,17 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
-            
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after moving to ({action.x}, {action.y})."
             # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_move.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # Draw a cursor on the screenshot
-            action_result_screenshot_path = await self.screenshot_service.draw_cursor(action_result_screenshot_path, action.x, action.y)
-            
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action move(x={action.x}, y={action.y}) result screenshot."
-            
-            return MoveResult(success=True, message=f"Moved to ({action.x}, {action.y})")
+            result = MoveResult(success=True, 
+                                message=f"Moved to ({action.x}, {action.y})", 
+                                screenshot=screenshot, 
+                                screenshot_description=screenshot_description)
+            return result
         except Exception as e:
             logger.error(f"| ❌ Failed to move: {e}")
-            return MoveResult(success=False, message=f"Failed to move: {e}")
+            return MoveResult(success=False, message=f"Failed to move: {e}", screenshot=None, screenshot_description=None)
         
     async def keypress(self, action: KeypressRequest) -> KeypressResult:
         """Press a key on the current page.
@@ -384,22 +344,18 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after pressing {action.keys}."
             
-            # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_keypress.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # DO NOT need to draw anything on the screenshot
-            
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action keypress(keys={action.keys}) result screenshot."
-            
-            return KeypressResult(success=True, message=f"Pressed {action.keys}")
+            result = KeypressResult(success=True, 
+                                message=f"Pressed {action.keys}", 
+                                screenshot=screenshot, 
+                                screenshot_description=screenshot_description)
+            return result
+        
         except Exception as e:
             logger.error(f"| ❌ Failed to keypress: {e}")
-            return KeypressResult(success=False, message=f"Failed to keypress: {e}")
+            return KeypressResult(success=False, message=f"Failed to keypress: {e}", screenshot=None, screenshot_description=None)
         
     async def drag(self, action: DragRequest) -> DragResult:
         """Drag the current page.
@@ -420,30 +376,20 @@ class OperatorBrowserService:
             
             # Take a screenshot of the current page
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
-            
-            # Save the screenshot of the current page
-            action_result_screenshot_path = os.path.join(self.base_dir, "screenshots", f"step_{self.step_number:04d}_drag.png")
-            with open(action_result_screenshot_path, "wb") as f:
-                f.write(base64.b64decode(browser_state.screenshot))
-                
-            # Draw a path on the screenshot
-            action_result_screenshot_path = await self.screenshot_service.draw_path(action_result_screenshot_path, action.path)
-            
-            # Set the previous action result screenshot path
-            self.previous_screenshot_path = action_result_screenshot_path
-            self.previous_screenshot_description = "This is the previous action drag(path={action.path}) result screenshot."
-            
-            return DragResult(success=True, message=f"Dragged {action.path}")
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page after dragging {action.path}."
+            result = DragResult(success=True, 
+                                message=f"Dragged {action.path}", 
+                                screenshot=screenshot, 
+                                screenshot_description=screenshot_description)
+            return result
+        
         except Exception as e:
             logger.error(f"| ❌ Failed to drag: {e}")
-            return DragResult(success=False, message=f"Failed to drag: {e}")
+            return DragResult(success=False, message=f"Failed to drag: {e}", screenshot=None, screenshot_description=None)
     
-            
-    async def get_state(self, step_number: int) -> Dict[str, Any]:
+    async def get_state(self) -> Dict[str, Any]:
         """Take a screenshot of the current page (Operator compatible).
-        
-        Args:
-            step_number: The step number
             
         Returns:
             Base64 encoded screenshot string or bytes if save_path provided
@@ -452,32 +398,28 @@ class OperatorBrowserService:
             if not self.browser:
                 return {}
             
-            self.step_number = step_number
-            
-            # Use BrowserSession's built-in screenshot method
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
-            
-            self.current_screenshot_path = await self.screenshot_service.store_screenshot(browser_state.screenshot, step_number)
-            self.current_screenshot_description = f"This is the current screenshot of the page."
-            if self.previous_screenshot_path is None:
-                self.previous_screenshot_path = self.current_screenshot_path
-                self.previous_screenshot_description = "This is the previous action result screenshot."
+            screenshot = browser_state.screenshot
+            screenshot_description = f"A screenshot of the current page at current step."
             
             state = {
-                "step_number": step_number,
                 "url": browser_state.url,
                 "title": browser_state.title,
-                "tabs": [tab.model_dump() for tab in browser_state.tabs],
-                "screenshot_path": self.current_screenshot_path,
-                "screenshot_description": self.current_screenshot_description,
-                "previous_screenshot_path": self.previous_screenshot_path,
-                "previous_screenshot_description": self.previous_screenshot_description,
-                "page_info": browser_state.page_info.model_dump(),
+                "tabs": browser_state.tabs,
+                "page_info": browser_state.page_info,
+                "screenshot": screenshot,
+                "screenshot_description": screenshot_description
             }
             
             return state
             
         except Exception as e:
             logger.error(f"| ❌ Screenshot failed: {e}")
-            return {}
-    
+            return {
+                "url": None,
+                "title": None,
+                "tabs": None,
+                "page_info": None,
+                "screenshot": None,
+                "screenshot_description": None
+            }

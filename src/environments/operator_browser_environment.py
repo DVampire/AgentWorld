@@ -17,10 +17,10 @@ from src.environments.operator_browser.types import (
 )
 from src.logger import logger
 from src.utils import assemble_project_path
-from src.utils import dedent
+from src.utils import dedent, ScreenshotService
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
-from src.environments.protocol.types import EnvironmentState, ScreenshotInfo
+from src.environments.protocol.types import EnvironmentState, ScreenshotInfo, ActionResult
 
 @ecp.environment()
 class OperatorBrowserEnvironment(BaseEnvironment):
@@ -69,6 +69,8 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         
         # Initialize step counter for screenshots
         self.step_number = 0
+        self.last_action_result: ActionResult = None
+        self.screenshot_service = ScreenshotService(base_dir=self.base_dir)
     
     async def initialize(self) -> None:
         """Initialize the Operator Browser environment."""
@@ -80,6 +82,278 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         await self.operator_browser_service.stop()
         logger.info("| 🧹 Operator Browser Environment cleanup completed")
     
+    @ecp.action(
+        name="click",
+        type="Operator Browser Environment",
+        description="Click at specified coordinates on the page",
+    )
+    async def click(self, x: int, y: int, button: str = "left") -> str:
+        """Click at specified coordinates on the page.
+        
+        Args:
+            x (int): X coordinate to click
+            y (int): Y coordinate to click
+            button (str): Mouse button to click (left, right, middle)
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = ClickRequest(x=x, y=y, button=button)
+            result = await self.operator_browser_service.click(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_click.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Click action failed: {e}")
+            return f"❌ Click action failed: {str(e)}"
+    
+    @ecp.action(
+        name="double_click",
+        description="Double click at specified coordinates on the page",
+        type="Operator Browser Environment",
+    )
+    async def double_click(self, x: int, y: int, button: str = "left") -> str:
+        """Double click at specified coordinates on the page.
+        
+        Args:
+            x (int): X coordinate to double click
+            y (int): Y coordinate to double click
+            button (str): Mouse button to double click (left, right, middle)
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = DoubleClickRequest(x=x, y=y, button=button)
+            result = await self.operator_browser_service.double_click(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_double_click.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Double click action failed: {e}")
+            return f"❌ Double click action failed: {str(e)}"
+    
+    @ecp.action(
+        name="scroll",
+        description="Scroll at specified coordinates with given offsets",
+        type="Operator Browser Environment",
+    )
+    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> str:
+        """Scroll at specified coordinates with given offsets.
+        
+        Args:
+            x (int): X coordinate to scroll at
+            y (int): Y coordinate to scroll at
+            scroll_x (int): Horizontal scroll offset
+            scroll_y (int): Vertical scroll offset
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = ScrollRequest(x=x, y=y, scroll_x=scroll_x, scroll_y=scroll_y)
+            result = await self.operator_browser_service.scroll(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_scroll.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_scroll(screenshot_path, x, y, scroll_x, scroll_y) # draw a scroll on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Scroll action failed: {e}")
+            return f"❌ Scroll action failed: {str(e)}"
+    
+    @ecp.action(
+        name="type",
+        description="Type text at the current cursor position",
+        type="Operator Browser Environment",
+    )
+    async def type_text(self, text: str) -> str:
+        """Type text at the current cursor position.
+        
+        Args:
+            text (str): Text to type
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = TypeRequest(text=text)
+            result = await self.operator_browser_service.type(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_type.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            # DO NOT draw anything on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Type action failed: {e}")
+            return f"❌ Type action failed: {str(e)}"
+    
+    @ecp.action(
+        name="wait",
+        description="Wait for specified milliseconds",
+        type="Operator Browser Environment",
+    )
+    async def wait(self, ms: int) -> str:
+        """Wait for specified milliseconds.
+        
+        Args:
+            ms (int): Number of milliseconds to wait
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = WaitRequest(ms=ms)
+            result = await self.operator_browser_service.wait(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_wait.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            # DO NOT draw anything on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Wait action failed: {e}")
+            return f"❌ Wait action failed: {str(e)}"
+    
+    @ecp.action(
+        name="move",
+        description="Move mouse to specified coordinates",
+        type="Operator Browser Environment",
+    )
+    async def move(self, x: int, y: int) -> str:
+        """Move mouse to specified coordinates.
+        
+        Args:
+            x (int): X coordinate to move to
+            y (int): Y coordinate to move to
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = MoveRequest(x=x, y=y)
+            result = await self.operator_browser_service.move(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_move.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Move action failed: {e}")
+            return f"❌ Move action failed: {str(e)}"
+    
+    @ecp.action(
+        name="keypress",
+        description="Press specified keys",
+        type="Operator Browser Environment",
+    )
+    async def keypress(self, keys: List[str]) -> str:
+        """Press specified keys.
+        
+        Args:
+            keys (List[str]): List of keys to press
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = KeypressRequest(keys=keys)
+            result = await self.operator_browser_service.keypress(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_keypress.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            # DO NOT draw anything on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Keypress action failed: {e}")
+            return f"❌ Keypress action failed: {str(e)}"
+    
+    @ecp.action(
+        name="drag",
+        description="Drag mouse along specified path",
+        type="Operator Browser Environment",
+    )
+    async def drag(self, path: List[List[int]]) -> str:
+        """Drag mouse along specified path.
+        
+        Args:
+            path (List[List[int]]): Path to drag, e.g., [[x1, y1], [x2, y2]]
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = DragRequest(path=path)
+            result = await self.operator_browser_service.drag(request)
+            
+            self.last_action_result = result
+            
+            screenshot_filename = f'step_{self.step_number:04d}_drag.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_path(screenshot_path, path) # draw a path on the screenshot
+            self.last_action_result.screenshot_path = screenshot_path
+            
+            self.step_number += 1
+            
+            return result.message
+                
+        except Exception as e:
+            logger.error(f"| ❌ Drag action failed: {e}")
+            return f"❌ Drag action failed: {str(e)}"
+        
     async def get_state(self) -> EnvironmentState:
         """Get the current state of the browser environment.
         
@@ -89,17 +363,23 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         
         try:
             
-            browser_state = await self.operator_browser_service.get_state(step_number=self.step_number)
+            browser_state = await self.operator_browser_service.get_state()
             
-            previous_screenshot_info = ScreenshotInfo(
-                screenshot_path=browser_state.get('previous_screenshot_path', 'Unknown'),
-                screenshot_description=browser_state.get('previous_screenshot_description', 'Unknown'),
-            )
-            screenshot_info = ScreenshotInfo(
-                screenshot_path=browser_state.get('screenshot_path', 'Unknown'),
-                screenshot_description=browser_state.get('screenshot_description', 'Unknown'),
-            )
-            screenshots = [previous_screenshot_info, screenshot_info]
+            screenshot_filename = f'step_{self.step_number:04d}_state.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.last_action_result.screenshot, self.step_number, screenshot_filename)
+            screenshot_description = "The current screenshot of the browser environment."
+            
+            if self.last_action_result:
+                last_action_result_screenshot_path = self.last_action_result.screenshot_path
+                last_action_result_screenshot_description = self.last_action_result.screenshot_description
+            else:
+                last_action_result_screenshot_path = screenshot_path
+                last_action_result_screenshot_description = "A screenshot of the browser environment at previous step."
+            
+            screenshots = [
+                ScreenshotInfo(screenshot_path=last_action_result_screenshot_path, screenshot_description=last_action_result_screenshot_description),
+                ScreenshotInfo(screenshot_path=screenshot_path, screenshot_description=screenshot_description),
+            ]
             
             state = dedent(f"""
                 <info>
@@ -135,227 +415,3 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 state="Failed to get browser state",
                 extra=dict(error=str(e)),
             )
-    
-    @ecp.action(
-        name="click",
-        type="Operator Browser Environment",
-        description="Click at specified coordinates on the page",
-    )
-    async def click(self, x: int, y: int, button: str = "left") -> str:
-        """Click at specified coordinates on the page.
-        
-        Args:
-            x (int): X coordinate to click
-            y (int): Y coordinate to click
-            button (str): Mouse button to click (left, right, middle)
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = ClickRequest(x=x, y=y, button=button)
-            result = await self.operator_browser_service.click(request)
-            
-            if result.success:
-                return f"✅ Clicked at ({x}, {y}) with {button} button"
-            else:
-                return f"❌ Click failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Click action failed: {e}")
-            return f"❌ Click action failed: {str(e)}"
-    
-    @ecp.action(
-        name="double_click",
-        description="Double click at specified coordinates on the page",
-        type="Operator Browser Environment",
-    )
-    async def double_click(self, x: int, y: int, button: str = "left") -> str:
-        """Double click at specified coordinates on the page.
-        
-        Args:
-            x (int): X coordinate to double click
-            y (int): Y coordinate to double click
-            button (str): Mouse button to double click (left, right, middle)
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = DoubleClickRequest(x=x, y=y, button=button)
-            result = await self.operator_browser_service.double_click(request)
-            
-            if result.success:
-                return f"✅ Double clicked at ({x}, {y}) with {button} button"
-            else:
-                return f"❌ Double click failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Double click action failed: {e}")
-            return f"❌ Double click action failed: {str(e)}"
-    
-    @ecp.action(
-        name="scroll",
-        description="Scroll at specified coordinates with given offsets",
-        type="Operator Browser Environment",
-    )
-    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> str:
-        """Scroll at specified coordinates with given offsets.
-        
-        Args:
-            x (int): X coordinate to scroll at
-            y (int): Y coordinate to scroll at
-            scroll_x (int): Horizontal scroll offset
-            scroll_y (int): Vertical scroll offset
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = ScrollRequest(x=x, y=y, scroll_x=scroll_x, scroll_y=scroll_y)
-            result = await self.operator_browser_service.scroll(request)
-            
-            if result.success:
-                return f"✅ Scrolled at ({x}, {y}) with offsets ({scroll_x}, {scroll_y})"
-            else:
-                return f"❌ Scroll failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Scroll action failed: {e}")
-            return f"❌ Scroll action failed: {str(e)}"
-    
-    @ecp.action(
-        name="type",
-        description="Type text at the current cursor position",
-        type="Operator Browser Environment",
-    )
-    async def type_text(self, text: str) -> str:
-        """Type text at the current cursor position.
-        
-        Args:
-            text (str): Text to type
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = TypeRequest(text=text)
-            result = await self.operator_browser_service.type(request)
-            
-            if result.success:
-                return f"✅ Typed text: {text}"
-            else:
-                return f"❌ Type failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Type action failed: {e}")
-            return f"❌ Type action failed: {str(e)}"
-    
-    @ecp.action(
-        name="wait",
-        description="Wait for specified milliseconds",
-        type="Operator Browser Environment",
-    )
-    async def wait(self, ms: int) -> str:
-        """Wait for specified milliseconds.
-        
-        Args:
-            ms (int): Number of milliseconds to wait
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = WaitRequest(ms=ms)
-            result = await self.operator_browser_service.wait(request)
-            
-            if result.success:
-                return f"✅ Waited for {ms} ms"
-            else:
-                return f"❌ Wait failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Wait action failed: {e}")
-            return f"❌ Wait action failed: {str(e)}"
-    
-    @ecp.action(
-        name="move",
-        description="Move mouse to specified coordinates",
-        type="Operator Browser Environment",
-    )
-    async def move(self, x: int, y: int) -> str:
-        """Move mouse to specified coordinates.
-        
-        Args:
-            x (int): X coordinate to move to
-            y (int): Y coordinate to move to
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = MoveRequest(x=x, y=y)
-            result = await self.operator_browser_service.move(request)
-            
-            if result.success:
-                return f"✅ Moved mouse to ({x}, {y})"
-            else:
-                return f"❌ Move failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Move action failed: {e}")
-            return f"❌ Move action failed: {str(e)}"
-    
-    @ecp.action(
-        name="keypress",
-        description="Press specified keys",
-        type="Operator Browser Environment",
-    )
-    async def keypress(self, keys: List[str]) -> str:
-        """Press specified keys.
-        
-        Args:
-            keys (List[str]): List of keys to press
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = KeypressRequest(keys=keys)
-            result = await self.operator_browser_service.keypress(request)
-            
-            if result.success:
-                return f"✅ Pressed keys: {keys}"
-            else:
-                return f"❌ Keypress failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Keypress action failed: {e}")
-            return f"❌ Keypress action failed: {str(e)}"
-    
-    @ecp.action(
-        name="drag",
-        description="Drag mouse along specified path",
-        type="Operator Browser Environment",
-    )
-    async def drag(self, path: List[List[int]]) -> str:
-        """Drag mouse along specified path.
-        
-        Args:
-            path (List[List[int]]): Path to drag, e.g., [[x1, y1], [x2, y2]]
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = DragRequest(path=path)
-            result = await self.operator_browser_service.drag(request)
-            
-            if result.success:
-                return f"✅ Dragged along path: {path}"
-            else:
-                return f"❌ Drag failed: {result.message}"
-                
-        except Exception as e:
-            logger.error(f"| ❌ Drag action failed: {e}")
-            return f"❌ Drag action failed: {str(e)}"

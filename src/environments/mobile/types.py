@@ -3,6 +3,7 @@
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
+from src.environments.protocol.types import ActionResult
 
 class MobileDeviceInfo(BaseModel):
     """Mobile device information."""
@@ -62,57 +63,41 @@ class ScrollRequest(BaseModel):
     distance: int = Field(default=500, description="Scroll distance in pixels")
 
 
-# Response types
-class MobileActionResult(BaseModel):
-    """Base result for mobile actions."""
-    success: bool = Field(description="Whether the action succeeded")
-    message: str = Field(description="Result message")
-    screenshot_path: Optional[str] = Field(default=None, description="Path to screenshot if taken")
-
-
-class TapResult(MobileActionResult):
+class TapResult(ActionResult):
     """Tap action result."""
     pass
 
 
-class SwipeResult(MobileActionResult):
+class SwipeResult(ActionResult):
     """Swipe action result."""
     pass
 
 
-class PressResult(MobileActionResult):
+class PressResult(ActionResult):
     """Press action result."""
     pass
 
 
-class TypeTextResult(MobileActionResult):
+class TypeTextResult(ActionResult):
     """Type text result."""
     pass
 
 
-class KeyEventResult(MobileActionResult):
+class KeyEventResult(ActionResult):
     """Key event result."""
     pass
 
 
-class ScreenshotResult(MobileActionResult):
+class ScreenshotResult(ActionResult):
     """Screenshot result."""
     screenshot_path: str = Field(description="Path to saved screenshot")
 
 
-class SwipePathResult(MobileActionResult):
+class SwipePathResult(ActionResult):
     """Swipe path result."""
     pass
 
 
-class ScrollResult(MobileActionResult):
+class ScrollResult(ActionResult):
     """Scroll result."""
     pass
-
-
-class MobileDeviceState(BaseModel):
-    """Mobile device state."""
-    device_info: MobileDeviceInfo = Field(description="Device information")
-    screenshot_path: Optional[str] = Field(default=None, description="Current screenshot path")
-    is_recording: bool = Field(default=False, description="Whether video is being recorded")
-    recording_path: Optional[str] = Field(default=None, description="Video recording path")

@@ -4,29 +4,34 @@ Screenshot storage service for browser-use agents.
 
 import base64
 from pathlib import Path
-from typing import Union
-from PIL import Image, ImageDraw, ImageFilter
+from typing import Union, Optional
+from PIL import Image, ImageDraw
 import anyio
 import io
 import cairosvg
 
-from src.environments.cdp_browser.observability import observe_debug
-
 class ScreenshotService:
 	"""Simple screenshot storage service that saves screenshots to disk"""
 
-	def __init__(self, agent_directory: Union[str, Path]):
+	def __init__(self, base_dir: Union[str, Path]):
 		"""Initialize with agent directory path"""
-		self.agent_directory = Path(agent_directory) if isinstance(agent_directory, str) else agent_directory
+		self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
 
 		# Create screenshots subdirectory
-		self.screenshots_dir = self.agent_directory / 'screenshots'
+		self.screenshots_dir = self.base_dir / 'screenshots'
 		self.screenshots_dir.mkdir(parents=True, exist_ok=True)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='store_screenshot')
-	async def store_screenshot(self, screenshot_b64: str, step_number: int) -> str:
+	async def store_screenshot(self, 
+                            screenshot_b64: str, 
+                            step_number: Optional[int] = None,
+                            screenshot_filename: Optional[str] = None) -> str:
 		"""Store screenshot to disk and return the full path as string"""
-		screenshot_filename = f'step_{step_number:04d}.png'
+  
+		if screenshot_filename:
+			screenshot_filename = f'{screenshot_filename}'
+		else:
+			screenshot_filename = f'step_{step_number:04d}.png'
+   
 		screenshot_path = self.screenshots_dir / screenshot_filename
 
 		# Decode base64 and save to disk
@@ -37,7 +42,6 @@ class ScreenshotService:
 
 		return str(screenshot_path)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_screenshot_from_disk')
 	async def get_screenshot(self, screenshot_path: str) -> str | None:
 		"""Load screenshot from disk path and return as base64"""
 		if not screenshot_path:

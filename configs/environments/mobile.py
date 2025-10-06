@@ -1,7 +1,7 @@
 """Mobile environment configuration."""
 
 # Mobile environment configuration
-mobile_environment = dict(
+environment = dict(
     base_dir="workdir/mobile_agent",
     device_id=None,  # Use first connected device
     fps=2,

@@ -556,6 +556,48 @@ class ModelManager(metaclass=Singleton):
                 "model_id": model_id,
             }
             
+            # claude-4.5-sonnet
+            model_name = "claude-4.5-sonnet"
+            model_id = "claude-sonnet-4.5"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
+                                                    remote_api_base_name="ANTHROPIC_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # computer-use-claude-4.5-sonnet
+            model_name = "computer-use-claude-4.5-sonnet"
+            model_id = "claude-sonnet-4.5"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_OPENROUTER_US_API_BASE", 
+                                                    remote_api_base_name="ANTHROPIC_API_BASE"),
+                callbacks=[TokenUsageCallbackHandler(model_name)],
+            )
+            tool = {
+                "type": "computer_20250124",
+                "name": "computer",
+                "display_width_px": 1024,
+                "display_height_px": 768,
+                "display_number": 1,
+            }
+            model = model.bind_tools([tool])
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
         else:
             logger.info("| Using remote API for Anthropic models")
             api_key = self._check_local_api_key(local_api_key_name="ANTHROPIC_API_KEY", 
@@ -571,6 +613,10 @@ class ModelManager(metaclass=Singleton):
                 {
                     "model_name": "claude-4-sonnet",
                     "model_id": "claude-4-sonnet",
+                },
+                {
+                    "model_name": "claude-4.5-sonnet",
+                    "model_id": "claude-sonnet-4-5",
                 },
             ]
             
@@ -589,6 +635,31 @@ class ModelManager(metaclass=Singleton):
                     "model_name": model_name,
                     "model_id": model_id,
                 }
+                
+            # computer-use-claude-4.5-sonnet
+            model_name = "computer-use-claude-4.5-sonnet"
+            model_id = "claude-sonnet-4-5"
+            model = ChatAnthropic(
+                model=model_id,
+                api_key=api_key,
+                base_url=api_base,
+                callbacks=[TokenUsageCallbackHandler(model_name)],
+                betas=["computer-use-2025-01-24"],
+            )
+            tool = {
+                "type": "computer_20250124",
+                "name": "computer",
+                "display_width_px": 1024,
+                "display_height_px": 768,
+                "display_number": 1,
+            }
+            model = model.bind_tools([tool])
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "anthropic",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
     def _register_google_models(self, use_local_proxy: bool = False):
         # gemini-2.5-pro

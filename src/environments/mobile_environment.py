@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Union, Optional, Type
 from pydantic import BaseModel, Field, ConfigDict
+import shutil
+import os
 
 from src.environments.mobile.service import MobileService
 from src.environments.mobile.types import (
@@ -10,17 +12,14 @@ from src.environments.mobile.types import (
     PressRequest,
     TypeTextRequest,
     KeyEventRequest,
-    ScreenshotRequest,
     SwipePathRequest,
-    SwipePathResult,
     ScrollRequest,
 )
 from src.logger import logger
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
-from src.utils import dedent
-from src.environments.protocol.types import ScreenshotInfo
-
+from src.utils import dedent, ScreenshotService, encode_image_base64
+from src.environments.protocol.types import ScreenshotInfo, ActionResult
 
 @ecp.environment()
 class MobileEnvironment(BaseEnvironment):
@@ -59,6 +58,14 @@ class MobileEnvironment(BaseEnvironment):
         """
         super().__init__()
         
+        self.base_dir = base_dir
+        self.device_id = device_id
+        self.fps = fps
+        self.bitrate = bitrate
+        self.chunk_duration = chunk_duration
+        
+        self.screenshot_service = ScreenshotService(base_dir=base_dir)
+        
         self.mobile_service = MobileService(
             base_dir=base_dir,
             device_id=device_id,
@@ -67,7 +74,14 @@ class MobileEnvironment(BaseEnvironment):
             chunk_duration=chunk_duration
         )
         
-        self.is_connected = False
+        # Initialize screenshot service
+        self.step_number = 0
+        
+        self.screenshot: ScreenshotInfo = None
+        self.previous_screenshot: ScreenshotInfo = None
+        
+        self.screenshot_service = ScreenshotService(base_dir=self.base_dir)
+        
         
     async def initialize(self) -> None:
         """Initialize the mobile environment."""
@@ -79,20 +93,331 @@ class MobileEnvironment(BaseEnvironment):
         await self.mobile_service.stop()
         logger.info("| 📱 Mobile Environment cleanup completed")
     
+    # ==================== BASIC OPERATIONS ====================
+    @ecp.action(
+        name="tap",
+        description="Tap at specified coordinates on the mobile device",
+        type="Mobile Environment",
+    )
+    async def tap(self, x: int, y: int) -> str:
+        """
+        Tap at specified coordinates on the mobile device.
+        
+        Args:
+            x (int): X coordinate for tap
+            y (int): Y coordinate for tap
+            
+        Returns:
+            TapResult: Result of the tap operation
+        """
+        try:
+            request = TapRequest(x=x, y=y)
+            
+            # Draw a cursor on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_tap.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Tap at ({x}, {y})"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform tap
+            result = await self.mobile_service.tap(request)
+            
+            self.step_number += 1
+            
+            return result.message
+            
+        except Exception as e:
+            logger.error(f"Error in tap operation: {e}")
+            return f"Tap failed: {e}"
+    
+    @ecp.action(
+        name="swipe",
+        description="Swipe at specified coordinates on the mobile device",
+        type="Mobile Environment",
+    )
+    async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300) -> str:
+        """
+        Swipe gesture from start to end coordinates.
+        
+        Args:
+            start_x (int): Start X coordinate
+            start_y (int): Start Y coordinate
+            end_x (int): End X coordinate
+            end_y (int): End Y coordinate
+            duration (int): Swipe duration in milliseconds
+            
+        Returns:
+            SwipeResult: Result of the swipe operation
+        """
+        try:
+            request = SwipeRequest(
+                start_x=start_x,
+                start_y=start_y,
+                end_x=end_x,
+                end_y=end_y,
+                duration=duration
+            )
+            
+            # Draw a path on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_swipe.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_path(screenshot_path, [[start_x, start_y], [end_x, end_y]]) # draw a path on the screenshot
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Swipe from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform swipe
+            result = await self.mobile_service.swipe(request)
+            
+            self.step_number += 1
+            
+            return result.message
+            
+        except Exception as e:
+            logger.error(f"Error in swipe operation: {e}")
+            return f"Swipe failed: {e}"
+    
+    @ecp.action(
+        name="press",
+        description="Long press at specified coordinates on the mobile device",
+        type="Mobile Environment",
+    )
+    async def press(self, x: int, y: int, duration: int = 1000) -> str:
+        """
+        Long press at specified coordinates.
+        
+        Args:
+            x (int): X coordinate for press
+            y (int): Y coordinate for press
+            duration (int): Press duration in milliseconds
+            
+        Returns:
+            PressResult: Result of the press operation
+        """
+        try:
+            request = PressRequest(x=x, y=y, duration=duration)
+
+            # Draw a cursor on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_press.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Press at ({x}, {y}) for {duration}ms"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform press
+            result = await self.mobile_service.press(request)
+            
+            self.step_number += 1
+            
+            return result.message
+        
+        except Exception as e:
+            logger.error(f"Error in press operation: {e}")
+            return f"Press failed: {e}"
+    
+    @ecp.action(
+        name="type_text",
+        description="Type text at the current cursor position on the mobile device",
+        type="Mobile Environment",
+    )
+    async def type_text(self, text: str) -> str:
+        """
+        Type text on the mobile device.
+        
+        Args:
+            text (str): Text to input
+            
+        Returns:
+            TypeTextResult: Result of the type operation
+        """
+        try:
+            request = TypeTextRequest(text=text)
+
+            # DO NOT draw anything on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_type_text.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Type text: {text}"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform type text
+            result = await self.mobile_service.type_text(request)
+            
+            self.step_number += 1
+            
+            return result.message
+        
+        except Exception as e:
+            logger.error(f"Error in type operation: {e}")
+            return f"Type failed: {e}"
+    
+    @ecp.action(
+        name="key_event",
+        description="Press a key on the mobile device",
+        type="Mobile Environment",
+    )
+    async def key_event(self, keycode: int) -> str:
+        """
+        Press a key on the mobile device.
+        
+        Args:
+            keycode (int): Android keycode to press
+            
+        Returns:
+            KeyEventResult: Result of the key event operation
+        """
+        try:
+            request = KeyEventRequest(keycode=keycode)
+
+            # DO NOT draw anything on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_key_event.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Key event: {keycode}"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform key event
+            result = await self.mobile_service.key_event(request)
+            
+            self.step_number += 1
+            
+            return result.message
+        
+        except Exception as e:
+            logger.error(f"Error in key event operation: {e}")
+            return f"Key event failed: {e}"
+    
+    # ==================== ADVANCED OPERATIONS ====================
+    
+    @ecp.action(
+        name="swipe_path",
+        description="Swipe along a path of coordinates on the mobile device",
+        type="Mobile Environment",
+    )
+    async def swipe_path(self, path: List[List[int]], duration: int = 300) -> str:
+        """
+        Swipe along a path of coordinates.
+        
+        Args:
+            path (List[List[int]]): List of [x, y] coordinates
+            duration (int): Total swipe duration in milliseconds
+            
+        Returns:
+            str: Result of the swipe path operation
+        """
+        try:
+            request = SwipePathRequest(path=path, duration=duration)
+
+            # Draw a path on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_swipe_path.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.draw_path(screenshot_path, path) # draw a path on the screenshot
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Swipe path with {len(path)} points"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform swipe path
+            result = await self.mobile_service.swipe_path(request)
+            
+            self.step_number += 1
+            
+            return result.message
+        
+        except Exception as e:
+            logger.error(f"Error in swipe path operation: {e}")
+            return f"Swipe path failed: {e}"
+    
+    # ==================== SCROLL OPERATIONS ====================
+    
+    @ecp.action(
+        name="scroll",
+        description="Scroll on the mobile device in specified direction",
+        type="Mobile Environment",
+    )
+    async def scroll(self, direction: str, distance: int = 500) -> str:
+        """
+        Scroll on the mobile device in specified direction.
+        
+        Args:
+            direction (str) : Scroll direction ("up", "down", "left", "right")
+            distance: Scroll distance in pixels
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            request = ScrollRequest(direction=direction, distance=distance)
+            
+            # DO NOT draw anything on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_scroll.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
+            screenshot = encode_image_base64(screenshot_path)
+            screenshot_description = f"Action: Scroll {direction} by {distance} pixels"
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+                                                      screenshot_path=screenshot_path,
+                                                      screenshot_description=screenshot_description)
+            
+            # Perform scroll
+            result = await self.mobile_service.scroll(request)
+            
+            self.step_number += 1
+            
+            return result.message
+        
+        except Exception as e:
+            logger.error(f"Error in scroll operation: {e}")
+            return f"Scroll failed: {e}"
+    
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the mobile device."""
         try:
-            mobile_device_state = await self.mobile_service.get_device_state()
+            mobile_device_state = await self.mobile_service.get_state()
+            device_info = mobile_device_state.get("device_info", {})
             
             state = dedent(f"""
                 <info>
-                Device Info: {mobile_device_state.device_info}
+                Screen Width: {device_info["screen_width"]}
+                Screen Height: {device_info["screen_height"]}
+                Screen Density: {device_info["screen_density"]}
+                Is Connected: {device_info["is_connected"]}
                 </info>
             """)
+
+            screenshot_filename = f'step_{self.step_number:04d}_state.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(mobile_device_state["screenshot"], self.step_number, screenshot_filename)
+            screenshot_description = "A screenshot of the device at current step."
             
-            screenshot_path = mobile_device_state.screenshot_path
-            screenshot_description = "Current screenshot of the mobile device."
-            screenshots = [ScreenshotInfo(screenshot_path=screenshot_path, screenshot_description=screenshot_description)]
+            self.screenshot = ScreenshotInfo(
+                screenshot=mobile_device_state["screenshot"],
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description
+            )
+            
+            if not self.previous_screenshot:
+                self.previous_screenshot = self.screenshot
+            
+            screenshots = [
+                self.previous_screenshot,
+                self.screenshot,
+            ]
+
             extra = {
                 "screenshots": screenshots,
             }
@@ -110,302 +435,3 @@ class MobileEnvironment(BaseEnvironment):
                 },
             }
     
-    # ==================== BASIC OPERATIONS ====================
-    @ecp.action(
-        name="tap",
-        description="Tap at specified coordinates on the mobile device",
-        type="Mobile Environment",
-    )
-    async def tap(self, x: int, y: int) -> str:
-        """
-        Tap at specified coordinates on the mobile device.
-        
-        Args:
-            x: X coordinate for tap
-            y: Y coordinate for tap
-            
-        Returns:
-            TapResult: Result of the tap operation
-        """
-        try:
-            request = TapRequest(x=x, y=y)
-            result = await self.mobile_service.tap(request)
-            logger.info(f"Tap operation: {result.success} - {result.message}")
-            return result.message
-        except Exception as e:
-            logger.error(f"Error in tap operation: {e}")
-            return f"Tap failed: {e}"
-    
-    @ecp.action(
-        name="swipe",
-        description="Swipe at specified coordinates on the mobile device",
-        type="Mobile Environment",
-    )
-    async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300) -> str:
-        """
-        Swipe gesture from start to end coordinates.
-        
-        Args:
-            start_x: Start X coordinate
-            start_y: Start Y coordinate
-            end_x: End X coordinate
-            end_y: End Y coordinate
-            duration: Swipe duration in milliseconds
-            
-        Returns:
-            SwipeResult: Result of the swipe operation
-        """
-        try:
-            request = SwipeRequest(
-                start_x=start_x,
-                start_y=start_y,
-                end_x=end_x,
-                end_y=end_y,
-                duration=duration
-            )
-            result = await self.mobile_service.swipe(request)
-            logger.info(f"Swipe operation: {result.success} - {result.message}")
-            return result.message
-        except Exception as e:
-            logger.error(f"Error in swipe operation: {e}")
-            return f"Swipe failed: {e}"
-    
-    @ecp.action(
-        name="press",
-        description="Long press at specified coordinates on the mobile device",
-        type="Mobile Environment",
-    )
-    async def press(self, x: int, y: int, duration: int = 1000) -> str:
-        """
-        Long press at specified coordinates.
-        
-        Args:
-            x: X coordinate for press
-            y: Y coordinate for press
-            duration: Press duration in milliseconds
-            
-        Returns:
-            PressResult: Result of the press operation
-        """
-        try:
-            request = PressRequest(x=x, y=y, duration=duration)
-            result = await self.mobile_service.press(request)
-            logger.info(f"Press operation: {result.success} - {result.message}")
-            return result.message
-        except Exception as e:
-            logger.error(f"Error in press operation: {e}")
-            return f"Press failed: {e}"
-    
-    @ecp.action(
-        name="type_text",
-        description="Type text at the current cursor position on the mobile device",
-        type="Mobile Environment",
-    )
-    async def type_text(self, text: str) -> str:
-        """
-        Type text on the mobile device.
-        
-        Args:
-            text: Text to input
-            
-        Returns:
-            TypeTextResult: Result of the type operation
-        """
-        try:
-            request = TypeTextRequest(text=text)
-            result = await self.mobile_service.type_text(request)
-            logger.info(f"Type operation: {result.success} - {result.message}")
-            return result.message
-        except Exception as e:
-            logger.error(f"Error in type operation: {e}")
-            return f"Type failed: {e}"
-    
-    @ecp.action(
-        name="key_event",
-        description="Press a key on the mobile device",
-        type="Mobile Environment",
-    )
-    async def key_event(self, keycode: int) -> str:
-        """
-        Press a key on the mobile device.
-        
-        Args:
-            keycode: Android keycode to press
-            
-        Returns:
-            KeyEventResult: Result of the key event operation
-        """
-        try:
-            request = KeyEventRequest(keycode=keycode)
-            result = await self.mobile_service.key_event(request)
-            logger.info(f"Key event operation: {result.success} - {result.message}")
-            return result.message
-        except Exception as e:
-            logger.error(f"Error in key event operation: {e}")
-            return f"Key event failed: {e}"
-    
-    @ecp.action(
-        name="screenshot",
-        description="Take a screenshot of the mobile device",
-        type="Mobile Environment",
-    )
-    async def screenshot(self, save_path: Optional[str] = None) -> str:
-        """
-        Take a screenshot of the mobile device.
-        
-        Args:
-            save_path: Optional path to save screenshot
-            
-        Returns:
-            ScreenshotResult: Result of the screenshot operation
-        """
-        try:
-            request = ScreenshotRequest(save_path=save_path)
-            result = await self.mobile_service.take_screenshot(request)
-            logger.info(f"Screenshot operation: {result.success} - {result.message}")
-            return result.message
-        
-        except Exception as e:
-            logger.error(f"Error in screenshot operation: {e}")
-            return f"Screenshot failed: {e}"
-    
-    # ==================== ADVANCED OPERATIONS ====================
-    
-    @ecp.action(
-        name="swipe_path",
-        description="Swipe along a path of coordinates on the mobile device",
-        type="Mobile Environment",
-    )
-    async def swipe_path(self, path: List[List[int]], duration: int = 300) -> SwipePathResult:
-        """
-        Swipe along a path of coordinates.
-        
-        Args:
-            path: List of [x, y] coordinates
-            duration: Total swipe duration in milliseconds
-            
-        Returns:
-            SwipePathResult: Result of the swipe path operation
-        """
-        try:
-            request = SwipePathRequest(path=path, duration=duration)
-            result = await self.mobile_service.swipe_path(request)
-            logger.info(f"Swipe path operation: {result.success} - {result.message}")
-            return result
-        except Exception as e:
-            logger.error(f"Error in swipe path operation: {e}")
-            return SwipePathResult(success=False, message=f"Swipe path failed: {e}")
-    
-    # ==================== SCROLL OPERATIONS ====================
-    
-    @ecp.action(
-        name="scroll",
-        description="Scroll on the mobile device in specified direction",
-        type="Mobile Environment",
-    )
-    async def scroll(self, direction: str, distance: int = 500) -> str:
-        """
-        Scroll on the mobile device in specified direction.
-        
-        Args:
-            direction: Scroll direction ("up", "down", "left", "right")
-            distance: Scroll distance in pixels
-            
-        Returns:
-            str: Result message
-        """
-        try:
-            request = ScrollRequest(direction=direction, distance=distance)
-            result = await self.mobile_service.scroll(request)
-            logger.info(f"Scroll operation: {result.success} - {result.message}")
-            return result.message
-        except Exception as e:
-            logger.error(f"Error in scroll operation: {e}")
-            return f"Scroll failed: {e}"
-    
-    # ==================== SYSTEM OPERATIONS ====================
-    @ecp.action(
-        name="wake_up",
-        description="Wake up the mobile device",
-        type="Mobile Environment",
-    )
-    async def wake_up(self) -> bool:
-        """
-        Wake up the mobile device.
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            await self.mobile_service.adb.wake_up()
-            logger.info("Device wake up")
-            return True
-        except Exception as e:
-            logger.error(f"Error in wake up: {e}")
-            return False
-    
-    @ecp.action(
-        name="unlock_screen",
-        description="Unlock the mobile device screen",
-        type="Mobile Environment",
-    )
-    async def unlock_screen(self) -> bool:
-        """
-        Unlock the mobile device screen.
-        
-        Returns:
-            bool: True if successful
-        """
-        try:
-            await self.mobile_service.adb.unlock_screen()
-            logger.info("Screen unlock")
-            return True
-        except Exception as e:
-            logger.error(f"Error in unlock screen: {e}")
-            return False
-    
-    @ecp.action(
-        name="open_app",
-        description="Open an app on the mobile device",
-        type="Mobile Environment",
-    )
-    async def open_app(self, package_name: str) -> bool:
-        """
-        Open an app on the mobile device.
-        
-        Args:
-            package_name: App package name
-            
-        Returns:
-            bool: True if successful
-        """
-        try:
-            await self.mobile_service.adb.open_app(package_name)
-            logger.info(f"Open app: {package_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Error in open app: {e}")
-            return False
-    
-    @ecp.action(
-        name="close_app",
-        description="Close an app on the mobile device",
-        type="Mobile Environment",
-    )
-    async def close_app(self, package_name: str) -> bool:
-        """
-        Close an app on the mobile device.
-        
-        Args:
-            package_name: App package name
-            
-        Returns:
-            bool: True if successful
-        """
-        try:
-            await self.mobile_service.adb.close_app(package_name)
-            logger.info(f"Close app: {package_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Error in close app: {e}")
-            return False

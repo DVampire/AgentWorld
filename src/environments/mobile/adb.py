@@ -180,7 +180,7 @@ class AdbDriver:
             return (0, 0)
         parts = result.strip().split(": ")[-1].split("x")
         screen_size = tuple(map(int, parts))
-        return (screen_size[1], screen_size[0])
+        return (screen_size[0], screen_size[1])
 
     async def get_screen_density(self) -> int:
         """

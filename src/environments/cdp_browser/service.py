@@ -34,7 +34,7 @@ from src.environments.cdp_browser.browser.views import BrowserError
 from src.environments.cdp_browser.dom.service import EnhancedDOMTreeNode
 from src.environments.cdp_browser.observability import observe_debug
 from src.environments.cdp_browser.utils import _log_pretty_url
-from src.environments.cdp_browser.screenshots.service import ScreenshotService
+from src.utils import ScreenshotService
 from src.environments.cdp_browser.browser.session import DEFAULT_BROWSER_PROFILE
 from src.environments.cdp_browser.types import (
     # Request types

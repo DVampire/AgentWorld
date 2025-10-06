@@ -1,103 +1,88 @@
-"""Example script to run mobile agent."""
-
-import asyncio
+import os
 import sys
+from dotenv import load_dotenv
+load_dotenv(verbose=True)
+
 from pathlib import Path
+import argparse
+from mmengine import DictAction
+import asyncio
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+root = str(Path(__file__).resolve().parents[1])
+sys.path.append(root)
 
-from src.environments.mobile import MobileService, TapRequest, SwipeRequest, InputTextRequest
+from src.config import config
+from src.logger import logger
+from src.infrastructures.models import model_manager
+from src.tools import tcp
+from src.environments import ecp
+from src.agents import acp
+from src.transformation import transformation
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='main')
+    parser.add_argument("--config", default=os.path.join(root, "configs", "mobile_agent.py"), help="config file path")
+
+    parser.add_argument(
+        '--cfg-options',
+        nargs='+',
+        action=DictAction,
+        help='override some settings in the used config, the key-value pair '
+        'in xxx=yyy format will be merged into config file. If the value to '
+        'be overwritten is a list, it should be like key="[a,b]" or key=a,b '
+        'It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" '
+        'Note that the quotation marks are necessary and that no white space '
+        'is allowed.')
+    args = parser.parse_args()
+    return args
 
 async def main():
-    """Main function to test mobile service."""
-    print("🚀 Starting Mobile Agent...")
-    print("📋 Prerequisites:")
-    print("   - Android device connected via USB")
-    print("   - USB debugging enabled")
-    print("   - adbutils package installed: pip install adbutils")
-    print("   - ADB tools installed and in PATH")
-    print()
+    args = parse_args()
     
-    # Initialize mobile service
-    mobile_service = MobileService(
-        device_id=None,  # Use first connected device
-        video_save_path="./workdir/mobile_agent/videos",
-        video_save_name="test_record",
-        fps=30,
-        base_dir="./workdir/mobile_agent"
-    )
+    config.init_config(args.config, args)
+    logger.init_logger(config)
+    logger.info(f"| Config: {config.pretty_text}")
     
-    try:
-        # Start the service
-        print("📱 Connecting to device...")
-        success = await mobile_service.start()
-        
-        if not success:
-            print("❌ Failed to connect to device")
-            print("💡 Make sure:")
-            print("   - Device is connected via USB")
-            print("   - USB debugging is enabled")
-            print("   - adbutils is installed: pip install adbutils")
-            return
-        
-        print("✅ Device connected successfully!")
-        
-        # Get device info
-        device_state = await mobile_service.get_device_state()
-        print(f"📱 Device: {device_state.device_info.device_id}")
-        print(f"📏 Screen: {device_state.device_info.screen_width}x{device_state.device_info.screen_height}")
-        print(f"🔍 Density: {device_state.device_info.screen_density}")
-        
-        # Test tap action
-        print("\n👆 Testing tap action...")
-        tap_result = await mobile_service.tap(TapRequest(x=500, y=500))
-        print(f"Tap result: {tap_result.success} - {tap_result.message}")
-        if tap_result.screenshot_path:
-            print(f"📸 Screenshot: {tap_result.screenshot_path}")
-        
-        # Test swipe action
-        print("\n👆 Testing swipe action...")
-        swipe_result = await mobile_service.swipe(SwipeRequest(
-            start_x=100, start_y=500,
-            end_x=900, end_y=500,
-            duration=500
-        ))
-        print(f"Swipe result: {swipe_result.success} - {swipe_result.message}")
-        if swipe_result.screenshot_path:
-            print(f"📸 Screenshot: {swipe_result.screenshot_path}")
-        
-        # Test text input
-        print("\n⌨️ Testing text input...")
-        text_result = await mobile_service.input_text(InputTextRequest(text="Hello Mobile!"))
-        print(f"Text input result: {text_result.success} - {text_result.message}")
-        if text_result.screenshot_path:
-            print(f"📸 Screenshot: {text_result.screenshot_path}")
-        
-        # Take a screenshot
-        print("\n📸 Taking screenshot...")
-        from src.environments.mobile.types import ScreenshotRequest
-        screenshot_result = await mobile_service.take_screenshot(ScreenshotRequest())
-        print(f"Screenshot result: {screenshot_result.success} - {screenshot_result.message}")
-        if screenshot_result.screenshot_path:
-            print(f"📸 Screenshot saved: {screenshot_result.screenshot_path}")
-        
-        print("\n✅ Mobile agent test completed successfully!")
-        print("🎥 Video recording saved to: ./workdir/mobile_agent/videos/")
-        
-    except Exception as e:
-        print(f"❌ Error during mobile agent test: {e}")
-        import traceback
-        traceback.print_exc()
+    # Initialize model manager
+    logger.info("| 🧠 Initializing model manager...")
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    finally:
-        # Stop the service
-        print("\n🛑 Stopping mobile service...")
-        await mobile_service.stop()
-        print("✅ Mobile service stopped")
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    await ecp.initialize(config.env_names)
+    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
+    await tcp.initialize(config.tool_names)
+    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
 
-
+    # Initialize agents
+    logger.info("| 🤖 Initializing agents...")
+    await acp.initialize(config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {acp.list()}")
+    
+    # Transformation ECP to TCP
+    logger.info("| 🔄 Transformation start...")
+    await transformation.transform(type="e2t", env_names=config.env_names)
+    logger.info(f"| ✅ Transformation completed: {tcp.list()}")
+    
+    # Example task
+    task = "Open the '备忘录' app and write 'Hello, World!'."
+    files = []
+    
+    logger.info(f"| 📋 Task: {task}")
+    logger.info(f"| 📂 Files: {files}")
+    
+    input = {
+        "name": "mobile",
+        "input": {
+            "task": task,
+            "files": files
+        }
+    }
+    await acp.ainvoke(**input)
+    
 if __name__ == "__main__":
     asyncio.run(main())

@@ -252,9 +252,20 @@ class InterdayTradingAgent(BaseAgent):
         """Get the environment state."""
         environment_state = ""
         for env_name in ecp.list():
-            state = await ecp.get_state(env_name)
-            state_string = state.get("state", "")
-            environment_state += f"{state_string}\n"
+            env_state = await ecp.get_state(env_name)
+            state_string = env_state["state"]
+            extra = env_state["extra"]
+            
+            if "screenshots" in extra:
+                for screenshot in extra["screenshots"]:
+                    state_string += f"\n<img src={screenshot.screenshot_path} alt={screenshot.screenshot_description}/>"
+                    
+            environment_state += dedent(f"""
+                <{env_name}_state>
+                {state_string}
+                </{env_name}_state>
+            """)
+        
         return {
             "environment_state": environment_state,
         }

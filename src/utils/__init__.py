@@ -14,6 +14,7 @@ from .name_utils import get_tag_name, get_newspage_name
 from .url_utils import fetch_url
 from .file_utils import get_file_info
 from .env_utils import get_env
+from .screenshot_utils import ScreenshotService
 
 __all__ = [
     "get_project_root",
@@ -41,4 +42,5 @@ __all__ = [
     "get_file_info",
     "get_env",
     "dedent",
+    "ScreenshotService",
 ]

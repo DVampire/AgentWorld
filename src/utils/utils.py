@@ -30,6 +30,7 @@ from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Optional, Union
+from PIL import Image
 
 @lru_cache
 def _is_package_available(package_name: str) -> bool:
@@ -376,10 +377,19 @@ def get_source(obj) -> str:
         raise e from inspect_error
 
 
-def encode_image_base64(image):
-    buffered = BytesIO()
-    image.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
+def encode_image_base64(image: Union[Image.Image, str]):
+    if isinstance(image, Image.Image):
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+    
+    elif isinstance(image, str):
+        image = Image.open(image)
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        return base64.b64encode(buffered.getvalue()).decode("utf-8")
+    else:
+        raise ValueError(f"Invalid image type: {type(image)}")
 
 
 def make_image_url(base64_image):

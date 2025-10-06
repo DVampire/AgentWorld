@@ -3,7 +3,7 @@
 A protocol for managing environments and their capabilities.
 """
 
-from .types import EnvironmentInfo, ActionInfo, EnvironmentState, ScreenshotInfo
+from .types import EnvironmentInfo, ActionInfo, EnvironmentState, ScreenshotInfo, ActionResult
 from .server import ECPServer, ecp
 from .context import EnvironmentContextManager
 
@@ -17,4 +17,5 @@ __all__ = [
     "ActionInfo",
     "EnvironmentState",
     "ScreenshotInfo",
+    "ActionResult",
 ]

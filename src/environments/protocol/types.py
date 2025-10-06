@@ -89,12 +89,21 @@ class EnvironmentState(BaseModel):
     
 class ScreenshotInfo(BaseModel):
     """Screenshot information"""
+    screenshot: str = Field(default="Screenshot base64")
     screenshot_path: str = Field(default="Screenshot path")
     screenshot_description: str = Field(default="Screenshot description")
 
+class ActionResult(BaseModel):
+    """Action result"""
+    success: bool = Field(default=True)
+    message: str = Field(default="Action result")
+    screenshot: str = Field(default="Screenshot base64")
+    screenshot_path: str = Field(default="Screenshot path")
+    screenshot_description: str = Field(default="Screenshot description")
 
 # Update forward references
 EnvironmentInfo.model_rebuild()
 ActionInfo.model_rebuild()
 EnvironmentState.model_rebuild()
 ScreenshotInfo.model_rebuild()
+ActionResult.model_rebuild()

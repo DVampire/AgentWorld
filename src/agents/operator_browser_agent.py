@@ -237,8 +237,8 @@ class OperatorBrowserAgent(BaseAgent):
         environment_state = ""
         for env_name in ecp.list():
             env_state = await ecp.get_state(env_name)
-            state_string = env_state.state
-            extra = env_state.extra
+            state_string = env_state["state"]
+            extra = env_state["extra"]
             
             if "screenshots" in extra:
                 for screenshot in extra["screenshots"]:
@@ -293,8 +293,8 @@ class OperatorBrowserAgent(BaseAgent):
         environment_state = ""
         for env_name in ecp.list():
             env_state = await ecp.get_state(env_name)
-            state_string = env_state.state
-            extra = env_state.extra
+            state_string = env_state["state"]
+            extra = env_state["extra"]
             
             # CUA only supports the one latest screenshot
             if "screenshots" in extra:

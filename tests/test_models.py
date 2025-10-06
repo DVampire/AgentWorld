@@ -10,8 +10,6 @@ import argparse
 from mmengine import DictAction
 import asyncio
 from PIL import Image
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -57,12 +55,13 @@ async def test_general_models():
     
     for model_name in [
         # "gpt-4o", 
-        "gpt-4.1", 
+        # "gpt-4.1", 
         # "gpt-5", 
         # "o1", 
         # "o3",
         # "claude-3.7-sonnet",
         # "claude-4-sonnet",
+        "claude-4.5-sonnet",
         # "gemini-2.5-pro",  
     ]:
         model = model_manager.get(model_name)
@@ -112,7 +111,7 @@ async def test_embedding_models():
         logger.info(f"| {model_name} Response: {response.shape}")
         
 
-async def test_computer_browser_use_models():
+async def test_openai_computer_use_models():
     """Test computer-use-preview model with responses API.
     
     Note: computer-use-preview uses OpenAI's responses API, not chat completions.
@@ -151,6 +150,37 @@ async def test_computer_browser_use_models():
         
         logger.info(f"| {model_name} Response: {response}")
         
+async def test_anthropic_computer_use_models():
+    for model_name in [
+        "computer-use-claude-4.5-sonnet",
+    ]:
+        # Create message with proper format for responses API
+        messages = [
+            HumanMessage(content=[
+                {
+                    "type": "text",
+                    "text": "What is the next action to search 'python programming' on google?"
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/google.png"))))
+                    }
+                }
+            ])
+        ]
+        
+        # Get the model (already configured with computer_use_preview tool)
+        model = model_manager.get(model_name)
+        
+        # Invoke with reasoning parameter for computer-use-preview
+        # Changed from "generate_summary" to "summary" as per OpenAI API
+        response = await model.ainvoke(
+            messages,
+        )
+        
+        logger.info(f"| {model_name} Response: {response}")
+        
 async def main():
     args = parse_args()
     
@@ -165,7 +195,8 @@ async def main():
     # await test_deep_research_models()
     # await test_transcribe_models()
     # await test_embedding_models()
-    await test_computer_browser_use_models()
+    # await test_openai_computer_use_models()
+    await test_anthropic_computer_use_models()
     
     
 if __name__ == "__main__":
