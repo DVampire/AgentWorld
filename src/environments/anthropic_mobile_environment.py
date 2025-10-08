@@ -15,8 +15,9 @@ ScrollDirection = Literal["up", "down", "left", "right"]
 _ACTION_DESCRIPTION="""The operation to perform. 
 
 Available operations:
-1. type: Type a string of text on the keyboard.
+1. type: Type a string of text on the keyboard. Supports any languages.
     - text: The text to type.
+    - Examples: "你好!", "Hello World!", "こんにちは！"
 2. left_click: Click the left mouse button at the specified (x, y) pixel coordinates on the screen. 
     - coordinate: The (x, y) pixel coordinates to click.
     - Examples: [100, 200]

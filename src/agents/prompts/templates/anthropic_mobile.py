@@ -99,7 +99,7 @@ When interacting with mobile devices:
 
 2. **Action Selection**:
    - Use `left_click` for buttons, links, and clickable elements (equivalent to mobile tap)
-   - Use `type` for entering text in text input fields
+   - Use `type` for entering text in text input fields - supports any language (Chinese, English, Japanese, etc.)
    - Use `scroll` for directional scrolling (up, down, left, right)
    - Use `wait` for waiting for app transitions and loading
    - **IMPORTANT**: DO NOT use `screenshot` action - the system automatically captures screenshots after each action
@@ -131,10 +131,11 @@ When interacting with mobile devices:
    - Minimize redundant actions (don't re-navigate to the same screen)
    - Use appropriate wait times for app transitions
    - For text input: first `left_click` on the field, then `type` the text
+   - The `type` action supports any language text directly - no need to spell out characters
 </mobile_interaction_guidelines>
 
 <reasoning_rules>
-You must reason explicitly and systematically at every step in your `thinking` block. 
+You must reason explicitly and systematically at every step:
 
 Exhibit the following reasoning patterns to successfully achieve the <task>:
 - **Visual Analysis**: Carefully examine the screenshot to understand the current mobile screen state and identify all interactive elements
@@ -148,6 +149,7 @@ Exhibit the following reasoning patterns to successfully achieve the <task>:
 - **Mobile Context**: Consider mobile-specific factors like app permissions, device state, and touch interaction patterns
 - **App Navigation**: Understand mobile app navigation patterns and UI conventions
 - **Screenshot Management**: Remember that screenshots are automatically captured after each action - do not use the `screenshot` action
+- **Text Input**: When using `type` action, you can input text in any language directly (Chinese, English, Japanese, etc.) - no need to spell out characters
 </reasoning_rules>
 """
 

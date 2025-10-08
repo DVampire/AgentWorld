@@ -6,6 +6,7 @@ from typing import Optional, Tuple, Dict, Any
 from PIL.Image import Image
 import adbutils
 
+# TODO: Adb do not support input Chinese characters directly. Need use ADBKeyboard (https://github.com/senzhk/ADBKeyBoard) to input Chinese characters.
 
 class AdbDriver:
     """

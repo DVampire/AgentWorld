@@ -69,7 +69,7 @@ async def main():
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
     # Example task
-    task = "打开'备忘录'，输入'Hello World!'，保存"
+    task = "打开'备忘录'，输入'你好！我是机器人'，保存"
     files = []
     
     logger.info(f"| 📋 Task: {task}")

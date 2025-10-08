@@ -6,6 +6,7 @@ import time
 from typing import Optional, Tuple, Dict, Any
 from pathlib import Path
 import base64
+import urllib.parse
 
 from src.environments.mobile.types import (
     MobileDeviceInfo,
@@ -247,7 +248,8 @@ class MobileService:
                 return TypeTextResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
             
             # Use ADB for text input (like adb_scrcpy.py)
-            await self.adb.type_text(action.text)
+            text = urllib.parse.quote(action.text)
+            await self.adb.type_text(text)
             
             await asyncio.sleep(0.5) # wait for the device to respond
             
