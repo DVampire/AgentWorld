@@ -1,9 +1,12 @@
 """Mobile Environment for AgentWorld - provides mobile device automation operations as an environment."""
 
 from typing import Any, Dict, List, Union, Optional, Type
+from langgraph.store.base import Op
 from pydantic import BaseModel, Field, ConfigDict
 import shutil
+import asyncio
 import os
+from PIL import Image
 
 from src.environments.mobile.service import MobileService
 from src.environments.mobile.types import (
@@ -18,8 +21,8 @@ from src.environments.mobile.types import (
 from src.logger import logger
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
-from src.utils import dedent, ScreenshotService, encode_image_base64
-from src.environments.protocol.types import ScreenshotInfo, ActionResult
+from src.utils import dedent, ScreenshotService, encode_image_base64, decode_image_base64
+from src.environments.protocol.types import ScreenshotInfo
 
 @ecp.environment()
 class MobileEnvironment(BaseEnvironment):
@@ -64,8 +67,6 @@ class MobileEnvironment(BaseEnvironment):
         self.bitrate = bitrate
         self.chunk_duration = chunk_duration
         
-        self.screenshot_service = ScreenshotService(base_dir=base_dir)
-        
         self.mobile_service = MobileService(
             base_dir=base_dir,
             device_id=device_id,
@@ -80,7 +81,18 @@ class MobileEnvironment(BaseEnvironment):
         self.screenshot: ScreenshotInfo = None
         self.previous_screenshot: ScreenshotInfo = None
         
-        self.screenshot_service = ScreenshotService(base_dir=self.base_dir)
+        # Target window size
+        self.target_window_width = 1024
+        self.target_window_height = 768
+        self.pad_color = (0, 0, 0)
+        
+        self.screenshot_service = ScreenshotService(
+            base_dir=self.base_dir,
+            adapt_window_size=True,
+            target_window_width=self.target_window_width,
+            target_window_height=self.target_window_height,
+            pad_color=self.pad_color
+        )
         
         
     async def initialize(self) -> None:
@@ -111,26 +123,40 @@ class MobileEnvironment(BaseEnvironment):
             TapResult: Result of the tap operation
         """
         try:
-            request = TapRequest(x=x, y=y)
             
             # Draw a cursor on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_tap.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot,
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
+            screenshot_description = f"Action: Tap at ({x}, {y})"
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
                                                                              self.step_number,
                                                                              screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
-            screenshot = encode_image_base64(screenshot_path)
-            screenshot_description = f"Action: Tap at ({x}, {y})"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
-                                                      screenshot_path=screenshot_path,
-                                                      screenshot_description=screenshot_description)
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            # inverse transform the x and y
+            source_width, source_height = self.screenshot.transform_info["source_width"], self.screenshot.transform_info["source_height"]
+            inverse_x, inverse_y = self.screenshot_service.inverse_transform_point(x, 
+                                                                   y,
+                                                                   source_width,
+                                                                   source_height,
+                                                                   self.target_window_width,
+                                                                   self.target_window_height
+                                                                   )
             
             # Perform tap
-            result = await self.mobile_service.tap(request)
+            request = TapRequest(x=inverse_x, y=inverse_y)
+            await self.mobile_service.tap(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Tapped at ({x}, {y})"
             
         except Exception as e:
             logger.error(f"Error in tap operation: {e}")
@@ -156,30 +182,52 @@ class MobileEnvironment(BaseEnvironment):
             SwipeResult: Result of the swipe operation
         """
         try:
+            # Draw a path on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_swipe.png'
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_path(screenshot, [[start_x, start_y], [end_x, end_y]]) # draw a path on the screenshot
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
+            screenshot_description = f"Action: Swipe from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            # inverse transform the x and y
+            source_width, source_height = self.screenshot.transform_info["source_width"], self.screenshot.transform_info["source_height"]
+            inverse_start_x, inverse_start_y = self.screenshot_service.inverse_transform_point(start_x, 
+                                                                               start_y,
+                                                                               source_width,
+                                                                               source_height,
+                                                                               self.target_window_width,
+                                                                               self.target_window_height)
+            inverse_end_x, inverse_end_y = self.screenshot_service.inverse_transform_point(end_x, 
+                                                                           end_y,
+                                                                           source_width,
+                                                                           source_height,
+                                                                           self.target_window_width,
+                                                                           self.target_window_height)
+            
+            
             request = SwipeRequest(
-                start_x=start_x,
-                start_y=start_y,
-                end_x=end_x,
-                end_y=end_y,
+                start_x=inverse_start_x,
+                start_y=inverse_start_y,
+                end_x=inverse_end_x,
+                end_y=inverse_end_y,
                 duration=duration
             )
             
-            # Draw a path on the screenshot
-            screenshot_filename = f'step_{self.step_number:04d}_swipe.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_path(screenshot_path, [[start_x, start_y], [end_x, end_y]]) # draw a path on the screenshot
-            screenshot = encode_image_base64(screenshot_path)
-            screenshot_description = f"Action: Swipe from ({start_x}, {start_y}) to ({end_x}, {end_y})"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
-                                                      screenshot_path=screenshot_path,
-                                                      screenshot_description=screenshot_description)
-            
             # Perform swipe
-            result = await self.mobile_service.swipe(request)
+            await self.mobile_service.swipe(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Swiped from ({start_x}, {start_y}) to ({end_x}, {end_y})"
             
         except Exception as e:
             logger.error(f"Error in swipe operation: {e}")
@@ -203,31 +251,41 @@ class MobileEnvironment(BaseEnvironment):
             PressResult: Result of the press operation
         """
         try:
-            request = PressRequest(x=x, y=y, duration=duration)
-
             # Draw a cursor on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_press.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
-            screenshot = encode_image_base64(screenshot_path)
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_b64 = encode_image_base64(screenshot)
             screenshot_description = f"Action: Press at ({x}, {y}) for {duration}ms"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
+            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot_b64,
                                                       screenshot_path=screenshot_path,
                                                       screenshot_description=screenshot_description)
             
+            # inverse transform the x and y
+            source_width, source_height = self.screenshot.transform_info["source_width"], self.screenshot.transform_info["source_height"]
+            inverse_x, inverse_y = self.screenshot_service.inverse_transform_point(x, 
+                                                                   y,
+                                                                   source_width,
+                                                                   source_height,
+                                                                   self.target_window_width,
+                                                                   self.target_window_height)
+            
+            request = PressRequest(x=inverse_x, y=inverse_y, duration=duration)
+            
             # Perform press
-            result = await self.mobile_service.press(request)
+            await self.mobile_service.press(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Pressed at ({x}, {y}) for {duration}ms"
         
         except Exception as e:
             logger.error(f"Error in press operation: {e}")
             return f"Press failed: {e}"
     
     @ecp.action(
-        name="type_text",
+        name="type",
         description="Type text at the current cursor position on the mobile device",
         type="Mobile Environment",
     )
@@ -242,23 +300,29 @@ class MobileEnvironment(BaseEnvironment):
             TypeTextResult: Result of the type operation
         """
         try:
-            request = TypeTextRequest(text=text)
-
             # DO NOT draw anything on the screenshot
-            screenshot_filename = f'step_{self.step_number:04d}_type_text.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
-            screenshot = encode_image_base64(screenshot_path)
+            screenshot_filename = f'step_{self.step_number:04d}_type.png'
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
             screenshot_description = f"Action: Type text: {text}"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
-                                                      screenshot_path=screenshot_path,
-                                                      screenshot_description=screenshot_description)
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            request = TypeTextRequest(text=text)
             
             # Perform type text
-            result = await self.mobile_service.type_text(request)
+            await self.mobile_service.type_text(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Typed text: {text}"
         
         except Exception as e:
             logger.error(f"Error in type operation: {e}")
@@ -280,23 +344,29 @@ class MobileEnvironment(BaseEnvironment):
             KeyEventResult: Result of the key event operation
         """
         try:
-            request = KeyEventRequest(keycode=keycode)
-
             # DO NOT draw anything on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_key_event.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
-            screenshot = encode_image_base64(screenshot_path)
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
             screenshot_description = f"Action: Key event: {keycode}"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
-                                                      screenshot_path=screenshot_path,
-                                                      screenshot_description=screenshot_description)
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            request = KeyEventRequest(keycode=keycode)
             
             # Perform key event
-            result = await self.mobile_service.key_event(request)
+            await self.mobile_service.key_event(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Key event: {keycode}"
         
         except Exception as e:
             logger.error(f"Error in key event operation: {e}")
@@ -321,24 +391,42 @@ class MobileEnvironment(BaseEnvironment):
             str: Result of the swipe path operation
         """
         try:
-            request = SwipePathRequest(path=path, duration=duration)
-
             # Draw a path on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_swipe_path.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_path(screenshot_path, path) # draw a path on the screenshot
-            screenshot = encode_image_base64(screenshot_path)
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_path(screenshot, path)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
             screenshot_description = f"Action: Swipe path with {len(path)} points"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
-                                                      screenshot_path=screenshot_path,
-                                                      screenshot_description=screenshot_description)
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            # inverse transform the path
+            source_width, source_height = self.screenshot.transform_info["source_width"], self.screenshot.transform_info["source_height"]
+            new_path = []
+            for point_x, point_y in path:
+                inverse_point_x, inverse_point_y = self.screenshot_service.inverse_transform_point(point_x, 
+                                                                                   point_y,
+                                                                                   source_width,
+                                                                                   source_height,
+                                                                                   self.target_window_width,
+                                                                                   self.target_window_height)
+                new_path.append([inverse_point_x, inverse_point_y])
+                
+            request = SwipePathRequest(path=new_path, duration=duration)
             
             # Perform swipe path
-            result = await self.mobile_service.swipe_path(request)
+            await self.mobile_service.swipe_path(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Swiped path with {len(path)} points"
         
         except Exception as e:
             logger.error(f"Error in swipe path operation: {e}")
@@ -363,27 +451,65 @@ class MobileEnvironment(BaseEnvironment):
             str: Result message
         """
         try:
-            request = ScrollRequest(direction=direction, distance=distance)
-            
             # DO NOT draw anything on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_scroll.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.screenshot.screenshot, self.step_number, screenshot_filename)
-            screenshot = encode_image_base64(screenshot_path)
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
             screenshot_description = f"Action: Scroll {direction} by {distance} pixels"
-            self.previous_screenshot = ScreenshotInfo(screenshot=screenshot,
-                                                      screenshot_path=screenshot_path,
-                                                      screenshot_description=screenshot_description)
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            request = ScrollRequest(direction=direction, distance=distance)
             
             # Perform scroll
-            result = await self.mobile_service.scroll(request)
+            await self.mobile_service.scroll(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Scrolled {direction} by {distance} pixels"
         
         except Exception as e:
             logger.error(f"Error in scroll operation: {e}")
             return f"Scroll failed: {e}"
+        
+    @ecp.action(
+        name="screenshot",
+        description="Take a screenshot of the mobile device",
+        type="Mobile Environment",
+    )
+    async def taske_screenshot(self) -> str:
+        # DO NOT capture the screenshot here, just return the screenshot path
+        return f"Screenshot taken successfully: {self.screenshot.screenshot_path}."
+    
+    @ecp.action(
+        name="wait",
+        description="Wait for a specified duration",
+        type="Mobile Environment",
+    )
+    async def wait(self, duration: int) -> str:
+        """
+        Wait for a specified duration in seconds.
+        
+        Args:
+            duration (int): Wait duration in seconds
+        """
+        await asyncio.sleep(int(duration))
+        return f"Waited for {duration} seconds"
+        
+    def transform_screenshot(self, screenshot: Image.Image) -> Image.Image:
+        """Transform the screenshot to the target window size."""
+        transformed_screenshot = self.screenshot_service.transform_screenshot(screenshot,
+                                                                              target_width=self.target_window_width,
+                                                                              target_height=self.target_window_height,
+                                                                              pad_color=self.pad_color)
+        return transformed_screenshot
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the mobile device."""
@@ -393,21 +519,33 @@ class MobileEnvironment(BaseEnvironment):
             
             state = dedent(f"""
                 <info>
-                Screen Width: {device_info["screen_width"]}
-                Screen Height: {device_info["screen_height"]}
+                Screen Width: {self.target_window_width}
+                Screen Height: {self.target_window_height}
                 Screen Density: {device_info["screen_density"]}
                 Is Connected: {device_info["is_connected"]}
                 </info>
             """)
-
+            
+            # Transform screenshot
+            screenshot = decode_image_base64(mobile_device_state["screenshot"])
+            source_width, source_height = screenshot.size
+            transformed_screenshot = self.transform_screenshot(screenshot)
             screenshot_filename = f'step_{self.step_number:04d}_state.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(mobile_device_state["screenshot"], self.step_number, screenshot_filename)
+            screenshot_path = await self.screenshot_service.store_screenshot(transformed_screenshot, self.step_number, screenshot_filename)
             screenshot_description = "A screenshot of the device at current step."
             
             self.screenshot = ScreenshotInfo(
-                screenshot=mobile_device_state["screenshot"],
+                transformed=True,
+                screenshot=encode_image_base64(transformed_screenshot),
                 screenshot_path=screenshot_path,
-                screenshot_description=screenshot_description
+                screenshot_description=screenshot_description,
+                transform_info={
+                    "source_width": source_width,
+                    "source_height": source_height,
+                    "target_width": self.target_window_width,
+                    "target_height": self.target_window_height,
+                    "pad_color": self.pad_color,
+                }
             )
             
             if not self.previous_screenshot:

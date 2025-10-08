@@ -21,7 +21,7 @@ from src.transformation import transformation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "mobile_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "anthropic_mobile_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -69,14 +69,14 @@ async def main():
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
     # Example task
-    task = "打开'备忘录'，输入'今天天气不错'，保存"
+    task = "打开'备忘录'，输入'Hello World!'，保存"
     files = []
     
     logger.info(f"| 📋 Task: {task}")
     logger.info(f"| 📂 Files: {files}")
     
     input = {
-        "name": "mobile",
+        "name": "anthropic_mobile",
         "input": {
             "task": task,
             "files": files

@@ -2,6 +2,7 @@ from .path_utils import get_project_root, assemble_project_path
 from .singleton import Singleton
 from .utils import (_is_package_available,
                     encode_image_base64, 
+                    decode_image_base64,
                     make_image_url, 
                     parse_json_blob,
                     truncate_content)
@@ -22,6 +23,7 @@ __all__ = [
     "Singleton",
     "_is_package_available",
     "encode_image_base64",
+    "decode_image_base64",
     "make_image_url",
     "parse_json_blob",
     "truncate_content",

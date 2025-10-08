@@ -79,7 +79,11 @@ class MobileService:
         
         # Screen properties (like adb_scrcpy.py)
         self.screen_density = 0
-        self.screen_size = (0, 0)
+        self.screen_info = {
+            "width": 0,
+            "height": 0,
+            "rotate": 0
+        }
 
     async def start(self) -> bool:
         """Start the mobile service and connect to device."""
@@ -112,13 +116,14 @@ class MobileService:
             
             # Get device screen properties (like adb_scrcpy.py)
             self.screen_density = await self.adb.get_screen_density()
-            self.screen_size = await self.adb.get_screen_size()
+            self.screen_info = await self.adb.get_screen_info()
             
             # Create device info
             self.device_info = MobileDeviceInfo(
                 device_id=self.device_id or "default",
-                screen_width=self.screen_size[0],
-                screen_height=self.screen_size[1],
+                screen_width=self.screen_info["width"],
+                screen_height=self.screen_info["height"],
+                screen_rotate=self.screen_info["rotate"],
                 screen_density=self.screen_density,
                 is_connected=True
             )
@@ -397,8 +402,9 @@ class MobileService:
         state = {
             "device_info": {
                 "device_id": self.device_id,
-                "screen_width": self.screen_size[0],
-                "screen_height": self.screen_size[1],
+                "screen_width": self.screen_info["width"],
+                "screen_height": self.screen_info["height"],
+                "screen_rotate": self.screen_info["rotate"],
                 "screen_density": self.screen_density,
                 "is_connected": self.is_connected
             },
@@ -420,9 +426,9 @@ class MobileService:
             self.minicap.unpause()
     
     # Additional methods following adb_scrcpy.py pattern
-    def get_screen_size(self) -> Tuple[int, int]:
+    def get_screen_info(self) -> Dict[str, Any]:
         """Get screen size (like adb_scrcpy.py)."""
-        return self.screen_size
+        return self.screen_info
     
     def get_screen_density(self) -> int:
         """Get screen density (like adb_scrcpy.py)."""

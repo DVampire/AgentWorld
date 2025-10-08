@@ -235,6 +235,7 @@ class OperatorBrowserAgent(BaseAgent):
     async def _get_environment_state(self) -> Dict[str, Any]:
         """Get the environment state."""
         environment_state = ""
+        
         for env_name in ecp.list():
             env_state = await ecp.get_state(env_name)
             state_string = env_state["state"]
@@ -268,13 +269,18 @@ class OperatorBrowserAgent(BaseAgent):
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
         agent_state = await self._get_agent_state(task)
+        print(f"| 📝 Start of environment state")
         environment_state = await self._get_environment_state()
+        print(f"| 📝 Environment State: {environment_state}")
+        exit()
         
         agent_input_variables.update(agent_history)
         agent_input_variables.update(agent_state)
         agent_input_variables.update(environment_state)
         
         agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        print(f"| 📝 Agent Message: {agent_message}")
+        exit()
         
         messages = [
             system_message,
@@ -504,6 +510,9 @@ class OperatorBrowserAgent(BaseAgent):
         while step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
+            
+            print(f"| 📝 Messages: {messages}")
+            exit()
             
             # Execute one step
             done, final_result = await self._think_and_action(messages, task_id)

@@ -89,9 +89,11 @@ class EnvironmentState(BaseModel):
     
 class ScreenshotInfo(BaseModel):
     """Screenshot information"""
+    transformed: bool = Field(default=False, description="Whether the screenshot has been transformed")
     screenshot: str = Field(default="Screenshot base64")
     screenshot_path: str = Field(default="Screenshot path")
     screenshot_description: str = Field(default="Screenshot description")
+    transform_info: Optional[Dict[str, Any]] = Field(default=None, description="Transform information")
 
 class ActionResult(BaseModel):
     """Action result"""

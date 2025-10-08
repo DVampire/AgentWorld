@@ -12,6 +12,7 @@ from src.infrastructures.models.restful.chat import ChatRestfulSearch
 from src.infrastructures.models.transcribe import TranscribeOpenAI
 from src.utils import Singleton
 from src.logger import logger
+from src.config import config
 
 PLACEHOLDER = "PLACEHOLDER"
 
@@ -99,7 +100,8 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
 
 class ModelManager(metaclass=Singleton):
     def __init__(self):
-        self._max_tokens = 32768
+        self._max_tokens = config.max_tokens
+        self._window_size = config.window_size
         
         self.registed_models: Dict[str, Any] = {}
         self.registed_models_info: Dict[str, Any] = {}
@@ -382,8 +384,8 @@ class ModelManager(metaclass=Singleton):
             )
             tool = {
                 "type": "computer_use_preview",
-                "display_width": 1024,
-                "display_height": 768,
+                "display_width": self._window_size[0],
+                "display_height": self._window_size[1],
                 "environment": "browser",
             }
             model = model.bind_tools([tool])
@@ -503,8 +505,8 @@ class ModelManager(metaclass=Singleton):
             )
             tool = {
                 "type": "computer_use_preview",
-                "display_width": 1024,
-                "display_height": 768,
+                "display_width": self._window_size[0],
+                "display_height": self._window_size[1],
                 "environment": "browser",
             }
             model = model.bind_tools([tool])
@@ -587,8 +589,8 @@ class ModelManager(metaclass=Singleton):
             tool = {
                 "type": "computer_20250124",
                 "name": "computer",
-                "display_width_px": 1024,
-                "display_height_px": 768,
+                "display_width_px": self._window_size[0],
+                "display_height_px": self._window_size[1],
                 "display_number": 1,
             }
             model = model.bind_tools([tool])
@@ -649,8 +651,8 @@ class ModelManager(metaclass=Singleton):
             tool = {
                 "type": "computer_20250124",
                 "name": "computer",
-                "display_width_px": 1024,
-                "display_height_px": 768,
+                "display_width_px": self._window_size[0],
+                "display_height_px": self._window_size[1],
                 "display_number": 1,
             }
             model = model.bind_tools([tool])

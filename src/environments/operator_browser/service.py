@@ -57,9 +57,9 @@ class OperatorBrowserService:
                 viewport=self.viewport,
                 window_size=self.viewport,
                 highlight_elements=False,
-                record_video_dir=os.path.join(self.base_dir, "videos"),
-                record_video_framerate=30,
-                record_video_size=self.viewport,
+                # record_video_dir=os.path.join(self.base_dir, "videos"),
+                # record_video_framerate=30,
+                # record_video_size=self.viewport,
             )
             await self.browser.start()
             
@@ -397,7 +397,6 @@ class OperatorBrowserService:
         try:
             if not self.browser:
                 return {}
-            
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
             screenshot = browser_state.screenshot
             screenshot_description = f"A screenshot of the current page at current step."

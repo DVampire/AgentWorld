@@ -17,20 +17,20 @@ from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 from src.agents.prompts.prompt_manager import PromptManager
 
-class MobileAgentInputArgs(BaseModel):
+class AnthropicMobileAgentInputArgs(BaseModel):
     task: str = Field(description="The mobile device automation task to complete.")
 
 
 @acp.agent()
-class MobileAgent(BaseAgent):
-    """Mobile Agent implementation with visual understanding capabilities for mobile device control."""
+class AnthropicMobileAgent(BaseAgent):
+    """Anthropic Mobile Agent implementation with visual understanding capabilities for mobile device control."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="mobile", description="The name of the mobile agent.")
+    name: str = Field(default="anthropic_mobile", description="The name of the anthropic mobile agent.")
     type: str = Field(default="Agent", description="The type of the mobile agent.")
-    description: str = Field(default="A mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
-    args_schema: Type[MobileAgentInputArgs] = Field(default=MobileAgentInputArgs, description="The args schema of the mobile agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the mobile agent.")
+    description: str = Field(default="A anthropic mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
+    args_schema: Type[AnthropicMobileAgentInputArgs] = Field(default=AnthropicMobileAgentInputArgs, description="The args schema of the mobile agent.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the anthropic mobile agent.")
     
     def __init__(
         self,
@@ -43,7 +43,7 @@ class MobileAgent(BaseAgent):
         log_max_length: int = 500,
         **kwargs
     ):
-        """Initialize the Mobile Agent.
+        """Initialize the Anthropic Mobile Agent.
         
         Args:
             workdir: Working directory for logs and screenshots
@@ -56,7 +56,7 @@ class MobileAgent(BaseAgent):
         """
         # Set default prompt name for mobile
         if not prompt_name:
-            prompt_name = "mobile"
+            prompt_name = "anthropic_mobile"
         
         super().__init__(
             workdir=workdir,
@@ -70,7 +70,7 @@ class MobileAgent(BaseAgent):
         
         self.prompt_manager = PromptManager(
             prompt_name=prompt_name,
-            max_actions_per_step=1, # Max actions per step is 1 for mobile agent
+            max_actions_per_step=1, # Max actions per step is 1 for anthropic mobile agent
         )
         
     async def _extract_file_content(self, file: str) -> str:
@@ -281,16 +281,13 @@ class MobileAgent(BaseAgent):
                     if content['type'] == 'text':
                         reasoning += content["text"]
                     elif content['type'] == 'tool_use':
-                        if content['name'] == 'computer':
-                            action['name'] = "screenshot"
-                            action['args'] = {}
-                        else:
-                            action['name'] = content['name']
-                            action['args'] = content['input']
+                        action['name'] = content['name']
+                        action['args'] = content['input']
+            
             elif isinstance(contents, str):
                 reasoning += contents
                 action['name'] = "wait"
-                action['args'] = {"duration": 1000}
+                action['args'] = {"duration": 1}
             
             logger.info(f"| 💭 Reasoning: {reasoning}")
             logger.info(f"| 🎯 Action: {action}")
@@ -353,7 +350,7 @@ class MobileAgent(BaseAgent):
                   files: Optional[List[str]] = None,
                   ):
         """Run the mobile agent with loop."""
-        logger.info(f"| 🚀 Starting MobileAgent: {task}")
+        logger.info(f"| 🚀 Starting Anthropic MobileAgent: {task}")
         
         if files:
             logger.info(f"| 📂 Attached files: {files}")

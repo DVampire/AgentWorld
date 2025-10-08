@@ -191,12 +191,12 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| Models: {model_manager.list()}")
     
-    # await test_general_models()
+    await test_general_models()
     # await test_deep_research_models()
     # await test_transcribe_models()
     # await test_embedding_models()
     # await test_openai_computer_use_models()
-    await test_anthropic_computer_use_models()
+    # await test_anthropic_computer_use_models()
     
     
 if __name__ == "__main__":

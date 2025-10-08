@@ -24,6 +24,7 @@ import json5
 import keyword
 import os
 import re
+import io
 import types
 from functools import lru_cache
 from io import BytesIO
@@ -377,20 +378,18 @@ def get_source(obj) -> str:
         raise e from inspect_error
 
 
-def encode_image_base64(image: Union[Image.Image, str]):
+def encode_image_base64(image: Image.Image):
     if isinstance(image, Image.Image):
         buffered = BytesIO()
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode("utf-8")
     
-    elif isinstance(image, str):
-        image = Image.open(image)
-        buffered = BytesIO()
-        image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
     else:
         raise ValueError(f"Invalid image type: {type(image)}")
-
+    
+def decode_image_base64(image_b64: str) -> Image.Image:
+    """Decode a base64 encoded image string to a PIL Image."""
+    return Image.open(io.BytesIO(base64.b64decode(image_b64)))
 
 def make_image_url(base64_image):
     return f"data:image/png;base64,{base64_image}"

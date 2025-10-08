@@ -7,6 +7,7 @@ from .simple_chat_agent import SimpleChatAgent
 from .debate_manager import DebateManagerAgent
 from .operator_browser_agent import OperatorBrowserAgent
 from .mobile_agent import MobileAgent
+from .anthropic_mobile_agent import AnthropicMobileAgent
 from .protocol import acp
 
 
@@ -18,5 +19,6 @@ __all__ = [
     "DebateManagerAgent",
     "OperatorBrowserAgent",
     "MobileAgent",
+    "AnthropicMobileAgent",
     "acp",
 ]

@@ -2,7 +2,7 @@
 
 import asyncio
 import urllib.parse
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from PIL.Image import Image
 import adbutils
 
@@ -168,19 +168,56 @@ class AdbDriver:
             print(f"Screenshot failed: {e}")
             return None
 
-    async def get_screen_size(self) -> Tuple[int, int]:
+    async def get_screen_info(self) -> Dict[str, Any]:
         """
         Get device screen resolution.
 
         Returns:
-            Tuple[int, int]: (width, height) in pixels, or (0,0) on error.
+            Dict[str, Any]: (width, height) in pixels, or (0,0) on error.
         """
+        
+        # adb shell dumpsys input | grep 'SurfaceOrientation'
+        result = await self.shell("dumpsys input | grep 'SurfaceOrientation'")
+        
+        rotate = 0
+        if "SurfaceOrientation: 0" in result: # portrait
+            rotate = 0
+        elif "SurfaceOrientation: 1" in result: # landscape
+            rotate = 90
+        elif "SurfaceOrientation: 2" in result: # portrait upside down
+            rotate = 180
+        elif "SurfaceOrientation: 3" in result: # landscape upside down
+            rotate = -90
+            
+        # adb shell wm size
         result = await self.shell("wm size")
         if not result:
-            return (0, 0)
+            return {
+                "width": 0,
+                "height": 0,
+                "rotate": rotate
+            }
         parts = result.strip().split(": ")[-1].split("x")
         screen_size = tuple(map(int, parts))
-        return (screen_size[0], screen_size[1])
+        
+        if rotate == 0 or rotate == 180:
+            return {
+                "width": screen_size[0],
+                "height": screen_size[1],
+                "rotate": rotate
+            }
+        elif rotate == 90 or rotate == -90:
+            return {
+                "width": screen_size[1],
+                "height": screen_size[0],
+                "rotate": rotate
+            }
+            
+        return {
+            "width": 0,
+            "height": 0,
+            "rotate": rotate
+        }
 
     async def get_screen_density(self) -> int:
         """
@@ -200,7 +237,7 @@ class AdbDriver:
         return {
             'model': await self.shell("getprop ro.product.model"),
             'version': await self.shell("getprop ro.build.version.release"),
-            'screen_size': await self.get_screen_size(),
+            'screen_info': await self.get_screen_info(),
             'screen_density': await self.get_screen_density()
         }
 

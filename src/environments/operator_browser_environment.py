@@ -1,5 +1,6 @@
 """Operator Browser Environment for AgentWorld - provides browser automation as an environment."""
 
+from tkinter import NO
 from typing import Any, Dict, List, Union, Optional, Type
 from pydantic import BaseModel, Field, ConfigDict
 import os
@@ -16,11 +17,11 @@ from src.environments.operator_browser.types import (
     DragRequest,
 )
 from src.logger import logger
-from src.utils import assemble_project_path
+from src.utils import assemble_project_path, encode_image_base64, decode_image_base64
 from src.utils import dedent, ScreenshotService
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
-from src.environments.protocol.types import EnvironmentState, ScreenshotInfo, ActionResult
+from src.environments.protocol.types import EnvironmentState, ScreenshotInfo
 
 @ecp.environment()
 class OperatorBrowserEnvironment(BaseEnvironment):
@@ -69,7 +70,8 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         
         # Initialize step counter for screenshots
         self.step_number = 0
-        self.last_action_result: ActionResult = None
+        self.screenshot: ScreenshotInfo = None
+        self.previous_screenshot: ScreenshotInfo = None
         self.screenshot_service = ScreenshotService(base_dir=self.base_dir)
     
     async def initialize(self) -> None:
@@ -100,18 +102,25 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = ClickRequest(x=x, y=y, button=button)
-            result = await self.operator_browser_service.click(request)
             
-            self.last_action_result = result
-            
+            # Draw a cursor on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_click.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
-            
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Click at ({x}, {y}) with {button} button"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             self.step_number += 1
             
-            return result.message
+            await self.operator_browser_service.click(request)
+            
+            return f"Clicked at ({x}, {y}) with {button} button"
                 
         except Exception as e:
             logger.error(f"| ❌ Click action failed: {e}")
@@ -135,18 +144,26 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         try:
             request = DoubleClickRequest(x=x, y=y, button=button)
-            result = await self.operator_browser_service.double_click(request)
             
-            self.last_action_result = result
-            
+            # Draw a cursor on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_double_click.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Double click at ({x}, {y}) with {button} button"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            await self.operator_browser_service.double_click(request)
             
             self.step_number += 1
             
-            return result.message
+            return f"Double clicked at ({x}, {y}) with {button} button"
                 
         except Exception as e:
             logger.error(f"| ❌ Double click action failed: {e}")
@@ -173,12 +190,19 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             request = ScrollRequest(x=x, y=y, scroll_x=scroll_x, scroll_y=scroll_y)
             result = await self.operator_browser_service.scroll(request)
             
-            self.last_action_result = result
-            
+            # Draw scroll on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_scroll.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_scroll(screenshot_path, x, y, scroll_x, scroll_y) # draw a scroll on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot = decode_image_base64(result.screenshot)
+            screenshot = await self.screenshot_service.draw_scroll(screenshot, x, y, scroll_x, scroll_y)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Scroll at ({x}, {y}) with offset ({scroll_x}, {scroll_y})"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             
             self.step_number += 1
             
@@ -189,7 +213,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             return f"❌ Scroll action failed: {str(e)}"
     
     @ecp.action(
-        name="type",
+        name="type_text",
         description="Type text at the current cursor position",
         type="Operator Browser Environment",
     )
@@ -206,12 +230,18 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             request = TypeRequest(text=text)
             result = await self.operator_browser_service.type(request)
             
-            self.last_action_result = result
-            
-            screenshot_filename = f'step_{self.step_number:04d}_type.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
             # DO NOT draw anything on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot_filename = f'step_{self.step_number:04d}_type.png'
+            screenshot = decode_image_base64(result.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Type text: {text}"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             
             self.step_number += 1
             
@@ -241,10 +271,18 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.last_action_result = result
             
-            screenshot_filename = f'step_{self.step_number:04d}_wait.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
             # DO NOT draw anything on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot_filename = f'step_{self.step_number:04d}_wait.png'
+            screenshot = decode_image_base64(result.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Wait for {ms}ms"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             
             self.step_number += 1
             
@@ -273,12 +311,19 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             request = MoveRequest(x=x, y=y)
             result = await self.operator_browser_service.move(request)
             
-            self.last_action_result = result
-            
+            # Draw cursor on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_move.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_cursor(screenshot_path, x, y) # draw a cursor on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot = decode_image_base64(result.screenshot)
+            screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Move to ({x}, {y})"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             
             self.step_number += 1
             
@@ -306,12 +351,18 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             request = KeypressRequest(keys=keys)
             result = await self.operator_browser_service.keypress(request)
             
-            self.last_action_result = result
-            
-            screenshot_filename = f'step_{self.step_number:04d}_keypress.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
             # DO NOT draw anything on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot_filename = f'step_{self.step_number:04d}_keypress.png'
+            screenshot = decode_image_base64(result.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Keypress: {keys}"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             
             self.step_number += 1
             
@@ -339,12 +390,19 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             request = DragRequest(path=path)
             result = await self.operator_browser_service.drag(request)
             
-            self.last_action_result = result
-            
+            # Draw path on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_drag.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(result.screenshot, self.step_number, screenshot_filename)
-            screenshot_path = await self.screenshot_service.draw_path(screenshot_path, path) # draw a path on the screenshot
-            self.last_action_result.screenshot_path = screenshot_path
+            screenshot = decode_image_base64(result.screenshot)
+            screenshot = await self.screenshot_service.draw_path(screenshot, path)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = f"Action: Drag along path with {len(path)} points"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
             
             self.step_number += 1
             
@@ -365,22 +423,6 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             browser_state = await self.operator_browser_service.get_state()
             
-            screenshot_filename = f'step_{self.step_number:04d}_state.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(self.last_action_result.screenshot, self.step_number, screenshot_filename)
-            screenshot_description = "The current screenshot of the browser environment."
-            
-            if self.last_action_result:
-                last_action_result_screenshot_path = self.last_action_result.screenshot_path
-                last_action_result_screenshot_description = self.last_action_result.screenshot_description
-            else:
-                last_action_result_screenshot_path = screenshot_path
-                last_action_result_screenshot_description = "A screenshot of the browser environment at previous step."
-            
-            screenshots = [
-                ScreenshotInfo(screenshot_path=last_action_result_screenshot_path, screenshot_description=last_action_result_screenshot_description),
-                ScreenshotInfo(screenshot_path=screenshot_path, screenshot_description=screenshot_description),
-            ]
-            
             state = dedent(f"""
                 <info>
                 Current URL: {browser_state.get('url', 'Unknown')}
@@ -389,6 +431,27 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 Page Info: {browser_state.get('page_info', 'Unknown')}
                 </info>
                 """)
+            
+            screenshot = decode_image_base64(browser_state["screenshot"])
+            screenshot_filename = f'step_{self.step_number:04d}_state.png'
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+            screenshot_description = "A screenshot of the browser environment at current step."
+            
+            self.screenshot = ScreenshotInfo(
+                transformed=False,
+                screenshot=browser_state["screenshot"],
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=None
+            )
+            
+            if not self.previous_screenshot:
+                self.previous_screenshot = self.screenshot
+            
+            screenshots = [
+                self.previous_screenshot,
+                self.screenshot,
+            ]
             
             extra = {
                 "step_number": self.step_number,

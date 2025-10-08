@@ -2,48 +2,185 @@
 Screenshot storage service for browser-use agents.
 """
 
-import base64
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Dict, Any, Tuple
 from PIL import Image, ImageDraw
-import anyio
 import io
 import cairosvg
 
 class ScreenshotService:
 	"""Simple screenshot storage service that saves screenshots to disk"""
 
-	def __init__(self, base_dir: Union[str, Path]):
+	def __init__(self, 
+              base_dir: Union[str, Path],
+              adapt_window_size: bool = False,
+              target_window_width: Optional[int] = None,
+              target_window_height: Optional[int] = None,
+              pad_color: Optional[tuple[int, int, int]] = None):
 		"""Initialize with agent directory path"""
 		self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
 
 		# Create screenshots subdirectory
 		self.screenshots_dir = self.base_dir / 'screenshots'
 		self.screenshots_dir.mkdir(parents=True, exist_ok=True)
+	
+		# Adapt window size
+		self.adapt_window_size = adapt_window_size
+		self.target_window_width = target_window_width or 1920
+		self.target_window_height = target_window_height or 1080
+		self.pad_color = pad_color or (0, 0, 0)
+  
+	def compute_transform_info(self, 
+                            source_width: int,
+                            source_height: int,
+                            target_width: int = 1920,
+                            target_height: int = 1080) -> Dict[str, Any]:
+		"""Compute the transform information for the screenshot."""
+		target_ratio = target_width / target_height
+		src_ratio = source_width / source_height
+
+		if src_ratio > target_ratio: # The source image is wider than the target image
+			new_width = target_width
+			new_height = int(target_width / src_ratio)
+			scale = new_width / source_width
+			paste_x = 0
+			paste_y = (target_height - new_height) // 2
+		else:  # The source image is higher or narrower than the target image
+			new_height = target_height
+			new_width = int(target_height * src_ratio)
+			scale = new_height / source_height
+			paste_x = (target_width - new_width) // 2
+			paste_y = 0
+
+		return {
+			"scale": scale,
+			"paste_x": paste_x,
+			"paste_y": paste_y,
+		}
+  
+	def transform_screenshot(self, 
+	                        img: Image.Image,
+	                        target_width: int = 1920, 
+	                        target_height: int = 1080, 
+	                        pad_color: tuple[int, int, int] = (0, 0, 0)) -> Image.Image:
+		"""
+		Resize and pad an image to a fixed target width and height.
+		
+		Args:
+			img: PIL Image
+			target_width: Target width
+			target_height: Target height
+			pad_color: Fill color (R, G, B)
+   
+		Returns:
+			Base64 encoded string of the resized and padded screenshot
+		"""
+		
+		source_width, source_height = img.size
+
+		transform_info = self.compute_transform_info(source_width, source_height, target_width, target_height)
+		scale = transform_info["scale"]
+		paste_x = transform_info["paste_x"]
+		paste_y = transform_info["paste_y"]
+
+		new_width = int(source_width * scale)
+		new_height = int(source_height * scale)
+
+		resized = img.resize((new_width, new_height), Image.LANCZOS)
+		new_img = Image.new("RGB", (target_width, target_height), pad_color)
+		new_img.paste(resized, (paste_x, paste_y))
+  
+		return new_img
+
+	def transform_point(self, 
+	                   x: int,
+	                   y: int,
+	                   source_width: int,
+	                   source_height: int,
+	                   target_width: int = 1920, 
+	                   target_height: int = 1080) -> Tuple[int, int]:
+		"""
+		Transform a point from source coordinates to target coordinates.
+		
+		Args:
+			x: Source X coordinate
+			y: Source Y coordinate
+			source_width: Source image width
+			source_height: Source image height
+			target_width: Target image width
+			target_height: Target image height
+			
+		Returns:
+			Tuple of (target_x, target_y) coordinates
+		"""
+		# Clamp input coordinates to source bounds
+		x = max(0, min(x, source_width - 1))
+		y = max(0, min(y, source_height - 1))
+		
+		transform_info = self.compute_transform_info(source_width, source_height, target_width, target_height)
+		scale = transform_info["scale"]
+		paste_x = transform_info["paste_x"]
+		paste_y = transform_info["paste_y"]
+
+		new_x = int(x * scale) + paste_x
+		new_y = int(y * scale) + paste_y
+		
+		# Ensure coordinates are within target bounds
+		new_x = max(0, min(new_x, target_width - 1))
+		new_y = max(0, min(new_y, target_height - 1))
+
+		return new_x, new_y
+
+	def inverse_transform_point(self, 
+	                                 x: int,
+	                                 y: int,
+	                                 source_width: int,
+	                                 source_height: int,
+	                                 target_width: int = 1920, 
+	                                 target_height: int = 1080) -> Tuple[int, int]:
+		"""
+		Inverse transform a point to a new position based on the transform information.
+		"""
+		transform_info = self.compute_transform_info(source_width, source_height, target_width, target_height)
+		scale = transform_info["scale"]
+		paste_x = transform_info["paste_x"]
+		paste_y = transform_info["paste_y"]
+
+		# Calculate the actual image area in target coordinates
+		actual_width = int(source_width * scale)
+		actual_height = int(source_height * scale)
+		
+		# Clamp coordinates to the actual image area first
+		clamped_x = max(paste_x, min(x, paste_x + actual_width - 1))
+		clamped_y = max(paste_y, min(y, paste_y + actual_height - 1))
+		
+		# Transform to source coordinates
+		new_x = int((clamped_x - paste_x) / scale)
+		new_y = int((clamped_y - paste_y) / scale)
+		
+		# Ensure coordinates are within source bounds
+		new_x = max(0, min(new_x, source_width - 1))
+		new_y = max(0, min(new_y, source_height - 1))
+
+		return new_x, new_y
 
 	async def store_screenshot(self, 
-                            screenshot_b64: str, 
-                            step_number: Optional[int] = None,
+                            img: Image.Image, 
+                            step_number: Optional[int] = None, 
                             screenshot_filename: Optional[str] = None) -> str:
 		"""Store screenshot to disk and return the full path as string"""
-  
 		if screenshot_filename:
 			screenshot_filename = f'{screenshot_filename}'
 		else:
 			screenshot_filename = f'step_{step_number:04d}.png'
-   
 		screenshot_path = self.screenshots_dir / screenshot_filename
-
-		# Decode base64 and save to disk
-		screenshot_data = base64.b64decode(screenshot_b64)
-
-		async with await anyio.open_file(screenshot_path, 'wb') as f:
-			await f.write(screenshot_data)
+  
+		img.save(screenshot_path)
 
 		return str(screenshot_path)
 
-	async def get_screenshot(self, screenshot_path: str) -> str | None:
-		"""Load screenshot from disk path and return as base64"""
+	async def get_screenshot(self, screenshot_path: str) -> Image.Image:
+		"""Load screenshot from disk path and return as Image.Image"""
 		if not screenshot_path:
 			return None
 
@@ -51,29 +188,21 @@ class ScreenshotService:
 		if not path.exists():
 			return None
 
-		# Load from disk and encode to base64
-		async with await anyio.open_file(path, 'rb') as f:
-			screenshot_data = await f.read()
+		return Image.open(path)
 
-		return base64.b64encode(screenshot_data).decode('utf-8')
-
-	async def draw_cursor(self, screenshot_path: str, x: int, y: int, size: int = 32) -> str:
+	async def draw_cursor(self, img: Image.Image, x: int, y: int, size: int = 32) -> Image.Image:
 		"""
 		Draw a Mac-style cursor on the screenshot using SVG.
 		
 		Args:
-			screenshot_path: Path to the screenshot
+			img: Image.Image
 			x: X coordinate of the cursor
 			y: Y coordinate of the cursor
 			size: Size of the cursor
 			
 		Returns:
-			Path to the processed screenshot
-		"""
-		
-		# Load the screenshot
-		base_img = Image.open(screenshot_path)
-		
+			Image.Image: The screenshot with the cursor drawn on it
+		"""	
 		# Create SVG cursor (already at 120 degree angle)
 		svg_code = f'''
 		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32" width="{size}" height="{size}">
@@ -97,40 +226,35 @@ class ScreenshotService:
 		cursor_y = y - size // 2
 		
 		# Ensure cursor stays within image bounds
-		cursor_x = max(0, min(cursor_x, base_img.width - size))
-		cursor_y = max(0, min(cursor_y, base_img.height - size))
+		cursor_x = max(0, min(cursor_x, img.width - size))
+		cursor_y = max(0, min(cursor_y, img.height - size))
 		
 		# Paste cursor onto screenshot
 		if cursor_img.mode == 'RGBA':
-			base_img.paste(cursor_img, (cursor_x, cursor_y), cursor_img)
+			img.paste(cursor_img, (cursor_x, cursor_y), cursor_img)
 		else:
-			base_img.paste(cursor_img, (cursor_x, cursor_y))
-		
-		# Save the processed screenshot
-		base_img.save(screenshot_path)
-		
-		return screenshot_path
+			img.paste(cursor_img, (cursor_x, cursor_y))
+   
+		return img
 
-	async def draw_path(self, screenshot_path: str, path: list[list[int]], arrow_size: int = 16) -> str:
+	async def draw_path(self, img: Image.Image, path: list[list[int]], arrow_size: int = 16) -> Image.Image:
 		"""
 		Draw a path on the screenshot with arrows showing direction.
 		
 		Args:
-			screenshot_path: Path to the screenshot
+			img: Image.Image
 			path: List of [x, y] coordinates representing the path
 			arrow_size: Size of the direction arrows
 			
 		Returns:
-			Path to the processed screenshot
+			Image.Image: The screenshot with the path drawn on it
 		"""
 		import math
 		
-		# Load the screenshot
-		base_img = Image.open(screenshot_path)
-		draw = ImageDraw.Draw(base_img)
+		draw = ImageDraw.Draw(img)
 		
 		if len(path) < 2:
-			return screenshot_path
+			return img
 		
 		# Draw the path line
 		for i in range(len(path) - 1):
@@ -182,12 +306,9 @@ class ScreenshotService:
 			text_x = x - text_width // 2
 			text_y = y - text_height // 2
 			draw.text((text_x, text_y), text, fill=(255, 255, 255, 255))
-		
-		# Save the processed screenshot
-		base_img.save(screenshot_path)
-		
-		return screenshot_path
-	
+
+		return img
+
 	async def _draw_arrow_at_position(self, draw, x: int, y: int, angle: float, size: int):
 		"""Draw a small arrow at the specified position and angle."""
 		import math
@@ -217,30 +338,29 @@ class ScreenshotService:
 		# Draw arrow
 		draw.polygon(rotated_points, fill=(255, 0, 0, 255), outline=(0, 0, 0, 255), width=1)
 
-	async def draw_scroll(self, screenshot_path: str, x: int, y: int, scroll_x: int, scroll_y: int) -> str:
+	async def draw_scroll(self, img: Image.Image, x: int, y: int, scroll_x: int, scroll_y: int) -> Image.Image:
 		"""
 		Draw a scroll operation on the screenshot.
 		
 		Args:
-			screenshot_path: Path to the screenshot
+			img: Image.Image
 			x: X coordinate where scroll started
 			y: Y coordinate where scroll started
 			scroll_x: X scroll delta (positive = right, negative = left)
 			scroll_y: Y scroll delta (positive = down, negative = up)
 			
 		Returns:
-			Path to the processed screenshot
+			Image.Image: The screenshot with the scroll drawn on it
 		"""
 		import math
 		
 		# Load the screenshot
-		base_img = Image.open(screenshot_path)
-		draw = ImageDraw.Draw(base_img)
+		draw = ImageDraw.Draw(img)
 		
 		# Calculate scroll direction and magnitude
 		scroll_magnitude = math.sqrt(scroll_x * scroll_x + scroll_y * scroll_y)
 		if scroll_magnitude == 0:
-			return screenshot_path
+			return img
 		
 		# Normalize scroll direction
 		scroll_dx = scroll_x / scroll_magnitude
@@ -284,7 +404,4 @@ class ScreenshotService:
 					  fill=(255, 255, 255, 200), outline=(0, 0, 0, 255), width=1)
 		draw.text((text_x, text_y), scroll_text, fill=(0, 0, 0, 255))
 		
-		# Save the processed screenshot
-		base_img.save(screenshot_path)
-		
-		return screenshot_path
+		return img

@@ -2,7 +2,7 @@
 
 mobile_agent = dict(
     workdir="./workdir/mobile_agent",
-    model_name="gpt-5",
+    model_name="gpt-4.1",
     prompt_name="mobile",
     memory_config=None,
     max_steps=30,

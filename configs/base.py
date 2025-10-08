@@ -11,3 +11,9 @@ memory_config = dict(
     max_summaries = 20,
     max_insights = 100
 )
+
+#---------------MAX TOKENS CONFIG---------------
+max_tokens = 16384
+
+#---------------Window Size Config---------------
+window_size = (1024, 768)

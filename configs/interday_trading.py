@@ -1,6 +1,6 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import memory_config
+    from .base import memory_config, window_size, max_tokens
     from .environments.interday_trading import environment as interday_trading_environment, dataset as interday_trading_dataset
     from .agents.interday_trading import interday_trading_agent
 

@@ -1,6 +1,6 @@
 from mmengine.config import read_base
 with read_base():
-    from .base import memory
+    from .base import memory, window_size, max_tokens
     from .agents.simple_chat import simple_chat_agent
     from .agents.debate_manager import debate_manager_agent
 
