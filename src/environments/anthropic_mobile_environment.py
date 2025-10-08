@@ -1,14 +1,15 @@
 """Mobile Environment for AgentWorld - provides mobile device automation operations as an environment."""
 
-from typing import Any, Dict, List, Union, Optional, Type, Literal
-from langgraph.store.base import Op
+from typing import Any, Dict, List, Optional, Type, Literal
 from pydantic import BaseModel, Field, ConfigDict
 from src.environments.mobile.service import MobileService
 from src.logger import logger
+import asyncio
 from src.environments.protocol.server import ecp
+from src.environments.mobile.types import TapRequest, ScrollRequest, TypeTextRequest
 from src.utils import dedent, ScreenshotService, encode_image_base64, decode_image_base64
 from src.environments.protocol.types import ScreenshotInfo
-from src.environments.mobile_environment import MobileEnvironment
+from src.environments.protocol.environment import BaseEnvironment
 
 ScrollDirection = Literal["up", "down", "left", "right"]
 
@@ -31,7 +32,7 @@ Note: Screenshots are automatically captured after each action - do not use scre
 """
 
 @ecp.environment()
-class AnthropicMobileEnvironment(MobileEnvironment):
+class AnthropicMobileEnvironment(BaseEnvironment):
     """Mobile Environment that provides mobile device automation operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -144,13 +145,13 @@ class AnthropicMobileEnvironment(MobileEnvironment):
         try:
             if action == "left_click":
                 x, y = coordinate
-                return await self.tap(x, y)
+                return await self._tap(x, y)
             elif action == "scroll":
-                return await self.scroll(scroll_direction, scroll_amount)
+                return await self._scroll(scroll_direction, scroll_amount)
             elif action == "wait":
-                return await self.wait(duration)
+                return await self._wait(duration)
             elif action == "type":
-                return await self.type_text(text)
+                return await self._type_text(text)
             elif action == "screenshot":
                 return f"Screenshots are automatically captured after each action. You DO NOT need to use this action. And the current screenshot path is: {self.screenshot.screenshot_path}."  
             else:
@@ -158,6 +159,146 @@ class AnthropicMobileEnvironment(MobileEnvironment):
         except Exception as e:
             logger.error(f"Error in step operation: {e}")
             return f"Step failed: {e}"
+        
+    async def _tap(self, x: int, y: int) -> str:
+        """
+        Tap at specified coordinates on the mobile device.
+        
+        Args:
+            x (int): X coordinate for tap
+            y (int): Y coordinate for tap
+            
+        Returns:
+            TapResult: Result of the tap operation
+        """
+        try:
+            
+            # Draw a cursor on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_tap.png'
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
+            screenshot_description = f"Action: Tap at ({x}, {y})"
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            # inverse transform the x and y
+            source_width, source_height = self.screenshot.transform_info["source_width"], self.screenshot.transform_info["source_height"]
+            inverse_x, inverse_y = self.screenshot_service.inverse_transform_point(x, 
+                                                                   y,
+                                                                   source_width,
+                                                                   source_height,
+                                                                   self.target_window_width,
+                                                                   self.target_window_height
+                                                                   )
+            
+            # Perform tap
+            request = TapRequest(x=inverse_x, y=inverse_y)
+            await self.mobile_service.tap(request)
+            
+            self.step_number += 1
+            
+            return f"Tapped at ({x}, {y})"
+            
+        except Exception as e:
+            logger.error(f"Error in tap operation: {e}")
+            return f"Tap failed: {e}"
+        
+    async def _type_text(self, text: str) -> str:
+        """
+        Type text on the mobile device.
+        
+        Args:
+            text (str): Text to input
+            
+        Returns:
+            TypeTextResult: Result of the type operation
+        """
+        try:
+            # DO NOT draw anything on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_type.png'
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
+            screenshot_description = f"Action: Type text: {text}"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            request = TypeTextRequest(text=text)
+            
+            # Perform type text
+            await self.mobile_service.type_text(request)
+            
+            self.step_number += 1
+            
+            return f"Typed text: {text}"
+        
+        except Exception as e:
+            logger.error(f"Error in type operation: {e}")
+            return f"Type failed: {e}"
+        
+    async def _scroll(self, direction: str, distance: int = 500) -> str:
+        """
+        Scroll on the mobile device in specified direction.
+        
+        Args:
+            direction (str) : Scroll direction ("up", "down", "left", "right")
+            distance: Scroll distance in pixels
+            
+        Returns:
+            str: Result message
+        """
+        try:
+            # DO NOT draw anything on the screenshot
+            screenshot_filename = f'step_{self.step_number:04d}_scroll.png'
+            screenshot = decode_image_base64(self.screenshot.screenshot)
+            screenshot_path = await self.screenshot_service.store_screenshot(screenshot,
+                                                                             self.step_number,
+                                                                             screenshot_filename)
+            screenshot_description = f"Action: Scroll {direction} by {distance} pixels"
+            self.previous_screenshot = ScreenshotInfo(
+                transformed=self.screenshot.transformed,
+                screenshot=encode_image_base64(screenshot),
+                screenshot_path=screenshot_path,
+                screenshot_description=screenshot_description,
+                transform_info=self.screenshot.transform_info
+            )
+            
+            request = ScrollRequest(direction=direction, distance=distance)
+            
+            # Perform scroll
+            await self.mobile_service.scroll(request)
+            
+            self.step_number += 1
+            
+            return f"Scrolled {direction} by {distance} pixels"
+        
+        except Exception as e:
+            logger.error(f"Error in scroll operation: {e}")
+            return f"Scroll failed: {e}"
+        
+    async def _wait(self, duration: int) -> str:
+        """
+        Wait for a specified duration in seconds.
+        
+        Args:
+            duration (int): Wait duration in seconds
+        """
+        await asyncio.sleep(int(duration))
+        return f"Waited for {duration} seconds"
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the mobile device."""
