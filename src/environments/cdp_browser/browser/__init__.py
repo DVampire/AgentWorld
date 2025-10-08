@@ -21,7 +21,7 @@ def __getattr__(name: str):
 		try:
 			from importlib import import_module
 
-			# Import from local playwright browser package
+			# Use relative import for current package
 			full_module_path = f'src.environments.cdp_browser.browser{module_path}'
 			module = import_module(full_module_path)
 			attr = getattr(module, attr_name)

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.environments.cdp_browser.config import CONFIG
+from browser_use.config import CONFIG
 
 
 def addLoggingLevel(levelName, levelNum, methodName=None):

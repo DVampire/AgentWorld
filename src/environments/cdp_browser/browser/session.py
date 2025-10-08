@@ -236,6 +236,7 @@ class BrowserSession(BaseModel):
 		chromium_sandbox: bool | None = None,
 		devtools: bool | None = None,
 		downloads_path: str | Path | None = None,
+		traces_dir: str | Path | None = None,
 		# From BrowserContextArgs
 		accept_downloads: bool | None = None,
 		permissions: list[str] | None = None,
@@ -580,7 +581,7 @@ class BrowserSession(BaseModel):
 		if event.new_tab:
 			try:
 				current_url = await self.get_current_page_url()
-				from browser_use.utils import is_new_tab_page
+				from src.environments.cdp_browser.utils import is_new_tab_page
 
 				if is_new_tab_page(current_url):
 					self.logger.debug(f'[on_NavigateToUrlEvent] Already in new tab ({current_url}), setting new_tab=False')
@@ -739,10 +740,26 @@ class BrowserSession(BaseModel):
 
 	async def on_CloseTabEvent(self, event: CloseTabEvent) -> None:
 		"""Handle tab closure - update focus if needed."""
+		try:
+			# Remove from session pool first to prevent further use
+			stale_session = self._cdp_session_pool.pop(event.target_id, None)
+			if stale_session and stale_session.owns_cdp_client:
+				try:
+					await stale_session.disconnect()
+				except Exception:
+					pass
 
-		cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
-		await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
-		await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
+			# Dispatch tab closed event
+			await self.event_bus.dispatch(TabClosedEvent(target_id=event.target_id))
+
+			# Try to close the target, but don't fail if it's already closed
+			try:
+				cdp_session = await self.get_or_create_cdp_session(target_id=None, focus=False)
+				await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': event.target_id})
+			except Exception as e:
+				self.logger.debug(f'Target may already be closed: {e}')
+		except Exception as e:
+			self.logger.warning(f'Error during tab close cleanup: {e}')
 
 	async def on_TabCreatedEvent(self, event: TabCreatedEvent) -> None:
 		"""Handle tab creation - apply viewport settings to new tab."""
@@ -820,6 +837,17 @@ class BrowserSession(BaseModel):
 				self.agent_focus = await self.get_or_create_cdp_session(target_id=last_target_id, focus=True)
 				raise
 
+		# Dispatch NavigationCompleteEvent when tab focus changes
+		# This ensures PDF detection and downloads work when switching tabs
+		if event.target_id and event.url:
+			self.logger.debug(f'🔄 Dispatching NavigationCompleteEvent for tab switch to {event.url[:50]}...')
+			await self.event_bus.dispatch(
+				NavigationCompleteEvent(
+					target_id=event.target_id,
+					url=event.url,
+				)
+			)
+
 		# self.logger.debug('🔄 AgentFocusChangedEvent handler completed successfully')
 
 	async def on_FileDownloadedEvent(self, event: FileDownloadedEvent) -> None:
@@ -846,7 +874,7 @@ class BrowserSession(BaseModel):
 			# Clean up cloud browser session if using cloud browser
 			if self.browser_profile.use_cloud:
 				try:
-					from browser_use.browser.cloud import cleanup_cloud_client
+					from src.environments.cdp_browser.browser.cloud import cleanup_cloud_client
 
 					await cleanup_cloud_client()
 					self.logger.info('🌤️ Cloud browser session cleaned up')
@@ -933,7 +961,7 @@ class BrowserSession(BaseModel):
 		from cdp_use.cdp.target.commands import CloseTargetParameters
 
 		# Import here to avoid circular import
-		from browser_use.actor.page import Page as Target
+		from src.environments.cdp_browser.actor.page import Page as Target
 
 		if isinstance(page, Target):
 			target_id = page._target_id
@@ -957,6 +985,51 @@ class BrowserSession(BaseModel):
 	async def clear_cookies(self) -> None:
 		"""Clear all cookies."""
 		await self.cdp_client.send.Network.clearBrowserCookies()
+
+	async def export_storage_state(self, output_path: str | Path | None = None) -> dict[str, Any]:
+		"""Export all browser cookies and storage to storage_state format.
+
+		Extracts decrypted cookies via CDP, bypassing keychain encryption.
+
+		Args:
+			output_path: Optional path to save storage_state.json. If None, returns dict only.
+
+		Returns:
+			Storage state dict with cookies in Playwright format.
+
+		"""
+		from pathlib import Path
+
+		# Get all cookies using Storage.getCookies (returns decrypted cookies from all domains)
+		cookies = await self._cdp_get_cookies()
+
+		# Convert CDP cookie format to Playwright storage_state format
+		storage_state = {
+			'cookies': [
+				{
+					'name': c['name'],
+					'value': c['value'],
+					'domain': c['domain'],
+					'path': c['path'],
+					'expires': c.get('expires', -1),
+					'httpOnly': c.get('httpOnly', False),
+					'secure': c.get('secure', False),
+					'sameSite': c.get('sameSite', 'Lax'),
+				}
+				for c in cookies
+			],
+			'origins': [],  # Could add localStorage/sessionStorage extraction if needed
+		}
+
+		if output_path:
+			import json
+
+			output_file = Path(output_path).expanduser().resolve()
+			output_file.parent.mkdir(parents=True, exist_ok=True)
+			output_file.write_text(json.dumps(storage_state, indent=2))
+			self.logger.info(f'💾 Exported {len(cookies)} cookies to {output_file}')
+
+		return storage_state
 
 	async def get_or_create_cdp_session(
 		self, target_id: TargetID | None = None, focus: bool = True, new_socket: bool | None = None
@@ -1044,7 +1117,6 @@ class BrowserSession(BaseModel):
 	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
-		cache_clickable_elements_hashes: bool = True,
 		include_screenshot: bool = True,
 		cached: bool = False,
 		include_recent_events: bool = False,
@@ -1071,7 +1143,6 @@ class BrowserSession(BaseModel):
 				BrowserStateRequestEvent(
 					include_dom=True,
 					include_screenshot=include_screenshot,
-					cache_clickable_elements_hashes=cache_clickable_elements_hashes,
 					include_recent_events=include_recent_events,
 				)
 			),
@@ -1089,10 +1160,9 @@ class BrowserSession(BaseModel):
 			self.logger.debug('Watchdogs already attached, skipping duplicate attachment')
 			return
 
-		from src.environments.cdp_browser.browser.watchdog_base import BaseWatchdog
-  
-		# from src.environments.cdp_browser.browser.watchdogs.crash_watchdog import CrashWatchdog
 		from src.environments.cdp_browser.browser.watchdogs.aboutblank_watchdog import AboutBlankWatchdog
+
+		# from src.environments.cdp_browser.browser.crash_watchdog import CrashWatchdog
 		from src.environments.cdp_browser.browser.watchdogs.default_action_watchdog import DefaultActionWatchdog
 		from src.environments.cdp_browser.browser.watchdogs.dom_watchdog import DOMWatchdog
 		from src.environments.cdp_browser.browser.watchdogs.downloads_watchdog import DownloadsWatchdog
@@ -1538,7 +1608,7 @@ class BrowserSession(BaseModel):
 				if is_new_tab_page(url) or url.startswith('chrome://'):
 					# Use URL as title for chrome pages, or mark new tabs as unusable
 					if is_new_tab_page(url):
-						title = 'ignore this tab and do not use it'
+						title = ''
 					elif not title:
 						# For chrome:// pages without a title, use the URL itself
 						title = url
@@ -1560,7 +1630,7 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'⚠️ Failed to get target info for tab #{i}: {_log_pretty_url(url)} - {type(e).__name__}')
 
 				if is_new_tab_page(url):
-					title = 'ignore this tab and do not use it'
+					title = ''
 				elif url.startswith('chrome://'):
 					title = url
 				else:
@@ -1612,7 +1682,7 @@ class BrowserSession(BaseModel):
 			url: URL to navigate to
 			new_tab: Whether to open in a new tab
 		"""
-		from browser_use.browser.events import NavigateToUrlEvent
+		from src.environments.cdp_browser.browser.events import NavigateToUrlEvent
 
 		event = self.event_bus.dispatch(NavigateToUrlEvent(url=url, new_tab=new_tab))
 		await event
@@ -1656,18 +1726,38 @@ class BrowserSession(BaseModel):
 
 	async def get_target_id_from_tab_id(self, tab_id: str) -> TargetID:
 		"""Get the full-length TargetID from the truncated 4-char tab_id."""
+		# First check cached sessions
 		for full_target_id in self._cdp_session_pool.keys():
 			if full_target_id.endswith(tab_id):
-				return full_target_id
+				# Verify target still exists
+				if await self._is_target_valid(full_target_id):
+					return full_target_id
+				else:
+					# Remove stale session from pool
+					self.logger.debug(f'Removing stale session for target {full_target_id}')
+					stale_session = self._cdp_session_pool.pop(full_target_id, None)
+					if stale_session and stale_session.owns_cdp_client:
+						try:
+							await stale_session.disconnect()
+						except Exception:
+							pass
 
-		# may not have a cached session, so we need to get all pages and find the target id
+		# Get all current targets and find the one matching tab_id
 		all_targets = await self.cdp_client.send.Target.getTargets()
 		# Filter for valid page/tab targets only
 		for target in all_targets.get('targetInfos', []):
-			if target['targetId'].endswith(tab_id):
+			if target['targetId'].endswith(tab_id) and target.get('type') == 'page':
 				return target['targetId']
 
 		raise ValueError(f'No TargetID found ending in tab_id=...{tab_id}')
+
+	async def _is_target_valid(self, target_id: TargetID) -> bool:
+		"""Check if a target ID is still valid."""
+		try:
+			await self.cdp_client.send.Target.getTargetInfo(params={'targetId': target_id})
+			return True
+		except Exception:
+			return False
 
 	async def get_target_id_from_url(self, url: str) -> TargetID:
 		"""Get the TargetID from a URL."""

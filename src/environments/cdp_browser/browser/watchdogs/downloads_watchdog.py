@@ -56,6 +56,7 @@ class DownloadsWatchdog(BaseWatchdog):
 	_cdp_event_tasks: set[asyncio.Task] = PrivateAttr(default_factory=set)  # Track CDP event handler tasks
 	_cdp_downloads_info: dict[str, dict[str, Any]] = PrivateAttr(default_factory=dict)  # Map guid -> info
 	_use_js_fetch_for_local: bool = PrivateAttr(default=False)  # Guard JS fetch path for local regular downloads
+	_session_pdf_urls: dict[str, str] = PrivateAttr(default_factory=dict)  # URL -> path for PDFs downloaded this session
 
 	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> None:
 		self.logger.debug(f'[DownloadsWatchdog] Received BrowserLaunchEvent, EventBus ID: {id(self.event_bus)}')
@@ -123,6 +124,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		self._sessions_with_listeners.clear()
 		self._active_downloads.clear()
 		self._pdf_viewer_cache.clear()
+		self._session_pdf_urls.clear()
 
 	async def on_NavigationCompleteEvent(self, event: NavigationCompleteEvent) -> None:
 		"""Check for PDFs after navigation completes."""
@@ -306,7 +308,7 @@ class DownloadsWatchdog(BaseWatchdog):
 		downloads_dir = (
 			Path(
 				self.browser_session.browser_profile.downloads_path
-				or f"{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}"
+				or f'{tempfile.gettempdir()}/browser_use_downloads.{str(self.browser_session.id)[-4:]}'
 			)
 			.expanduser()
 			.resolve()
@@ -801,13 +803,26 @@ class DownloadsWatchdog(BaseWatchdog):
 
 			self.logger.debug(f'[DownloadsWatchdog] Generated filename: {pdf_filename}')
 
-			# Check if already downloaded by looking in the downloads directory
+			# Check if already downloaded in this session
+			self.logger.debug(f'[DownloadsWatchdog] PDF_URL: {pdf_url}, session_pdf_urls: {self._session_pdf_urls}')
+			if pdf_url in self._session_pdf_urls:
+				existing_path = self._session_pdf_urls[pdf_url]
+				self.logger.debug(f'[DownloadsWatchdog] PDF already downloaded in session: {existing_path}')
+				return existing_path
+
+			# Generate unique filename if file exists from previous run
 			downloads_dir = str(self.browser_session.browser_profile.downloads_path)
-			if os.path.exists(downloads_dir):
-				existing_files = os.listdir(downloads_dir)
-				if pdf_filename in existing_files:
-					self.logger.debug(f'[DownloadsWatchdog] PDF already downloaded: {pdf_filename}')
-					return None
+			os.makedirs(downloads_dir, exist_ok=True)
+			final_filename = pdf_filename
+			existing_files = os.listdir(downloads_dir)
+			if pdf_filename in existing_files:
+				# Generate unique name with (1), (2), etc.
+				base, ext = os.path.splitext(pdf_filename)
+				counter = 1
+				while f'{base} ({counter}){ext}' in existing_files:
+					counter += 1
+				final_filename = f'{base} ({counter}){ext}'
+				self.logger.debug(f'[DownloadsWatchdog] File exists, using: {final_filename}')
 
 			self.logger.debug(f'[DownloadsWatchdog] Starting PDF download from: {pdf_url[:100]}...')
 
@@ -858,12 +873,10 @@ class DownloadsWatchdog(BaseWatchdog):
 				download_result = result.get('result', {}).get('value', {})
 
 				if download_result and download_result.get('data') and len(download_result['data']) > 0:
-					# Ensure unique filename
-					downloads_dir = str(self.browser_session.browser_profile.downloads_path)
 					# Ensure downloads directory exists
+					downloads_dir = str(self.browser_session.browser_profile.downloads_path)
 					os.makedirs(downloads_dir, exist_ok=True)
-					unique_filename = await self._get_unique_filename(downloads_dir, pdf_filename)
-					download_path = os.path.join(downloads_dir, unique_filename)
+					download_path = os.path.join(downloads_dir, final_filename)
 
 					# Save the PDF asynchronously
 					async with await anyio.open_file(download_path, 'wb') as f:
@@ -886,13 +899,16 @@ class DownloadsWatchdog(BaseWatchdog):
 						f'[DownloadsWatchdog] ✅ Auto-downloaded PDF ({cache_status}, {response_size:,} bytes): {download_path}'
 					)
 
+					# Store URL->path mapping for this session
+					self._session_pdf_urls[pdf_url] = download_path
+
 					# Emit file downloaded event
-					self.logger.debug(f'[DownloadsWatchdog] Dispatching FileDownloadedEvent for {unique_filename}')
+					self.logger.debug(f'[DownloadsWatchdog] Dispatching FileDownloadedEvent for {final_filename}')
 					self.event_bus.dispatch(
 						FileDownloadedEvent(
 							url=pdf_url,
 							path=download_path,
-							file_name=unique_filename,
+							file_name=final_filename,
 							file_size=response_size,
 							file_type='pdf',
 							mime_type='application/pdf',

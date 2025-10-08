@@ -85,6 +85,7 @@ class BrowserStateSummary:
 	is_pdf_viewer: bool = False  # Whether the current page is a PDF viewer
 	recent_events: str | None = None  # Text summary of recent browser events
 
+
 @dataclass
 class BrowserStateHistory:
 	"""The summary of the browser's state at a past point in time to usse in LLM message history"""

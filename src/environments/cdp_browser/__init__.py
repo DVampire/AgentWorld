@@ -1,22 +1,4 @@
-import os
 from typing import TYPE_CHECKING
-
-from src.environments.cdp_browser.logging_config import setup_logging
-
-# Only set up logging if not in MCP mode or if explicitly requested
-if os.environ.get('BROWSER_USE_SETUP_LOGGING', 'true').lower() != 'false':
-	from src.environments.cdp_browser.config import CONFIG
-
-	# Get log file paths from config/environment
-	debug_log_file = getattr(CONFIG, 'BROWSER_USE_DEBUG_LOG_FILE', None)
-	info_log_file = getattr(CONFIG, 'BROWSER_USE_INFO_LOG_FILE', None)
-
-	# Set up logging with file handlers if specified
-	logger = setup_logging(debug_log_file=debug_log_file, info_log_file=info_log_file)
-else:
-	import logging
-
-	logger = logging.getLogger('playwright')
 
 # Monkeypatch BaseSubprocessTransport.__del__ to handle closed event loops gracefully
 from asyncio import base_subprocess
@@ -49,23 +31,13 @@ if TYPE_CHECKING:
 	from src.environments.cdp_browser.browser import BrowserSession as Browser
 	from src.environments.cdp_browser.dom.service import DomService
 
-# Import exceptions directly (not lazy)
-from .exceptions import (
-	PlaywrightError,
-	LLMException,
-	BrowserError,
-	NavigationError,
-	ElementError,
-	ScreenshotError,
-	JavaScriptError,
-)
-
 
 # Lazy imports mapping - only import when actually accessed
 _LAZY_IMPORTS = {
 	'BrowserSession': ('src.environments.cdp_browser.browser', 'BrowserSession'),
 	'Browser': ('src.environments.cdp_browser.browser', 'BrowserSession'),  # Alias for BrowserSession
 	'BrowserProfile': ('src.environments.cdp_browser.browser', 'BrowserProfile'),
+	# DOM service
 	'DomService': ('src.environments.cdp_browser.dom.service', 'DomService'),
 }
 
@@ -97,12 +69,4 @@ __all__ = [
 	'Browser',  # Alias for BrowserSession
 	'BrowserProfile',
 	'DomService',
-	# Exceptions
-	'PlaywrightError',
-	'LLMException',
-	'BrowserError',
-	'NavigationError',
-	'ElementError',
-	'ScreenshotError',
-	'JavaScriptError',
 ]

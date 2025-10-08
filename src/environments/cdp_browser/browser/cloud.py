@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from src.environments.cdp_browser.sync.auth import CloudAuthConfig
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 
 
 class CloudBrowserResponse(BaseModel):

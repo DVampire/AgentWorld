@@ -43,29 +43,26 @@ class OperatorBrowserService:
         """
         self.base_dir = base_dir
         self.headless = headless
-        self.viewport = viewport or {"width": 1280, "height": 720}
+        self.viewport = viewport or {"width": 1024, "height": 768}
         self.browser: Optional[Browser] = None
         
         
     async def start(self):
         """Start the browser with OpenAI Computer Use API compatible settings."""
         try:
-            # Create browser session using default profile (like playwright service)
             self.browser = Browser(
                 browser_profile=DEFAULT_BROWSER_PROFILE,
                 headless=self.headless,
                 viewport=self.viewport,
                 window_size=self.viewport,
-                highlight_elements=False,
-                # record_video_dir=os.path.join(self.base_dir, "videos"),
-                # record_video_framerate=30,
-                # record_video_size=self.viewport,
             )
             await self.browser.start()
             
             self.page = await self.browser.get_current_page()
             
             await self.page.goto("https://www.google.com")
+            
+            await asyncio.sleep(5) # Wait for the browser to be ready
             
             logger.info("| 🌐 Operator started successfully")
             
@@ -398,6 +395,7 @@ class OperatorBrowserService:
             if not self.browser:
                 return {}
             browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
+            
             screenshot = browser_state.screenshot
             screenshot_description = f"A screenshot of the current page at current step."
             

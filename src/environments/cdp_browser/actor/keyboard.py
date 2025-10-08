@@ -1,10 +1,9 @@
 """Keyboard class for keyboard operations."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
 	from cdp_use.cdp.input.commands import DispatchKeyEventParameters
-	from cdp_use.cdp.input.types import KeyModifier
 
 	from src.environments.cdp_browser.browser.session import BrowserSession
 
@@ -12,7 +11,7 @@ if TYPE_CHECKING:
 class Keyboard:
 	"""Keyboard operations for a target."""
 
-	def __init__(self, browser_session: 'BrowserSession', session_id: str | None = None, target_id: str | None = None):
+	def __init__(self, browser_session: 'BrowserSession', session_id: Optional[str] = None, target_id: Optional[str] = None):
 		self._browser_session = browser_session
 		self._client = browser_session.cdp_client
 		self._session_id = session_id
@@ -59,7 +58,7 @@ class Keyboard:
 				import asyncio
 				await asyncio.sleep(delay / 1000.0)  # Convert ms to seconds
 
-	async def press(self, key: str, modifiers: list['KeyModifier'] | None = None) -> None:
+	async def press(self, key: str, modifiers: Optional[int] = None) -> None:
 		"""Press a key with optional modifiers."""
 		if not self._session_id:
 			raise RuntimeError('Session ID is required for keyboard operations')
@@ -105,7 +104,7 @@ class Keyboard:
 			session_id=self._session_id,
 		)
 
-	async def down(self, key: str, modifiers: list['KeyModifier'] | None = None) -> None:
+	async def down(self, key: str, modifiers: Optional[int] = None) -> None:
 		"""Press a key down (without releasing)."""
 		if not self._session_id:
 			raise RuntimeError('Session ID is required for keyboard operations')
@@ -134,7 +133,7 @@ class Keyboard:
 			session_id=self._session_id,
 		)
 
-	async def up(self, key: str, modifiers: list['KeyModifier'] | None = None) -> None:
+	async def up(self, key: str, modifiers: Optional[int] = None) -> None:
 		"""Release a key."""
 		if not self._session_id:
 			raise RuntimeError('Session ID is required for keyboard operations')

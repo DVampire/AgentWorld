@@ -18,7 +18,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any, Literal, TypeVar, cast
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -119,6 +119,7 @@ def observe(
 		'ignore_output': ignore_output,
 		'metadata': metadata,
 		'span_type': span_type,
+		'tags': ['observe', 'observe_debug'],  # important: tags need to be created on laminar first
 		**kwargs,
 	}
 
@@ -170,6 +171,7 @@ def observe_debug(
 		'ignore_output': ignore_output,
 		'metadata': metadata,
 		'span_type': span_type,
+		'tags': ['observe_debug'],  # important: tags need to be created on laminar first
 		**kwargs,
 	}
 

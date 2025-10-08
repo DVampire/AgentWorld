@@ -1,9 +1,10 @@
 """Page class for page-level operations."""
 
-from typing import TYPE_CHECKING, TypeVar, Any
+from typing import TYPE_CHECKING, TypeVar
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.language_models import BaseChatModel
 
 from pydantic import BaseModel
-from langchain_core.messages import SystemMessage, HumanMessage
 
 from src.environments.cdp_browser.dom.serializer.serializer import DOMTreeSerializer
 from src.environments.cdp_browser.dom.service import DomService
@@ -38,7 +39,7 @@ class Page:
 	"""Page operations (tab or iframe)."""
 
 	def __init__(
-		self, browser_session: 'BrowserSession', target_id: str, session_id: str | None = None, llm: Any = None
+		self, browser_session: 'BrowserSession', target_id: str, session_id: str | None = None, llm: 'BaseChatModel | None' = None
 	):
 		self._browser_session = browser_session
 		self._client = browser_session.cdp_client
@@ -46,6 +47,7 @@ class Page:
 		self._session_id: str | None = session_id
 		self._mouse: 'Mouse | None' = None
 		self._keyboard: 'Keyboard | None' = None
+
 		self._llm = llm
 
 	async def _ensure_session(self) -> str:
@@ -91,6 +93,7 @@ class Page:
 		if not self._keyboard:
 			session_id = await self._ensure_session()
 			from .keyboard import Keyboard
+
 			self._keyboard = Keyboard(self._browser_session, session_id, self._target_id)
 		return self._keyboard
 
@@ -218,38 +221,29 @@ class Page:
 		return result['data']
 
 	async def press(self, key: str) -> None:
-		"""Press a key on the page (sends keyboard input to the focused element or page)."""
-		session_id = await self._ensure_session()
+		"""Press a key using the keyboard interface."""
+		keyboard = await self.keyboard
+		await keyboard.press(key)
 
-		# Handle key combinations like "Control+A"
-		if '+' in key:
-			parts = key.split('+')
-			modifiers = parts[:-1]
-			main_key = parts[-1]
+	async def type_text(self, text: str, delay: int = 0) -> None:
+		"""Type text using the keyboard interface."""
+		keyboard = await self.keyboard
+		await keyboard.type(text, delay)
 
-			# Press modifier keys
-			for mod in modifiers:
-				params: 'DispatchKeyEventParameters' = {'type': 'keyDown', 'key': mod}
-				await self._client.send.Input.dispatchKeyEvent(params, session_id=session_id)
+	async def press_key(self, key: str, modifiers: int | None = None) -> None:
+		"""Press a key with optional modifiers using the keyboard interface."""
+		keyboard = await self.keyboard
+		await keyboard.press(key, modifiers)
 
-			# Press main key
-			main_down_params: 'DispatchKeyEventParameters' = {'type': 'keyDown', 'key': main_key}
-			await self._client.send.Input.dispatchKeyEvent(main_down_params, session_id=session_id)
+	async def key_down(self, key: str, modifiers: int | None = None) -> None:
+		"""Press a key down (without releasing) using the keyboard interface."""
+		keyboard = await self.keyboard
+		await keyboard.down(key, modifiers)
 
-			main_up_params: 'DispatchKeyEventParameters' = {'type': 'keyUp', 'key': main_key}
-			await self._client.send.Input.dispatchKeyEvent(main_up_params, session_id=session_id)
-
-			# Release modifier keys
-			for mod in reversed(modifiers):
-				release_params: 'DispatchKeyEventParameters' = {'type': 'keyUp', 'key': mod}
-				await self._client.send.Input.dispatchKeyEvent(release_params, session_id=session_id)
-		else:
-			# Simple key press
-			key_down_params: 'DispatchKeyEventParameters' = {'type': 'keyDown', 'key': key}
-			await self._client.send.Input.dispatchKeyEvent(key_down_params, session_id=session_id)
-
-			key_up_params: 'DispatchKeyEventParameters' = {'type': 'keyUp', 'key': key}
-			await self._client.send.Input.dispatchKeyEvent(key_up_params, session_id=session_id)
+	async def key_up(self, key: str, modifiers: int | None = None) -> None:
+		"""Release a key using the keyboard interface."""
+		keyboard = await self.keyboard
+		await keyboard.up(key, modifiers)
 
 	async def set_viewport_size(self, width: int, height: int) -> None:
 		"""Set the viewport size."""
@@ -371,7 +365,7 @@ class Page:
 		"""Get the DOM service for this target."""
 		return DomService(self._browser_session)
 
-	async def get_element_by_prompt(self, prompt: str, llm: Any = None) -> 'Element | None':
+	async def get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element | None':
 		"""Get an element by a prompt."""
 		await self._ensure_session()
 		llm = llm or self._llm
@@ -450,7 +444,7 @@ Before you return the element index, reason about the state and elements for a s
 
 		return Element_(self._browser_session, element.backend_node_id, self._session_id)
 
-	async def must_get_element_by_prompt(self, prompt: str, llm: Any = None) -> 'Element':
+	async def must_get_element_by_prompt(self, prompt: str, llm: 'BaseChatModel | None' = None) -> 'Element':
 		"""Get an element by a prompt.
 
 		@dev LLM can still return None, this just raises an error if the element is not found.
@@ -461,7 +455,7 @@ Before you return the element index, reason about the state and elements for a s
 
 		return element
 
-	async def extract_content(self, prompt: str, structured_output: type[T], llm: Any = None) -> T:
+	async def extract_content(self, prompt: str, structured_output: type[T], llm: 'BaseChatModel | None' = None) -> T:
 		"""Extract structured content from the current page using LLM.
 
 		Extracts clean markdown from the page and sends it to LLM for structured data extraction.

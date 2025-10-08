@@ -82,54 +82,6 @@ class Mouse:
 		params: 'DispatchMouseEventParameters' = {'type': 'mouseMoved', 'x': x, 'y': y}
 		await self._client.send.Input.dispatchMouseEvent(params, session_id=self._session_id)
 
-	async def drag(self, path: list[list[int]], button: 'MouseButton' = 'left') -> None:
-		"""Drag along the specified path.
-		
-		Args:
-			path: List of [x, y] coordinates to drag through, e.g., [[x1, y1], [x2, y2], [x3, y3]]
-			button: Mouse button to use for dragging
-		"""
-		if len(path) < 2:
-			raise ValueError("Drag path must contain at least 2 points")
-		
-		# Mouse press at first position
-		press_params: 'DispatchMouseEventParameters' = {
-			'type': 'mousePressed',
-			'x': path[0][0],
-			'y': path[0][1],
-			'button': button,
-			'clickCount': 1,
-		}
-		await self._client.send.Input.dispatchMouseEvent(
-			press_params,
-			session_id=self._session_id,
-		)
-
-		# Move through all intermediate points
-		for point in path[1:-1]:
-			move_params: 'DispatchMouseEventParameters' = {
-				'type': 'mouseMoved',
-				'x': point[0],
-				'y': point[1],
-			}
-			await self._client.send.Input.dispatchMouseEvent(
-				move_params,
-				session_id=self._session_id,
-			)
-
-		# Mouse release at last position
-		release_params: 'DispatchMouseEventParameters' = {
-			'type': 'mouseReleased',
-			'x': path[-1][0],
-			'y': path[-1][1],
-			'button': button,
-			'clickCount': 1,
-		}
-		await self._client.send.Input.dispatchMouseEvent(
-			release_params,
-			session_id=self._session_id,
-		)
-
 	async def scroll(self, x: int = 0, y: int = 0, delta_x: int | None = None, delta_y: int | None = None) -> None:
 		"""Scroll the page using robust CDP methods."""
 		if not self._session_id:

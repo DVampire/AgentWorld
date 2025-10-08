@@ -16,7 +16,7 @@ from src.environments.cdp_browser.dom.views import DOMSelectorMap, EnhancedDOMTr
 from src.environments.cdp_browser.observability import observe_debug
 from src.environments.cdp_browser.utils import time_execution_async
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 
 # Font cache to prevent repeated font loading and reduce memory usage
 _FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont | None] = {}

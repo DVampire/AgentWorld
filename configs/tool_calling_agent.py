@@ -20,7 +20,7 @@ model_name = "gpt-4.1"
 env_names = [
     "file_system", 
     "github",
-    # "operator_browser"
+    "operator_browser"
 ]
 agent_names = ["tool_calling"]
 tool_names = [
@@ -47,9 +47,9 @@ github_environment.update(dict(
 ))
 
 #-----------------OPERATOR BROWSER ENVIRONMENT CONFIG-----------------
-# operator_browser_environment.update(
-#     base_dir=workdir,
-# )
+operator_browser_environment.update(
+    base_dir=workdir,
+)
 
 #-----------------TOOL CALLING AGENT CONFIG-----------------
 tool_calling_agent.update(

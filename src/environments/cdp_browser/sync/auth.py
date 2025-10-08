@@ -281,9 +281,8 @@ class DeviceAuthClient:
 		Run the full authentication flow.
 		Returns True if authentication successful.
 		"""
-		import logging
 
-		logger = logging.getLogger(__name__)
+		from src.logger import logger
 
 		try:
 			# Start device authorization

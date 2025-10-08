@@ -9,6 +9,7 @@ import anyio
 
 from src.environments.cdp_browser.observability import observe_debug
 
+
 class ScreenshotService:
 	"""Simple screenshot storage service that saves screenshots to disk"""
 

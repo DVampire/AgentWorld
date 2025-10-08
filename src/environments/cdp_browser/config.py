@@ -13,7 +13,7 @@ import psutil
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 
 
 @cache

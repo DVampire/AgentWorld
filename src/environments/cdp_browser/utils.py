@@ -22,7 +22,7 @@ load_dotenv()
 URL_PATTERN = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE)
 
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 
 # Import error types - these may need to be adjusted based on actual import paths
 try:
@@ -344,7 +344,7 @@ def time_execution_sync(additional_text: str = '') -> Callable[[Callable[P, R]],
 				elif 'browser_session' in kwargs:
 					logger = getattr(kwargs['browser_session'], 'logger')
 				else:
-					logger = logging.getLogger(__name__)
+					from src.logger import logger
 				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
@@ -373,7 +373,7 @@ def time_execution_async(
 				elif 'browser_session' in kwargs:
 					logger = getattr(kwargs['browser_session'], 'logger')
 				else:
-					logger = logging.getLogger(__name__)
+					from src.logger import logger
 				logger.debug(f'⏳ {additional_text.strip("-")}() took {execution_time:.2f}s')
 			return result
 
@@ -498,14 +498,14 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 			# First, check for patterns like *.*.domain which are unsafe
 			if pattern_domain.count('*.') > 1 or pattern_domain.count('.*') > 1:
 				if log_warnings:
-					logger = logging.getLogger(__name__)
+					from src.logger import logger
 					logger.error(f'⛔️ Multiple wildcards in pattern=[{domain_pattern}] are not supported')
 				return False  # Don't match unsafe patterns
 
 			# Check for wildcards in TLD part (example.*)
 			if pattern_domain.endswith('.*'):
 				if log_warnings:
-					logger = logging.getLogger(__name__)
+					from src.logger import logger
 					logger.error(f'⛔️ Wildcard TLDs like in pattern=[{domain_pattern}] are not supported for security')
 				return False  # Don't match unsafe patterns
 
@@ -513,7 +513,7 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 			bare_domain = pattern_domain.replace('*.', '')
 			if '*' in bare_domain:
 				if log_warnings:
-					logger = logging.getLogger(__name__)
+					from src.logger import logger
 					logger.error(f'⛔️ Only *.domain style patterns are supported, ignoring pattern=[{domain_pattern}]')
 				return False  # Don't match unsafe patterns
 
@@ -529,7 +529,7 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 
 		return False
 	except Exception as e:
-		logger = logging.getLogger(__name__)
+		from src.logger import logger
 		logger.error(f'⛔️ Error matching URL {url} with pattern {domain_pattern}: {type(e).__name__}: {e}')
 		return False
 

@@ -139,6 +139,20 @@ async def test_github():
     print("\n✅ GitHub Environment Workflow Test Completed!")
     print("=" * 50)
     
+async def test_operator_browser():
+    
+    
+    state = await ecp.get_state("operator_browser")
+    logger.info(f"| 📝 State: {state}")
+        
+    res = await ecp.ainvoke(
+        name="operator_browser",
+        action="type",
+        input={
+            "text": "python programming"
+        }
+    )
+    logger.info(f"| 📝 Result: {res}")
     
     
 async def main():
@@ -157,7 +171,7 @@ async def main():
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
-    await tcp.initialize(config.tcp_names)
+    await tcp.initialize(config.tool_names)
     logger.info(f"| ✅ Tool manager initialized: {tcp.list()}")
     
     # Initialize environments
@@ -167,7 +181,8 @@ async def main():
     
     # Test file system
     # await test_file_system()
-    await test_github()
+    # await test_github()
+    await test_operator_browser()
     
 
 if __name__ == "__main__":

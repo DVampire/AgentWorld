@@ -12,7 +12,7 @@ from bubus import BaseEvent
 from src.environments.cdp_browser.config import CONFIG
 from src.environments.cdp_browser.sync.auth import TEMP_USER_ID, DeviceAuthClient
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 
 
 class CloudSync:
@@ -147,7 +147,7 @@ class CloudSync:
 				logger.info('─' * max(terminal_width - 40, 20))
 				logger.info('🔐 To view this run in Browser Use Cloud, authenticate with:')
 				logger.info('    👉  browser-use auth')
-				logger.info('    or: python -m src.environments.cdp_browser.cli auth')
+				logger.info('    or: python -m browser_use.cli auth')
 				logger.info('─' * max(terminal_width - 40, 20) + '\n')
 
 		except Exception as e:
@@ -206,7 +206,7 @@ class CloudSync:
 		if self.auth_client.is_authenticated:
 			import logging
 
-			logger = logging.getLogger(__name__)
+			from src.logger import logger
 			if show_instructions:
 				logger.info('✅ Already authenticated! Skipping OAuth flow.')
 			return True

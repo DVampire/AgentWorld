@@ -19,7 +19,7 @@ try:
 except ImportError:
 	IMAGEIO_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
 
 
 def _get_padded_size(size: ViewportSize, macro_block_size: int = 16) -> ViewportSize:

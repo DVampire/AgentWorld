@@ -258,5 +258,3 @@ class BrowserStateResult(BaseModel):
     state: Dict[str, Any]
     success: bool
     message: str
-
-
