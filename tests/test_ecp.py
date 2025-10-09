@@ -23,7 +23,7 @@ from src.utils import assemble_project_path
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Tool Calling Agent Example')
-        parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
+        parser.add_argument("--config", default=os.path.join(root, "configs", "operator_browser_agent.py"), help="config file path")
         
         parser.add_argument(
             '--cfg-options',

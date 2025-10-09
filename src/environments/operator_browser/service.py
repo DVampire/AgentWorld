@@ -5,6 +5,11 @@ from typing import Dict, Any, Optional
 import os
 import asyncio
 
+# Enable debug mode for observe_debug decorators
+os.environ['DEBUG'] = '1'
+os.environ['BROWSER_USE_DEBUG'] = '1'
+os.environ['LMNR_LOGGING_LEVEL'] = 'debug'
+
 from src.logger import logger
 from src.environments.browser import Browser 
 from src.environments.operator_browser.types import (
@@ -43,7 +48,7 @@ class OperatorBrowserService:
         """
         self.base_dir = base_dir
         self.headless = headless
-        self.viewport = viewport or {"width": 1280, "height": 720}
+        self.viewport = viewport or {"width": 1024, "height": 768}
         self.browser: Optional[Browser] = None
         
         
@@ -55,10 +60,11 @@ class OperatorBrowserService:
                 headless=self.headless,
                 viewport=self.viewport,
                 window_size=self.viewport,
+                highlight_elements=False,
             )
             
             # Add timeout for browser start
-            await asyncio.wait_for(self.browser.start(), timeout=30.0)
+            await self.browser.start()
             
             self.page = await self.browser.get_current_page()
             
@@ -68,9 +74,6 @@ class OperatorBrowserService:
             
             logger.info("| 🌐 Operator started successfully")
             
-        except asyncio.TimeoutError:
-            logger.error("| ❌ Browser start timed out")
-            raise
         except Exception as e:
             logger.error(f"| ❌ Failed to start browser: {e}")
             raise
@@ -401,37 +404,28 @@ class OperatorBrowserService:
                 return {}
             
             # Add timeout to prevent infinite hang
-            screenshot_data = await asyncio.wait_for(
-                self.browser.take_screenshot(),
-                timeout=5.0
-            )
-            screenshot = base64.b64encode(screenshot_data).decode('utf-8')
-            
-            logger.info(f"| 📸 Screenshot status: {screenshot is not None}, type: {type(screenshot)}")
-            
-            # Ensure screenshot is a string (Pydantic validation requirement)
-            if screenshot is None:
-                screenshot = ""  # Empty string instead of None
-                screenshot_description = "No screenshot available"
-            else:
-                screenshot_description = "A screenshot of the current page at current step."
+            browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
+            screenshot = browser_state.screenshot
+            screenshot_description = "A screenshot of the current page at current step."
             
             state = {
+                "url": browser_state.url,
+                "title": browser_state.title,
+                "tabs": browser_state.tabs,
+                "page_info": browser_state.page_info,
                 "screenshot": screenshot,
                 "screenshot_description": screenshot_description
             }
             
             return state
         
-        except asyncio.TimeoutError:
-            logger.error("| ❌ Screenshot timed out after 15 seconds")
-            return {
-                "screenshot": "",
-                "screenshot_description": "Screenshot timed out after 15 seconds"
-            }
         except Exception as e:
             logger.error(f"| ❌ Screenshot failed: {e}")
             return {
-                "screenshot": "",
-                "screenshot_description": f"Screenshot failed: {str(e)}"
+                "url": None,
+                "title": None,
+                "tabs": None,
+                "page_info": None,
+                "screenshot": None,
+                "screenshot_description": None
             }

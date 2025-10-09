@@ -8,7 +8,7 @@ tag = "operator_browser_agent"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
-use_local_proxy = True
+use_local_proxy = False
 version = "0.1.0"
 model_name = "computer-browser-use"
 # model_name = "gpt-4.1"

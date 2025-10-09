@@ -21,7 +21,7 @@ from src.utils import assemble_project_path, encode_image_base64, decode_image_b
 from src.utils import dedent, ScreenshotService
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
-from src.environments.protocol.types import EnvironmentState, ScreenshotInfo
+from src.environments.protocol.types import ScreenshotInfo
 
 @ecp.environment()
 class OperatorBrowserEnvironment(BaseEnvironment):
@@ -57,7 +57,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         super().__init__(**kwargs)
         self.base_dir = assemble_project_path(base_dir)
         self.headless = headless
-        self.viewport = viewport or {"width": 1280, "height": 720}
+        self.viewport = viewport or {"width": 1024, "height": 768}
         
         os.makedirs(self.base_dir, exist_ok=True)
         
@@ -416,7 +416,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             logger.error(f"| ❌ Drag action failed: {e}")
             return f"❌ Drag action failed: {str(e)}"
         
-    async def get_state(self) -> EnvironmentState:
+    async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the browser environment.
         
         Returns:
@@ -424,12 +424,15 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         """
         
         try:
-            
+            state = {}
             browser_state = await self.operator_browser_service.get_state()
             
             state = dedent(f"""
                 <info>
-                The screenshots of the browser environment are as follows:
+                Current URL: {browser_state["url"]}
+                Current Title: {browser_state["title"]}
+                Current Tabs: {browser_state["tabs"]}
+                Current Page Info: {browser_state["page_info"]}
                 </info>
                 """)
 
@@ -465,17 +468,21 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 "viewport": self.viewport,
                 "screenshots": screenshots,
                 "base_dir": self.base_dir,
+                "url": browser_state["url"],
+                "title": browser_state["title"],
+                "tabs": browser_state["tabs"],
+                "page_info": browser_state["page_info"],
             }
             
             self.step_number += 1
             
-            return EnvironmentState(
-                state=state,
-                extra=extra,
-            )
+            return {
+                "state": state,
+                "extra": extra,
+            }
         except Exception as e:
             logger.error(f"| ❌ Error getting browser state: {e}")
-            return EnvironmentState(
-                state="Failed to get browser state",
-                extra=dict(error=str(e)),
-            )
+            return {
+                "state": "Failed to get browser state",
+                "extra": dict(error=str(e)),
+            }

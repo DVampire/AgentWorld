@@ -82,11 +82,6 @@ class ActionInfo(BaseModel):
     def __repr__(self):
         return self.__str__()
     
-class EnvironmentState(BaseModel):
-    """Environment state"""
-    state: str
-    extra: Optional[Dict[str, Any]] = None
-    
 class ScreenshotInfo(BaseModel):
     """Screenshot information"""
     transformed: bool = Field(default=False, description="Whether the screenshot has been transformed")
@@ -106,6 +101,5 @@ class ActionResult(BaseModel):
 # Update forward references
 EnvironmentInfo.model_rebuild()
 ActionInfo.model_rebuild()
-EnvironmentState.model_rebuild()
 ScreenshotInfo.model_rebuild()
 ActionResult.model_rebuild()

@@ -4,7 +4,6 @@ from .interday_trading_environment import InterdayTradingEnvironment
 from .intraday_trading_environment import IntradayTradingEnvironment
 from .database_environment import DatabaseEnvironment
 from .faiss_environment import FaissEnvironment
-from .cdp_browser_environment import CDPBrowserEnvironment
 from .operator_browser_environment import OperatorBrowserEnvironment
 from .mobile_environment import MobileEnvironment
 from .anthropic_mobile_environment import AnthropicMobileEnvironment
@@ -17,7 +16,6 @@ __all__ = [
     "IntradayTradingEnvironment",
     "DatabaseEnvironment",
     "FaissEnvironment",
-    "CDPBrowserEnvironment",
     "OperatorBrowserEnvironment",
     "MobileEnvironment",
     "AnthropicMobileEnvironment",

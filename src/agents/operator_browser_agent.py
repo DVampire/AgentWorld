@@ -220,14 +220,10 @@ class OperatorBrowserAgent(BaseAgent):
         environment_state = ""
         
         for env_name in ecp.list():
-            print(f"| 📝 Env Name: {env_name}")
             
             env_state = await ecp.get_state(env_name)
             state_string = env_state["state"]
             extra = env_state["extra"]
-            
-            print(f"| 📝 State String: {state_string}")
-            print(f"| 📝 Extra: {extra}")
             
             # CUA only supports the one latest screenshot
             if "screenshots" in extra:
