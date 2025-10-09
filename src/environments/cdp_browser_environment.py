@@ -3,8 +3,8 @@
 from typing import Any, Dict, List, Union, Optional, Type
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.environments.cdp_browser.service import CDPBrowserService
-from src.environments.cdp_browser.types import (
+from src.environments.browser.service import CDPBrowserService
+from src.environments.browser.types import (
     SearchGoogleRequest,
     GoToUrlRequest,
     GoBackRequest,

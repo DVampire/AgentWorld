@@ -6,7 +6,7 @@ import os
 import asyncio
 
 from src.logger import logger
-from src.environments.cdp_browser import Browser 
+from src.environments.browser import Browser 
 from src.environments.operator_browser.types import (
     ClickRequest,
     ClickResult,
@@ -25,7 +25,7 @@ from src.environments.operator_browser.types import (
     DragRequest,
     DragResult,
 )
-from src.environments.cdp_browser.browser.session import DEFAULT_BROWSER_PROFILE
+from src.environments.browser.browser.session import DEFAULT_BROWSER_PROFILE
 
 class OperatorBrowserService:
     """Browser implementation compatible with OpenAI Operator Browser API."""
@@ -43,7 +43,7 @@ class OperatorBrowserService:
         """
         self.base_dir = base_dir
         self.headless = headless
-        self.viewport = viewport or {"width": 1024, "height": 768}
+        self.viewport = viewport or {"width": 1280, "height": 720}
         self.browser: Optional[Browser] = None
         
         
@@ -56,16 +56,21 @@ class OperatorBrowserService:
                 viewport=self.viewport,
                 window_size=self.viewport,
             )
-            await self.browser.start()
+            
+            # Add timeout for browser start
+            await asyncio.wait_for(self.browser.start(), timeout=30.0)
             
             self.page = await self.browser.get_current_page()
             
             await self.page.goto("https://www.google.com")
             
-            await asyncio.sleep(5) # Wait for the browser to be ready
+            await asyncio.sleep(2) # Wait for the browser to be ready
             
             logger.info("| 🌐 Operator started successfully")
             
+        except asyncio.TimeoutError:
+            logger.error("| ❌ Browser start timed out")
+            raise
         except Exception as e:
             logger.error(f"| ❌ Failed to start browser: {e}")
             raise
@@ -394,29 +399,39 @@ class OperatorBrowserService:
         try:
             if not self.browser:
                 return {}
-            browser_state = await self.browser.get_browser_state_summary(include_screenshot=True)
             
-            screenshot = browser_state.screenshot
-            screenshot_description = f"A screenshot of the current page at current step."
+            # Add timeout to prevent infinite hang
+            screenshot_data = await asyncio.wait_for(
+                self.browser.take_screenshot(),
+                timeout=5.0
+            )
+            screenshot = base64.b64encode(screenshot_data).decode('utf-8')
+            
+            logger.info(f"| 📸 Screenshot status: {screenshot is not None}, type: {type(screenshot)}")
+            
+            # Ensure screenshot is a string (Pydantic validation requirement)
+            if screenshot is None:
+                screenshot = ""  # Empty string instead of None
+                screenshot_description = "No screenshot available"
+            else:
+                screenshot_description = "A screenshot of the current page at current step."
             
             state = {
-                "url": browser_state.url,
-                "title": browser_state.title,
-                "tabs": browser_state.tabs,
-                "page_info": browser_state.page_info,
                 "screenshot": screenshot,
                 "screenshot_description": screenshot_description
             }
             
             return state
-            
+        
+        except asyncio.TimeoutError:
+            logger.error("| ❌ Screenshot timed out after 15 seconds")
+            return {
+                "screenshot": "",
+                "screenshot_description": "Screenshot timed out after 15 seconds"
+            }
         except Exception as e:
             logger.error(f"| ❌ Screenshot failed: {e}")
             return {
-                "url": None,
-                "title": None,
-                "tabs": None,
-                "page_info": None,
-                "screenshot": None,
-                "screenshot_description": None
+                "screenshot": "",
+                "screenshot_description": f"Screenshot failed: {str(e)}"
             }

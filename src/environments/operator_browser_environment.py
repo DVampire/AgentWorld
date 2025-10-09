@@ -57,7 +57,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         super().__init__(**kwargs)
         self.base_dir = assemble_project_path(base_dir)
         self.headless = headless
-        self.viewport = viewport or {"width": 1024, "height": 768}
+        self.viewport = viewport or {"width": 1280, "height": 720}
         
         os.makedirs(self.base_dir, exist_ok=True)
         
@@ -429,33 +429,34 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             state = dedent(f"""
                 <info>
-                Current URL: {browser_state.get('url', 'Unknown')}
-                Current Title: {browser_state.get('title', 'Unknown')}
-                Tabs: {browser_state.get('tabs', [])}
-                Page Info: {browser_state.get('page_info', 'Unknown')}
+                The screenshots of the browser environment are as follows:
                 </info>
                 """)
 
-            screenshot = decode_image_base64(browser_state["screenshot"])
-            screenshot_filename = f'step_{self.step_number:04d}_state.png'
-            screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
-            screenshot_description = "A screenshot of the browser environment at current step."
+            if "screenshot" in browser_state and browser_state["screenshot"]:
+                screenshot = decode_image_base64(browser_state["screenshot"])
+                screenshot_filename = f'step_{self.step_number:04d}_state.png'
+                screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
+                screenshot_description = "A screenshot of the browser environment at current step."
+                
+                self.screenshot = ScreenshotInfo(
+                    transformed=False,
+                    screenshot=browser_state["screenshot"],
+                    screenshot_path=screenshot_path,
+                    screenshot_description=screenshot_description,
+                    transform_info=None
+                )
             
-            self.screenshot = ScreenshotInfo(
-                transformed=False,
-                screenshot=browser_state["screenshot"],
-                screenshot_path=screenshot_path,
-                screenshot_description=screenshot_description,
-                transform_info=None
-            )
-            
-            if not self.previous_screenshot:
-                self.previous_screenshot = self.screenshot
-            
-            screenshots = [
-                self.previous_screenshot,
-                self.screenshot,
-            ]
+                if not self.previous_screenshot:
+                    self.previous_screenshot = self.screenshot
+                
+                screenshots = [
+                    self.previous_screenshot,
+                    self.screenshot,
+                ]
+                
+            else:
+                screenshots = []
             
             extra = {
                 "step_number": self.step_number,
@@ -464,10 +465,6 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 "viewport": self.viewport,
                 "screenshots": screenshots,
                 "base_dir": self.base_dir,
-                "tabs": browser_state.get('tabs', []),
-                "page_info": browser_state.get('page_info', 'Unknown'),
-                "current_url": browser_state.get('url', 'Unknown'),
-                "current_title": browser_state.get('title', 'Unknown'),
             }
             
             self.step_number += 1

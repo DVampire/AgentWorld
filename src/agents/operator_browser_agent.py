@@ -6,11 +6,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
-import base64
 
-from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.agents.protocol.agent import BaseAgent
 from src.logger import logger
-from src.infrastructures.models import model_manager
 from src.utils import get_file_info, dedent
 from src.agents.protocol import acp
 from src.tools.protocol import tcp
@@ -18,7 +16,7 @@ from src.environments.protocol import ecp
 from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 from src.agents.prompts.prompt_manager import PromptManager
-from src.environments.protocol.types import ScreenshotInfo
+from src.infrastructures.models import model_manager
 
 class OperatorBrowserAgentInputArgs(BaseModel):
     task: str = Field(description="The web browsing task to complete.")
@@ -38,7 +36,7 @@ class OperatorBrowserAgent(BaseAgent):
     def __init__(
         self,
         workdir: str,
-        model_name: Optional[str] = "gpt-4.1",
+        model_name: Optional[str] = "computer-browser-use",
         prompt_name: Optional[str] = None,
         memory_config: Optional[Dict[str, Any]] = None,
         max_steps: int = 30,
@@ -78,20 +76,6 @@ class OperatorBrowserAgent(BaseAgent):
         self.prompt_manager = PromptManager(
             prompt_name=prompt_name,
             max_actions_per_step=1, # Max actions per step is 1 for operator browser agent
-        )
-        
-        self.think_output_builder = ThinkOutputBuilder()
-        self.think_output_builder.register(tcp.args_schemas())
-        self.ThinkOutput = self.think_output_builder.build()
-        
-        # Bind tools to model
-        self.tools = [tcp.get(tool) for tool in tcp.list()]
-        self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
-        self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
-        
-        self.cua_model = model_manager.get(model_name="computer-browser-use")
-        self.cua_prompt_manager = PromptManager(
-            prompt_name="operator_browser_cua",
         )
     
     async def _extract_file_content(self, file: str) -> str:
@@ -137,7 +121,8 @@ class OperatorBrowserAgent(BaseAgent):
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
-        structured_llm = self.model.with_structured_output(
+        model = model_manager.get("gpt-4.1")
+        structured_llm = model.with_structured_output(
             SessionInfo,
             method="function_calling",
             include_raw=False
@@ -184,10 +169,8 @@ class OperatorBrowserAgent(BaseAgent):
             elif event.event_type == EventType.TASK_END:
                 agent_history += f"Task End: {event.data['result']}\n"
             elif event.event_type == EventType.ACTION_STEP:
-                agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
-                agent_history += f"Memory: {event.data['memory']}\n"
-                agent_history += f"Next Goal: {event.data['next_goal']}\n"
                 agent_history += f"Action Results: {event.data['action']}\n"
+                agent_history += f"Reasoning: {event.data['reasoning']}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         
@@ -237,14 +220,20 @@ class OperatorBrowserAgent(BaseAgent):
         environment_state = ""
         
         for env_name in ecp.list():
+            print(f"| 📝 Env Name: {env_name}")
+            
             env_state = await ecp.get_state(env_name)
             state_string = env_state["state"]
             extra = env_state["extra"]
             
+            print(f"| 📝 State String: {state_string}")
+            print(f"| 📝 Extra: {extra}")
+            
+            # CUA only supports the one latest screenshot
             if "screenshots" in extra:
-                for screenshot in extra["screenshots"]:
-                    state_string += f"\n<img src={screenshot.screenshot_path} alt={screenshot.screenshot_description}/>"
-                    
+                last_screenshot = extra["screenshots"][-1]
+                state_string += f"\n<img src={last_screenshot.screenshot_path} alt={last_screenshot.screenshot_description}/>"
+                        
             environment_state += dedent(f"""
                 <{env_name}_state>
                 {state_string}
@@ -269,18 +258,13 @@ class OperatorBrowserAgent(BaseAgent):
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
         agent_state = await self._get_agent_state(task)
-        print(f"| 📝 Start of environment state")
         environment_state = await self._get_environment_state()
-        print(f"| 📝 Environment State: {environment_state}")
-        exit()
         
         agent_input_variables.update(agent_history)
         agent_input_variables.update(agent_state)
         agent_input_variables.update(environment_state)
         
         agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
-        print(f"| 📝 Agent Message: {agent_message}")
-        exit()
         
         messages = [
             system_message,
@@ -289,130 +273,41 @@ class OperatorBrowserAgent(BaseAgent):
         
         return messages
     
-    async def _get_cua_messages(self, proposed_action: Any) -> Dict[str, Any]:
-        """Correct the action."""
-        system_input_variables = {}
-        system_message = self.cua_prompt_manager.get_system_message(system_input_variables)
-        
-        agent_input_variables = {}
-        # Get environment state
-        environment_state = ""
-        for env_name in ecp.list():
-            env_state = await ecp.get_state(env_name)
-            state_string = env_state["state"]
-            extra = env_state["extra"]
-            
-            # CUA only supports the one latest screenshot
-            if "screenshots" in extra:
-                last_screenshot = extra["screenshots"][-1]
-                state_string += f"\n<img src={last_screenshot.screenshot_path} alt={last_screenshot.screenshot_description}/>"
-                    
-            environment_state += dedent(f"""
-                <{env_name}_state>
-                {state_string}
-                </{env_name}_state>
-            """)
-        agent_input_variables.update(dict(
-            environment_state=environment_state,
-        ))
-        
-        thinking = proposed_action.thinking
-        evaluation_previous_goal = proposed_action.evaluation_previous_goal
-        memory = proposed_action.memory
-        next_goal = proposed_action.next_goal
-        action = proposed_action.action
-        
-        proposed_action_string = dedent(f"""
-            - Thinking: {thinking}
-            - Evaluation of Previous Goal: {evaluation_previous_goal}
-            - Memory: {memory}
-            - Next Goal: {next_goal}
-            - Action: {action}
-        """)
-        agent_input_variables["proposed_action"] = proposed_action_string
-        
-        agent_message = self.cua_prompt_manager.get_agent_message(agent_input_variables)
-
-        messages = [
-            system_message,
-            agent_message,
-        ]
-        return messages
-        
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
         """Think and action for one step."""
-        
-        # If the new tool is added, rebuild the ThinkOutput model
-        tcp_args_schema = tcp.args_schemas()
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
-        
-        # Get structured output for thinking
-        structured_llm = self.no_fc_model.with_structured_output(
-            self.ThinkOutput,
-            method="function_calling",
-            include_raw=False
-        )
         
         done = False
         final_result = None
         
         try:
-            think_output = await structured_llm.ainvoke(messages)
+            response = await self.model.ainvoke(messages)
             
-            thinking = think_output.thinking
-            evaluation_previous_goal = think_output.evaluation_previous_goal
-            memory = think_output.memory
-            next_goal = think_output.next_goal
-            actions = think_output.action
+            reasoning = ""
+            action = {}
+            contents = response.content
             
-            action = actions[0] # First action
-            action = action.model_dump() # Convert to dict
+            if isinstance(contents, list):
+                for content in contents:
+                    if content['type'] == 'text':
+                        reasoning += content["text"]
+                    elif content['type'] == 'reasoning':
+                        summary = " ".join([item['text'] for item in content["summary"]])
+                        reasoning += summary
+                    elif content['type'] == 'computer_call':
+                        action_dict = content['action']
+                        action['name'] = action_dict['type']
+                        action['args'] = {
+                            key: value for key, value in action_dict.items() if key != 'type'
+                        }
             
-            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
-            logger.info(f"| 🔧 Evaluation of Previous Goal: {evaluation_previous_goal}")
-            logger.info(f"| 🔧 Memory: {memory}")
-            logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 📝 Action: {action}")
+            elif isinstance(contents, str):
+                reasoning += contents
+                action['name'] = "wait"
+                action['args'] = {"ms": 1000} # wait for 1 second
             
-            extra_thinking = ""
-            corrected_action = {}
-            if self.if_correct_action:
-            # Correct the action
-                try:
-                    messages = await self._get_cua_messages(think_output)
-
-                    cua_output = await self.cua_model.ainvoke(messages, reasoning={"summary": "concise"})
-                    
-                    contents = cua_output.content
-                    for content in contents:
-                        if content['type'] == 'text':
-                            extra_thinking += content["text"]
-                        elif content['type'] == 'reasoning':
-                            summary = " ".join([item['text'] for item in content["summary"]])
-                            extra_thinking += summary
-                        elif content['type'] == 'computer_call':
-                            action_dict = content['action']
-                            corrected_action['name'] = action_dict['type']
-                            corrected_action['args'] = {
-                                key: value for key, value in action_dict.items() if key != 'type'
-                            }
-                    
-                    logger.info(f"| 📝 Corrected Action: {corrected_action}")
-                    
-                except Exception as e:
-                    logger.error(f"| Error in correcting action: {e}")
+            logger.info(f"| 💭 Reasoning: {reasoning}")
+            logger.info(f"| 🎯 Action: {action}")
             
-            if extra_thinking:
-                thinking += extra_thinking
-            if corrected_action:
-                action.update(corrected_action)
-                
             # Get tool name and args
             tool_name = action['name']
             tool_args = action['args']
@@ -429,7 +324,7 @@ class OperatorBrowserAgent(BaseAgent):
                 tool_result = str(tool_result)
             
             logger.info(f"| ✅ Action completed successfully")
-            logger.info(f"| 📄 Results: {str(tool_result)}...")
+            logger.info(f"| 📄 Results: {str(tool_result)}")
             
             # Update action with result
             action["output"] = tool_result
@@ -440,10 +335,7 @@ class OperatorBrowserAgent(BaseAgent):
                 final_result = tool_result
             
             event_data = {
-                "thinking": thinking,
-                "evaluation_previous_goal": evaluation_previous_goal,
-                "memory": memory,
-                "next_goal": next_goal,
+                "reasoning": reasoning,
                 "action": action_results
             }
             await self.memory_manager.add_event(
@@ -474,7 +366,7 @@ class OperatorBrowserAgent(BaseAgent):
                   files: Optional[List[str]] = None,
                   ):
         """Run the tool calling agent with loop."""
-        logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
+        logger.info(f"| 🚀 Starting OperatorBrowserAgent: {task}")
         
         if files:
             logger.info(f"| 📂 Attached files: {files}")
@@ -510,9 +402,6 @@ class OperatorBrowserAgent(BaseAgent):
         while step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
-            
-            print(f"| 📝 Messages: {messages}")
-            exit()
             
             # Execute one step
             done, final_result = await self._think_and_action(messages, task_id)

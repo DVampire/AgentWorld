@@ -163,8 +163,8 @@ class AnthropicMobileAgent(BaseAgent):
             elif event.event_type == EventType.TASK_END:
                 agent_history += f"Task End: {event.data['result']}\n"
             elif event.event_type == EventType.ACTION_STEP:
-                agent_history += f"Reasoning: {event.data['reasoning']}\n"
                 agent_history += f"Action Results: {event.data['action']}\n"
+                agent_history += f"Reasoning: {event.data['reasoning']}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         
@@ -273,8 +273,6 @@ class AnthropicMobileAgent(BaseAgent):
             reasoning = ""
             action = {}
             contents = response.content
-            
-            print(contents)
             
             if isinstance(contents, list):
                 for content in contents:

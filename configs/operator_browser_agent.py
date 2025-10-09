@@ -10,11 +10,11 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "gpt-4.1"
+model_name = "computer-browser-use"
+# model_name = "gpt-4.1"
 
 env_names = [
     "operator_browser",
-    # "operator_browser"
 ]
 agent_names = ["operator_browser"]
 tool_names = [  

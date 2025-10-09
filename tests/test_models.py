@@ -22,7 +22,7 @@ from src.utils import make_image_url, encode_image_base64
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "operator_browser_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -55,7 +55,7 @@ async def test_general_models():
     
     for model_name in [
         # "gpt-4o", 
-        # "gpt-4.1", 
+        "gpt-4.1", 
         # "gpt-5", 
         # "o1", 
         # "o3",
@@ -188,7 +188,7 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    await model_manager.initialize(use_local_proxy=True)
     logger.info(f"| Models: {model_manager.list()}")
     
     await test_general_models()
