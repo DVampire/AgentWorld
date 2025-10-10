@@ -266,3 +266,17 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ---
 
 **AgentWorld** - A universal framework for building multi-agent systems through the TEA Protocol, with AgentOrchestra as a prime example of hierarchical multi-agent coordination.
+
+## Cite
+
+```bibtex
+@misc{zhang2025agentorchestrahierarchicalmultiagentframework,
+      title={AgentOrchestra: Orchestrating Hierarchical Multi-Agent Intelligence with the Tool-Environment-Agent (TEA) Protocol}, 
+      author={Wentao Zhang, Liang Zeng, Yuzhen Xiao, Yongcong Li, Ce Cui, Yilei Zhao, Rui Hu, Yang Liu, Yahui Zhou, Bo An},
+      year={2025},
+      eprint={2506.12508},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2506.12508}, 
+}
+```
