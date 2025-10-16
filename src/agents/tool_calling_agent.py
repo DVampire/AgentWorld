@@ -236,15 +236,27 @@ class ToolCallingAgent(BaseAgent):
         
         return SessionInfo(session_id=session_id, description=description)
     
-    async def _get_agent_history(self) -> Dict[str, Any]:
-        """Get the agent history."""
+    async def _get_agent_context(self, task: str) -> Dict[str, Any]:
+        """Get the agent context."""
+        
+        task = f"<task>{task}</task>"
+        
+        step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
+        time_str = datetime.now().isoformat()
+        step_info_description += f'Current date and time: {time_str}'
+        step_info = dedent(f"""
+            <step_info>
+            {step_info_description}
+            </step_info>
+        """)
+        
         state = await self.memory_manager.get_state(n=self.review_steps)
         
         events = state["events"]
         summaries = state["summaries"]
         insights = state["insights"]
         
-        agent_history = ""
+        agent_history = "<agent_history>"
         for event in events:
             agent_history += f"<step_{event.step_number}>\n"
             if event.event_type == EventType.TASK_START:
@@ -258,93 +270,113 @@ class ToolCallingAgent(BaseAgent):
                 agent_history += f"Action Results: {event.data['action']}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
+        agent_history += "</agent_history>"
         
+        memory = "<memory>"
         if len(summaries) > 0:
-            agent_history += dedent(f"""
+            memory += dedent(f"""
                 <summaries>
                 {chr(10).join([str(summary) for summary in summaries])}
                 </summaries>
             """)
         else:
-            agent_history += "<summaries>[Current summaries are empty.]</summaries>\n"
+            memory += "<summaries>[Current summaries are empty.]</summaries>\n"
         if len(insights) > 0:
-            agent_history += dedent(f"""
+            memory += dedent(f"""
                 <insights>
                 {chr(10).join([str(insight) for insight in insights])}
                 </insights>
             """)
         else:
-            agent_history += "<insights>[Current insights are empty.]</insights>\n"
+            memory += "<insights>[Current insights are empty.]</insights>\n"
+        memory += "</memory>"
+        
+        todo = "<todo>"
+        todo_contents = await self._get_todo_contents()
+        todo += todo_contents
+        todo += "</todo>"
+        
+        agent_context = dedent(f"""
+            <agent_context>
+            {task}
+            {step_info}
+            {agent_history}
+            {memory}
+            {todo}
+            </agent_context>
+        """)
         
         return {
-            "agent_history": agent_history,
+            "agent_context": agent_context,
         }
     
     async def _get_todo_contents(self) -> str:
         """Get the todo contents."""
         todo_tool = tcp.get("todo")
         todo_contents = todo_tool.get_todo_content()
-        return todo_contents   
-    
-    async def _get_agent_state(self, task: str) -> Dict[str, Any]:
-        """Get the agent state."""
-        step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
-        time_str = datetime.now().isoformat()
-        step_info_description += f'Current date and time: {time_str}'
+        return todo_contents
         
-        available_actions_description = [tcp.to_string(tool) for tool in tcp.list()]
-        available_actions_description = "\n".join(available_actions_description)
-        
-        todo_contents = await self._get_todo_contents()
-        
-        return {
-            "task": task,
-            "step_info": step_info_description,
-            "available_actions": available_actions_description,
-            "todo_contents": todo_contents,
-        }
-        
-    async def _get_environment_state(self) -> Dict[str, Any]:
+    async def _get_environment_context(self) -> Dict[str, Any]:
         """Get the environment state."""
-        environment_state = ""
+        environment_context = "<environment_context>"
         for env_name in ecp.list():
+            rule_string = ecp.get_info(env_name).rules
+            rule_string = dedent(f"""
+                <rules>
+                {rule_string}
+                </rules>
+            """)
+            
             env_state = await ecp.get_state(env_name)
-            state_string = env_state["state"]
+            state_string = "<state>"
+            state_string += env_state["state"]
             extra = env_state["extra"]
             
             if "screenshots" in extra:
                 for screenshot in extra["screenshots"]:
                     state_string += f"\n<img src={screenshot.screenshot_path} alt={screenshot.screenshot_description}/>"
-                    
-            environment_state += dedent(f"""
-                <{env_name}_state>
+            state_string += "</state>"
+            
+            environment_context += dedent(f"""
+                <{env_name}>
+                {rule_string}
                 {state_string}
-                </{env_name}_state>
+                </{env_name}>
             """)
         
+        environment_context += "</environment_context>"
         return {
-            "environment_state": environment_state,
+            "environment_context": environment_context,
+        }
+        
+    async def _get_tool_context(self) -> Dict[str, Any]:
+        """Get the tool context."""
+        tool_context = "<tool_context>"
+        
+        tool_list = [tcp.to_string(tool) for tool in tcp.list()]
+        tool_list_string = "\n".join(tool_list)
+        
+        tool_context += dedent(f"""
+        <tool_list>
+        {tool_list_string}
+        </tool_list>
+        """)
+        
+        tool_context += "</tool_context>"
+        return {
+            "tool_context": tool_context,
         }
         
     async def _get_messages(self, task: str) -> List[BaseMessage]:
         
-        system_input_variables = {}
-        environment_rules = ""
-        for env_name in ecp.list():
-            environment_rules += f"{ecp.get_info(env_name).rules}\n"
-        system_input_variables.update(dict(
-            environment_rules=environment_rules,
-        ))
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_modules = {}
+        system_message = self.prompt_manager.get_system_message(modules=system_modules, reload=False)
         
-        agent_input_variables = {}
-        agent_history = await self._get_agent_history()
-        agent_state = await self._get_agent_state(task)
-        environment_state = await self._get_environment_state()
-        agent_input_variables.update(agent_history)
-        agent_input_variables.update(agent_state)
-        agent_input_variables.update(environment_state)
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message_modules = {}
+        agent_message_modules.update(await self._get_agent_context(task))
+        agent_message_modules.update(await self._get_environment_context())
+        agent_message_modules.update(await self._get_tool_context())
+        agent_message = self.prompt_manager.get_agent_message(modules=agent_message_modules, reload=True)
         
         messages = [
             system_message,

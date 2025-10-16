@@ -678,10 +678,14 @@ class GitHubEnvironment(BaseEnvironment):
             """)
             
             return {
-                "state": state
+                "state": state,
+                "extra": {},
             }
         except Exception as e:
             logger.error(f"Failed to get GitHub state: {e}")
             return {
-                "state": str(e)
+                "state": str(e),
+                "extra": {
+                    "error": str(e),
+                },
             }

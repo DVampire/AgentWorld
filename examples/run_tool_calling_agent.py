@@ -55,7 +55,7 @@ async def main():
     
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
-    await tcp.initialize()
+    await tcp.initialize(config.tool_names)
     logger.info(f"| ✅ Tools initialized: {tcp.list()}")
 
     # Initialize agents

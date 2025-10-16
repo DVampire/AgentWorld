@@ -3,10 +3,6 @@ with read_base():
     from .base import memory_config, window_size, max_tokens
     from .environments.file_system import environment as file_system_environment
     from .environments.github import environment as github_environment
-    from .environments.operator_browser import environment as operator_browser_environment
-    from .tools.browser import browser_tool
-    from .tools.deep_researcher import deep_researcher_tool
-    from .tools.deep_analyzer import deep_analyzer_tool
     from .agents.tool_calling import tool_calling_agent
 
 tag = "tool_calling_agent"
@@ -20,7 +16,6 @@ model_name = "gpt-4.1"
 env_names = [
     "file_system", 
     "github",
-    "operator_browser"
 ]
 agent_names = ["tool_calling"]
 tool_names = [
@@ -31,9 +26,6 @@ tool_names = [
     'web_fetcher', 
     'web_searcher', 
     'mdify', 
-    'browser',
-    'deep_researcher',
-    'deep_analyzer',
 ]
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
@@ -45,11 +37,6 @@ file_system_environment.update(dict(
 github_environment.update(dict(
     base_dir=workdir,
 ))
-
-#-----------------OPERATOR BROWSER ENVIRONMENT CONFIG-----------------
-operator_browser_environment.update(
-    base_dir=workdir,
-)
 
 #-----------------TOOL CALLING AGENT CONFIG-----------------
 tool_calling_agent.update(

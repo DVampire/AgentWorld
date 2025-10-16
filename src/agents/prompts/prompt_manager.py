@@ -11,38 +11,36 @@ class PromptManager():
     
     def __init__(self, 
                  prompt_name: str = "tool_calling",
-                 max_actions_per_step: int = 10,
+                 max_tools: int = 10,
                  **kwargs):
         super().__init__(**kwargs)
         self.prompt_name = prompt_name
-        self.max_actions_per_step = max_actions_per_step
+        self.max_tools = max_tools
         
         self.system_prompt_name = f"{prompt_name}_system_prompt"
         self.agent_message_prompt_name = f"{prompt_name}_agent_message_prompt"
         
         self.system_prompt = SystemPrompt(prompt_name=self.system_prompt_name, 
-                                          max_actions_per_step=self.max_actions_per_step,
+                                          max_tools=self.max_tools,
                                           **kwargs)
         self.agent_message_prompt = AgentMessagePrompt(prompt_name=self.agent_message_prompt_name, 
-                                                       max_actions_per_step=self.max_actions_per_step,
+                                                       max_tools=self.max_tools,
                                                        **kwargs)
     
-    def get_system_message(self, input_variables: Dict[str, Any], **kwargs) -> SystemMessage:
+    def get_system_message(self, 
+                           modules: Dict[str, Any] = None, 
+                           reload: bool = False, 
+                           **kwargs) -> SystemMessage:
         """Get a system message using SystemPrompt."""
-        return self.system_prompt.get_message(input_variables, **kwargs)
+        return self.system_prompt.get_message(modules, reload, **kwargs)
     
-    def get_agent_message(self, input_variables: Dict[str, Any], **kwargs) -> HumanMessage:
+    def get_agent_message(self, 
+                          modules: Dict[str, Any] = None, 
+                          reload: bool = True, 
+                          **kwargs) -> HumanMessage:
         """Get a system message using AgentMessagePrompt."""
-        return self.agent_message_prompt.get_message(input_variables, **kwargs)
+        return self.agent_message_prompt.get_message(modules, reload, **kwargs)
     
     def list_prompts(self) -> List[str]:
         """List all available prompts."""
         return list(PROMPT_TEMPLATES.keys())
-    
-    def get_system_prompt_template(self) -> str:
-        """Get the system prompt template."""
-        return self.system_prompt.get_prompt_template()
-    
-    def get_agent_message_prompt_template(self) -> str:
-        """Get the agent message prompt template."""
-        return self.agent_message_prompt.get_prompt_template()
