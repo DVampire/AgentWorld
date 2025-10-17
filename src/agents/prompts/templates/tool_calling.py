@@ -210,65 +210,56 @@ PROMPT_TEMPLATES = {
                 "type": "system_prompt_module",
                 "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
                 "require_grad": True,
-                "template": AGENT_INTRODUCTION,
-                "variables": None
+                "template": None,
+                "variables": AGENT_INTRODUCTION
             },
             {
                 "name": "language_settings",
                 "type": "system_prompt_module",
                 "description": "Specifies the default working language and language response preferences for the agent.",
                 "require_grad": False,
-                "template": LANGUAGE_SETTINGS,
-                "variables": None
+                "template": None,
+                "variables": LANGUAGE_SETTINGS
             },
             {
                 "name": "input",
                 "type": "system_prompt_module",
                 "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
                 "require_grad": False,
-                "template": INPUT,
-                "variables": None
+                "template": None,
+                "variables": INPUT
             },
             {
                 "name": "agent_context_rules",
                 "type": "system_prompt_module",
                 "description": "Establishes rules for task management, agent history tracking, memory usage, and todo planning strategies.",
                 "require_grad": True,
-                "template": AGENT_CONTEXT_RULES,
-                "variables": None
+                "template": None,
+                "variables": AGENT_CONTEXT_RULES
             },
             {
                 "name": "environment_context_rules",
                 "type": "system_prompt_module",
                 "description": "Defines how the agent should interact with and respond to different environmental contexts and conditions.",
                 "require_grad": True,
-                "template": ENVIRONMENT_CONTEXT_RULES,
-                "variables": None
+                "template": None,
+                "variables": ENVIRONMENT_CONTEXT_RULES
             },
             {
                 "name": "tool_context_rules",
                 "type": "system_prompt_module",
                 "description": "Provides guidelines for reasoning patterns, tool selection, usage efficiency, and available tool management.",
                 "require_grad": True,
-                "template": TOOL_CONTEXT_RULES,
-                "variables": [
-                    {
-                        "name": "max_tools",
-                        "type": "hyperparameter",
-                        "description": "The maximum number of tools that the agent can use in a single step.",
-                        "require_grad": False,
-                        "template": None,
-                        "variables": 10
-                    }
-                ]
+                "template": None,
+                "variables": TOOL_CONTEXT_RULES
             },
             {
                 "name": "example_rules",
                 "type": "system_prompt_module",
                 "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
                 "require_grad": True,
-                "template": EXAMPLE_RULES,
-                "variables": None
+                "template": None,
+                "variables": EXAMPLE_RULES
             }
         ],
     },

@@ -10,7 +10,7 @@ from PIL import Image
 from src.logger import logger
 from src.agents.prompts.templates import PROMPT_TEMPLATES
 from src.utils import encode_image_base64, make_image_url, assemble_project_path
-from src.optimizers.type import Variable
+from src.optimizers.protocol.variable import Variable
 
 class AgentMessagePrompt:
     """Agent message prompt manager for dynamic task-related prompts (tool-calling agents)."""

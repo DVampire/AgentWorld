@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage
 
 from src.logger import logger
 from src.agents.prompts.templates import PROMPT_TEMPLATES
-from src.optimizers.type import Variable
+from src.optimizers.protocol.variable import Variable
 
 class SystemPrompt:
     """System prompt manager for tool-calling agents (static constitution).
