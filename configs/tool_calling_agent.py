@@ -26,6 +26,7 @@ tool_names = [
     'web_fetcher', 
     'web_searcher', 
     'mdify', 
+    "browser",
 ]
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------

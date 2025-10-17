@@ -720,6 +720,7 @@ class ModelManager(metaclass=Singleton):
         # browser-use
         from browser_use import ChatOpenAI
         from browser_use import ChatAnthropic
+        from browser_use.llm import ChatBrowserUse
         
         if use_local_proxy:
             logger.info("| Using local proxy for Browser models")
@@ -782,6 +783,20 @@ class ModelManager(metaclass=Singleton):
             self.registed_models[model_name] = model
             self.registed_models_info[model_name] = {
                 "type": "anthropic",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
+            # browser use api
+            model_name = "bs-browser-use"
+            model_id = "browser-use"
+            model = ChatBrowserUse(
+                api_key=self._check_local_api_key(local_api_key_name="BROWSER_USE_API_KEY",
+                                                 remote_api_key_name="BROWSER_USE_API_KEY"),
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "browser-use",
                 "model_name": model_name,
                 "model_id": model_id,
             }
@@ -849,5 +864,18 @@ class ModelManager(metaclass=Singleton):
                     "model_name": model_name,
                     "model_id": model_id,
                 }
+                
+            model_name = "bs-browser-use"
+            model_id = "browser-use"
+            model = ChatBrowserUse(
+                api_key=self._check_local_api_key(local_api_key_name="BROWSER_USE_API_KEY",
+                                                 remote_api_key_name="BROWSER_USE_API_KEY"),
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "browser-use",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
             
 model_manager = ModelManager()
