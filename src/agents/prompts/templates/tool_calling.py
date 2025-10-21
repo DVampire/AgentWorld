@@ -209,7 +209,7 @@ PROMPT_TEMPLATES = {
                 "name": "agent_introduction",
                 "type": "system_prompt_module",
                 "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
-                "require_grad": True,
+                "require_grad": False,
                 "template": None,
                 "variables": AGENT_INTRODUCTION
             },
@@ -241,7 +241,7 @@ PROMPT_TEMPLATES = {
                 "name": "environment_context_rules",
                 "type": "system_prompt_module",
                 "description": "Defines how the agent should interact with and respond to different environmental contexts and conditions.",
-                "require_grad": True,
+                "require_grad": False,
                 "template": None,
                 "variables": ENVIRONMENT_CONTEXT_RULES
             },
@@ -249,7 +249,7 @@ PROMPT_TEMPLATES = {
                 "name": "tool_context_rules",
                 "type": "system_prompt_module",
                 "description": "Provides guidelines for reasoning patterns, tool selection, usage efficiency, and available tool management.",
-                "require_grad": True,
+                "require_grad": False,
                 "template": None,
                 "variables": TOOL_CONTEXT_RULES
             },
@@ -257,7 +257,7 @@ PROMPT_TEMPLATES = {
                 "name": "example_rules",
                 "type": "system_prompt_module",
                 "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
-                "require_grad": True,
+                "require_grad": False,
                 "template": None,
                 "variables": EXAMPLE_RULES
             }
