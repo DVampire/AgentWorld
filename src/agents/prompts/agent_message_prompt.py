@@ -3,7 +3,6 @@
 import os
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage
-from datetime import datetime
 from bs4 import BeautifulSoup
 from PIL import Image
 
@@ -18,15 +17,9 @@ class AgentMessagePrompt:
     def __init__(
         self,
         prompt_name: str = "tool_calling_agent_message_prompt",
-        max_tools: int = 10,
-        current_step: int = 1,
-        max_steps: int = 50,
         **kwargs
     ):
         self.prompt_name = prompt_name
-        self.max_tools = max_tools
-        self.current_step = current_step
-        self.max_steps = max_steps
         
         self._initialize()
     
@@ -47,7 +40,7 @@ class AgentMessagePrompt:
         try:
             
             modules = modules if modules is not None else {}
-            modules["step_info"] = self._build_step_info()
+            
             prompt_str = self.prompt.render(modules)
             
             contents = [
@@ -83,12 +76,3 @@ class AgentMessagePrompt:
         except Exception as e:
             logger.warning(f"Failed to render agent message template: {e}")
             raise RuntimeError(f"Failed to render agent message template: {e}")
-    
-    def _build_step_info(self) -> str:
-        """Build step info string."""
-        step_info_description = f'Step {self.current_step} of {self.max_steps} max possible steps\n'
-        time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        step_info_description += f'Current date and time: {time_str}'
-        step_info_description += f'\nMax tools per step: {self.max_tools}'
-        
-        return step_info_description

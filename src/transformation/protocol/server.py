@@ -286,7 +286,6 @@ class TransformationServer:
                 success=False,
                 message="TCP to ACP transformation failed: " + str(e)
             )
-        
     
     async def _e2t(self, request: E2TRequest) -> E2TResponse:
         """Convert ECP environments to TCP tools.
@@ -313,7 +312,7 @@ class TransformationServer:
                 env_info = ecp.get_info(env_name)
                 
                 actions = env_info.actions
-                for action_name, action_info in actions.items():
+                for action_name, action_info in actions.items():    
                     # Create Tool
                     tool = StructuredTool(
                         name=action_name,

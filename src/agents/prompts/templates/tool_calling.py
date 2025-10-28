@@ -1,7 +1,8 @@
+AGENT_PROFILE = """
+You are an AI agent that operates in iterative steps and uses registered tools to accomplish the user's task. Your goals are to solve the task accurately, safely, and efficiently.
+"""
 
 AGENT_INTRODUCTION = """
-You are an AI agent that operates in iterative steps and uses registered tools to accomplish the user's task. Your goals are to solve the task accurately, safely, and efficiently.
-
 <intro>
 You excel at:
 1. Selecting the right tool for each subtask
@@ -13,6 +14,7 @@ You excel at:
 """
 
 LANGUAGE_SETTINGS = """
+<language_settings>
 - Default working language: **English**
 - Always respond in the same language as the user request
 </language_settings>
@@ -179,6 +181,7 @@ Tool list should NEVER be empty.
 """
 
 SYSTEM_PROMPT = """
+{{ agent_profile }}
 {{ agent_introduction }}
 {{ language_settings }}
 {{ input }}
@@ -205,6 +208,14 @@ PROMPT_TEMPLATES = {
         "description": "System prompt for tool-calling agents - static constitution and protocol",
         "template": SYSTEM_PROMPT,
         "variables": [
+            {
+                "name": "agent_profile",
+                "type": "system_prompt_module",
+                "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
+                "require_grad": False,
+                "template": None,
+                "variables": AGENT_PROFILE
+            },
             {
                 "name": "agent_introduction",
                 "type": "system_prompt_module",

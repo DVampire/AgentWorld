@@ -3,10 +3,14 @@
 Core type definitions for the Agent Context Protocol.
 """
 
-from typing import Any, Dict, Optional, Union, Type
+from typing import Any, Dict, Optional, Union, Type, List
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
+
+class InputArgs(BaseModel):
+    task: str = Field(description="The task to complete.")
+    files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
 
 class ACPErrorCode(Enum):
     """ACP error codes"""

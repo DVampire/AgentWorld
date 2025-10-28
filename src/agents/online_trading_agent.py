@@ -1,4 +1,4 @@
-"""Tool calling agent implementation with manual agent logic."""
+"""Online trading agent implementation for multi-stock trading operations."""
 
 import asyncio
 from typing import List, Optional, Type, Dict, Any
@@ -14,15 +14,15 @@ from src.tools.protocol.types import ToolResponse
 from src.agents.protocol.types import InputArgs
 
 @acp.agent()
-class ToolCallingAgent(BaseAgent):
-    """Tool calling agent implementation with manual agent logic."""
+class OnlineTradingAgent(BaseAgent):
+    """Online trading agent implementation for multi-stock trading operations."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="tool_calling", description="The name of the tool calling agent.")
-    type: str = Field(default="Agent", description="The type of the tool calling agent.")
-    description: str = Field(default="A tool calling agent that can call tools to complete tasks.", description="The description of the tool calling agent.")
-    args_schema: Type[InputArgs] = Field(default=InputArgs, description="The args schema of the tool calling agent.")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool calling agent.")
+    name: str = Field(default="online_trading", description="The name of the online trading agent.")
+    type: str = Field(default="Agent", description="The type of the online trading agent.")
+    description: str = Field(default="A online trading agent that can trade online.", description="The description of the online trading agent.")
+    args_schema: Type[InputArgs] = Field(default=InputArgs, description="The args schema of the online trading agent.")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the online trading agent.")
     
     def __init__(
         self,
@@ -44,7 +44,7 @@ class ToolCallingAgent(BaseAgent):
     ):
         # Set default prompt name for tool calling
         if not prompt_name:
-            prompt_name = "tool_calling"
+            prompt_name = "online_trading"
         
         super().__init__(
             workdir=workdir,

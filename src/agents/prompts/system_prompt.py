@@ -18,11 +18,9 @@ class SystemPrompt:
     def __init__(
         self,
         prompt_name: str = "tool_calling_system_prompt",
-        max_tools: int = 10,
         **kwargs
     ):
         self.prompt_name = prompt_name
-        self.max_tools = max_tools
         
         self._initialize()
 
@@ -33,8 +31,6 @@ class SystemPrompt:
             self.prompt = Variable.from_dict(prompt)
             
             modules = self.prompt.get_modules()
-            
-            modules["max_tools"] = self.max_tools
             
             prompt_str = self.prompt.render(modules)
             
@@ -53,9 +49,9 @@ class SystemPrompt:
         try:
             
             modules = modules if modules is not None else {}
-            modules["max_tools"] = self.max_tools
             
             prompt_str = self.prompt.render(modules)
+            
             self.message = SystemMessage(content=prompt_str, cache=True)
             
         except Exception as e:

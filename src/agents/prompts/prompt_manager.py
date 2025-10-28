@@ -11,21 +11,15 @@ class PromptManager():
     
     def __init__(self, 
                  prompt_name: str = "tool_calling",
-                 max_tools: int = 10,
                  **kwargs):
         super().__init__(**kwargs)
         self.prompt_name = prompt_name
-        self.max_tools = max_tools
         
         self.system_prompt_name = f"{prompt_name}_system_prompt"
         self.agent_message_prompt_name = f"{prompt_name}_agent_message_prompt"
         
-        self.system_prompt = SystemPrompt(prompt_name=self.system_prompt_name, 
-                                          max_tools=self.max_tools,
-                                          **kwargs)
-        self.agent_message_prompt = AgentMessagePrompt(prompt_name=self.agent_message_prompt_name, 
-                                                       max_tools=self.max_tools,
-                                                       **kwargs)
+        self.system_prompt = SystemPrompt(prompt_name=self.system_prompt_name, **kwargs)
+        self.agent_message_prompt = AgentMessagePrompt(prompt_name=self.agent_message_prompt_name, **kwargs)
     
     def get_system_message(self, 
                            modules: Dict[str, Any] = None, 

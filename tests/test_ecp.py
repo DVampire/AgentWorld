@@ -23,7 +23,7 @@ from src.utils import assemble_project_path
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Tool Calling Agent Example')
-        parser.add_argument("--config", default=os.path.join(root, "configs", "operator_browser_agent.py"), help="config file path")
+        parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
         
         parser.add_argument(
             '--cfg-options',
@@ -154,6 +154,15 @@ async def test_operator_browser():
     )
     logger.info(f"| 📝 Result: {res}")
     
+async def test_alpaca():
+    
+    res = await ecp.ainvoke(
+        name="alpaca",
+        action="get_account",
+        input={}
+    )
+    logger.info(f"| 📝 Result: {res}")
+    
     
 async def main():
     
@@ -182,7 +191,8 @@ async def main():
     # Test file system
     # await test_file_system()
     # await test_github()
-    await test_operator_browser()
+    # await test_operator_browser()
+    await test_alpaca()
     
 
 if __name__ == "__main__":

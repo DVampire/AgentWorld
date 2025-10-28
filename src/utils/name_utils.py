@@ -29,3 +29,12 @@ def get_newspage_name(symbol: str, timestamp: str, title: str) -> str:
     :return: A formatted news page name.
     """
     return hashlib.md5(f'{symbol} {timestamp} {title}'.encode()).hexdigest()
+
+def get_md5(text: str) -> str:
+    """
+    Generate a MD5 hash of the text.
+
+    :param text: The text to generate.
+    :return: A MD5 hash of the text.
+    """
+    return hashlib.md5(text.encode()).hexdigest()

@@ -11,7 +11,7 @@ from .token_utils import get_token_count
 from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp, calculate_time_info
 from .string_utils import extract_boxed_content, dedent
 from .misc import get_world_size, get_rank
-from .name_utils import get_tag_name, get_newspage_name
+from .name_utils import get_tag_name, get_newspage_name, get_md5
 from .url_utils import fetch_url
 from .file_utils import get_file_info
 from .env_utils import get_env
@@ -40,6 +40,7 @@ __all__ = [
     "get_rank",
     "get_tag_name",
     "get_newspage_name",
+    "get_md5",
     "fetch_url",
     "get_file_info",
     "get_env",

@@ -13,11 +13,11 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.infrastructures.models import model_manager
 from src.tools import tcp
 from src.environments import ecp
 from src.agents import acp
 from src.transformation import transformation
+from src.infrastructures.models import model_manager
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -69,7 +69,7 @@ async def main():
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
     # Example task
-    task = "Create a simple HTML Sokoban web mini-game and submit it to GitHub."
+    task = "Hello, how are you?"
     files = []
     
     logger.info(f"| 📋 Task: {task}")

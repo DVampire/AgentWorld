@@ -4,11 +4,10 @@ Core type definitions for the Tool Context Protocol.
 """
 
 import json
-from typing import Any, Dict, List, Optional, Union, Literal, Type, Callable
+from typing import Any, Dict, List, Optional, Union, Type
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
-from datetime import datetime
 
 class ToolResponse(BaseModel):
     content: str = Field(description="The content of the tool response.")
@@ -74,8 +73,6 @@ class ToolInfo(BaseModel):
     
     def __repr__(self):
         return self.__str__()
-
-
 
 
 class ToolExecutionResult(BaseModel):
