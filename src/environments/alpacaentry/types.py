@@ -57,6 +57,22 @@ class AlpacaPosition:
 
 
 @dataclass
+class AlpacaAsset:
+    """Alpaca asset information."""
+    id: str
+    symbol: str
+    name: str
+    asset_class: str
+    exchange: str
+    status: str
+    tradable: bool
+    marginable: bool
+    shortable: bool
+    easy_to_borrow: bool
+    fractionable: bool
+
+
+@dataclass
 class AlpacaBar:
     """Alpaca bar data."""
     symbol: str
@@ -142,6 +158,19 @@ class GetAccountRequest(BaseModel):
 class GetAccountResult(BaseModel):
     """Result of getting account information."""
     account: Optional[AlpacaAccount] = None
+    success: bool
+    message: str
+
+
+class GetAssetsRequest(BaseModel):
+    """Request for getting assets."""
+    status: Optional[str] = Field(None, description="Filter by asset status")
+    asset_class: Optional[str] = Field(None, description="Filter by asset class")
+
+
+class GetAssetsResult(BaseModel):
+    """Result of getting assets."""
+    assets: List[AlpacaAsset] = []
     success: bool
     message: str
 

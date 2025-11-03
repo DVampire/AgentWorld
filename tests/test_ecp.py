@@ -155,14 +155,22 @@ async def test_operator_browser():
     logger.info(f"| 📝 Result: {res}")
     
 async def test_alpaca():
-    
-    res = await ecp.ainvoke(
+    res= await ecp.ainvoke(
         name="alpaca",
         action="get_account",
         input={}
     )
     logger.info(f"| 📝 Result: {res}")
     
+    res = await ecp.ainvoke(
+        name="alpaca",
+        action="get_assets",
+        input={
+            "status": "active",
+            "asset_class": "crypto"
+        }
+    )
+    logger.info(f"| 📝 Result: {res}")
     
 async def main():
     
