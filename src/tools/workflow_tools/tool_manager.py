@@ -537,7 +537,7 @@ class ToolManagerTool(BaseTool):
             
             if operation == "discover":
                 if not directory_path:
-                    return ToolResponse(content="Error: directory_path is required for discover operation")
+                    return ToolResponse(success=False, message="Error: directory_path is required for discover operation")
                 
                 # Discover tools in directory
                 discovered_tools = await self.workflow.discover_tools_in_directory(
@@ -563,7 +563,7 @@ class ToolManagerTool(BaseTool):
                     ]
                 }
                 
-                return ToolResponse(content=str(result))
+                return ToolResponse(success=True, message=str(result))
             
             elif operation == "register":
                 # Register discovered tools
@@ -588,11 +588,11 @@ class ToolManagerTool(BaseTool):
                     ]
                 }
                 
-                return ToolResponse(content=str(result))
+                return ToolResponse(success=True, message=str(result))
             
             elif operation == "analyze":
                 if not analysis_tool_name:
-                    return ToolResponse(content="Error: analysis_tool_name is required for analyze operation")
+                    return ToolResponse(success=False, message="Error: analysis_tool_name is required for analyze operation")
                 
                 # Analyze specific tool
                 analysis_result = await self.workflow.analyze_tool_usage(analysis_tool_name)
@@ -604,7 +604,7 @@ class ToolManagerTool(BaseTool):
                     "analysis": analysis_result
                 }
                 
-                return ToolResponse(content=str(result))
+                return ToolResponse(success=True, message=str(result))
             
             elif operation == "summary":
                 # Get summary of operations
@@ -616,7 +616,7 @@ class ToolManagerTool(BaseTool):
                     "summary": summary
                 }
                 
-                return ToolResponse(content=str(result))
+                return ToolResponse(success=True, message=str(result))
             
             elif operation == "cleanup":
                 # Cleanup workflow state
@@ -628,14 +628,14 @@ class ToolManagerTool(BaseTool):
                     "message": "Tool manager workflow cleaned up"
                 }
                 
-                return ToolResponse(content=str(result))
+                return ToolResponse(success=True, message=str(result))
             
             else:
                 return ToolResponse(content=f"Error: Unknown operation '{operation}'. Available operations: discover, register, analyze, summary, cleanup")
         
         except Exception as e:
             logger.error(f"| ❌ Tool Manager operation failed: {e}")
-            return ToolResponse(content=f"Error in tool manager operation: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in tool manager operation: {e}")
     
     def _run(self, 
              operation: str,
@@ -662,4 +662,4 @@ class ToolManagerTool(BaseTool):
                 loop.close()
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
-            return ToolResponse(content=f"Error in synchronous execution: {e}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {e}")

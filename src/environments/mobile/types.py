@@ -3,7 +3,6 @@
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
-from src.environments.protocol.types import ActionResult
 
 class MobileDeviceInfo(BaseModel):
     """Mobile device information."""
@@ -61,43 +60,3 @@ class ScrollRequest(BaseModel):
     """Scroll request."""
     direction: str = Field(description="Scroll direction")
     distance: int = Field(default=500, description="Scroll distance in pixels")
-
-
-class TapResult(ActionResult):
-    """Tap action result."""
-    pass
-
-
-class SwipeResult(ActionResult):
-    """Swipe action result."""
-    pass
-
-
-class PressResult(ActionResult):
-    """Press action result."""
-    pass
-
-
-class TypeTextResult(ActionResult):
-    """Type text result."""
-    pass
-
-
-class KeyEventResult(ActionResult):
-    """Key event result."""
-    pass
-
-
-class ScreenshotResult(ActionResult):
-    """Screenshot result."""
-    screenshot_path: str = Field(description="Path to saved screenshot")
-
-
-class SwipePathResult(ActionResult):
-    """Swipe path result."""
-    pass
-
-
-class ScrollResult(ActionResult):
-    """Scroll result."""
-    pass

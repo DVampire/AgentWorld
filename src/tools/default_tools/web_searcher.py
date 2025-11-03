@@ -166,7 +166,8 @@ class WebSearcherTool(BaseTool):
                     ),
                 )
                 return ToolResponse(
-                    content=response.output,
+                    success=True,
+                    message=response.output,
                     extra={
                         "query": query,
                         "status": "success",
@@ -188,7 +189,8 @@ class WebSearcherTool(BaseTool):
                 logger.error(res)
                 # Return an error response
                 return ToolResponse(
-                    content=f"Error: All search tools failed to return results after multiple retries.",
+                    success=False,
+                    message=f"Error: All search tools failed to return results after multiple retries.",
                     extra={
                         "query": query,
                         "status": "failed",
@@ -319,8 +321,16 @@ class WebSearcherTool(BaseTool):
         
         return results
     
-    def _run(self, query: str, num_results: Optional[int] = 5, lang: Optional[str] = "en", country: Optional[str] = "us", filter_year: Optional[int] = None) -> str:
-        """Execute a Web search synchronously (fallback)."""
+    def _run(self, query: str, num_results: Optional[int] = 5, lang: Optional[str] = "en", country: Optional[str] = "us", filter_year: Optional[int] = None) -> ToolResponse:
+        """Execute a Web search synchronously (fallback).
+        
+        Args:
+            query: The search query to submit to the search engine
+            num_results: The number of search results to return (default: 5)
+            lang: Language code for search results (default from config)
+            country: Country code for search results (default from config)
+            filter_year: Filter results by year (default: None)
+        """
         try:
             # Run the async version in a new event loop
             loop = asyncio.new_event_loop()
@@ -331,4 +341,4 @@ class WebSearcherTool(BaseTool):
                 loop.close()
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
-            return f"Error in synchronous execution: {e}"
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {e}")

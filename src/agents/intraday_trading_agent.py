@@ -417,7 +417,7 @@ class IntradayMinuteTradingAgent(BaseAgent):
             tool_args = action.args.model_dump()
             tool_result = await tcp.ainvoke(tool_name, input=tool_args)
             if isinstance(tool_result, ToolResponse):
-                tool_result = tool_result.content
+                tool_result = tool_result.message
             else:
                 tool_result = str(tool_result)
             

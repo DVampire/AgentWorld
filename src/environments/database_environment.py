@@ -18,6 +18,7 @@ from src.logger import logger
 from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
+from src.utils import dedent
 
 @ecp.environment()
 class DatabaseEnvironment(BaseEnvironment):
@@ -139,7 +140,7 @@ class DatabaseEnvironment(BaseEnvironment):
     @ecp.action(name="execute_sql",
                 type="Database",
                 description="Execute a SQL query.")
-    async def execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> str:
+    async def execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute a SQL query.
         
         Args:
@@ -147,18 +148,33 @@ class DatabaseEnvironment(BaseEnvironment):
             parameters (Optional[Dict[str, Any]]): Query parameters
             
         Returns:
-            Query result message
+            Dict with success, message, and extra fields
         """
-        request = QueryRequest(query=query, parameters=parameters)
-        result = await self.database_service.execute_query(request)
-        
-        if result.success:
-            if result.data:
-                return f"Query executed successfully. Rows returned: {result.row_count}. Data: {result.data}"
+        try:
+            request = QueryRequest(query=query, parameters=parameters)
+            result = await self.database_service.execute_query(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            if result.success:
+                if "data" in extra:
+                    message = f"Query executed successfully. Rows returned: {extra.get('row_count', 0)}"
+                else:
+                    message = f"Query executed successfully. Rows affected: {extra.get('row_count', 0)}"
             else:
-                return f"Query executed successfully. Rows affected: {result.row_count}"
-        else:
-            return f"Query failed: {result.message}"
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Query failed: {str(e)}",
+                "extra": {"error": str(e), "query": query}
+            }
     
     @ecp.action(name="create_table",
                 type="Database",
@@ -167,7 +183,7 @@ class DatabaseEnvironment(BaseEnvironment):
                            table_name: str,
                            columns: List[Dict[str, Any]],
                            primary_key: Optional[str] = None,
-                           foreign_keys: Optional[List[Dict[str, Any]]] = None) -> str:
+                           foreign_keys: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """Create a table.
         
         Args:
@@ -177,27 +193,38 @@ class DatabaseEnvironment(BaseEnvironment):
             foreign_keys (Optional[List[Dict[str, Any]]]): List of foreign key constraints, each dict should have 'column', 'ref_table', 'ref_column'
             
         Returns:
-            str: Operation result message
+            Dict with success, message, and extra fields
         """
-        request = CreateTableRequest(
-            table_name=table_name,
-            columns=columns,
-            primary_key=primary_key,
-            foreign_keys=foreign_keys
-        )
-        result = await self.database_service.create_table(request)
-        
-        if result.success:
-            return f"Table '{table_name}' created successfully"
-        else:
-            return f"Failed to create table: {result.message}"
+        try:
+            request = CreateTableRequest(
+                table_name=table_name,
+                columns=columns,
+                primary_key=primary_key,
+                foreign_keys=foreign_keys
+            )
+            result = await self.database_service.create_table(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["table_name"] = table_name
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to create table: {str(e)}",
+                "extra": {"error": str(e), "table_name": table_name}
+            }
     
     @ecp.action(name="insert_data",
                 type="Database",
                 description="Insert data into a table.")
     async def insert_data(self, 
                           table_name: str,
-                          data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> str:
+                          data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Dict[str, Any]:
         """Insert data into a table.
         
         Args:
@@ -205,15 +232,26 @@ class DatabaseEnvironment(BaseEnvironment):
             data (Union[Dict[str, Any], List[Dict[str, Any]]]): Data to insert, can be a single record dict or list of record dicts
             
         Returns:
-            str: Operation result message
+            Dict with success, message, and extra fields
         """
-        request = InsertRequest(table_name=table_name, data=data)
-        result = await self.database_service.insert_data(request)
-        
-        if result.success:
-            return f"Data inserted successfully into '{table_name}'. Rows affected: {result.row_count}"
-        else:
-            return f"Failed to insert data: {result.message}"
+        try:
+            request = InsertRequest(table_name=table_name, data=data)
+            result = await self.database_service.insert_data(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["table_name"] = table_name
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to insert data: {str(e)}",
+                "extra": {"error": str(e), "table_name": table_name}
+            }
     
     @ecp.action(name="select_data",
                 type="Database",
@@ -224,7 +262,7 @@ class DatabaseEnvironment(BaseEnvironment):
                           where_clause: Optional[str] = None,
                           where_params: Optional[Dict[str, Any]] = None,
                           order_by: Optional[str] = None,
-                          limit: Optional[int] = None) -> str:
+                          limit: Optional[int] = None) -> Dict[str, Any]:
         """Select data from a table.
         
         Args:
@@ -236,25 +274,41 @@ class DatabaseEnvironment(BaseEnvironment):
             limit (Optional[int]): Maximum number of rows to return
             
         Returns:
-            str: Query result message with data
+            Dict with success, message, and extra fields
         """
-        request = SelectRequest(
-            table_name=table_name,
-            columns=columns,
-            where_clause=where_clause,
-            where_params=where_params,
-            order_by=order_by,
-            limit=limit
-        )
-        result = await self.database_service.select_data(request)
-        
-        if result.success:
-            if result.data:
-                return f"Query executed successfully. Rows returned: {result.row_count}. Data: {result.data}"
+        try:
+            request = SelectRequest(
+                table_name=table_name,
+                columns=columns,
+                where_clause=where_clause,
+                where_params=where_params,
+                order_by=order_by,
+                limit=limit
+            )
+            result = await self.database_service.select_data(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["table_name"] = table_name
+            
+            if result.success:
+                if "data" in extra and extra["data"]:
+                    message = f"Query executed successfully. Rows returned: {extra.get('row_count', 0)}"
+                else:
+                    message = f"Query executed successfully. No data found."
             else:
-                return f"Query executed successfully. No data found."
-        else:
-            return f"Query failed: {result.message}"
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Query failed: {str(e)}",
+                "extra": {"error": str(e), "table_name": table_name}
+            }
     
     @ecp.action(name="update_data",
                 type="Database",
@@ -263,7 +317,7 @@ class DatabaseEnvironment(BaseEnvironment):
                           table_name: str,
                           data: Dict[str, Any],
                           where_clause: str,
-                          where_params: Optional[Dict[str, Any]] = None) -> str:
+                          where_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Update data in a table.
         
         Args:
@@ -273,20 +327,31 @@ class DatabaseEnvironment(BaseEnvironment):
             where_params (Optional[Dict[str, Any]]): Parameters for WHERE clause placeholders
             
         Returns:
-            str: Operation result message
+            Dict with success, message, and extra fields
         """
-        request = UpdateRequest(
-            table_name=table_name,
-            data=data,
-            where_clause=where_clause,
-            where_params=where_params
-        )
-        result = await self.database_service.update_data(request)
-        
-        if result.success:
-            return f"Data updated successfully in '{table_name}'. Rows affected: {result.row_count}"
-        else:
-            return f"Failed to update data: {result.message}"
+        try:
+            request = UpdateRequest(
+                table_name=table_name,
+                data=data,
+                where_clause=where_clause,
+                where_params=where_params
+            )
+            result = await self.database_service.update_data(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["table_name"] = table_name
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to update data: {str(e)}",
+                "extra": {"error": str(e), "table_name": table_name}
+            }
     
     @ecp.action(name="delete_data",
                 type="Database",
@@ -294,7 +359,7 @@ class DatabaseEnvironment(BaseEnvironment):
     async def delete_data(self, 
                           table_name: str,
                           where_clause: str,
-                          where_params: Optional[Dict[str, Any]] = None) -> str:
+                          where_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Delete data from a table.
         
         Args:
@@ -303,66 +368,90 @@ class DatabaseEnvironment(BaseEnvironment):
             where_params (Optional[Dict[str, Any]]): Parameters for WHERE clause placeholders
             
         Returns:
-            str: Operation result message
+            Dict with success, message, and extra fields
         """
-        request = DeleteRequest(
-            table_name=table_name,
-            where_clause=where_clause,
-            where_params=where_params
-        )
-        result = await self.database_service.delete_data(request)
-        
-        if result.success:
-            return f"Data deleted successfully from '{table_name}'. Rows affected: {result.row_count}"
-        else:
-            return f"Failed to delete data: {result.message}"
+        try:
+            request = DeleteRequest(
+                table_name=table_name,
+                where_clause=where_clause,
+                where_params=where_params
+            )
+            result = await self.database_service.delete_data(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["table_name"] = table_name
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to delete data: {str(e)}",
+                "extra": {"error": str(e), "table_name": table_name}
+            }
     
     @ecp.action(name="get_tables",
                 type="Database",
                 description="Get information about all tables.")
-    async def get_tables(self) -> str:
+    async def get_tables(self) -> Dict[str, Any]:
         """Get information about all tables.
         
         Returns:
-            str: Table information message with table names, column counts, and row counts
+            Dict with success, message, and extra fields
         """
-        request = GetTablesRequest()
-        result = await self.database_service.get_tables(request)
-        
-        if result.success:
-            if result.tables:
-                table_info = []
-                for table in result.tables:
-                    table_info.append(f"Table: {table.name}, Columns: {len(table.columns)}, Rows: {table.row_count}")
-                return f"Found {len(result.tables)} tables:\n" + "\n".join(table_info)
+        try:
+            request = GetTablesRequest()
+            result = await self.database_service.get_tables(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            if result.success:
+                if "tables" in extra and extra["tables"]:
+                    table_info = []
+                    for table in extra["tables"]:
+                        table_info.append(f"Table: {table['name']}, Columns: {len(table['columns'])}, Rows: {table['row_count']}")
+                    message = f"Found {len(extra['tables'])} tables:\n" + "\n".join(table_info)
+                else:
+                    message = "No tables found in the database"
             else:
-                return "No tables found in the database"
-        else:
-            return f"Failed to get tables: {result.message}"
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get tables: {str(e)}",
+                "extra": {"error": str(e)}
+            }
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the database environment."""
         try:
             db_info = await self.database_service.get_database_info()
+            
+            extra = db_info.extra
+            state = dedent(f"""
+                <info>
+                Database File Path: {str(self.base_dir / "database.db")}
+                Is Connected: {db_info.extra.get("is_connected", False)}
+                Total Tables: {db_info.extra.get("total_tables", 0)}
+                Tables: {", ".join([table["name"] for table in db_info.extra.get("tables", [])])}
+                </info>
+            """)
             return {
-                "base_dir": str(self.base_dir),
-                "database_path": str(self.base_dir / "database.db"),
-                "is_connected": db_info.is_connected,
-                "total_tables": db_info.total_tables,
-                "tables": [
-                    {
-                        "name": table.name,
-                        "columns": table.columns,
-                        "row_count": table.row_count
-                    }
-                    for table in db_info.tables
-                ]
-            }
+                "state": state,
+                "extra": extra
+            }   
         except Exception as e:
             logger.error(f"Failed to get database state: {e}")
             return {
-                "base_dir": str(self.base_dir),
-                "database_path": str(self.base_dir / "database.db"),
-                "is_connected": False,
-                "error": str(e)
+                "state": f"Failed to get database state: {str(e)}",
+                "extra": {"error": str(e)}
             }

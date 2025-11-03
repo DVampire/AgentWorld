@@ -118,7 +118,7 @@ class GitHubEnvironment(BaseEnvironment):
         description: Optional[str] = None,
         private: bool = False,
         auto_init: bool = False
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Create a new GitHub repository.
         
         Args:
@@ -128,18 +128,22 @@ class GitHubEnvironment(BaseEnvironment):
             auto_init (bool): Whether to auto-initialize the repository.
         
         Returns:
-            A string indicating the success or failure of the repository creation.
+            Dict with success, message, and extra fields
         """
         try:
             # First check if repository already exists
             current_user = self.github_service.authenticated_user.login
             try:
-                
                 request = GetRepositoryRequest(owner=current_user, repo=name)
                 existing_repo = await self.github_service.get_repository(request)
                 
-                if existing_repo.success and existing_repo.repository:
-                    return f"Repository '{existing_repo.repository.full_name}' already exists. URL: {existing_repo.repository.html_url}"
+                if existing_repo.success and "repository" in existing_repo.extra:
+                    repo_dict = existing_repo.extra["repository"]
+                    return {
+                        "success": True,
+                        "message": f"Repository '{repo_dict.get('full_name', name)}' already exists. URL: {repo_dict.get('html_url', '')}",
+                        "extra": existing_repo.extra
+                    }
             
             except RepositoryError:
                 # Repository doesn't exist, proceed with creation
@@ -152,24 +156,40 @@ class GitHubEnvironment(BaseEnvironment):
                 auto_init=auto_init
             )
             result = await self.github_service.create_repository(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["name"] = name
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         
         except RepositoryError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "name": name}
+            }
         except Exception as e:
-            return f"Failed to create repository '{name}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to create repository '{name}': {str(e)}",
+                "extra": {"error": str(e), "name": name}
+            }
 
     @ecp.action(name="get_repository",
                 type="GitHub", 
                 description="Get your repository information")
-    async def get_repository(self, repo: str) -> str:
+    async def get_repository(self, repo: str) -> Dict[str, Any]:
         """Get repository information for your own repository.
         
         Args:
             repo (str): The name of your repository.
         
         Returns:
-            A string containing detailed repository information including description, URL, stars, forks, language, privacy status, and timestamps.
+            Dict with success, message, and extra fields
         """
         try:
             # Use authenticated user as owner
@@ -177,32 +197,48 @@ class GitHubEnvironment(BaseEnvironment):
             request = GetRepositoryRequest(owner=owner, repo=repo)
             result = await self.github_service.get_repository(request)
             
-            if not result.success or not result.repository:
-                return f"| ❌ {result.message}"
+            extra = result.extra.copy() if result.extra else {}
+            extra["repo"] = repo
+            extra["owner"] = owner
             
-            repository = result.repository
+            if result.success and "repository" in extra:
+                repository = extra["repository"]
+                message = dedent(f"""
+                    Repository: {repository.get('full_name', repo)}
+                    Description: {repository.get('description') or 'No description'}
+                    URL: {repository.get('html_url', '')}
+                    Stars: {repository.get('stargazers_count', 0)}
+                    Forks: {repository.get('forks_count', 0)}
+                    Language: {repository.get('language') or 'Unknown'}
+                    Private: {repository.get('private', False)}
+                    Created: {repository.get('created_at', 'Unknown')}
+                    Updated: {repository.get('updated_at', 'Unknown')}
+                    """)
+            else:
+                message = result.message
             
-            result = dedent(f"""
-                        Repository: {repository.full_name}
-                        Description: {repository.description or 'No description'}
-                        URL: {repository.html_url}
-                        Stars: {repository.stargazers_count}
-                        Forks: {repository.forks_count}
-                        Language: {repository.language or 'Unknown'}
-                        Private: {repository.private}
-                        Created: {repository.created_at}
-                        Updated: {repository.updated_at}
-                        """)
-            return result
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
         except NotFoundError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "repo": repo}
+            }
         except Exception as e:
-            return f"Failed to get repository '{repo}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to get repository '{repo}': {str(e)}",
+                "extra": {"error": str(e), "repo": repo}
+            }
 
     @ecp.action(name="fork_repository",
                 type="GitHub", 
                 description="Fork a public repository to your account")
-    async def fork_repository(self, owner: str, repo: str) -> str:
+    async def fork_repository(self, owner: str, repo: str) -> Dict[str, Any]:
         """Fork a public repository to your account.
         
         Args:
@@ -210,39 +246,73 @@ class GitHubEnvironment(BaseEnvironment):
             repo (str): The name of the repository to fork.
         
         Returns:
-            A string indicating the success or failure of the fork operation.
+            Dict with success, message, and extra fields
         """
         try:
             request = ForkRepositoryRequest(owner=owner, repo=repo)
             result = await self.github_service.fork_repository(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["owner"] = owner
+            extra["repo"] = repo
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except RepositoryError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "owner": owner, "repo": repo}
+            }
         except Exception as e:
-            return f"Failed to fork repository '{owner}/{repo}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to fork repository '{owner}/{repo}': {str(e)}",
+                "extra": {"error": str(e), "owner": owner, "repo": repo}
+            }
 
     @ecp.action(name="delete_repository",
                 type="GitHub", 
                 description="Delete your own repository")
-    async def delete_repository(self, repo: str) -> str:
+    async def delete_repository(self, repo: str) -> Dict[str, Any]:
         """Delete your own repository.
         
         Args:
             repo (str): The name of your repository to delete.
         
         Returns:
-            A string indicating the success or failure of the repository deletion operation.
+            Dict with success, message, and extra fields
         """
         try:
             # Use authenticated user as owner
             owner = self.github_service.authenticated_user.login
             request = DeleteRepositoryRequest(owner=owner, repo=repo)
             result = await self.github_service.delete_repository(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["repo"] = repo
+            extra["owner"] = owner
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except RepositoryError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "repo": repo}
+            }
         except Exception as e:
-            return f"Failed to delete repository '{repo}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to delete repository '{repo}': {str(e)}",
+                "extra": {"error": str(e), "repo": repo}
+            }
 
     # --------------- Git Operations ---------------
     @ecp.action(name="git_init", 
@@ -252,7 +322,7 @@ class GitHubEnvironment(BaseEnvironment):
         self,
         local_path: str,
         remote_url: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Initialize a local directory as Git repository.
         
         Args:
@@ -260,17 +330,34 @@ class GitHubEnvironment(BaseEnvironment):
             remote_url (Optional[str]): The remote repository URL to set as origin. If None, no remote is added.
         
         Returns:
-            A string indicating the success or failure of the repository initialization operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
             request = InitRepositoryRequest(local_path=resolved_path, remote_url=remote_url)
             result = await self.github_service.init_repository(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["remote_url"] = remote_url
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except (GitError, RepositoryError) as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to initialize repository in '{local_path}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to initialize repository in '{local_path}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
     
     @ecp.action(name="git_clone", 
                 type="GitHub", 
@@ -281,7 +368,7 @@ class GitHubEnvironment(BaseEnvironment):
         repo: str,
         local_path: str,
         branch: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Clone a repository to local directory.
         
         If the repository belongs to someone else, it will automatically fork the repository
@@ -294,7 +381,7 @@ class GitHubEnvironment(BaseEnvironment):
             branch (Optional[str]): The specific branch to clone. If None, clones the default branch.
         
         Returns:
-            A string indicating the success or failure of the repository cloning operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -309,28 +396,59 @@ class GitHubEnvironment(BaseEnvironment):
                     branch=branch
                 )
                 result = await self.github_service.clone_repository(request)
-                return result.message
+                
+                extra = result.extra.copy() if result.extra else {}
+                extra["owner"] = owner
+                extra["repo"] = repo
+                extra["local_path"] = local_path
+                extra["branch"] = branch
+                
+                return {
+                    "success": result.success,
+                    "message": result.message,
+                    "extra": extra
+                }
             
             # If it's someone else's repository, fork it first
             try:
                 fork_request = ForkRepositoryRequest(owner=owner, repo=repo)
                 fork_result = await self.github_service.fork_repository(fork_request)
                 
-                if not fork_result.success or not fork_result.repository:
-                    return f"| ❌ Failed to fork repository: {fork_result.message}"
+                if not fork_result.success or "repository" not in fork_result.extra:
+                    extra = fork_result.extra.copy() if fork_result.extra else {}
+                    extra["owner"] = owner
+                    extra["repo"] = repo
+                    extra["local_path"] = local_path
+                    return {
+                        "success": False,
+                        "message": f"Failed to fork repository: {fork_result.message}",
+                        "extra": extra
+                    }
                 
                 fork_msg = fork_result.message
+                fork_repo = fork_result.extra["repository"]
                 
                 # Clone the forked repository
                 clone_request = CloneRepositoryRequest(
-                    owner=fork_result.repository.owner,
-                    repo=fork_result.repository.name,
+                    owner=fork_repo.get("owner", current_user),
+                    repo=fork_repo.get("name", repo),
                     local_path=resolved_path,
                     branch=branch
                 )
                 clone_result = await self.github_service.clone_repository(clone_request)
                 
-                return fork_msg + clone_result.message
+                extra = clone_result.extra.copy() if clone_result.extra else {}
+                extra["owner"] = owner
+                extra["repo"] = repo
+                extra["local_path"] = local_path
+                extra["branch"] = branch
+                extra["fork_result"] = fork_result.extra
+                
+                return {
+                    "success": clone_result.success,
+                    "message": fork_msg + " " + clone_result.message,
+                    "extra": extra
+                }
                 
             except RepositoryError as e:
                 # If fork fails (e.g., already forked), try to clone the existing fork
@@ -344,15 +462,34 @@ class GitHubEnvironment(BaseEnvironment):
                             branch=branch
                         )
                         clone_result = await self.github_service.clone_repository(clone_request)
-                        return clone_result.message
+                        
+                        extra = clone_result.extra.copy() if clone_result.extra else {}
+                        extra["owner"] = owner
+                        extra["repo"] = repo
+                        extra["local_path"] = local_path
+                        extra["branch"] = branch
+                        
+                        return {
+                            "success": clone_result.success,
+                            "message": clone_result.message,
+                            "extra": extra
+                        }
                     except Exception:
                         pass
                 raise e
                 
         except (GitError, RepositoryError) as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "owner": owner, "repo": repo, "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to clone repository '{owner}/{repo}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to clone repository '{owner}/{repo}': {str(e)}",
+                "extra": {"error": str(e), "owner": owner, "repo": repo, "local_path": local_path}
+            }
     
     @ecp.action(name="git_commit",
                 type="GitHub", 
@@ -362,7 +499,7 @@ class GitHubEnvironment(BaseEnvironment):
         local_path: str,
         message: str,
         add_all: bool = True
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Commit changes to local repository.
         
         Args:
@@ -371,7 +508,7 @@ class GitHubEnvironment(BaseEnvironment):
             add_all (bool): Whether to add all changes before committing. Defaults to True.
         
         Returns:
-            A string indicating the success or failure of the commit operation, including the commit hash.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -381,11 +518,29 @@ class GitHubEnvironment(BaseEnvironment):
                 files=None if add_all else []
             )
             result = await self.github_service.git_commit(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["message"] = message
+            extra["add_all"] = add_all
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to commit in '{local_path}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to commit in '{local_path}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
 
     @ecp.action(name="git_push",
                 type="GitHub", 
@@ -395,7 +550,7 @@ class GitHubEnvironment(BaseEnvironment):
         local_path: str,
         remote: str = "origin",
         branch: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Push changes to remote repository.
         
         Args:
@@ -404,7 +559,7 @@ class GitHubEnvironment(BaseEnvironment):
             branch (Optional[str]): The branch name to push. If None, pushes the current branch.
         
         Returns:
-            A string indicating the success or failure of the push operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -414,11 +569,29 @@ class GitHubEnvironment(BaseEnvironment):
                 branch=branch
             )
             result = await self.github_service.git_push(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["remote"] = remote
+            extra["branch"] = branch
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to push from '{local_path}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to push from '{local_path}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
 
     @ecp.action(name="git_pull",
                 type="GitHub", 
@@ -428,7 +601,7 @@ class GitHubEnvironment(BaseEnvironment):
         local_path: str,
         remote: str = "origin",
         branch: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Pull changes from remote repository.
         
         Args:
@@ -437,7 +610,7 @@ class GitHubEnvironment(BaseEnvironment):
             branch (Optional[str]): The branch name to pull. If None, pulls the current branch.
         
         Returns:
-            A string indicating the success or failure of the pull operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -447,11 +620,29 @@ class GitHubEnvironment(BaseEnvironment):
                 branch=branch
             )
             result = await self.github_service.git_pull(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["remote"] = remote
+            extra["branch"] = branch
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to pull to '{local_path}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to pull to '{local_path}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
 
     @ecp.action(name="git_fetch",
                 type="GitHub", 
@@ -460,7 +651,7 @@ class GitHubEnvironment(BaseEnvironment):
         self,
         local_path: str,
         remote: str = "origin"
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Fetch changes from remote repository.
         
         Args:
@@ -468,7 +659,7 @@ class GitHubEnvironment(BaseEnvironment):
             remote (str): The remote name. Defaults to "origin".
         
         Returns:
-            A string indicating the success or failure of the fetch operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -477,11 +668,28 @@ class GitHubEnvironment(BaseEnvironment):
                 remote=remote
             )
             result = await self.github_service.git_fetch(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["remote"] = remote
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to fetch to '{local_path}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to fetch to '{local_path}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
 
     # --------------- Branch Operations ---------------
     @ecp.action(name="git_create_branch",
@@ -492,7 +700,7 @@ class GitHubEnvironment(BaseEnvironment):
         local_path: str,
         branch_name: str,
         checkout: bool = True
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Create a new branch.
         
         Args:
@@ -501,7 +709,7 @@ class GitHubEnvironment(BaseEnvironment):
             checkout (bool): Whether to checkout the new branch after creation. Defaults to True.
         
         Returns:
-            A string indicating the success or failure of the branch creation operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -511,11 +719,29 @@ class GitHubEnvironment(BaseEnvironment):
                 from_branch=None
             )
             result = await self.github_service.git_create_branch(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["branch_name"] = branch_name
+            extra["checkout"] = checkout
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path, "branch_name": branch_name}
+            }
         except Exception as e:
-            return f"Failed to create branch '{branch_name}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to create branch '{branch_name}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path, "branch_name": branch_name}
+            }
 
     @ecp.action(name="git_checkout_branch",
                 type="GitHub", 
@@ -524,7 +750,7 @@ class GitHubEnvironment(BaseEnvironment):
         self,
         local_path: str,
         branch_name: str
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Checkout an existing branch.
         
         Args:
@@ -532,7 +758,7 @@ class GitHubEnvironment(BaseEnvironment):
             branch_name (str): The name of the branch to checkout.
         
         Returns:
-            A string indicating the success or failure of the branch checkout operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -541,33 +767,66 @@ class GitHubEnvironment(BaseEnvironment):
                 branch_name=branch_name
             )
             result = await self.github_service.git_checkout_branch(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["branch_name"] = branch_name
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path, "branch_name": branch_name}
+            }
         except Exception as e:
-            return f"Failed to checkout branch '{branch_name}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to checkout branch '{branch_name}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path, "branch_name": branch_name}
+            }
 
     @ecp.action(name="git_list_branches",
                 type="GitHub", 
                 description="List all branches")
-    async def git_list_branches(self, local_path: str) -> str:
+    async def git_list_branches(self, local_path: str) -> Dict[str, Any]:
         """List all branches.
         
         Args:
             local_path (str): The local repository path (relative to base_dir or absolute).
         
         Returns:
-            A string containing a formatted list of all branches with the current branch marked.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
             request = GitListBranchesRequest(local_path=resolved_path)
             result = await self.github_service.git_list_branches(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to list branches: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to list branches: {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
 
     @ecp.action(name="git_delete_branch",
                 type="GitHub", 
@@ -577,7 +836,7 @@ class GitHubEnvironment(BaseEnvironment):
         local_path: str,
         branch_name: str,
         force: bool = False
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Delete a branch.
         
         Args:
@@ -586,7 +845,7 @@ class GitHubEnvironment(BaseEnvironment):
             force (bool): Whether to force delete the branch even if it's not merged. Defaults to False.
         
         Returns:
-            A string indicating the success or failure of the branch deletion operation.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
@@ -596,45 +855,80 @@ class GitHubEnvironment(BaseEnvironment):
                 force=force
             )
             result = await self.github_service.git_delete_branch(request)
-            return result.message
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
+            extra["branch_name"] = branch_name
+            extra["force"] = force
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path, "branch_name": branch_name}
+            }
         except Exception as e:
-            return f"Failed to delete branch '{branch_name}': {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to delete branch '{branch_name}': {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path, "branch_name": branch_name}
+            }
 
     @ecp.action(name="git_status",
                 type="GitHub", 
                 description="Get Git repository status")
-    async def git_status(self, local_path: str) -> str:
+    async def git_status(self, local_path: str) -> Dict[str, Any]:
         """Get Git repository status.
         
         Args:
             local_path (str): The local repository path (relative to base_dir or absolute).
         
         Returns:
-            A string containing detailed repository status including current branch, dirty state, modified files, staged files, untracked files, and all branches.
+            Dict with success, message, and extra fields
         """
         try:
             resolved_path = self._resolve_path(local_path)
             request = GitStatusRequest(local_path=resolved_path)
             result = await self.github_service.git_status(request)
             
-            if not result.success or not result.status:
-                return f"| ❌ {result.message}"
+            extra = result.extra.copy() if result.extra else {}
+            extra["local_path"] = local_path
             
-            status = result.status
-            status_text = dedent(f"""Repository Status:
-                Current Branch: {status.current_branch}
-                Dirty: {status.is_dirty}
-                Modified Files: {', '.join(status.modified_files) if status.modified_files else 'None'}
-                Staged Files: {', '.join(status.staged_files) if status.staged_files else 'None'}
-                Untracked Files: {', '.join(status.untracked_files) if status.untracked_files else 'None'}
-                Branches: {', '.join(status.branches)}""")
-            return status_text
+            if result.success and "status" in extra:
+                status = extra["status"]
+                status_text = dedent(f"""Repository Status:
+                    Current Branch: {status.get('current_branch', 'Unknown')}
+                    Dirty: {status.get('is_dirty', False)}
+                    Modified Files: {', '.join(status.get('modified_files', [])) if status.get('modified_files') else 'None'}
+                    Staged Files: {', '.join(status.get('staged_files', [])) if status.get('staged_files') else 'None'}
+                    Untracked Files: {', '.join(status.get('untracked_files', [])) if status.get('untracked_files') else 'None'}
+                    Branches: {', '.join(status.get('branches', []))}""")
+                message = status_text
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
         except GitError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e), "local_path": local_path}
+            }
         except Exception as e:
-            return f"Failed to get status: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to get status: {str(e)}",
+                "extra": {"error": str(e), "local_path": local_path}
+            }
 
     # --------------- Environment Interface Methods ---------------
     async def get_info(self) -> Dict[str, Any]:
@@ -670,11 +964,13 @@ class GitHubEnvironment(BaseEnvironment):
             git_status = await self.git_status(self.base_dir)
             
             state = dedent(f"""
+                <info>
                 GitHub Environment:
                 Username: {self.username}
                 Authenticated: {bool(self.token)}
                 Service Available: {self.github_service is not None}
                 Git Status: {git_status}
+                </info>
             """)
             
             return {

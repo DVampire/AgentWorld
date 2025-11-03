@@ -40,17 +40,20 @@ class WebFetcherTool(BaseTool):
             if not res:
                 logger.error(f"Failed to fetch content from {url}")
                 return ToolResponse(
-                    content=f"Failed to fetch content from {url}",
+                    success=False, 
+                    message=f"Failed to fetch content from {url}",
                     extra={"url": url, "status": "failed"}
                 )
             return ToolResponse(
-                content=res,
+                success=True,
+                message=res,
                 extra={"url": url, "status": "success", "content_length": len(res)}
             )
         except Exception as e:
             logger.error(f"Error fetching content: {e}")
             return ToolResponse(
-                content=f"Failed to fetch content: {e}",
+                success=False,
+                message=f"Failed to fetch content: {e}",
                 extra={"url": url, "status": "error", "error_type": type(e).__name__}
             )
     
@@ -66,7 +69,8 @@ class WebFetcherTool(BaseTool):
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
             return ToolResponse(
-                content=f"Error in synchronous execution: {e}",
+                success=False, 
+                message=f"Error in synchronous execution: {e}",
                 extra={"status": "error", "error_type": type(e).__name__}
             )
 

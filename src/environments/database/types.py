@@ -17,15 +17,6 @@ class TableInfo(BaseModel):
     row_count: int = Field(description="Number of rows in the table")
 
 
-class QueryResult(BaseModel):
-    """Result of a SQL query execution."""
-    success: bool = Field(description="Whether the query was successful")
-    data: Optional[List[Dict[str, Any]]] = Field(default=None, description="Query result data")
-    row_count: int = Field(default=0, description="Number of rows returned")
-    message: Optional[str] = Field(default=None, description="Success or error message")
-    execution_time: Optional[float] = Field(default=None, description="Query execution time in seconds")
-
-
 class DatabaseInfo(BaseModel):
     """Information about the database."""
     path: str = Field(description="Database file path")
@@ -63,37 +54,6 @@ class DeleteRequest(BaseModel):
     where_params: Optional[Dict[str, Any]] = Field(default=None, description="Parameters for WHERE clause")
 
 
-class CreateTableResult(BaseModel):
-    """Result of creating a table."""
-    success: bool = Field(description="Whether the operation was successful")
-    message: Optional[str] = Field(default=None, description="Success or error message")
-    execution_time: Optional[float] = Field(default=None, description="Operation execution time in seconds")
-
-
-class InsertResult(BaseModel):
-    """Result of inserting data."""
-    success: bool = Field(description="Whether the operation was successful")
-    row_count: int = Field(default=0, description="Number of rows affected")
-    message: Optional[str] = Field(default=None, description="Success or error message")
-    execution_time: Optional[float] = Field(default=None, description="Operation execution time in seconds")
-
-
-class UpdateResult(BaseModel):
-    """Result of updating data."""
-    success: bool = Field(description="Whether the operation was successful")
-    row_count: int = Field(default=0, description="Number of rows affected")
-    message: Optional[str] = Field(default=None, description="Success or error message")
-    execution_time: Optional[float] = Field(default=None, description="Operation execution time in seconds")
-
-
-class DeleteResult(BaseModel):
-    """Result of deleting data."""
-    success: bool = Field(description="Whether the operation was successful")
-    row_count: int = Field(default=0, description="Number of rows affected")
-    message: Optional[str] = Field(default=None, description="Success or error message")
-    execution_time: Optional[float] = Field(default=None, description="Operation execution time in seconds")
-
-
 class SelectRequest(BaseModel):
     """Request for selecting data from a table."""
     table_name: str = Field(description="Name of the table")
@@ -104,22 +64,6 @@ class SelectRequest(BaseModel):
     limit: Optional[int] = Field(default=None, description="LIMIT clause")
 
 
-class SelectResult(BaseModel):
-    """Result of selecting data."""
-    success: bool = Field(description="Whether the operation was successful")
-    data: Optional[List[Dict[str, Any]]] = Field(default=None, description="Selected data")
-    row_count: int = Field(default=0, description="Number of rows returned")
-    message: Optional[str] = Field(default=None, description="Success or error message")
-    execution_time: Optional[float] = Field(default=None, description="Operation execution time in seconds")
-
-
 class GetTablesRequest(BaseModel):
     """Request for getting table information."""
     pass
-
-
-class GetTablesResult(BaseModel):
-    """Result of getting table information."""
-    success: bool = Field(description="Whether the operation was successful")
-    tables: List[TableInfo] = Field(default_factory=list, description="List of table information")
-    message: Optional[str] = Field(default=None, description="Success or error message")

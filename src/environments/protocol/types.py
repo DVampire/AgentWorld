@@ -2,11 +2,10 @@
 
 Core type definitions for the Environment Context Protocol.
 """
-from typing import Any, Dict, Optional, Union, Literal, Type, Callable
+from typing import Any, Dict, Optional, Union, Type, Callable
 from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
-from datetime import datetime
 
 from src.environments.protocol.environment import BaseEnvironment
 
@@ -92,14 +91,18 @@ class ScreenshotInfo(BaseModel):
 
 class ActionResult(BaseModel):
     """Action result"""
-    success: bool = Field(default=True)
-    message: str = Field(default="Action result")
-    screenshot: str = Field(default="Screenshot base64")
-    screenshot_path: str = Field(default="Screenshot path")
-    screenshot_description: str = Field(default="Screenshot description")
+    success: bool = Field(default=True, description="Whether the action was successful")
+    message: str = Field(default="Action result", description="The message of the action result")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra information of the action result")
+    
+class EnvironmentState(BaseModel):
+    """Environment state"""
+    state: str = Field(default="State", description="The state of the environment")
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra information of the state")
 
 # Update forward references
 EnvironmentInfo.model_rebuild()
 ActionInfo.model_rebuild()
 ScreenshotInfo.model_rebuild()
 ActionResult.model_rebuild()
+EnvironmentState.model_rebuild()

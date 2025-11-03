@@ -58,15 +58,15 @@ class MdifyTool(BaseTool):
         try:
             # Validate input
             if not file_path.strip():
-                return ToolResponse(content="Error: Empty file path provided")
+                return ToolResponse(success=False, message="Error: Empty file path provided")
             
             # Check if file exists
             if not os.path.exists(file_path):
-                return ToolResponse(content=f"Error: File not found: {file_path}")
+                return ToolResponse(success=False, message=f"Error: File not found: {file_path}")
             
             # Check if it's a file (not directory)
             if not os.path.isfile(file_path):
-                return ToolResponse(content=f"Error: Path is not a file: {file_path}")
+                return ToolResponse(success=False, message=f"Error: Path is not a file: {file_path}")
             
             # Get file info
             file_size = os.path.getsize(file_path)
@@ -77,7 +77,7 @@ class MdifyTool(BaseTool):
             max_size = 100 * 1024 * 1024  # 100MB
             if file_size > max_size:
                 return ToolResponse(
-                    content=f"Error: File too large ({file_size / (1024*1024):.1f}MB). "
+                    success=False, message=f"Error: File too large ({file_size / (1024*1024):.1f}MB). "
                            f"Maximum allowed size is {max_size / (1024*1024)}MB"
                 )
             
@@ -91,7 +91,7 @@ class MdifyTool(BaseTool):
             )
             
             if result is None:
-                return ToolResponse(content="Error: Conversion failed - unable to process the file")
+                return ToolResponse(success=False, message="Error: Conversion failed - unable to process the file")
             
             # Format the response
             response_content = f"Successfully converted file: {file_name}\n"
@@ -101,12 +101,12 @@ class MdifyTool(BaseTool):
             response_content += "--- Converted Content ---\n"
             response_content += result
             
-            return ToolResponse(content=response_content)
+            return ToolResponse(success=True, message=response_content)
             
         except asyncio.TimeoutError:
-            return ToolResponse(content=f"Error: Conversion timed out after {self.timeout} seconds")
+            return ToolResponse(success=False, message=f"Error: Conversion timed out after {self.timeout} seconds")
         except Exception as e:
-            return ToolResponse(content=f"Error during conversion: {str(e)}")
+            return ToolResponse(success=False, message=f"Error during conversion: {str(e)}")
     
     def _convert_file(self, file_path: str, output_format: str) -> Optional[str]:
         """Convert file to markdown (synchronous helper method)."""
@@ -134,4 +134,4 @@ class MdifyTool(BaseTool):
             finally:
                 loop.close()
         except Exception as e:
-            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {str(e)}")

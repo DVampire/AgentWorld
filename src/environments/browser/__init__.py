@@ -56,6 +56,7 @@ _LAZY_IMPORTS = {
 	'Browser': ('src.environments.browser.browser', 'BrowserSession'),  # Alias for BrowserSession
 	'BrowserProfile': ('src.environments.browser.browser', 'BrowserProfile'),
 	'DomService': ('src.environments.browser.dom.service', 'DomService'),
+	'CDPBrowserService': ('src.environments.browser.service', 'CDPBrowserService'),
 }
 
 
@@ -86,4 +87,5 @@ __all__ = [
 	'Browser',  # Alias for BrowserSession
 	'BrowserProfile',
 	'DomService',
+	'CDPBrowserService',
 ]

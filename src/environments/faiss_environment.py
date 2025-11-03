@@ -10,6 +10,7 @@ from src.environments.faiss.types import (
     FaissAddRequest,
     FaissDeleteRequest
 )
+from src.utils import dedent
 from src.logger import logger
 from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
@@ -77,7 +78,7 @@ class FaissEnvironment(BaseEnvironment):
         self,
         texts: List[str],
         metadatas: Optional[List[Dict[str, Any]]] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Add documents to the FAISS vector store.
         
         Args:
@@ -85,16 +86,29 @@ class FaissEnvironment(BaseEnvironment):
             metadatas (Optional[List[Dict[str, Any]]]): Optional metadata for each text
         
         Returns:
-            str: Count of added documents
+            Dict with success, message, and extra fields
         """
-        request = FaissAddRequest(
-            texts=texts,
-            metadatas=metadatas,
-        )
-        
-        result = await self.faiss_service.add_documents(request)
-        
-        return f"Successfully added {result.count} documents"
+        try:
+            request = FaissAddRequest(
+                texts=texts,
+                metadatas=metadatas,
+            )
+            
+            result = await self.faiss_service.add_documents(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to add documents: {str(e)}",
+                "extra": {"error": str(e)}
+            }
     
     @ecp.action(
         name="search_similar",
@@ -109,7 +123,7 @@ class FaissEnvironment(BaseEnvironment):
         filter: Optional[Dict[str, Any]] = None,
         fetch_k: int = 20,
         score_threshold: Optional[float] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Search for similar documents in the FAISS vector store.
         
         Args:
@@ -120,82 +134,139 @@ class FaissEnvironment(BaseEnvironment):
             score_threshold (Optional[float]): Minimum similarity score (0.0-1.0)
             
         Returns:
-            str: Search results with documents and scores
+            Dict with success, message, and extra fields
         """
-        request = FaissSearchRequest(
-            query=query,
-            k=k,
-            filter=filter,
-            fetch_k=fetch_k,
-            score_threshold=score_threshold
-        )
-        
-        result = await self.faiss_service.search_similar(request)
-        
-        # Format results as string
-        if result.documents:
-            documents_info = []
-            for i, (doc, score) in enumerate(zip(result.documents, result.scores)):
-                documents_info.append(f"Document {i+1} (Score: {score:.4f}):\n{doc.page_content[:200]}...")
+        try:
+            request = FaissSearchRequest(
+                query=query,
+                k=k,
+                filter=filter,
+                fetch_k=fetch_k,
+                score_threshold=score_threshold
+            )
             
-            return f"Found {result.total_found} similar documents for query '{query}':\n\n" + "\n\n".join(documents_info)
-        else:
-            return f"No similar documents found for query '{query}'"
+            result = await self.faiss_service.search_similar(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            # Format message from results
+            if result.success and "documents" in extra and extra["documents"]:
+                documents_info = []
+                documents = extra["documents"]
+                scores = extra.get("scores", [])
+                for i, (doc, score) in enumerate(zip(documents, scores)):
+                    content = doc.get("page_content", "")[:200] if isinstance(doc, dict) else str(doc)[:200]
+                    documents_info.append(f"Document {i+1} (Score: {score:.4f}):\n{content}...")
+                message = f"Found {extra.get('total_found', 0)} similar documents for query '{query}':\n\n" + "\n\n".join(documents_info)
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to search documents: {str(e)}",
+                "extra": {"error": str(e), "query": query}
+            }
     
     @ecp.action(
         name="delete_documents",
         description="Delete documents from the FAISS vector store",
         type="Faiss Environment",
     )
-    async def delete_documents(self, ids: List[str]) -> str:
+    async def delete_documents(self, ids: List[str]) -> Dict[str, Any]:
         """Delete documents from the FAISS vector store.
         
         Args:
             ids (List[str]): IDs of documents to delete
             
         Returns:
-            str: Deletion result message
+            Dict with success, message, and extra fields
         """
-        request = FaissDeleteRequest(ids=ids)
-        result = await self.faiss_service.delete_documents(request)
-        
-        if result.success:
-            return f"Successfully deleted {result.deleted_count} documents"
-        else:
-            return f"Failed to delete documents. Deleted count: {result.deleted_count}"
+        try:
+            request = FaissDeleteRequest(ids=ids)
+            result = await self.faiss_service.delete_documents(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to delete documents: {str(e)}",
+                "extra": {"error": str(e), "ids": ids}
+            }
     
     @ecp.action(
         name="get_index_info",
         description="Get information about the FAISS index",
         type="Faiss Environment"
     )
-    async def get_index_info(self) -> str:
+    async def get_index_info(self) -> Dict[str, Any]:
         """Get information about the FAISS index.
         
         Returns:
-            str: Index information including document count, dimensions, and configuration
+            Dict with success, message, and extra fields
         """
-        result = await self.faiss_service.get_index_info()
-        
-        return f"FAISS Index Information:\n" \
-               f"Total Documents: {result.total_documents}\n" \
-               f"Embedding Dimension: {result.embedding_dimension}\n" \
-               f"Index Type: {result.index_type}\n" \
-               f"Distance Strategy: {result.distance_strategy}"
+        try:
+            result = await self.faiss_service.get_index_info()
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            if result.success:
+                index_info = extra.get("index_info", {})
+                message = f"FAISS Index Information:\n" \
+                         f"Total Documents: {extra.get('total_documents', 0)}\n" \
+                         f"Embedding Dimension: {extra.get('embedding_dimension', 0)}\n" \
+                         f"Index Type: {extra.get('index_type', 'Unknown')}\n" \
+                         f"Distance Strategy: {extra.get('distance_strategy', 'Unknown')}"
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get index info: {str(e)}",
+                "extra": {"error": str(e)}
+            }
     
     @ecp.action(
         name="save_index",
         description="Save the FAISS index to disk",
         type="Faiss Environment"
     )
-    async def save_index(self) -> str:
+    async def save_index(self) -> Dict[str, Any]:
         """Save the FAISS index to disk.
         
         Returns:
-            str: Save operation result message
+            Dict with success, message, and extra fields
         """
-        await self.faiss_service.save_index()
-        return f"FAISS index saved successfully to: {self.base_dir}"
+        try:
+            await self.faiss_service.save_index()
+            return {
+                "success": True,
+                "message": f"FAISS index saved successfully to: {self.base_dir}",
+                "extra": {"base_dir": str(self.base_dir)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to save index: {str(e)}",
+                "extra": {"error": str(e), "base_dir": str(self.base_dir)}
+            }
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the FAISS environment.
@@ -204,20 +275,29 @@ class FaissEnvironment(BaseEnvironment):
             Dict[str, Any]: Environment state including index information and configuration
         """
         try:
-            index_info = await self.faiss_service.get_index_info()
+            index_result = await self.faiss_service.get_index_info()
+            extra = index_result.extra if index_result.extra else {}
+            
+            state = dedent(f"""
+                <info>
+                Base Directory: {str(self.base_dir)}
+                Index Name: {self.config.index_name}
+                Total Documents: {extra.get("total_documents", 0)}
+                Embedding Dimension: {extra.get("embedding_dimension", 0)}
+                Index Type: {extra.get("index_type", "Unknown")}
+                Distance Strategy: {extra.get("distance_strategy", "Unknown")}
+                Auto Save: {self.config.auto_save}
+                Save Interval: {self.config.save_interval}
+                </info>
+            """
+            )
             return {
-                "base_dir": str(self.base_dir),
-                "index_name": self.config.index_name,
-                "total_documents": index_info.total_documents,
-                "embedding_dimension": index_info.embedding_dimension,
-                "index_type": index_info.index_type,
-                "distance_strategy": index_info.distance_strategy,
-                "auto_save": self.config.auto_save,
-                "save_interval": self.config.save_interval
+                "state": state,
+                "extra": extra
             }
         except Exception as e:
             logger.error(f"| ❌ Failed to get FAISS state: {e}")
             return {
-                "base_dir": str(self.base_dir),
-                "error": str(e)
+                "state": f"Failed to get FAISS state: {str(e)}",
+                "extra": {"error": str(e)}
             }

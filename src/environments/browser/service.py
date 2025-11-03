@@ -15,6 +15,7 @@ from pydantic import BaseModel
 cdp_logger = logging.getLogger('cdp_use.client')
 cdp_logger.setLevel(logging.CRITICAL)  # Only show critical errors, suppress common CDP errors
 
+from src.environments.protocol.types import ActionResult
 from src.environments.browser.browser.session import BrowserSession
 from src.environments.browser.browser.events import (
     ClickElementEvent,
@@ -58,27 +59,6 @@ from src.environments.browser.types import (
     StoreScreenshotRequest,
     GetScreenshotRequest,
     BrowserStateRequest,
-    # Result types
-    SearchGoogleResult, 
-    GoToUrlResult, 
-    GoBackResult, 
-    WaitResult,
-    ClickElementResult, 
-    InputTextResult, 
-    ScrollResult, 
-    SendKeysResult,
-    ScrollToTextResult,
-    GetDropdownOptionsResult,
-    SelectDropdownOptionResult,
-    UploadFileResult, 
-    SwitchTabResult, 
-    CloseTabResult, 
-    ExtractStructuredDataResult,
-    ExecuteJsResult,
-    ScreenshotResult, 
-    StoreScreenshotResult,
-    GetScreenshotResult, 
-    BrowserStateResult
 )
 
 # Import EnhancedDOMTreeNode and rebuild event models that have forward references to it
@@ -144,7 +124,7 @@ class CDPBrowserService(Generic[Context]):
         base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
         self._screenshot_service = ScreenshotService(base_dir)
 
-    async def search_google(self, request: SearchGoogleRequest) -> SearchGoogleResult:
+    async def search_google(self, request: SearchGoogleRequest) -> ActionResult:
         """Search the query in Google, the query should be a search query like humans search in Google, concrete and not vague or super long."""
         try:
             search_url = f'https://www.google.com/search?q={request.query}&udm=14'
@@ -231,22 +211,20 @@ class CDPBrowserService(Generic[Context]):
             msg = f'🔍  {memory}'
             logger.info(msg)
             
-            return SearchGoogleResult(
-                extracted_content=memory,
-                long_term_memory=memory,
+            return ActionResult(
                 success=True,
-                message=f"Successfully searched Google for '{request.query}'"
+                message=msg,
+                extra={"memory": memory}
             )
         except Exception as e:
             logger.error(f'Failed to search Google: {e}')
-            return SearchGoogleResult(
-                extracted_content=None,
-                long_term_memory=None,
+            return ActionResult(
                 success=False,
-                message=f"Failed to search Google for '{request.query}': {str(e)}"
+                message=f"Failed to search Google for '{request.query}': {str(e)}",
+                extra={"error": str(e)}
             )
 
-    async def go_to_url(self, request: GoToUrlRequest) -> GoToUrlResult:
+    async def go_to_url(self, request: GoToUrlRequest) -> ActionResult:
         """Navigate to URL, set new_tab=True to open in new tab, False to navigate in current tab"""
         try:
             # Ensure browser session is ready
@@ -279,11 +257,10 @@ class CDPBrowserService(Generic[Context]):
                 msg = f'🔗 {memory}'
 
             logger.info(msg)
-            return GoToUrlResult(
-                extracted_content=msg,
-                long_term_memory=memory,
+            return ActionResult(
                 success=True,
-                message=f"Successfully navigated to {request.url}"
+                message=msg,
+                extra={"memory": memory}
             )
         except Exception as e:
             error_msg = str(e)
@@ -293,11 +270,10 @@ class CDPBrowserService(Generic[Context]):
             # Check if it's specifically a RuntimeError about CDP client
             if isinstance(e, RuntimeError) and 'CDP client not initialized' in error_msg:
                 self._session.logger.error('❌ Browser connection failed - CDP client not properly initialized')
-                return GoToUrlResult(
-                    extracted_content=None,
-                    long_term_memory=None,
+                return ActionResult(
                     success=False,
-                    message=f"Browser connection error: {error_msg}"
+                    message=f"Browser connection error: {error_msg}",
+                    extra={"error": error_msg}
                 )
             # Check for network-related errors
             elif any(
@@ -312,22 +288,20 @@ class CDPBrowserService(Generic[Context]):
             ):
                 site_unavailable_msg = f'Navigation failed - site unavailable: {request.url}'
                 self._session.logger.warning(f'⚠️ {site_unavailable_msg} - {error_msg}')
-                return GoToUrlResult(
-                    extracted_content=None,
-                    long_term_memory=None,
+                return ActionResult(
                     success=False,
-                    message=site_unavailable_msg
+                    message=site_unavailable_msg,
+                    extra={"error": error_msg}
                 )
             else:
                 # Return error instead of re-raising
-                return GoToUrlResult(
-                    extracted_content=None,
-                    long_term_memory=None,
+                return ActionResult(
                     success=False,
-                    message=f"Navigation failed: {str(e)}"
+                    message=f"Navigation failed: {str(e)}",
+                    extra={"error": error_msg}
                 )
 
-    async def go_back(self, request: GoBackRequest) -> GoBackResult:
+    async def go_back(self, request: GoBackRequest) -> ActionResult:
         """Go back"""
         try:
             event = self._session.event_bus.dispatch(GoBackEvent())
@@ -335,21 +309,21 @@ class CDPBrowserService(Generic[Context]):
             memory = 'Navigated back'
             msg = f'🔙  {memory}'
             logger.info(msg)
-            return GoBackResult(
-                extracted_content=memory,
+            return ActionResult(
                 success=True,
-                message="Successfully navigated back"
+                message=msg,
+                extra={"memory": memory}
             )
         except Exception as e:
             logger.error(f'Failed to dispatch GoBackEvent: {type(e).__name__}: {e}')
             error_msg = f'Failed to go back: {str(e)}'
-            return GoBackResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=error_msg
+                message=error_msg,
+                extra={"error": error_msg}
             )
 
-    async def wait(self, request: WaitRequest) -> WaitResult:
+    async def wait(self, request: WaitRequest) -> ActionResult:
         """Wait for x seconds (default 3) (max 30 seconds). This can be used to wait until the page is fully loaded."""
         # Cap wait time at maximum 30 seconds
         # Reduce the wait time by 3 seconds to account for the llm call which takes at least 3 seconds
@@ -360,14 +334,13 @@ class CDPBrowserService(Generic[Context]):
         memory = f'Waited for {request.seconds} seconds'
         logger.info(f'🕒 waited for {actual_seconds} seconds + 3 seconds for LLM call')
         await asyncio.sleep(actual_seconds)
-        return WaitResult(
-            extracted_content=memory,
-            long_term_memory=memory,
+        return ActionResult(
             success=True,
-            message=f"Successfully waited for {request.seconds} seconds"
+            message=f"Successfully waited for {request.seconds} seconds",
+            extra={"memory": memory}
         )
 
-    async def click_element_by_index(self, request: ClickElementRequest) -> ClickElementResult:
+    async def click_element_by_index(self, request: ClickElementRequest) -> ActionResult:
         """Click element by index. Only indices from your browser_state are allowed. Never use an index that is not inside your current browser_state. Set while_holding_ctrl=True to open any resulting navigation in a new tab."""
         # Dispatch click event with node
         try:
@@ -399,50 +372,45 @@ class CDPBrowserService(Generic[Context]):
             logger.info(msg)
 
             # Include click coordinates in metadata if available
-            return ClickElementResult(
-                extracted_content=memory,
-                metadata=click_metadata if isinstance(click_metadata, dict) else None,
+            return ActionResult(
                 success=True,
-                message=f"Successfully clicked element {request.index}"
+                message=msg,
+                extra={"memory": memory}
             )
         except BrowserError as e:
             if 'Cannot click on <select> elements.' in str(e):
                 try:
                     dropdown_result = await self.get_dropdown_options(request.index)
-                    return ClickElementResult(
-                        extracted_content=dropdown_result.extracted_content,
-                        metadata=dropdown_result.metadata,
+                    return ActionResult(
                         success=True,
-                        message=f"Element {request.index} is a dropdown, retrieved options"
+                        message=f"Element {request.index} is a dropdown, retrieved options",
+                        extra={"memory": dropdown_result.extracted_content}
                     )
                 except Exception as dropdown_error:
                     logger.error(
                         f'Failed to get dropdown options as shortcut during click_element_by_index on dropdown: {type(dropdown_error).__name__}: {dropdown_error}'
                     )
-                return ClickElementResult(
-                    extracted_content=None,
-                    metadata=None,
+                return ActionResult(
                     success=False,
-                    message="Cannot click on select elements"
+                    message="Cannot click on select elements",
+                    extra={"error": "Cannot click on select elements"}
                 )
 
             error_info = handle_browser_error(e)
-            return ClickElementResult(
-                extracted_content=error_info.get("extracted_content"),
-                metadata=None,
+            return ActionResult(
                 success=False,
-                message=f"Browser error: {error_info.get('error', str(e))}"
+                message=f"Browser error: {error_info.get('error', str(e))}",
+                extra={"error": error_info.get('error', str(e))}
             )
         except Exception as e:
             error_msg = f'Failed to click element {request.index}: {str(e)}'
-            return ClickElementResult(
-                extracted_content=None,
-                metadata=None,
+            return ActionResult(
                 success=False,
-                message=error_msg
+                message=error_msg,
+                extra={"error": error_msg}
             )
 
-    async def input_text(self, request: InputTextRequest) -> InputTextResult:
+    async def input_text(self, request: InputTextRequest) -> ActionResult:
         """Input text into an input interactive element. Only input text into indices that are inside your current browser_state. Never input text into indices that are not inside your current browser_state."""
         # Look up the node from the selector map
         node = await self._session.get_element_by_index(request.index)
@@ -483,29 +451,29 @@ class CDPBrowserService(Generic[Context]):
             logger.debug(log_msg)
 
             # Include input coordinates in metadata if available
-            return InputTextResult(
-                extracted_content=msg,
+            return ActionResult(
                 success=True,
-                message=f"Successfully input text into element {request.index}"
+                message=msg,
+                extra={"memory": input_metadata}
             )
         except BrowserError as e:
             error_info = handle_browser_error(e)
-            return InputTextResult(
-                extracted_content=error_info.get("extracted_content"),
+            return ActionResult(
                 success=False,
-                message=f"Browser error: {error_info.get('error', str(e))}"
+                message=f"Browser error: {error_info.get('error', str(e))}",
+                extra={"error": error_info.get('error', str(e))}
             )
         except Exception as e:
             # Log the full error for debugging
             logger.error(f'Failed to dispatch TypeTextEvent: {type(e).__name__}: {e}')
             error_msg = f'Failed to input text into element {request.index}: {e}'
-            return InputTextResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=error_msg
+                message=error_msg,
+                extra={"error": error_msg}
             )
 
-    async def scroll(self, request: ScrollRequest) -> ScrollResult:
+    async def scroll(self, request: ScrollRequest) -> ActionResult:
         """Scroll the page by specified number of pages (set down=True to scroll down, down=False to scroll up, num_pages=number of pages to scroll like 0.5 for half page, 10.0 for ten pages, etc.). 
         Default behavior is to scroll the entire page. This is enough for most cases.
         Optional if there are multiple scroll containers, use frame_element_index parameter with an element inside the container you want to scroll in. For that you must use indices that exist in your browser_state (works well for dropdowns and custom UI components). 
@@ -520,10 +488,10 @@ class CDPBrowserService(Generic[Context]):
                 node = await self._session.get_element_by_index(request.frame_element_index)
                 if node is None:
                     # Element does not exist
-                    return ScrollResult(
-                        extracted_content=None,
+                    return ActionResult(
                         success=False,
-                        message=f'Element index {request.frame_element_index} not found in browser state'
+                        message=f'Element index {request.frame_element_index} not found in browser state',
+                        extra={"error": f"Element index {request.frame_element_index} not found"}
                     )
 
             # Dispatch scroll event with node - the complex logic is handled in the event handler
@@ -550,21 +518,21 @@ class CDPBrowserService(Generic[Context]):
 
             msg = f'🔍 {long_term_memory}'
             logger.info(msg)
-            return ScrollResult(
-                extracted_content=msg,
+            return ActionResult(
                 success=True,
-                message=f"Successfully scrolled {direction} {target}"
+                message=f"Successfully scrolled {direction} {target}",
+                extra={"memory": long_term_memory}
             )
         except Exception as e:
             logger.error(f'Failed to dispatch ScrollEvent: {type(e).__name__}: {e}')
             error_msg = 'Failed to execute scroll action.'
-            return ScrollResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=error_msg
+                message=error_msg,
+                extra={"error": str(e)}
             )
 
-    async def send_keys(self, request: SendKeysRequest) -> SendKeysResult:
+    async def send_keys(self, request: SendKeysRequest) -> ActionResult:
         """Send strings of special keys to use e.g. Escape, Backspace, Insert, PageDown, Delete, Enter, or Shortcuts such as `Control+o`, `Control+Shift+T`"""
         # Dispatch send keys event
         try:
@@ -574,21 +542,21 @@ class CDPBrowserService(Generic[Context]):
             memory = f'Sent keys: {request.keys}'
             msg = f'⌨️  {memory}'
             logger.info(msg)
-            return SendKeysResult(
-                extracted_content=memory,
+            return ActionResult(
                 success=True,
-                message=f"Successfully sent keys: {request.keys}"
+                message=f"Successfully sent keys: {request.keys}",
+                extra={"memory": memory}
             )
         except Exception as e:
             logger.error(f'Failed to dispatch SendKeysEvent: {type(e).__name__}: {e}')
             error_msg = f'Failed to send keys: {str(e)}'
-            return SendKeysResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=error_msg
+                message=error_msg,
+                extra={"error": str(e)}
             )
 
-    async def scroll_to_text(self, request: ScrollToTextRequest) -> ScrollToTextResult:
+    async def scroll_to_text(self, request: ScrollToTextRequest) -> ActionResult:
         """Scroll to a text in the current page. This helps you to be efficient. Prefer this tool over scrolling step by step."""
         # Dispatch scroll to text event
         event = self._session.event_bus.dispatch(ScrollToTextEvent(text=request.text))
@@ -599,84 +567,115 @@ class CDPBrowserService(Generic[Context]):
             memory = f'Scrolled to text: {request.text}'
             msg = f'🔍  {memory}'
             logger.info(msg)
-            return ScrollToTextResult(
-                extracted_content=memory,
+            return ActionResult(
                 success=True,
-                message=f"Successfully scrolled to text: {request.text}"
+                message=f"Successfully scrolled to text: {request.text}",
+                extra={"memory": memory}
             )
         except Exception as e:
             # Text not found
             msg = f"Text '{request.text}' not found or not visible on page"
             logger.info(msg)
-            return ScrollToTextResult(
-                extracted_content=msg,
+            return ActionResult(
                 success=False,
-                message=msg
+                message=msg,
+                extra={"error": str(e)}
             )
 
-    async def get_dropdown_options(self, request: GetDropdownOptionsRequest) -> GetDropdownOptionsResult:
+    async def get_dropdown_options(self, request: GetDropdownOptionsRequest) -> ActionResult:
         """Get list of values for a dropdown input field. Only works on dropdown-style form elements (<select>, Semantic UI/aria-labeled select, etc.). Do not use this tool for none dropdown elements."""
-        # Look up the node from the selector map
-        node = await self._session.get_element_by_index(request.index)
-        if node is None:
-            raise ValueError(f'Element index {request.index} not found in browser state')
-
-        # Dispatch GetDropdownOptionsEvent to the event handler
-        event = self._session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
-        dropdown_data = await event.event_result(timeout=3.0, raise_if_none=True, raise_if_any=True)
-
-        if not dropdown_data:
-            raise ValueError('Failed to get dropdown options - no data returned')
-
-        # Use structured memory from the handler
-        return GetDropdownOptionsResult(
-            extracted_content=dropdown_data['short_term_memory'],
-            success=True,
-            message=f"Successfully retrieved dropdown options for element {request.index}",
-            options=dropdown_data.get('options', [])
-        )
-
-    async def select_dropdown_option(self, request: SelectDropdownOptionRequest) -> SelectDropdownOptionResult:
-        """Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options."""
-        # Look up the node from the selector map
-        node = await self._session.get_element_by_index(request.index)
-        if node is None:
-            raise ValueError(f'Element index {request.index} not found in browser state')
-
-        # Dispatch SelectDropdownOptionEvent to the event handler
-        event = self._session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=request.text))
-        selection_data = await event.event_result()
-
-        if not selection_data:
-            raise ValueError('Failed to select dropdown option - no data returned')
-
-        # Check if the selection was successful
-        if selection_data.get('success') == 'true':
-            # Extract the message from the returned data
-            msg = selection_data.get('message', f'Selected option: {request.text}')
-            return SelectDropdownOptionResult(
-                extracted_content=msg,
-                success=True,
-                message=f"Successfully selected dropdown option '{request.text}' at index {request.index}"
-            )
-        else:
-            # Handle structured error response
-            if 'short_term_memory' in selection_data and 'long_term_memory' in selection_data:
-                return SelectDropdownOptionResult(
-                    extracted_content=selection_data['short_term_memory'],
+        try:
+            # Look up the node from the selector map
+            node = await self._session.get_element_by_index(request.index)
+            if node is None:
+                return ActionResult(
                     success=False,
-                    message=selection_data.get('error', f'Failed to select option: {request.text}')
+                    message=f'Element index {request.index} not found in browser state',
+                    extra={"error": f"Element index {request.index} not found"}
+                )
+
+            # Dispatch GetDropdownOptionsEvent to the event handler
+            event = self._session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
+            dropdown_data = await event.event_result(timeout=3.0, raise_if_none=True, raise_if_any=True)
+
+            if not dropdown_data:
+                return ActionResult(
+                    success=False,
+                    message='Failed to get dropdown options - no data returned',
+                    extra={"error": "No data returned"}
+                )
+
+            # Use structured memory from the handler
+            return ActionResult(
+                success=True,
+                message=f"Successfully retrieved dropdown options for element {request.index}",
+                extra={
+                    "memory": dropdown_data['short_term_memory'],
+                    "options": dropdown_data.get('options', [])
+                }
+            )
+        except Exception as e:
+            return ActionResult(
+                success=False,
+                message=f"Failed to get dropdown options: {str(e)}",
+                extra={"error": str(e)}
+            )
+
+    async def select_dropdown_option(self, request: SelectDropdownOptionRequest) -> ActionResult:
+        """Select dropdown option by exact text from any dropdown type (native <select>, ARIA menus, or custom dropdowns). Searches target element and children to find selectable options."""
+        try:
+            # Look up the node from the selector map
+            node = await self._session.get_element_by_index(request.index)
+            if node is None:
+                return ActionResult(
+                    success=False,
+                    message=f'Element index {request.index} not found in browser state',
+                    extra={"error": f"Element index {request.index} not found"}
+                )
+
+            # Dispatch SelectDropdownOptionEvent to the event handler
+            event = self._session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=request.text))
+            selection_data = await event.event_result()
+
+            if not selection_data:
+                return ActionResult(
+                    success=False,
+                    message='Failed to select dropdown option - no data returned',
+                    extra={"error": "No data returned"}
+                )
+
+            # Check if the selection was successful
+            if selection_data.get('success') == 'true':
+                # Extract the message from the returned data
+                msg = selection_data.get('message', f'Selected option: {request.text}')
+                return ActionResult(
+                    success=True,
+                    message=f"Successfully selected dropdown option '{request.text}' at index {request.index}",
+                    extra={"memory": msg}
                 )
             else:
-                # Fallback to regular error
+                # Handle structured error response
                 error_msg = selection_data.get('error', f'Failed to select option: {request.text}')
-                return SelectDropdownOptionResult(
-                    extracted_content=None,
-                    success=False,
-                    message=error_msg
-                )
+                if 'short_term_memory' in selection_data:
+                    return ActionResult(
+                        success=False,
+                        message=error_msg,
+                        extra={"error": error_msg, "memory": selection_data['short_term_memory']}
+                    )
+                else:
+                    return ActionResult(
+                        success=False,
+                        message=error_msg,
+                        extra={"error": error_msg}
+                    )
+        except Exception as e:
+            return ActionResult(
+                success=False,
+                message=f"Failed to select dropdown option: {str(e)}",
+                extra={"error": str(e)}
+            )
 
-    async def upload_file_to_element(self, request: UploadFileRequest) -> UploadFileResult:
+    async def upload_file_to_element(self, request: UploadFileRequest) -> ActionResult:
         """Upload file to interactive element with file path"""
         # Check if file is in available_file_paths (user-provided or downloaded files)
         # For remote browsers (is_local=False), we allow absolute remote paths even if not tracked locally
@@ -690,30 +689,30 @@ class CDPBrowserService(Generic[Context]):
                 else:
                     msg = f'File path {request.path} is not available. Upload files must be in available_file_paths or downloaded_files.'
                     logger.error(f'❌ {msg}')
-                    return UploadFileResult(
-                        extracted_content=None,
+                    return ActionResult(
                         success=False,
-                        message=msg
+                        message=msg,
+                        extra={"error": msg}
                     )
 
         # For local browsers, ensure the file exists on the local filesystem
         if self._session.is_local:
             if not os.path.exists(request.path):
                 msg = f'File {request.path} does not exist'
-                return UploadFileResult(
-                    extracted_content=None,
+                return ActionResult(
                     success=False,
-                    message=msg
+                    message=msg,
+                    extra={"error": msg}
                 )
 
         # Get the selector map to find the node
         selector_map = await self._session.get_selector_map()
         if request.index not in selector_map:
             msg = f'Element with index {request.index} does not exist.'
-            return UploadFileResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=msg
+                message=msg,
+                extra={"error": msg}
             )
 
         node = selector_map[request.index]
@@ -798,10 +797,10 @@ class CDPBrowserService(Generic[Context]):
             else:
                 msg = 'No file upload element found on the page'
                 logger.error(msg)
-                return UploadFileResult(
-                    extracted_content=None,
+                return ActionResult(
                     success=False,
-                    message=msg
+                    message=msg,
+                    extra={"error": msg}
                 )
 
         # Dispatch upload file event with the file input node
@@ -810,21 +809,22 @@ class CDPBrowserService(Generic[Context]):
             await event
             await event.event_result(raise_if_any=True, raise_if_none=False)
             msg = f'Successfully uploaded file to index {request.index}'
+            memory = f'Uploaded file {request.path} to element {request.index}'
             logger.info(f'📁 {msg}')
-            return UploadFileResult(
-                extracted_content=msg,
+            return ActionResult(
                 success=True,
-                message=f"Successfully uploaded file {request.path} to element {request.index}"
+                message=f"Successfully uploaded file {request.path} to element {request.index}",
+                extra={"memory": memory}
             )
         except Exception as e:
             logger.error(f'Failed to upload file: {e}')
-            return UploadFileResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=f'Failed to upload file: {e}'
+                message=f'Failed to upload file: {e}',
+                extra={"error": str(e)}
             )
 
-    async def switch_tab(self, request: SwitchTabRequest) -> SwitchTabResult:
+    async def switch_tab(self, request: SwitchTabRequest) -> ActionResult:
         """Switch tab"""
         # Dispatch switch tab event
         try:
@@ -836,20 +836,20 @@ class CDPBrowserService(Generic[Context]):
             assert new_target_id, 'SwitchTabEvent did not return a TargetID for the new tab that was switched to'
             memory = f'Switched to Tab with ID {new_target_id[-4:]}'
             logger.info(f'🔄  {memory}')
-            return SwitchTabResult(
-                extracted_content=memory,
+            return ActionResult(
                 success=True,
-                message=f"Successfully switched to tab {request.tab_id}"
+                message=f"Successfully switched to tab {request.tab_id}",
+                extra={"memory": memory}
             )
         except Exception as e:
             logger.error(f'Failed to switch tab: {type(e).__name__}: {e}')
-            return SwitchTabResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=f'Failed to switch to tab {request.tab_id}.'
+                message=f'Failed to switch to tab {request.tab_id}.',
+                extra={"error": str(e)}
             )
 
-    async def close_tab(self, request: CloseTabRequest) -> CloseTabResult:
+    async def close_tab(self, request: CloseTabRequest) -> ActionResult:
         """Close an existing tab"""
         # Dispatch close tab event
         try:
@@ -864,20 +864,20 @@ class CDPBrowserService(Generic[Context]):
             await event.event_result(raise_if_any=True, raise_if_none=False)
             memory = f'Closed tab # {request.tab_id} ({_log_pretty_url(tab_url)})'
             logger.info(f'🗑️  {memory}')
-            return CloseTabResult(
-                extracted_content=memory,
+            return ActionResult(
                 success=True,
-                message=f"Successfully closed tab {request.tab_id}"
+                message=f"Successfully closed tab {request.tab_id}",
+                extra={"memory": memory}
             )
         except Exception as e:
             logger.error(f'Failed to close tab: {e}')
-            return CloseTabResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
-                message=f'Failed to close tab {request.tab_id}.'
+                message=f'Failed to close tab {request.tab_id}.',
+                extra={"error": str(e)}
             )
 
-    async def extract_structured_data(self, request: ExtractStructuredDataRequest) -> ExtractStructuredDataResult:
+    async def extract_structured_data(self, request: ExtractStructuredDataRequest) -> ActionResult:
         """This tool sends the markdown of the current page with the query to an LLM to extract structured, semantic data (e.g. product description, price, all information about XYZ) from the markdown of the current webpage based on a query.
 Only use when:
 - You are sure that you are on the right page for the query
@@ -906,10 +906,10 @@ If this tool does not return the desired outcome, do not call it again, use scro
 
         if request.start_from_char > 0:
             if request.start_from_char >= len(content):
-                return ExtractStructuredDataResult(
-                    extracted_content=None,
+                return ActionResult(
                     success=False,
-                    message=f'start_from_char ({request.start_from_char}) exceeds content length ({len(content)}). Content has {final_filtered_length} characters after filtering.'
+                    message=f'start_from_char ({request.start_from_char}) exceeds content length ({len(content)}). Content has {final_filtered_length} characters after filtering.',
+                    extra={"error": f"start_from_char ({request.start_from_char}) exceeds content length"}
                 )
             content = content[request.start_from_char:]
             content_stats['started_from_char'] = request.start_from_char
@@ -964,14 +964,17 @@ If this tool does not return the desired outcome, do not call it again, use scro
             include_extracted_content_only_once = True
 
         logger.info(f'📄 {memory}')
-        return ExtractStructuredDataResult(
-            extracted_content=extracted_content,
+        return ActionResult(
             success=True,
             message=f"Successfully extracted structured data for query: {request.query}",
-            extracted_data={"content": content, "stats": content_stats}
+            extra={
+                "memory": memory if not include_extracted_content_only_once else None,
+                "extracted_content": extracted_content if include_extracted_content_only_once else None,
+                "extracted_data": {"content": content, "stats": content_stats}
+            }
         )
 
-    async def execute_js(self, request: ExecuteJsRequest) -> ExecuteJsResult:
+    async def execute_js(self, request: ExecuteJsRequest) -> ActionResult:
         """This JavaScript code gets executed with Runtime.evaluate and 'returnByValue': True, 'awaitPromise': True
 
 SYNTAX RULES - FAILURE TO FOLLOW CAUSES "Uncaught at line 0" ERRORS:
@@ -1044,11 +1047,10 @@ SHADOW DOM ACCESS EXAMPLE:
                     error_msg += f' at line {exception["lineNumber"]}'
                 msg = f'Code: {request.code}\n\nError: {error_msg}'
                 logger.info(msg)
-                return ExecuteJsResult(
-                    extracted_content=None,
+                return ActionResult(
                     success=False,
                     message=error_msg,
-                    js_result=None
+                    extra={"error": error_msg}
                 )
 
             # Get the result data
@@ -1058,11 +1060,10 @@ SHADOW DOM ACCESS EXAMPLE:
             if result_data.get('wasThrown'):
                 msg = f'Code: {request.code}\n\nError: JavaScript execution failed (wasThrown=true)'
                 logger.info(msg)
-                return ExecuteJsResult(
-                    extracted_content=None,
+                return ActionResult(
                     success=False,
                     message="JavaScript execution failed (wasThrown=true)",
-                    js_result=None
+                    extra={"error": "JavaScript execution failed (wasThrown=true)"}
                 )
 
             # Get the actual value
@@ -1088,22 +1089,20 @@ SHADOW DOM ACCESS EXAMPLE:
                 result_text = result_text[:19950] + '\n... [Truncated after 20000 characters]'
             msg = f'Code: {request.code}\n\nResult: {result_text}'
             logger.info(msg)
-            return ExecuteJsResult(
-                extracted_content=msg,
+            return ActionResult(
                 success=True,
                 message="JavaScript executed successfully",
-                js_result=value
+                extra={"memory": msg, "js_result": value}
             )
 
         except Exception as e:
             # CDP communication or other system errors
             error_msg = f'Code: {request.code}\n\nError: Failed to execute JavaScript: {type(e).__name__}: {e}'
             logger.info(error_msg)
-            return ExecuteJsResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
                 message=f"Failed to execute JavaScript: {str(e)}",
-                js_result=None
+                extra={"error": str(e)}
             )
 
     @observe_debug(ignore_input=True, ignore_output=True, name='extract_clean_markdown')
@@ -1230,7 +1229,7 @@ SHADOW DOM ACCESS EXAMPLE:
     async def close(self) -> None:
         await self.stop()
 
-    async def state(self, request: BrowserStateRequest) -> BrowserStateResult:
+    async def state(self, request: BrowserStateRequest) -> ActionResult:
         """Get current browser state"""
         try:
             summary = await self._session.get_browser_state_summary(include_screenshot=request.include_screenshot)
@@ -1253,22 +1252,22 @@ SHADOW DOM ACCESS EXAMPLE:
                 "performance_metrics": summary.performance_metrics.model_dump() if summary.performance_metrics else None,
             }
             
-            return BrowserStateResult(
-                state=state_dict,
+            return ActionResult(
                 success=True,
-                message="Successfully retrieved browser state"
+                message="Successfully retrieved browser state",
+                extra={"state": state_dict}
             )
         except Exception as e:
             logger.error(f'Failed to get browser state: {e}')
-            return BrowserStateResult(
-                state={},
+            return ActionResult(
                 success=False,
-                message=f"Failed to get browser state: {str(e)}"
+                message=f"Failed to get browser state: {str(e)}",
+                extra={"error": str(e), "state": {}}
             )
 
 
     # ----- screenshot service methods -----
-    async def screenshot(self, request: ScreenshotRequest) -> ScreenshotResult:
+    async def screenshot(self, request: ScreenshotRequest) -> ActionResult:
         """Take a screenshot with optional element highlighting"""
         try:
             if request.highlight_elements:
@@ -1284,29 +1283,26 @@ SHADOW DOM ACCESS EXAMPLE:
                     # Use ScreenshotService if available and no specific path provided
                     if self._screenshot_service and not request.path:
                         screenshot_path = await self._screenshot_service.store_screenshot(summary.screenshot, 1)
-                        return ScreenshotResult(
-                            extracted_content=f"Screenshot taken with highlighting",
+                        return ActionResult(
                             success=True,
                             message="Successfully took highlighted screenshot",
-                            screenshot_path=screenshot_path
+                            extra={"screenshot_path": screenshot_path}
                         )
                     elif request.path:
                         # Save to specific path
                         from pathlib import Path
                         Path(request.path).write_bytes(highlighted_data)
-                        return ScreenshotResult(
-                            extracted_content=f"Screenshot saved to {request.path}",
+                        return ActionResult(
                             success=True,
                             message=f"Successfully saved highlighted screenshot to {request.path}",
-                            screenshot_path=str(Path(request.path).resolve())
+                            extra={"screenshot_path": str(Path(request.path).resolve())}
                         )
                     else:
                         # Return raw data
-                        return ScreenshotResult(
-                            extracted_content="Screenshot taken with highlighting",
+                        return ActionResult(
                             success=True,
                             message="Successfully took highlighted screenshot",
-                            screenshot_path=None
+                            extra={}
                         )
                 else:
                     # Fallback to regular screenshot if highlighting failed
@@ -1314,18 +1310,16 @@ SHADOW DOM ACCESS EXAMPLE:
                     data = await self._session.take_screenshot(path=request.path, full_page=request.full_page)
                     if request.path:
                         from pathlib import Path
-                        return ScreenshotResult(
-                            extracted_content=f"Screenshot saved to {request.path}",
+                        return ActionResult(
                             success=True,
                             message=f"Successfully saved screenshot to {request.path}",
-                            screenshot_path=str(Path(request.path).resolve())
+                            extra={"screenshot_path": str(Path(request.path).resolve())}
                         )
                     else:
-                        return ScreenshotResult(
-                            extracted_content="Screenshot taken",
+                        return ActionResult(
                             success=True,
                             message="Successfully took screenshot",
-                            screenshot_path=None
+                            extra={}
                         )
             else:
                 # Regular screenshot without highlighting
@@ -1337,44 +1331,39 @@ SHADOW DOM ACCESS EXAMPLE:
                     import base64
                     screenshot_b64 = base64.b64encode(data).decode('utf-8')
                     screenshot_path = await self._screenshot_service.store_screenshot(screenshot_b64, 1)
-                    return ScreenshotResult(
-                        extracted_content="Screenshot taken",
+                    return ActionResult(
                         success=True,
                         message="Successfully took screenshot",
-                        screenshot_path=screenshot_path
+                        extra={"screenshot_path": screenshot_path}
                     )
                 elif request.path:
                     from pathlib import Path
-                    return ScreenshotResult(
-                        extracted_content=f"Screenshot saved to {request.path}",
+                    return ActionResult(
                         success=True,
                         message=f"Successfully saved screenshot to {request.path}",
-                        screenshot_path=str(Path(request.path).resolve())
+                        extra={"screenshot_path": str(Path(request.path).resolve())}
                     )
                 else:
-                    return ScreenshotResult(
-                        extracted_content="Screenshot taken",
+                    return ActionResult(
                         success=True,
                         message="Successfully took screenshot",
-                        screenshot_path=None
+                        extra={}
                     )
         except Exception as e:
             logger.error(f'Failed to take screenshot: {e}')
-            return ScreenshotResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
                 message=f"Failed to take screenshot: {str(e)}",
-                screenshot_path=None
+                extra={"error": str(e)}
             )
     
-    async def store_screenshot(self, request: StoreScreenshotRequest) -> StoreScreenshotResult:
+    async def store_screenshot(self, request: StoreScreenshotRequest) -> ActionResult:
         """Take a screenshot and store it using ScreenshotService"""
         if not self._screenshot_service:
-            return StoreScreenshotResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
                 message="ScreenshotService not initialized. Please provide base_dir in constructor.",
-                screenshot_path=None
+                extra={"error": "ScreenshotService not initialized"}
             )
         
         # Create a ScreenshotRequest from StoreScreenshotRequest
@@ -1386,51 +1375,45 @@ SHADOW DOM ACCESS EXAMPLE:
         
         result = await self.screenshot(screenshot_request)
         
-        if result.success and result.screenshot_path:
-            return StoreScreenshotResult(
-                extracted_content=result.extracted_content,
+        if result.success and result.extra.get("screenshot_path"):
+            return ActionResult(
                 success=True,
                 message=f"Successfully stored screenshot for step {request.step_number}",
-                screenshot_path=result.screenshot_path
+                extra={"screenshot_path": result.extra.get("screenshot_path")}
             )
         else:
-            return StoreScreenshotResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
                 message=f"Failed to store screenshot for step {request.step_number}: {result.message}",
-                screenshot_path=None
+                extra={"error": result.message}
             )
     
-    async def get_screenshot_from_disk(self, request: GetScreenshotRequest) -> GetScreenshotResult:
+    async def get_screenshot_from_disk(self, request: GetScreenshotRequest) -> ActionResult:
         """Get screenshot from disk as base64"""
         if not self._screenshot_service:
-            return GetScreenshotResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
                 message="ScreenshotService not initialized",
-                base64_image=None
+                extra={"error": "ScreenshotService not initialized"}
             )
         
         try:
             base64_image = await self._screenshot_service.get_screenshot(request.screenshot_path)
             if base64_image:
-                return GetScreenshotResult(
-                    extracted_content=f"Screenshot retrieved from {request.screenshot_path}",
+                return ActionResult(
                     success=True,
                     message=f"Successfully retrieved screenshot from {request.screenshot_path}",
-                    base64_image=base64_image
+                    extra={"base64_image": base64_image}
                 )
             else:
-                return GetScreenshotResult(
-                    extracted_content=None,
+                return ActionResult(
                     success=False,
                     message=f"Screenshot not found at {request.screenshot_path}",
-                    base64_image=None
+                    extra={"error": f"Screenshot not found at {request.screenshot_path}"}
                 )
         except Exception as e:
-            return GetScreenshotResult(
-                extracted_content=None,
+            return ActionResult(
                 success=False,
                 message=f"Failed to retrieve screenshot: {str(e)}",
-                base64_image=None
+                extra={"error": str(e)}
             )

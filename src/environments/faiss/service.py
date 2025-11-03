@@ -13,6 +13,7 @@ from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores.utils import DistanceStrategy
 
 from src.logger import logger
+from src.environments.protocol.types import ActionResult
 from src.environments.faiss.exceptions import (
     FaissIndexError, 
     FaissDocumentError, 
@@ -22,11 +23,8 @@ from src.environments.faiss.exceptions import (
 )
 from src.environments.faiss.types import (
     FaissSearchRequest, 
-    FaissSearchResult, 
     FaissAddRequest,
-    FaissAddResult,
     FaissDeleteRequest,
-    FaissDeleteResult,
     FaissIndexInfo, 
     FaissConfig
 )
@@ -137,17 +135,21 @@ class FaissService:
         }
         return strategy_map.get(self.config.distance_strategy, DistanceStrategy.EUCLIDEAN_DISTANCE)
     
-    async def add_documents(self, request: FaissAddRequest) -> FaissAddResult:
+    async def add_documents(self, request: FaissAddRequest) -> ActionResult:
         """Add documents to the FAISS index.
         
         Args:
             request: Add request with texts and metadata
             
         Returns:
-            Add result with IDs and count
+            Action result with IDs and count in extra
         """
         if not self.vector_store:
-            raise FaissIndexError("FAISS index not initialized")
+            return ActionResult(
+                success=False,
+                message="FAISS index not initialized",
+                extra={"error": "FAISS index not initialized"}
+            )
         
         try:
             # Filter out empty texts
@@ -163,7 +165,11 @@ class FaissService:
             
             if not valid_texts:
                 logger.info("| ⚠️ No valid texts to add (all texts were empty)")
-                return FaissAddResult(ids=[], count=0)
+                return ActionResult(
+                    success=True,
+                    message="No valid texts to add (all texts were empty)",
+                    extra={"ids": [], "count": 0, "total_input": len(request.texts)}
+                )
 
             ids = []
             documents = []
@@ -181,22 +187,39 @@ class FaissService:
             await self._auto_save()
             
             logger.info(f"| ➕ Added {len(ids)} documents to FAISS index")
-            return FaissAddResult(ids=ids, count=len(ids))
+            return ActionResult(
+                success=True,
+                message=f"Added {len(ids)} documents to FAISS index",
+                extra={
+                    "ids": ids,
+                    "count": len(ids),
+                    "total_input": len(request.texts),
+                    "valid_input": len(valid_texts)
+                }
+            )
             
         except Exception as e:
-            raise FaissDocumentError(f"Failed to add documents: {e}")
+            return ActionResult(
+                success=False,
+                message=f"Failed to add documents: {str(e)}",
+                extra={"error": str(e)}
+            )
     
-    async def search_similar(self, request: FaissSearchRequest) -> FaissSearchResult:
+    async def search_similar(self, request: FaissSearchRequest) -> ActionResult:
         """Search for similar documents.
         
         Args:
             request: Search request with query and parameters
             
         Returns:
-            Search result with documents and scores
+            Action result with documents and scores in extra
         """
         if not self.vector_store:
-            raise FaissIndexError("FAISS index not initialized")
+            return ActionResult(
+                success=False,
+                message="FAISS index not initialized",
+                extra={"error": "FAISS index not initialized"}
+            )
         
         try:
             # Perform similarity search
@@ -217,27 +240,50 @@ class FaissService:
             documents = [doc for doc, _ in docs_and_scores]
             scores = [score for _, score in docs_and_scores]
             
+            # Convert documents to dict for serialization
+            documents_dict = [
+                {
+                    "page_content": doc.page_content,
+                    "metadata": doc.metadata
+                }
+                for doc in documents
+            ]
+            
             logger.info(f"| 🔍 Found {len(documents)} similar documents for query: {request.query[:50]}...")
-            return FaissSearchResult(
-                documents=documents,
-                scores=scores,
-                total_found=len(documents)
+            return ActionResult(
+                success=True,
+                message=f"Found {len(documents)} similar documents",
+                extra={
+                    "documents": documents_dict,
+                    "scores": scores,
+                    "total_found": len(documents),
+                    "query": request.query,
+                    "k": request.k
+                }
             )
             
         except Exception as e:
-            raise FaissSearchError(f"Failed to search documents: {e}")
+            return ActionResult(
+                success=False,
+                message=f"Failed to search documents: {str(e)}",
+                extra={"error": str(e), "query": request.query}
+            )
     
-    async def delete_documents(self, request: FaissDeleteRequest) -> FaissDeleteResult:
+    async def delete_documents(self, request: FaissDeleteRequest) -> ActionResult:
         """Delete documents from the FAISS index.
         
         Args:
             request: Delete request with document IDs
             
         Returns:
-            Delete result with count and success status
+            Action result with count and success status in extra
         """
         if not self.vector_store:
-            raise FaissIndexError("FAISS index not initialized")
+            return ActionResult(
+                success=False,
+                message="FAISS index not initialized",
+                extra={"error": "FAISS index not initialized"}
+            )
         
         try:
             # Delete documents
@@ -248,32 +294,55 @@ class FaissService:
             
             deleted_count = len(request.ids) if result else 0
             logger.info(f"| 🗑️ Deleted {deleted_count} documents from FAISS index")
-            return FaissDeleteResult(
-                deleted_count=deleted_count,
-                success=result is not False
+            return ActionResult(
+                success=result is not False,
+                message=f"Deleted {deleted_count} documents from FAISS index",
+                extra={
+                    "deleted_count": deleted_count,
+                    "requested_ids": request.ids,
+                    "total_requested": len(request.ids)
+                }
             )
             
         except ValueError as e:
             # Handle case where some IDs don't exist
             if "Some specified ids do not exist" in str(e):
                 logger.warning(f"| ⚠️ Some IDs not found during deletion: {e}")
-                return FaissDeleteResult(
-                    deleted_count=0,
-                    success=True  # Still consider it successful, just no documents deleted
+                return ActionResult(
+                    success=True,
+                    message="Some IDs not found, but deletion operation completed",
+                    extra={
+                        "deleted_count": 0,
+                        "requested_ids": request.ids,
+                        "total_requested": len(request.ids),
+                        "warning": str(e)
+                    }
                 )
             else:
-                raise FaissDocumentError(f"Failed to delete documents: {e}")
+                return ActionResult(
+                    success=False,
+                    message=f"Failed to delete documents: {str(e)}",
+                    extra={"error": str(e), "requested_ids": request.ids}
+                )
         except Exception as e:
-            raise FaissDocumentError(f"Failed to delete documents: {e}")
+            return ActionResult(
+                success=False,
+                message=f"Failed to delete documents: {str(e)}",
+                extra={"error": str(e), "requested_ids": request.ids}
+            )
     
-    async def get_index_info(self) -> FaissIndexInfo:
+    async def get_index_info(self) -> ActionResult:
         """Get information about the FAISS index.
         
         Returns:
-            Index information
+            Action result with index information in extra
         """
         if not self.vector_store:
-            raise FaissIndexError("FAISS index not initialized")
+            return ActionResult(
+                success=False,
+                message="FAISS index not initialized",
+                extra={"error": "FAISS index not initialized"}
+            )
         
         try:
             total_documents = len(self.vector_store.index_to_docstore_id)
@@ -284,15 +353,32 @@ class FaissService:
             else:
                 embedding_dimension = 0
             
-            return FaissIndexInfo(
+            index_info = FaissIndexInfo(
                 total_documents=total_documents,
                 embedding_dimension=embedding_dimension,
                 index_type=type(self.vector_store.index).__name__,
                 distance_strategy=self.config.distance_strategy
             )
             
+            return ActionResult(
+                success=True,
+                message=f"FAISS index information retrieved successfully",
+                extra={
+                    "index_info": index_info.model_dump(),
+                    "total_documents": total_documents,
+                    "embedding_dimension": embedding_dimension,
+                    "index_type": type(self.vector_store.index).__name__,
+                    "distance_strategy": self.config.distance_strategy,
+                    "index_name": self.config.index_name
+                }
+            )
+            
         except Exception as e:
-            raise FaissIndexError(f"Failed to get index info: {e}")
+            return ActionResult(
+                success=False,
+                message=f"Failed to get index info: {str(e)}",
+                extra={"error": str(e)}
+            )
     
     async def save_index(self) -> None:
         """Save the FAISS index to disk."""

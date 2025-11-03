@@ -124,7 +124,13 @@ class DeepResearcherTool(BaseTool):
         self.all_insights: List[str] = []
 
     async def _arun(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> ToolResponse:
-        """Execute deep research workflow."""
+        """Execute deep research workflow.
+        
+        Args:
+            task: The research task or question to investigate
+            image: Optional image absolute path to analyze along with the task
+            filter_year: Optional year filter for search results
+        """
         try:
             logger.info(f"Starting deep research for task: {task}")
             
@@ -174,17 +180,19 @@ class DeepResearcherTool(BaseTool):
                 final_summary = await self._evaluate_completeness(task)
                 if "ANSWER_FOUND" in final_summary:
                     logger.info(f"Answer found in round {round_num}")
-                    return await self._format_final_result(final_summary, round_num)
+                    result = await self._format_final_result(final_summary, round_num)
+                    return ToolResponse(success=True, message=result)
                 
                 logger.info(f"Round {round_num} completed, continuing to next round")
             
             # If all rounds completed without finding answer
             logger.warning("Maximum rounds reached without finding complete answer")
-            return await self._format_failure_result(task)
+            result = await self._format_failure_result(task)
+            return ToolResponse(success=False, message=result)
             
         except Exception as e:
             logger.error(f"Error in deep research: {e}")
-            return ToolResponse(content=f"Error during deep research: {str(e)}")
+            return ToolResponse(success=False, message=f"Error during deep research: {e}")
 
     async def _generate_search_query(self, task: str, round_num: int, image: Optional[str] = None) -> str:
         """Generate search query using LLM based on task, image, and round number."""
@@ -449,16 +457,16 @@ class DeepResearcherTool(BaseTool):
             response = await self.model.ainvoke([message])
             
             if response and response.content.strip():
-                return ToolResponse(content=response.content.strip())
+                return ToolResponse(success=True, message=response.content.strip())
             else:
-                return self._fallback_format_result(summary, round_num)
+                return ToolResponse(success=False, message=self._fallback_format_result(summary, round_num))
                 
         except Exception as e:
             logger.warning(f"Failed to format final result with LLM: {e}")
             # Simple fallback
-            return self._fallback_format_result(summary, round_num)
+            return ToolResponse(success=False, message=f"Failed to format final result with LLM: {e}")
     
-    def _fallback_format_result(self, summary: str, round_num: int) -> ToolResponse:
+    def _fallback_format_result(self, summary: str, round_num: int) -> str:
         """Basic fallback formatting for successful results."""
         result = f"🎯 Research completed in {round_num} rounds!\n\n"
         result += "📋 Summary:\n"
@@ -472,9 +480,9 @@ class DeepResearcherTool(BaseTool):
         result += f"- Total rounds: {len(self.research_history)}\n"
         result += f"- Total insights: {len(self.all_insights)}\n"
         
-        return ToolResponse(content=result) 
+        return result 
 
-    async def _format_failure_result(self, task: str) -> ToolResponse:
+    async def _format_failure_result(self, task: str) -> str:
         """Format the failure result when max rounds are reached using LLM."""
         try:
             prompt = cleandoc(f"""The research task was incomplete after maximum rounds. Please format a helpful failure report.
@@ -501,7 +509,7 @@ class DeepResearcherTool(BaseTool):
             response = await self.model.ainvoke([message])
             
             if response and response.content.strip():
-                return ToolResponse(content=response.content.strip())
+                return response.content.strip()
             else:
                 return self._fallback_format_failure_result(task)
                 
@@ -510,7 +518,7 @@ class DeepResearcherTool(BaseTool):
             # Simple fallback
             return self._fallback_format_failure_result(task)
     
-    def _fallback_format_failure_result(self, task: str) -> ToolResponse:
+    def _fallback_format_failure_result(self, task: str) -> str:
         """Basic fallback formatting for failure results."""
         result = f"❌ Research incomplete after maximum rounds reached.\n\n"
         result += f"📋 Task: {task}\n\n"
@@ -527,7 +535,7 @@ class DeepResearcherTool(BaseTool):
         else:
             result += "🔍 No insights collected. The task might be too specific or the information might not be available online."
         
-        return ToolResponse(content=result)
+        return result
 
     def _run(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> ToolResponse:
         """Execute deep research synchronously (fallback)."""

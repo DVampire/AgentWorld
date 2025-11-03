@@ -64,7 +64,7 @@ class BrowserTool(BaseTool):
                     verbose=True,
                 )
             except Exception as e:
-                return ToolResponse(content=f"Error creating browser agent: {str(e)}")
+                return ToolResponse(success=False, message=f"Error creating browser agent: {str(e)}")
 
             history = await agent.run()
 
@@ -80,12 +80,12 @@ class BrowserTool(BaseTool):
                 else:
                     res = "Task completed but no specific results available"
             except Exception as e:
-                res = ToolResponse(content=f"Task completed but error extracting results: {str(e)}")
+                res = ToolResponse(success=False, message=f"Task completed but error extracting results: {str(e)}")
 
             return res
 
         except Exception as e:
-            return ToolResponse(content=f"Error in browser tool: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in browser tool: {str(e)}")
         finally:
             # Ensure proper cleanup
             if agent:
@@ -107,4 +107,4 @@ class BrowserTool(BaseTool):
                 loop.close()
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
-            return ToolResponse(content=f"Error in synchronous execution: {e}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {e}")

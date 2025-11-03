@@ -30,8 +30,8 @@ class DoneTool(BaseTool):
     
     async def _arun(self, result: str) -> ToolResponse:
         """Indicate that the task has been completed."""
-        return ToolResponse(content=f"✅ Task completed: {result}")
+        return ToolResponse(success=True, message=f"✅ Task completed: {result}")
     
     def _run(self, result: str) -> ToolResponse:
         """Indicate that the task has been completed."""
-        return ToolResponse(content=f"✅ Task completed: {result}")
+        return ToolResponse(success=True, message=f"✅ Task completed: {result}")

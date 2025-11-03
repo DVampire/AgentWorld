@@ -14,13 +14,6 @@ class FaissSearchRequest(BaseModel):
     score_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum similarity score")
 
 
-class FaissSearchResult(BaseModel):
-    """Result of FAISS similarity search."""
-    documents: List[Document] = Field(..., description="List of similar documents")
-    scores: List[float] = Field(..., description="Similarity scores for each document")
-    total_found: int = Field(..., description="Total number of documents found")
-
-
 class FaissAddRequest(BaseModel):
     """Request for adding documents to FAISS."""
     texts: List[str] = Field(..., description="List of texts to add")
@@ -28,21 +21,9 @@ class FaissAddRequest(BaseModel):
     ids: Optional[List[str]] = Field(None, description="Custom IDs for each text")
 
 
-class FaissAddResult(BaseModel):
-    """Result of adding documents to FAISS."""
-    ids: List[str] = Field(..., description="IDs of added documents")
-    count: int = Field(..., description="Number of documents added")
-
-
 class FaissDeleteRequest(BaseModel):
     """Request for deleting documents from FAISS."""
     ids: List[str] = Field(..., description="IDs of documents to delete")
-
-
-class FaissDeleteResult(BaseModel):
-    """Result of deleting documents from FAISS."""
-    deleted_count: int = Field(..., description="Number of documents deleted")
-    success: bool = Field(..., description="Whether deletion was successful")
 
 
 class FaissIndexInfo(BaseModel):

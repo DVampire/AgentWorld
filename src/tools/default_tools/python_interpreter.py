@@ -56,10 +56,10 @@ class PythonInterpreterTool(BaseTool):
             self.python_evaluator.state = {}
             code_output = self.python_evaluator(code)
             output = f"Stdout:\n{code_output.logs}\nOutput: {str(code_output.output)}"
-            return ToolResponse(content=output)
+            return ToolResponse(success=True, message=output)
         
         except Exception as e:
-            return ToolResponse(content=f"Error: {str(e)}")
+            return ToolResponse(success=False, message=f"Error: {str(e)}")
         
     def _run(self, code: str) -> ToolResponse:
         """Execute Python code synchronously (fallback)."""
@@ -72,4 +72,4 @@ class PythonInterpreterTool(BaseTool):
             finally:
                 loop.close()
         except Exception as e:
-            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {str(e)}")

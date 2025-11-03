@@ -162,7 +162,12 @@ class DeepAnalyzerTool(BaseTool):
         self.image_files: List[str] = []
 
     async def _arun(self, task: str, files: Optional[List[str]] = None) -> ToolResponse:
-        """Execute deep analysis workflow."""
+        """Execute deep analysis workflow.
+        
+        Args:
+            task: The analysis task or question to investigate
+            files: Optional list of file paths to analyze along with the task
+        """
         try:
             logger.info(f"| 🚀 Starting DeepAnalyzerTool: {task}")
             if files:
@@ -207,18 +212,18 @@ class DeepAnalyzerTool(BaseTool):
                 if "ANALYSIS_COMPLETE" in final_summary:
                     logger.info(f"| ✅ Analysis completed in round {round_num}")
                     result = await self._format_final_result(final_summary, round_num)
-                    return ToolResponse(content=result)
+                    return ToolResponse(success=True, message=result)
                 
                 logger.info(f"| ✅ Round {round_num} completed, continuing to next round")
             
             # If all rounds completed without finding answer
             logger.warning("| ❌ Maximum rounds reached without completing analysis")
             result = await self._format_failure_result(task)
-            return ToolResponse(content=result)
+            return ToolResponse(success=False, message=result)
             
         except Exception as e:
             logger.error(f"| ❌ Error in deep analysis: {e}")
-            return ToolResponse(content=f"Error during deep analysis: {str(e)}")
+            return ToolResponse(success=False, message=f"Error during deep analysis: {str(e)}")
         
     async def _prepare_enhanced_task(self, task: str, files: Optional[List[str]]) -> str:
         """Prepare enhanced task by loading and organizing files."""

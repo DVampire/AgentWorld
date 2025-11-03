@@ -40,7 +40,7 @@ class BashTool(BaseTool):
         try:
             # Sanitize the command
             if not command.strip():
-                return ToolResponse(content="Error: Empty command provided")
+                return ToolResponse(success=False, message="Error: Empty command provided")
             
             # Use shell=True to handle complex commands properly
             process = await asyncio.create_subprocess_shell(
@@ -57,7 +57,7 @@ class BashTool(BaseTool):
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
-                return ToolResponse(content=f"Error: Command timed out after {self.timeout} seconds")
+                return ToolResponse(success=False, message=f"Error: Command timed out after {self.timeout} seconds")
             
             # Decode output
             stdout_str = stdout.decode('utf-8', errors='replace').strip()
@@ -74,10 +74,10 @@ class BashTool(BaseTool):
             if exit_code != 0:
                 result.append(f"Exit code: {exit_code}")
             
-            return ToolResponse(content="\n\n".join(result) if result else f"Command completed with exit code: {exit_code}")
+            return ToolResponse(success=True, message="\n\n".join(result) if result else f"Command completed with exit code: {exit_code}")
             
         except Exception as e:
-            return ToolResponse(content=f"Error executing command: {str(e)}")
+            return ToolResponse(success=False, message=f"Error executing command: {str(e)}")
     
     def _run(self, command: str) -> ToolResponse:
         """Execute a bash command synchronously (fallback)."""
@@ -90,4 +90,4 @@ class BashTool(BaseTool):
             finally:
                 loop.close()
         except Exception as e:
-            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {str(e)}")

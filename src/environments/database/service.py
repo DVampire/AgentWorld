@@ -6,9 +6,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from src.environments.protocol.types import ActionResult
 from src.environments.database.types import (
     QueryRequest, 
-    QueryResult, 
     TableInfo,
     DatabaseInfo,
     CreateTableRequest, 
@@ -16,9 +16,7 @@ from src.environments.database.types import (
     UpdateRequest,
     DeleteRequest,
     SelectRequest, 
-    SelectResult, 
-    GetTablesRequest,
-    GetTablesResult
+    GetTablesRequest
 )
 from src.environments.database.exceptions import (
     DatabaseError, 
@@ -61,17 +59,21 @@ class DatabaseService:
             self._connection = None
             self._is_connected = False
     
-    async def execute_query(self, request: QueryRequest) -> QueryResult:
+    async def execute_query(self, request: QueryRequest) -> ActionResult:
         """Execute a SQL query.
         
         Args:
             request: Query request with SQL and parameters
             
         Returns:
-            Query result with data and metadata
+            Action result with data and metadata in extra
         """
         if not self._is_connected:
-            raise ConnectionError("Database not connected")
+            return ActionResult(
+                success=False,
+                message="Database not connected",
+                extra={"error": "Database not connected"}
+            )
         
         start_time = time.time()
         
@@ -90,39 +92,47 @@ class DatabaseService:
                 await self._connection.commit()
                 
                 execution_time = time.time() - start_time
-                return QueryResult(
+                return ActionResult(
                     success=True,
-                    data=data,
-                    row_count=len(data),
                     message=f"Query executed successfully, returned {len(data)} rows",
-                    execution_time=execution_time
+                    extra={
+                        "data": data,
+                        "row_count": len(data),
+                        "execution_time": execution_time,
+                        "query": request.query
+                    }
                 )
             else:
                 # For non-SELECT queries (INSERT, UPDATE, DELETE, etc.)
                 await self._connection.commit()
+                rowcount = cursor.rowcount
                 await cursor.close()
                 
                 execution_time = time.time() - start_time
-                return QueryResult(
+                return ActionResult(
                     success=True,
-                    data=None,
-                    row_count=cursor.rowcount,
-                    message=f"Query executed successfully, affected {cursor.rowcount} rows",
-                    execution_time=execution_time
+                    message=f"Query executed successfully, affected {rowcount} rows",
+                    extra={
+                        "row_count": rowcount,
+                        "execution_time": execution_time,
+                        "query": request.query
+                    }
                 )
                 
         except Exception as e:
             await self._connection.rollback()
             execution_time = time.time() - start_time
-            return QueryResult(
+            return ActionResult(
                 success=False,
-                data=None,
-                row_count=0,
                 message=f"Query failed: {str(e)}",
-                execution_time=execution_time
+                extra={
+                    "error": str(e),
+                    "execution_time": execution_time,
+                    "query": request.query
+                }
             )
     
-    async def create_table(self, request: CreateTableRequest) -> QueryResult:
+    async def create_table(self, request: CreateTableRequest) -> ActionResult:
         """Create a table.
         
         Args:
@@ -156,16 +166,23 @@ class DatabaseService:
         sql = f"CREATE TABLE IF NOT EXISTS {request.table_name} ({', '.join(columns_sql)})"
         
         query_request = QueryRequest(query=sql)
-        return await self.execute_query(query_request)
+        result = await self.execute_query(query_request)
+        # Add table_name and table info to extra
+        if result.extra:
+            result.extra["table_name"] = request.table_name
+            result.extra["columns"] = request.columns
+            result.extra["primary_key"] = request.primary_key
+            result.extra["foreign_keys"] = request.foreign_keys
+        return result
     
-    async def insert_data(self, request: InsertRequest) -> QueryResult:
+    async def insert_data(self, request: InsertRequest) -> ActionResult:
         """Insert data into a table.
         
         Args:
             request: Insert request
             
         Returns:
-            Query result
+            Action result with insert information in extra
         """
         if isinstance(request.data, dict):
             # Single row insert
@@ -178,7 +195,11 @@ class DatabaseService:
         else:
             # Multiple rows insert
             if not request.data:
-                raise InvalidQueryError("No data provided for insert")
+                return ActionResult(
+                    success=False,
+                    message="No data provided for insert",
+                    extra={"error": "No data provided for insert"}
+                )
             
             columns = list(request.data[0].keys())
             placeholders = [f":{col}" for col in columns]
@@ -193,25 +214,35 @@ class DatabaseService:
                 results.append(result)
             
             # Return summary result
-            total_affected = sum(r.row_count for r in results)
-            return QueryResult(
-                success=all(r.success for r in results),
-                data=None,
-                row_count=total_affected,
+            total_affected = sum(r.extra.get("row_count", 0) for r in results if r.success)
+            total_time = sum(r.extra.get("execution_time", 0) for r in results)
+            all_success = all(r.success for r in results)
+            
+            return ActionResult(
+                success=all_success,
                 message=f"Inserted {total_affected} rows",
-                execution_time=sum(r.execution_time or 0 for r in results)
+                extra={
+                    "row_count": total_affected,
+                    "execution_time": total_time,
+                    "table_name": request.table_name,
+                    "num_rows_inserted": len(request.data)
+                }
             )
         
-        return await self.execute_query(query_request)
+        result = await self.execute_query(query_request)
+        # Add table_name to extra
+        if result.extra:
+            result.extra["table_name"] = request.table_name
+        return result
     
-    async def update_data(self, request: UpdateRequest) -> QueryResult:
+    async def update_data(self, request: UpdateRequest) -> ActionResult:
         """Update data in a table.
         
         Args:
             request: Update request
             
         Returns:
-            Query result
+            Action result with update information in extra
         """
         set_clauses = [f"{col} = :{col}" for col in request.data.keys()]
         sql = f"UPDATE {request.table_name} SET {', '.join(set_clauses)} WHERE {request.where_clause}"
@@ -220,29 +251,37 @@ class DatabaseService:
         parameters = {**request.data, **(request.where_params or {})}
         
         query_request = QueryRequest(query=sql, parameters=parameters)
-        return await self.execute_query(query_request)
+        result = await self.execute_query(query_request)
+        # Add table_name to extra
+        if result.extra:
+            result.extra["table_name"] = request.table_name
+        return result
     
-    async def delete_data(self, request: DeleteRequest) -> QueryResult:
+    async def delete_data(self, request: DeleteRequest) -> ActionResult:
         """Delete data from a table.
         
         Args:
             request: Delete request
             
         Returns:
-            Query result
+            Action result with delete information in extra
         """
         sql = f"DELETE FROM {request.table_name} WHERE {request.where_clause}"
         query_request = QueryRequest(query=sql, parameters=request.where_params or {})
-        return await self.execute_query(query_request)
+        result = await self.execute_query(query_request)
+        # Add table_name to extra
+        if result.extra:
+            result.extra["table_name"] = request.table_name
+        return result
     
-    async def select_data(self, request: SelectRequest) -> SelectResult:
+    async def select_data(self, request: SelectRequest) -> ActionResult:
         """Select data from a table.
         
         Args:
             request: Select request with table name, columns, where clause, etc.
             
         Returns:
-            Select result with data and metadata
+            Action result with data and metadata in extra
         """
         # Build SELECT query
         columns_str = "*" if not request.columns else ", ".join(request.columns)
@@ -262,47 +301,48 @@ class DatabaseService:
         
         query_request = QueryRequest(query=sql, parameters=request.where_params or {})
         result = await self.execute_query(query_request)
-        
-        return SelectResult(
-            success=result.success,
-            data=result.data,
-            row_count=result.row_count,
-            message=result.message,
-            execution_time=result.execution_time
-        )
+        # Add table_name and query details to extra
+        if result.extra:
+            result.extra["table_name"] = request.table_name
+            result.extra["columns"] = request.columns
+        return result
     
-    async def get_tables(self, request: GetTablesRequest = None) -> GetTablesResult:
+    async def get_tables(self, request: GetTablesRequest = None) -> ActionResult:
         """Get information about all tables in the database.
         
         Returns:
-            List of table information
+            Action result with table information in extra
         """
         # Get list of tables
         tables_query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         tables_result = await self.execute_query(QueryRequest(query=tables_query))
         
         try:
-            if not tables_result.success or not tables_result.data:
-                return GetTablesResult(
+            if not tables_result.success or not tables_result.extra or not tables_result.extra.get("data"):
+                return ActionResult(
                     success=True,
-                    tables=[],
-                    message="No tables found"
+                    message="No tables found",
+                    extra={
+                        "tables": [],
+                        "total_tables": 0
+                    }
                 )
             
+            tables_data = tables_result.extra.get("data", [])
             tables = []
-            for table_row in tables_result.data:
+            for table_row in tables_data:
                 table_name = table_row['name']
                 
                 # Get table schema
                 schema_query = f"PRAGMA table_info({table_name})"
                 schema_result = await self.execute_query(QueryRequest(query=schema_query))
                 
-                columns = schema_result.data if schema_result.success else []
+                columns = schema_result.extra.get("data", []) if schema_result.success else []
                 
                 # Get row count
                 count_query = f"SELECT COUNT(*) as count FROM {table_name}"
                 count_result = await self.execute_query(QueryRequest(query=count_query))
-                row_count = count_result.data[0]['count'] if count_result.success and count_result.data else 0
+                row_count = count_result.extra.get("data", [{}])[0].get('count', 0) if count_result.success and count_result.extra.get("data") else 0
                 
                 tables.append(TableInfo(
                     name=table_name,
@@ -310,19 +350,29 @@ class DatabaseService:
                     row_count=row_count
                 ))
             
-            return GetTablesResult(
+            # Convert TableInfo to dict for extra
+            tables_dict = [table.model_dump() for table in tables]
+            
+            return ActionResult(
                 success=True,
-                tables=tables,
-                message=f"Found {len(tables)} tables"
+                message=f"Found {len(tables)} tables",
+                extra={
+                    "tables": tables_dict,
+                    "total_tables": len(tables)
+                }
             )
         except Exception as e:
-            return GetTablesResult(
+            return ActionResult(
                 success=False,
-                tables=[],
-                message=f"Failed to get tables: {str(e)}"
+                message=f"Failed to get tables: {str(e)}",
+                extra={
+                    "error": str(e),
+                    "tables": [],
+                    "total_tables": 0
+                }
             )
     
-    async def get_database_info(self) -> DatabaseInfo:
+    async def get_database_info(self) -> ActionResult:
         """Get information about the database.
         
         Returns:
@@ -330,11 +380,15 @@ class DatabaseService:
         """
         tables = await self.get_tables()
         
-        return DatabaseInfo(
-            path=str(self.db_path),
-            tables=tables,
-            total_tables=len(tables),
-            is_connected=self._is_connected
+        return ActionResult(
+            success=True,
+            message=f"Database information retrieved successfully",
+            extra={
+                "path": str(self.db_path),
+                "tables": tables,
+                "total_tables": len(tables),
+                "is_connected": self._is_connected
+            }
         )
     
     async def __aenter__(self):

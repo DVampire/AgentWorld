@@ -264,7 +264,7 @@ class TodoTool(BaseTool):
                         ) -> ToolResponse:
         """Add a new step to the todo list."""
         if not task:
-            return ToolResponse(content="Error: Step description is required for add action")
+            return ToolResponse(success=False, message="Error: Step description is required for add action")
         
         # Create new step
         step_id = self._generate_step_id()
@@ -290,7 +290,7 @@ class TodoTool(BaseTool):
                     break
             
             if insert_index == -1:
-                return ToolResponse(content=f"Error: Step {after_step_id} not found. Adding to end of list.")
+                return ToolResponse(success=False, message=f"Error: Step {after_step_id} not found. Adding to end of list.")
             
             # Insert at the found position
             self.steps.insert(insert_index, new_step)
@@ -303,17 +303,17 @@ class TodoTool(BaseTool):
         self._sync_to_markdown()
         
         if after_step_id:
-            return ToolResponse(content=f"✅ Added step {step_id} after {after_step_id}: {task} (priority: {priority})")
+            return ToolResponse(success=True, message=f"✅ Added step {step_id} after {after_step_id}: {task} (priority: {priority})")
         else:
-            return ToolResponse(content=f"✅ Added step {step_id}: {task} (priority: {priority})")
+            return ToolResponse(success=True, message=f"✅ Added step {step_id}: {task} (priority: {priority})")
     
     async def _complete_step(self, step_id: str, status: str, result: Optional[str] = None) -> ToolResponse:
         """Mark step as completed."""
         if not step_id:
-            return ToolResponse(content="Error: Step ID is required for complete action")
+            return ToolResponse(success=False, message="Error: Step ID is required for complete action")
         
         if status not in ["success", "failed"]:
-            return ToolResponse(content="Error: Status must be 'success' or 'failed'")
+            return ToolResponse(success=False, message="Error: Status must be 'success' or 'failed'")
         
         # Find the step
         step = None
@@ -323,10 +323,10 @@ class TodoTool(BaseTool):
                 break
         
         if not step:
-            return ToolResponse(content=f"Error: Step {step_id} not found")
+            return ToolResponse(success=False, message=f"Error: Step {step_id} not found")
         
         if step.status != "pending":
-            return ToolResponse(content=f"Step {step_id} is already completed with status: {step.status}")
+            return ToolResponse(success=False, message=f"Step {step_id} is already completed with status: {step.status}")
         
         # Update step
         step.status = status
@@ -337,12 +337,12 @@ class TodoTool(BaseTool):
         self._save_steps()
         self._sync_to_markdown()
         
-        return ToolResponse(content=f"✅ Completed step {step_id} with status: {status}")
+        return ToolResponse(success=True, message=f"✅ Completed step {step_id} with status: {status}")
     
     async def _update_step(self, step_id: str, task: Optional[str] = None, parameters: Optional[Dict[str, Any]] = None) -> ToolResponse:
         """Update step information."""
         if not step_id:
-            return ToolResponse(content="Error: Step ID is required for update action")
+            return ToolResponse(success=False, message="Error: Step ID is required for update action")
         
         # Find the step
         step = None
@@ -352,7 +352,7 @@ class TodoTool(BaseTool):
                 break
         
         if not step:
-            return ToolResponse(content=f"Error: Step {step_id} not found")
+            return ToolResponse(success=False, message=f"Error: Step {step_id} not found")
         
         # Update step fields
         if task:
@@ -366,12 +366,12 @@ class TodoTool(BaseTool):
         self._save_steps()
         self._sync_to_markdown()
         
-        return ToolResponse(content=f"✅ Updated step {step_id}")
+        return ToolResponse(success=True, message=f"✅ Updated step {step_id}")
     
     async def _list_steps(self) -> str:
         """List all steps with their status."""
         if not self.steps:
-            return ToolResponse(content="No steps found. Use 'add' action to create your first step.")
+            return ToolResponse(success=False, message="No steps found. Use 'add' action to create your first step.")
         
         result = "📋 Todo Steps:\n\n"
         for step in self.steps:
@@ -401,14 +401,14 @@ class TodoTool(BaseTool):
                 result += f", Updated: {step.updated_at}"
             result += "\n\n"
         
-        return ToolResponse(content=result) 
+        return ToolResponse(success=True, message=result) 
     
     async def _clear_completed(self) -> ToolResponse:
         """Remove all completed steps from the todo list."""
         completed_steps = [step for step in self.steps if step.status in ["success", "failed"]]
         
         if not completed_steps:
-            return ToolResponse(content="No completed steps to remove")
+            return ToolResponse(success=False, message="No completed steps to remove")
         
         # Remove completed steps
         self.steps = [step for step in self.steps if step.status == "pending"]
@@ -417,27 +417,27 @@ class TodoTool(BaseTool):
         self._save_steps()
         self._sync_to_markdown()
         
-        return ToolResponse(content=f"✅ Removed {len(completed_steps)} completed step(s)")
+        return ToolResponse(success=True, message=f"✅ Removed {len(completed_steps)} completed step(s)")
     
     async def _show_todo_file(self) -> ToolResponse:
         """Show the complete todo.md file content."""
         if not self.todo_file.exists():
-            return ToolResponse(content="No todo file found. Use 'add' action to create your first step.")
+            return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
         
         content = self.todo_file.read_text(encoding='utf-8')
-        return ToolResponse(content=f"📄 Todo.md content:\n\n```markdown\n{content}\n```")
+        return ToolResponse(success=True, message=f"📄 Todo.md content:\n\n```markdown\n{content}\n```")
     
     async def _export_todo_file(self, export_path: str) -> ToolResponse:
         """Export todo.md file to a specified path."""
         if not export_path:
-            return ToolResponse(content="Error: Export path is required for export action")
+            return ToolResponse(success=False, message="Error: Export path is required for export action")
         
         try:
             # Ensure the todo.md file is up to date
             self._sync_to_markdown()
             
             if not self.todo_file.exists():
-                return ToolResponse(content="No todo file found. Use 'add' action to create your first step.")
+                return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
             
             # Convert to Path object
             export_path_obj = Path(export_path)
@@ -451,10 +451,10 @@ class TodoTool(BaseTool):
             # Write to the export path
             export_path_obj.write_text(content, encoding='utf-8')
             
-            return ToolResponse(content=f"✅ Successfully exported todo.md to: {export_path}")
+            return ToolResponse(success=True, message=f"✅ Successfully exported todo.md to: {export_path}")
             
         except Exception as e:
-            return ToolResponse(content=f"Error exporting todo.md: {str(e)}")
+            return ToolResponse(success=False, message=f"Error exporting todo.md: {str(e)}")
     
     def get_todo_content(self) -> str:
         """Get the content of the todo.md file."""

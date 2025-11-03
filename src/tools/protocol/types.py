@@ -10,11 +10,13 @@ from enum import Enum
 import uuid
 
 class ToolResponse(BaseModel):
-    content: str = Field(description="The content of the tool response.")
+    """Tool response"""
+    success: bool = Field(default=True, description="Whether the tool execution was successful.")
+    message: str = Field(description="The message of the tool response.")
     extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra data of the tool response.")
     
     def __str__(self) -> str:
-        return f"ToolResponse(content={self.content}, extra={self.extra})"
+        return f"ToolResponse(success={self.success}, message={self.message}, extra={self.extra})"
     
     def __repr__(self) -> str:
         return self.__str__()

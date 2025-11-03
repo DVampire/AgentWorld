@@ -24,6 +24,7 @@ from src.logger import logger
 from src.utils import assemble_project_path
 from src.environments.protocol.server import ecp
 from src.environments.protocol.environment import BaseEnvironment
+from src.utils import dedent
 
 @ecp.environment()
 class FileSystemEnvironment(BaseEnvironment):
@@ -78,7 +79,7 @@ class FileSystemEnvironment(BaseEnvironment):
     async def read(self, 
                     file_path: str, 
                     start_line: Optional[int] = None, 
-                    end_line: Optional[int] = None) -> str:
+                    end_line: Optional[int] = None) -> Dict[str, Any]:
         """Read a file from the file system.
         
         Args:
@@ -87,21 +88,39 @@ class FileSystemEnvironment(BaseEnvironment):
             end_line (Optional[int]): End line number for reading a range.
             
         Returns:
-            str: The content of the file.
+            Dict with success, message, and extra fields
         """
-        request = FileReadRequest(
-            path=Path(file_path),
-            start_line=start_line,
-            end_line=end_line
-        )
-        result = await self.file_system_service.read(request)
-        
-        if result.content_text:
-            return result.content_text
-        elif result.content_bytes:
-            return result.content_bytes.decode('utf-8', errors='ignore')
-        else:
-            return f"File read result: {result.message}"
+        try:
+            request = FileReadRequest(
+                path=Path(file_path),
+                start_line=start_line,
+                end_line=end_line
+            )
+            result = await self.file_system_service.read(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            
+            if result.success:
+                if "content_text" in extra:
+                    message = extra["content_text"]
+                elif "content_bytes_length" in extra:
+                    message = f"File read successfully. Content length: {extra['content_bytes_length']} bytes"
+                else:
+                    message = result.message
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to read file: {str(e)}",
+                "extra": {"error": str(e), "file_path": file_path}
+            }
     
     @ecp.action(name = "write", 
                 type = "File System", 
@@ -109,7 +128,7 @@ class FileSystemEnvironment(BaseEnvironment):
     async def write(self, 
                      file_path: str, 
                      content: str, 
-                     mode: str = "w") -> str:
+                     mode: str = "w") -> Dict[str, Any]:
         """Write content to a file.
         
         Args:
@@ -118,15 +137,30 @@ class FileSystemEnvironment(BaseEnvironment):
             mode (str): Write mode, 'w' for overwrite (default) or 'a' for append.
         
         Returns:
-            str: The result of the write operation.
+            Dict with success, message, and extra fields
         """
-        request = FileWriteRequest(
-            path=Path(file_path),
-            content=content,
-            mode=mode
-        )
-        result = await self.file_system_service.write(request)
-        return result.message
+        try:
+            request = FileWriteRequest(
+                path=Path(file_path),
+                content=content,
+                mode=mode
+            )
+            result = await self.file_system_service.write(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["file_path"] = file_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to write file: {str(e)}",
+                "extra": {"error": str(e), "file_path": file_path}
+            }
     
     @ecp.action(name = "replace", 
                 type = "File System", 
@@ -136,7 +170,7 @@ class FileSystemEnvironment(BaseEnvironment):
                        old_string: str, 
                        new_string: str, 
                        start_line: Optional[int] = None, 
-                       end_line: Optional[int] = None) -> str:
+                       end_line: Optional[int] = None) -> Dict[str, Any]:
         """Replace a string in a file.
         
         Args:
@@ -147,38 +181,68 @@ class FileSystemEnvironment(BaseEnvironment):
             end_line (Optional[int]): End line number for range replacement.
         
         Returns:
-            str: The result of the replacement.
+            Dict with success, message, and extra fields
         """
-        request = FileReplaceRequest(
-            path=Path(file_path),
-            old_string=old_string,
-            new_string=new_string,
-            start_line=start_line,
-            end_line=end_line
-        )
-        result = await self.file_system_service.replace(request)
-        return result.message
+        try:
+            request = FileReplaceRequest(
+                path=Path(file_path),
+                old_string=old_string,
+                new_string=new_string,
+                start_line=start_line,
+                end_line=end_line
+            )
+            result = await self.file_system_service.replace(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["file_path"] = file_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to replace text: {str(e)}",
+                "extra": {"error": str(e), "file_path": file_path}
+            }
     
     @ecp.action(name = "delete", 
                 type = "File System", 
                 description = "Delete a file from the file system.")
-    async def delete(self, file_path: str) -> str:
+    async def delete(self, file_path: str) -> Dict[str, Any]:
         """Delete a file from the file system.
         
         Args:
             file_path (str): The absolute path of the file to delete.
             
         Returns:
-            str: The result of the deletion.
+            Dict with success, message, and extra fields
         """
-        request = FileDeleteRequest(path=Path(file_path))
-        result = await self.file_system_service.delete(request)
-        return result.message
+        try:
+            request = FileDeleteRequest(path=Path(file_path))
+            result = await self.file_system_service.delete(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["file_path"] = file_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to delete file: {str(e)}",
+                "extra": {"error": str(e), "file_path": file_path}
+            }
     
     @ecp.action(name = "copy", 
                 type = "File System", 
                 description = "Copy a file from source to destination.")
-    async def copy(self, src_path: str, dst_path: str) -> str:
+    async def copy(self, src_path: str, dst_path: str) -> Dict[str, Any]:
         """Copy a file from source to destination.
         
         Args:
@@ -186,16 +250,32 @@ class FileSystemEnvironment(BaseEnvironment):
             dst_path (str): The absolute path of the destination file.
         
         Returns:
-            str: The result of the copy operation.
+            Dict with success, message, and extra fields
         """
-        request = FileCopyRequest(src_path=Path(src_path), dst_path=Path(dst_path))
-        result = await self.file_system_service.copy(request)
-        return result.message
+        try:
+            request = FileCopyRequest(src_path=Path(src_path), dst_path=Path(dst_path))
+            result = await self.file_system_service.copy(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["src_path"] = src_path
+            extra["dst_path"] = dst_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to copy file: {str(e)}",
+                "extra": {"error": str(e), "src_path": src_path, "dst_path": dst_path}
+            }
     
     @ecp.action(name = "move",
                 type = "File System", 
                 description = "Move a file from source to destination.")
-    async def move(self, src_path: str, dst_path: str) -> str:
+    async def move(self, src_path: str, dst_path: str) -> Dict[str, Any]:
         """Move a file from source to destination.
         
         Args:
@@ -203,19 +283,35 @@ class FileSystemEnvironment(BaseEnvironment):
             dst_path (str): The absolute path of the destination file.
         
         Returns:
-            str: The result of the move operation.
+            Dict with success, message, and extra fields
         """
-        request = FileMoveRequest(
-            src_path=Path(src_path),
-            dst_path=Path(dst_path)
-        )
-        result = await self.file_system_service.rename(request)
-        return result.message
+        try:
+            request = FileMoveRequest(
+                src_path=Path(src_path),
+                dst_path=Path(dst_path)
+            )
+            result = await self.file_system_service.rename(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["src_path"] = src_path
+            extra["dst_path"] = dst_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to move file: {str(e)}",
+                "extra": {"error": str(e), "src_path": src_path, "dst_path": dst_path}
+            }
     
     @ecp.action(name = "rename",
                 type = "File System", 
                 description = "Rename a file or directory.")
-    async def rename(self, old_path: str, new_path: str) -> str:
+    async def rename(self, old_path: str, new_path: str) -> Dict[str, Any]:
         """Rename a file or directory.
         
         Args:
@@ -223,20 +319,36 @@ class FileSystemEnvironment(BaseEnvironment):
             new_path (str): The absolute path of the new name.
         
         Returns:
-            str: The result of the rename operation.
+            Dict with success, message, and extra fields
         """
-        request = FileMoveRequest(
-            src_path=Path(old_path),
-            dst_path=Path(new_path)
-        )
-        result = await self.file_system_service.rename(request)
-        return result.message
+        try:
+            request = FileMoveRequest(
+                src_path=Path(old_path),
+                dst_path=Path(new_path)
+            )
+            result = await self.file_system_service.rename(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["old_path"] = old_path
+            extra["new_path"] = new_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to rename: {str(e)}",
+                "extra": {"error": str(e), "old_path": old_path, "new_path": new_path}
+            }
     
     @ecp.action(name = "get_info",
                 type = "File System", 
                 description = "Get detailed information about a file.")
     async def get_info(self, file_path: str,
-                        include_stats: Optional[bool] = True) -> str:
+                        include_stats: Optional[bool] = True) -> Dict[str, Any]:
         """Get detailed information about a file.
         
         Args:
@@ -244,56 +356,103 @@ class FileSystemEnvironment(BaseEnvironment):
             include_stats (Optional[bool]): Whether to include file statistics.
         
         Returns:
-            str: The detailed information about the file.
+            Dict with success, message, and extra fields
         """
-        request = FileStatRequest(path=Path(file_path))
-        result = await self.file_system_service.stat(request)
-        
-        if result.success and result.stats:
-            stats = result.stats
-            info = f"File: {file_path}\n"
-            info += f"Size: {stats.size} bytes\n"
-            info += f"Type: {'Directory' if stats.is_directory else 'File'}\n"
-            info += f"Permissions: {stats.permissions}\n"
-            if include_stats:
-                info += f"Is Directory: {stats.is_directory}\n"
-                info += f"Is File: {stats.is_file}\n"
-                info += f"Is Symlink: {stats.is_symlink}\n"
-            return info
-        else:
-            return result.message
+        try:
+            request = FileStatRequest(path=Path(file_path))
+            result = await self.file_system_service.stat(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["file_path"] = file_path
+            extra["include_stats"] = include_stats
+            
+            if result.success and "stats" in extra:
+                stats = extra["stats"]
+                info = f"File: {file_path}\n"
+                info += f"Size: {stats.get('size', 0)} bytes\n"
+                info += f"Type: {'Directory' if stats.get('is_directory', False) else 'File'}\n"
+                info += f"Permissions: {stats.get('permissions', 'Unknown')}\n"
+                if include_stats:
+                    info += f"Is Directory: {stats.get('is_directory', False)}\n"
+                    info += f"Is File: {stats.get('is_file', False)}\n"
+                    info += f"Is Symlink: {stats.get('is_symlink', False)}\n"
+                message = info
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get file info: {str(e)}",
+                "extra": {"error": str(e), "file_path": file_path}
+            }
     
     @ecp.action(name = "create_dir",
                 type = "File System", 
                 description = "Create a directory.")
-    async def create_dir(self, dir_path: str) -> str:
+    async def create_dir(self, dir_path: str) -> Dict[str, Any]:
         """Create a directory.
         
         Args:
             dir_path (str): The absolute path of the directory to create.
         
         Returns:
-            str: The result of the directory creation.
+            Dict with success, message, and extra fields
         """
-        request = DirectoryCreateRequest(path=Path(dir_path))
-        result = await self.file_system_service.mkdir(request)
-        return result.message
+        try:
+            request = DirectoryCreateRequest(path=Path(dir_path))
+            result = await self.file_system_service.mkdir(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["dir_path"] = dir_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to create directory: {str(e)}",
+                "extra": {"error": str(e), "dir_path": dir_path}
+            }
     
     @ecp.action(name = "delete_dir",
                 type = "File System", 
                 description = "Delete a directory.")
-    async def delete_dir(self, dir_path: str) -> str:
+    async def delete_dir(self, dir_path: str) -> Dict[str, Any]:
         """Delete a directory.
         
         Args:
             dir_path (str): The absolute path of the directory to delete.
         
         Returns:
-            str: The result of the directory deletion.
+            Dict with success, message, and extra fields
         """
-        request = DirectoryDeleteRequest(path=Path(dir_path), recursive=True)
-        result = await self.file_system_service.rmtree(request)
-        return result.message
+        try:
+            request = DirectoryDeleteRequest(path=Path(dir_path), recursive=True)
+            result = await self.file_system_service.rmtree(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["dir_path"] = dir_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to delete directory: {str(e)}",
+                "extra": {"error": str(e), "dir_path": dir_path}
+            }
     
     @ecp.action(name = "listdir",
                 type = "File System", 
@@ -301,7 +460,7 @@ class FileSystemEnvironment(BaseEnvironment):
     async def listdir(self, 
                        dir_path: str, 
                        show_hidden: bool = False, 
-                       file_types: Optional[List[str]] = None) -> str:
+                       file_types: Optional[List[str]] = None) -> Dict[str, Any]:
         """List directory contents.
         
         Args:
@@ -310,33 +469,52 @@ class FileSystemEnvironment(BaseEnvironment):
             file_types (Optional[List[str]]): List of file extensions to filter by.
         
         Returns:
-            str: The directory contents listing.
+            Dict with success, message, and extra fields
         """
-        request = FileListRequest(
-            path=Path(dir_path),
-            show_hidden=show_hidden,
-            file_types=file_types
-        )
-        result = await self.file_system_service.listdir(request)
-        
-        if result.files or result.directories:
-            listing = f"Contents of {dir_path}:\n"
-            listing += f"Total: {result.total_files} files, {result.total_directories} directories\n\n"
+        try:
+            request = FileListRequest(
+                path=Path(dir_path),
+                show_hidden=show_hidden,
+                file_types=file_types
+            )
+            result = await self.file_system_service.listdir(request)
             
-            if result.directories:
-                listing += "Directories:\n"
-                for directory in result.directories:
-                    listing += f"  📁 {directory}/\n"
-                listing += "\n"
+            extra = result.extra.copy() if result.extra else {}
+            extra["dir_path"] = dir_path
             
-            if result.files:
-                listing += "Files:\n"
-                for file in result.files:
-                    listing += f"  📄 {file}\n"
+            if result.success:
+                if extra.get("files") or extra.get("directories"):
+                    listing = f"Contents of {dir_path}:\n"
+                    listing += f"Total: {extra.get('total_files', 0)} files, {extra.get('total_directories', 0)} directories\n\n"
+                    
+                    if extra.get("directories"):
+                        listing += "Directories:\n"
+                        for directory in extra["directories"]:
+                            listing += f"  📁 {directory}/\n"
+                        listing += "\n"
+                    
+                    if extra.get("files"):
+                        listing += "Files:\n"
+                        for file in extra["files"]:
+                            listing += f"  📄 {file}\n"
+                    
+                    message = listing
+                else:
+                    message = f"Directory {dir_path} is empty"
+            else:
+                message = result.message
             
-            return listing
-        else:
-            return f"Directory {dir_path} is empty"
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to list directory: {str(e)}",
+                "extra": {"error": str(e), "dir_path": dir_path}
+            }
     
     @ecp.action(name = "tree",
                 type = "File System", 
@@ -346,7 +524,7 @@ class FileSystemEnvironment(BaseEnvironment):
                     max_depth: Optional[int] = 3, 
                     show_hidden: bool = False, 
                     exclude_patterns: Optional[List[str]] = None, 
-                    file_types: Optional[List[str]] = None) -> str:
+                    file_types: Optional[List[str]] = None) -> Dict[str, Any]:
         """Show directory tree structure.
         
         Args:
@@ -357,55 +535,93 @@ class FileSystemEnvironment(BaseEnvironment):
             file_types (Optional[List[str]]): List of file extensions to include.
         
         Returns:
-            str: The directory tree structure.
+            Dict with success, message, and extra fields
         """
-        request = FileTreeRequest(
-            path=Path(dir_path),
-            max_depth=max_depth,
-            show_hidden=show_hidden,
-            exclude_patterns=exclude_patterns,
-            file_types=file_types
-        )
-        result = await self.file_system_service.tree(request)
-        
-        if result.tree_lines:
-            tree_str = f"Directory tree for {dir_path}:\n"
-            tree_str += "\n".join(result.tree_lines)
-            tree_str += f"\n\nTotal: {result.total_files} files, {result.total_directories} directories"
-            return tree_str
-        else:
-            return f"No tree structure found for {dir_path}"
+        try:
+            request = FileTreeRequest(
+                path=Path(dir_path),
+                max_depth=max_depth,
+                show_hidden=show_hidden,
+                exclude_patterns=exclude_patterns,
+                file_types=file_types
+            )
+            result = await self.file_system_service.tree(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["dir_path"] = dir_path
+            
+            if result.success:
+                if extra.get("tree_lines"):
+                    tree_str = f"Directory tree for {dir_path}:\n"
+                    tree_str += "\n".join(extra["tree_lines"])
+                    tree_str += f"\n\nTotal: {extra.get('total_files', 0)} files, {extra.get('total_directories', 0)} directories"
+                    message = tree_str
+                else:
+                    message = f"No tree structure found for {dir_path}"
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to generate tree: {str(e)}",
+                "extra": {"error": str(e), "dir_path": dir_path}
+            }
     
     @ecp.action(name = "describe",
                 type = "File System", 
                 description = "Describe the file system with directory structure and file information.")
-    async def describe(self) -> str:
+    async def describe(self) -> Dict[str, Any]:
         """Describe the file system with directory structure and file information.
         
         Args:
             No parameters required.
         
         Returns:
-            str: The file system description with directory structure and file information.
+            Dict with success, message, and extra fields
         """
-        # Use tree to describe the file system
-        request = FileTreeRequest(
-            path=Path("."),
-            max_depth=3,
-            show_hidden=False
-        )
-        result = await self.file_system_service.tree(request)
-        
-        description = f"File System Environment at: {self.base_dir}\n"
-        description += f"Total: {result.total_files} files, {result.total_directories} directories\n\n"
-        
-        if result.tree_lines:
-            description += "Directory Structure:\n"
-            description += "\n".join(result.tree_lines)
-        else:
-            description += "No files or directories found."
-        
-        return description
+        try:
+            # Use tree to describe the file system
+            request = FileTreeRequest(
+                path=Path("."),
+                max_depth=3,
+                show_hidden=False
+            )
+            result = await self.file_system_service.tree(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["base_dir"] = str(self.base_dir)
+            
+            if result.success:
+                description = f"File System Environment at: {self.base_dir}\n"
+                description += f"Total: {extra.get('total_files', 0)} files, {extra.get('total_directories', 0)} directories\n\n"
+                
+                if extra.get("tree_lines"):
+                    description += "Directory Structure:\n"
+                    description += "\n".join(extra["tree_lines"])
+                else:
+                    description += "No files or directories found."
+                
+                message = description
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to describe file system: {str(e)}",
+                "extra": {"error": str(e), "base_dir": str(self.base_dir)}
+            }
     
     @ecp.action(name = "search",
                 type = "File System", 
@@ -416,7 +632,7 @@ class FileSystemEnvironment(BaseEnvironment):
                       search_type: str = "name", 
                       file_types: Optional[List[str]] = None,
                       case_sensitive: Optional[bool] = False, 
-                      max_results: Optional[int] = 50) -> str:
+                      max_results: Optional[int] = 50) -> Dict[str, Any]:
         """Search for files by name or content.
         
         Args:
@@ -428,37 +644,58 @@ class FileSystemEnvironment(BaseEnvironment):
             max_results (Optional[int]): Maximum number of results to return.
         
         Returns:
-            str: The search results.
+            Dict with success, message, and extra fields
         """
-        request = FileSearchRequest(
-            path=Path(search_path),
-            query=query,
-            by=search_type,
-            file_types=file_types,
-            case_sensitive=case_sensitive,
-            max_results=max_results
-        )
-        result = await self.file_system_service.search(request)
-        
-        if result.results:
-            search_str = f"Search results for '{query}' in {search_path}:\n"
-            search_str += f"Found {result.total_found} results\n\n"
+        try:
+            request = FileSearchRequest(
+                path=Path(search_path),
+                query=query,
+                by=search_type,
+                file_types=file_types,
+                case_sensitive=case_sensitive,
+                max_results=max_results
+            )
+            result = await self.file_system_service.search(request)
             
-            for i, search_result in enumerate(result.results, 1):
-                search_str += f"{i}. {search_result.path}\n"
-                if search_result.matches:
-                    for match in search_result.matches[:5]:  # Show first 5 matches
-                        search_str += f"   Line {match.line}: {match.text[:100]}...\n"
-                search_str += "\n"
+            extra = result.extra.copy() if result.extra else {}
+            extra["search_path"] = search_path
+            extra["query"] = query
             
-            return search_str
-        else:
-            return f"No results found for '{query}' in {search_path}"
+            if result.success:
+                if extra.get("results"):
+                    search_str = f"Search results for '{query}' in {search_path}:\n"
+                    search_str += f"Found {extra.get('total_found', 0)} results\n\n"
+                    
+                    results = extra["results"]
+                    for i, search_result in enumerate(results, 1):
+                        search_str += f"{i}. {search_result.get('path', 'Unknown')}\n"
+                        if search_result.get("matches"):
+                            for match in search_result["matches"][:5]:  # Show first 5 matches
+                                search_str += f"   Line {match.get('line', 0)}: {match.get('text', '')[:100]}...\n"
+                        search_str += "\n"
+                    
+                    message = search_str
+                else:
+                    message = f"No results found for '{query}' in {search_path}"
+            else:
+                message = result.message
+            
+            return {
+                "success": result.success,
+                "message": message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to search files: {str(e)}",
+                "extra": {"error": str(e), "search_path": search_path, "query": query}
+            }
     
     @ecp.action(name = "change_permissions",
                 type = "File System", 
                 description = "Change file or directory permissions.")
-    async def change_permissions(self, file_path: str, permissions: str) -> str:
+    async def change_permissions(self, file_path: str, permissions: str) -> Dict[str, Any]:
         """Change file or directory permissions.
         
         Args:
@@ -466,25 +703,47 @@ class FileSystemEnvironment(BaseEnvironment):
             permissions (str): The new permissions in octal format (e.g., '755', '644').
         
         Returns:
-            str: The result of the permissions change operation.
+            Dict with success, message, and extra fields
         """
-        request = FileChangePermissionsRequest(path=Path(file_path), permissions=permissions)
-        result = await self.file_system_service.change_permissions(request)
-        return result.message
+        try:
+            request = FileChangePermissionsRequest(path=Path(file_path), permissions=permissions)
+            result = await self.file_system_service.change_permissions(request)
+            
+            extra = result.extra.copy() if result.extra else {}
+            extra["file_path"] = file_path
+            extra["permissions"] = permissions
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to change permissions: {str(e)}",
+                "extra": {"error": str(e), "file_path": file_path, "permissions": permissions}
+            }
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the file system environment."""
         try:
             state = await self.describe()
+            state = dedent(f"""
+                <info>
+                {state["message"]}
+                </info>
+            """)
+            extra = state["extra"]
             return {
-                    "state": state,
-                    "extra": {},
-                    }
+                "state": state,
+                "extra": extra
+            }
         except Exception as e:
             logger.error(f"Failed to get file system state: {e}")
             return {
-                "state": str(e),
+                "state": f"Failed to get file system state: {str(e)}",
                 "extra": {
-                    "error": str(e),
-                },
+                    "error": str(e)
+                }
             }

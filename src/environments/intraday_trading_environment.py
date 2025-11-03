@@ -602,73 +602,109 @@ class IntradayTradingEnvironment(BaseEnvironment):
     @ecp.action(name = "step",
                 type = "Intraday Trading",
                 description = "Step the intraday trading environment.")
-    async def step(self, action: str) -> str:
+    async def step(self, action: str) -> Dict[str, Any]:
         """Step the intraday trading environment.
         
         Args:
             action (str): The action to take. Should be `BUY`, `SELL` or `HOLD`.
 
         Returns:
-            str: The state of the intraday trading environment.
+            Dict with success, message, and extra fields
         """
-        state, reward, done, truncted, info = self._step(action)
-        
-        if not done:
-            res = dedent(f"""
-                <info>
-                Name: {self.asset_info['asset_name']}
-                Symbol: {self.asset_info['asset_symbol']}
-                Start timestamp: {self.start_timestamp}
-                End timestamp: {self.end_timestamp}
-                Current timestamp: {self.state['timestamp']}
-                Environment status: running (intraday)
-                </info>
-                <action>
-                Expected executed action of assistant: {action}
-                Actual executed action because of cash or position constraint: {info['action_label']}
-                Action result: The action return is {info['ret'] * 100:.2f}%.
-                </action>
-                <result>
-                Total profit: {info['total_profit']:.2f}%
-                </result>
-                """)
-            return res
-        
-        else:
-            rets = np.array(self.trading_records.data['ret'])
-            for metric_name, metric in self.metrics_functions.items():
-                self.metrics[metric_name] = metric(rets)
+        try:
+            state, reward, done, truncted, info = self._step(action)
+            
+            extra = {
+                "action": action,
+                "expected_action": action,
+                "actual_action": info['action_label'],
+                "action_return": info['ret'] * 100,
+                "total_profit": info['total_profit'],
+                "state": state,
+                "reward": reward,
+                "done": done,
+                "truncted": truncted,
+                "timestamp": self.state['timestamp']
+            }
+            
+            if not done:
+                message = dedent(f"""
+                    <info>
+                    Name: {self.asset_info['asset_name']}
+                    Symbol: {self.asset_info['asset_symbol']}
+                    Start timestamp: {self.start_timestamp}
+                    End timestamp: {self.end_timestamp}
+                    Current timestamp: {self.state['timestamp']}
+                    Environment status: running (intraday)
+                    </info>
+                    <action>
+                    Expected executed action of assistant: {action}
+                    Actual executed action because of cash or position constraint: {info['action_label']}
+                    Action result: The action return is {info['ret'] * 100:.2f}%.
+                    </action>
+                    <result>
+                    Total profit: {info['total_profit']:.2f}%
+                    </result>
+                    """)
                 
-            metrics_string = f"**Metric | Value**\n"
-            for metric_name, metric_value in self.metrics.items():
-                metrics_string += f"{metric_name} | {metric_value:.4f}\n"
+                return {
+                    "success": True,
+                    "message": message,
+                    "extra": extra
+                }
             
-            df = self.trading_records.to_dataframe()
-            df.to_csv(os.path.join(self.base_dir, "intraday_trading_records.csv"), index=True)
-            logger.info(f"| 📊 Intraday trading records saved to {os.path.join(self.base_dir, 'intraday_trading_records.csv')}")
-            
-            res = dedent(f"""
-                <info>
-                Name: {self.asset_info['asset_name']}
-                Symbol: {self.asset_info['asset_symbol']}
-                Start timestamp: {self.start_timestamp}
-                End timestamp: {self.end_timestamp}
-                Current timestamp: {self.state['timestamp']}
-                Environment status: done (intraday session complete)
-                </info>
-                <action>
-                Expected executed action of assistant: {action}
-                Actual executed action because of cash or position constraint: {info['action_label']}
-                Action result: The action return is {info['ret'] * 100:.2f}%.
-                </action>
-                <result>
-                Total profit: {info['total_profit']:.2f}%
-                Intraday trading metrics: 
-                {metrics_string}
-                Trading records saved to {os.path.join(self.base_dir, 'intraday_trading_records.csv')}
-                </result>
-                """) 
-            return res
+            else:
+                rets = np.array(self.trading_records.data['ret'])
+                for metric_name, metric in self.metrics_functions.items():
+                    self.metrics[metric_name] = metric(rets)
+                    
+                metrics_string = f"**Metric | Value**\n"
+                for metric_name, metric_value in self.metrics.items():
+                    metrics_string += f"{metric_name} | {metric_value:.4f}\n"
+                
+                df = self.trading_records.to_dataframe()
+                df.to_csv(os.path.join(self.base_dir, "intraday_trading_records.csv"), index=True)
+                logger.info(f"| 📊 Intraday trading records saved to {os.path.join(self.base_dir, 'intraday_trading_records.csv')}")
+                
+                extra.update({
+                    "metrics": self.metrics,
+                    "trading_records_path": os.path.join(self.base_dir, 'intraday_trading_records.csv')
+                })
+                
+                message = dedent(f"""
+                    <info>
+                    Name: {self.asset_info['asset_name']}
+                    Symbol: {self.asset_info['asset_symbol']}
+                    Start timestamp: {self.start_timestamp}
+                    End timestamp: {self.end_timestamp}
+                    Current timestamp: {self.state['timestamp']}
+                    Environment status: done (intraday session complete)
+                    </info>
+                    <action>
+                    Expected executed action of assistant: {action}
+                    Actual executed action because of cash or position constraint: {info['action_label']}
+                    Action result: The action return is {info['ret'] * 100:.2f}%.
+                    </action>
+                    <result>
+                    Total profit: {info['total_profit']:.2f}%
+                    Intraday trading metrics: 
+                    {metrics_string}
+                    Trading records saved to {os.path.join(self.base_dir, 'intraday_trading_records.csv')}
+                    </result>
+                    """)
+                
+                return {
+                    "success": True,
+                    "message": message,
+                    "extra": extra
+                }
+        except Exception as e:
+            logger.error(f"Error in step operation: {e}")
+            return {
+                "success": False,
+                "message": f"Step failed: {str(e)}",
+                "extra": {"error": str(e), "action": action}
+            }
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Trading Offline environment."""
@@ -691,15 +727,15 @@ class IntradayTradingEnvironment(BaseEnvironment):
             else:
                 prices_string = "No prices available"
             
-            # 1. info string
-            info_string = dedent(f"""
-                <info>
+            # 1. status string
+            status_string = dedent(f"""
+                <status>
                 Timestamp: {timestamp_string}
                 Prices: {prices_string}
                 Current cash: {cash:.2f}
                 Current position: {position:04d}
                 Current profit: {profit:.2f}%
-                </info>
+                </status>
             """)
 
             # 2. news string
@@ -747,10 +783,12 @@ class IntradayTradingEnvironment(BaseEnvironment):
                 review_trends_string = "<history_price_trends>No price trend available</history_price_trends>"
             
             state = dedent(f"""
-                {info_string}
+                <info>
+                {status_string}
                 {news_string}
                 {review_actions_string}
                 {review_trends_string}
+                </info>
             """)
             
             token_count = get_token_count(state)
@@ -761,7 +799,7 @@ class IntradayTradingEnvironment(BaseEnvironment):
                 "cash": cash,
                 "position": position,
                 "profit": profit,
-                "info_string": info_string,
+                "status_string": status_string,
                 "prices": prices,
                 "prices_string": prices_string,
                 "news": news,

@@ -11,27 +11,22 @@ import urllib.parse
 from src.environments.mobile.types import (
     MobileDeviceInfo,
     TapRequest, 
-    TapResult,
     SwipeRequest,
-    SwipeResult, 
     PressRequest, 
-    PressResult,
     TypeTextRequest,
-    TypeTextResult,
     KeyEventRequest,
-    KeyEventResult,
     ScrollRequest,
-    ScrollResult,
     ScreenshotRequest, 
-    ScreenshotResult,
     SwipePathRequest,
-    SwipePathResult,
 )
+from src.environments.protocol.types import ActionResult
 
 # Import the three components
 from src.environments.mobile.adb import AdbDriver
 from src.environments.mobile.scrcpy import ScrcpyDriver
 from src.environments.mobile.minicap import MinicapDriver
+from src.utils import dedent
+from src.logger import logger
 
 
 class MobileService:
@@ -93,7 +88,7 @@ class MobileService:
             self.adb = AdbDriver(self.device_id)
             
             if not self.adb.device:
-                print("Failed to connect to ADB device")
+                logger.error("Failed to connect to ADB device")
                 return False
             
             # Initialize Scrcpy bridge (like adb_scrcpy.py)
@@ -137,7 +132,7 @@ class MobileService:
             return True
             
         except Exception as e:
-            print(f"Failed to start mobile service: {e}")
+            logger.error(f"Failed to start mobile service: {e}")
             return False
     
     async def stop(self) -> None:
@@ -151,16 +146,20 @@ class MobileService:
             if self.minicap:
                 self.minicap.close()
         except Exception as e:
-            print(f"Error stopping mobile service: {e}")
+            logger.error(f"Error stopping mobile service: {e}")
         finally:
             self.is_connected = False
             self.is_recording = False
     
-    async def tap(self, action: TapRequest) -> TapResult:
+    async def tap(self, action: TapRequest) -> ActionResult:
         """Perform a tap action on the device."""
         try:
             if not self.is_connected:
-                return TapResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             # Use ADB for simple tap (like adb_scrcpy.py)
             await self.adb.tap(action.x, action.y)
@@ -169,23 +168,33 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after tapping at ({action.x}, {action.y})"
             
-            result = TapResult(
+            return ActionResult(
                 success=True,
                 message=f"Tapped at ({action.x}, {action.y})",
-                screenshot=screenshot,
-                screenshot_description=screenshot_description
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "x": action.x,
+                    "y": action.y
+                }
             )
-            
-            return result
         
         except Exception as e:
-            return TapResult(success=False, message=f"Tap failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Tap failed: {e}",
+                extra={"error": str(e), "x": action.x, "y": action.y}
+            )
     
-    async def swipe(self, action: SwipeRequest) -> SwipeResult:
+    async def swipe(self, action: SwipeRequest) -> ActionResult:
         """Perform a swipe action on the device."""
         try:
             if not self.is_connected:
-                return SwipeResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             # Use ADB for swipe (like adb_scrcpy.py)
             await self.adb.swipe(
@@ -202,23 +211,36 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after swipe from ({action.start_x}, {action.start_y}) to ({action.end_x}, {action.end_y}) for {action.duration}ms"
             
-            result = SwipeResult(
+            return ActionResult(
                 success=True,
                 message=f"Swiped from ({action.start_x}, {action.start_y}) to ({action.end_x}, {action.end_y})",
-                screenshot=screenshot,
-                screenshot_description=screenshot_description
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "start_x": action.start_x,
+                    "start_y": action.start_y,
+                    "end_x": action.end_x,
+                    "end_y": action.end_y,
+                    "duration": action.duration
+                }
             )
-            
-            return result
         
         except Exception as e:
-            return SwipeResult(success=False, message=f"Swipe failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Swipe failed: {e}",
+                extra={"error": str(e), "start_x": action.start_x, "start_y": action.start_y, "end_x": action.end_x, "end_y": action.end_y, "duration": action.duration}
+            )
 
-    async def press(self, action: PressRequest) -> PressResult:
+    async def press(self, action: PressRequest) -> ActionResult:
         """Perform a long press action on the device."""
         try:
             if not self.is_connected:
-                return PressResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             # Use ADB for long press (like adb_scrcpy.py - swipe to same position)
             await self.adb.press(action.x, action.y, action.duration)
@@ -229,23 +251,34 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after long pressing at ({action.x}, {action.y}) for {action.duration}ms"
             
-            result = PressResult(
+            return ActionResult(
                 success=True,
                 message=f"Long pressed at ({action.x}, {action.y}) for {action.duration}ms",
-                screenshot=screenshot,
-                screenshot_description=screenshot_description
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "x": action.x,
+                    "y": action.y,
+                    "duration": action.duration
+                }
             )
-            
-            return result
         
         except Exception as e:
-            return PressResult(success=False, message=f"Long press failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Long press failed: {e}",
+                extra={"error": str(e), "x": action.x, "y": action.y, "duration": action.duration}
+            )
     
-    async def type_text(self, action: TypeTextRequest) -> TypeTextResult:
+    async def type_text(self, action: TypeTextRequest) -> ActionResult:
         """Input text on the device."""
         try:
             if not self.is_connected:
-                return TypeTextResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             # Use ADB for text input (like adb_scrcpy.py)
             text = urllib.parse.quote(action.text)
@@ -257,23 +290,32 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after inputting text: {action.text}"
             
-            result = TypeTextResult(
+            return ActionResult(
                 success=True,
                 message=f"Input text: {action.text}",
-                screenshot=screenshot,
-                screenshot_description=screenshot_description
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "text": action.text
+                }
             )
-            
-            return result
         
         except Exception as e:
-            return TypeTextResult(success=False, message=f"Text input failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Text input failed: {e}",
+                extra={"error": str(e), "text": action.text}
+            )
     
-    async def key_event(self, action: KeyEventRequest) -> KeyEventResult:
+    async def key_event(self, action: KeyEventRequest) -> ActionResult:
         """Press a key on the device."""
         try:
             if not self.is_connected:
-                return KeyEventResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             # Use ADB for key press (like adb_scrcpy.py)
             await self.adb.key_event(action.keycode)
@@ -284,25 +326,39 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after pressing key: {action.keycode}"
             
-            result = KeyEventResult(
+            return ActionResult(
                 success=True,
                 message=f"Pressed key: {action.keycode}",
-                screenshot=screenshot,
-                screenshot_description=screenshot_description
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "keycode": action.keycode
+                }
             )
-            return result
                         
         except Exception as e:
-            return KeyEventResult(success=False, message=f"Key press failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Key press failed: {e}",
+                extra={"error": str(e), "keycode": action.keycode}
+            )
     
-    async def swipe_path(self, action: SwipePathRequest) -> SwipePathResult:
+    async def swipe_path(self, action: SwipePathRequest) -> ActionResult:
         """Perform a swipe along a path."""
         try:
             if not self.is_connected:
-                return SwipePathResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             if len(action.path) < 2:
-                return SwipePathResult(success=False, message="Path must have at least 2 points", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Path must have at least 2 points",
+                    extra={"error": "Path must have at least 2 points", "path": action.path}
+                )
             
             # Calculate duration per segment
             segment_duration = action.duration // (len(action.path) - 1)
@@ -327,22 +383,32 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after swiping along path with {len(action.path)} points"
             
-            result = SwipePathResult(
+            return ActionResult(
                 success=True,
                 message=f"Swiped along path with {len(action.path)} points",
-                screenshot=screenshot,
-                screenshot_description=screenshot_description
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "path": action.path,
+                    "duration": action.duration
+                }
             )
-            
-            return result
         except Exception as e:
-            return SwipePathResult(success=False, message=f"Swipe path failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Swipe path failed: {e}",
+                extra={"error": str(e), "path": action.path, "duration": action.duration}
+            )
         
-    async def scroll(self, action: ScrollRequest) -> ScrollResult:
+    async def scroll(self, action: ScrollRequest) -> ActionResult:
         """Perform a scroll action on the device."""
         try:
             if not self.is_connected:
-                return ScrollResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             await self.adb.scroll(action.direction, action.distance)
             
@@ -351,30 +417,51 @@ class MobileService:
             screenshot = await self._take_screenshot()
             screenshot_description = f"A screenshot of the device after scrolling {action.direction} by {action.distance} pixels"
             
-            result = ScrollResult(success=True, message=f"Scrolled {action.direction} by {action.distance} pixels", screenshot=screenshot, screenshot_description=screenshot_description)
-            return result
+            return ActionResult(
+                success=True,
+                message=f"Scrolled {action.direction} by {action.distance} pixels",
+                extra={
+                    "screenshot": screenshot,
+                    "screenshot_description": screenshot_description,
+                    "direction": action.direction,
+                    "distance": action.distance
+                }
+            )
             
         except Exception as e:
-            return ScrollResult(success=False, message=f"Scroll failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Scroll failed: {e}",
+                extra={"error": str(e), "direction": action.direction, "distance": action.distance}
+            )
     
-    async def take_screenshot(self, action: ScreenshotRequest) -> ScreenshotResult:
+    async def take_screenshot(self, action: ScreenshotRequest) -> ActionResult:
         """Take a screenshot of the device."""
         try:
             if not self.is_connected:
-                return ScreenshotResult(success=False, message="Device not connected", screenshot=None, screenshot_description=None)
+                return ActionResult(
+                    success=False,
+                    message="Device not connected",
+                    extra={"error": "Device not connected"}
+                )
             
             screenshot_data = await self._take_screenshot(save_path=action.save_path)
             
-            result = ScreenshotResult(
+            return ActionResult(
                 success=True,
                 message="Screenshot taken",
-                screenshot=screenshot_data
+                extra={
+                    "screenshot": screenshot_data,
+                    "save_path": action.save_path
+                }
             )
             
-            return result
-            
         except Exception as e:
-            return ScreenshotResult(success=False, message=f"Screenshot failed: {e}", screenshot=None, screenshot_description=None)
+            return ActionResult(
+                success=False,
+                message=f"Screenshot failed: {e}",
+                extra={"error": str(e), "save_path": action.save_path}
+            )
     
     async def _take_screenshot(self, save_path: Optional[str] = None) -> str:
         """Take a screenshot and save it."""
@@ -401,21 +488,27 @@ class MobileService:
         
         screenshot = await self._take_screenshot()
         
-        state = {
-            "device_info": {
-                "device_id": self.device_id,
-                "screen_width": self.screen_info["width"],
-                "screen_height": self.screen_info["height"],
-                "screen_rotate": self.screen_info["rotate"],
-                "screen_density": self.screen_density,
-                "is_connected": self.is_connected
-            },
+        state = dedent(f"""
+            <info>
+            Device ID: {self.device_id}
+            Screen Width: {self.screen_info["width"]}
+            Screen Height: {self.screen_info["height"]}
+            Screen Rotate: {self.screen_info["rotate"]}
+            Screen Density: {self.screen_density}
+            Is Connected: {self.is_connected}
+            </info>
+        """
+        )
+        extra = {
             "screenshot": screenshot,
             "is_recording": self.is_recording,
             "recording_path": self.recording_path
         }
         
-        return state
+        return {
+            "state": state,
+            "extra": extra
+        }
     
     async def pause_recording(self) -> None:
         """Pause video recording (like adb_scrcpy.py)."""

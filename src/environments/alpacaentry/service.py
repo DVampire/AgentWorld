@@ -1,11 +1,7 @@
 """Alpaca trading service implementation using alpaca-py."""
-
 from typing import Optional
-from decimal import Decimal
-
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
-
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetAssetsRequest as AlpacaGetAssetsRequest
@@ -20,13 +16,10 @@ from alpaca.data.live import (CryptoDataStream,
                               OptionDataStream)
 from alpaca.common.exceptions import APIError
 
+from src.environments.protocol.types import ActionResult
 from src.environments.alpacaentry.types import (
-    AlpacaAccount,
-    AlpacaAsset,
     GetAccountRequest,
-    GetAccountResult,
     GetAssetsRequest,
-    GetAssetsResult,
 )
 from src.environments.alpacaentry.exceptions import (
     AlpacaError,
@@ -134,9 +127,9 @@ class AlpacaService:
         except APIError as e:
             if e.status_code == 401:
                 raise AuthenticationError(f"Invalid Alpaca credentials: {e}")
-            raise AlpacaError(f"Failed to initialize Alpaca service: {e}")
+            raise AlpacaError(f"Failed to initialize Alpaca service: {e}.")
         except Exception as e:
-            raise AlpacaError(f"Failed to initialize Alpaca service: {e}")
+            raise AlpacaError(f"Failed to initialize Alpaca service: {e}.")
 
     async def cleanup(self) -> None:
         """Cleanup the Alpaca service."""
@@ -144,52 +137,52 @@ class AlpacaService:
         self._data_client = None
 
     # Account methods
-    async def get_account(self, request: GetAccountRequest) -> GetAccountResult:
+    async def get_account(self, request: GetAccountRequest) -> ActionResult:
         """Get account information."""
         try:
             account = self._trading_client.get_account()
             
-            alpaca_account = AlpacaAccount(
-                id=account.id,
-                account_number=account.account_number,
-                status=account.status,
-                currency=account.currency,
-                buying_power=Decimal(str(account.buying_power)),
-                cash=Decimal(str(account.cash)),
-                portfolio_value=Decimal(str(account.portfolio_value)),
-                pattern_day_trader=account.pattern_day_trader,
-                trading_blocked=account.trading_blocked,
-                transfers_blocked=account.transfers_blocked,
-                account_blocked=account.account_blocked,
-                created_at=account.created_at,
-                trade_suspended_by_user=account.trade_suspended_by_user,
-                multiplier=int(account.multiplier),
-                shorting_enabled=account.shorting_enabled,
-                equity=Decimal(str(account.equity)),
-                last_equity=Decimal(str(account.last_equity)),
-                long_market_value=Decimal(str(account.long_market_value)),
-                short_market_value=Decimal(str(account.short_market_value)),
-                initial_margin=Decimal(str(account.initial_margin)),
-                maintenance_margin=Decimal(str(account.maintenance_margin)),
-                last_maintenance_margin=Decimal(str(account.last_maintenance_margin)),
-                sma=Decimal(str(account.sma)),
-                daytrade_count=int(account.daytrade_count)
-            )
+            account_info = {
+                "id": account.id,
+                "account_number": account.account_number,
+                "status": account.status,
+                "currency": account.currency,
+                "buying_power": account.buying_power,
+                "cash": account.cash,
+                "portfolio_value": account.portfolio_value,
+                "pattern_day_trader": account.pattern_day_trader,
+                "trading_blocked": account.trading_blocked,
+                "transfers_blocked": account.transfers_blocked,
+                "account_blocked": account.account_blocked,
+                "created_at": account.created_at,
+                "trade_suspended_by_user": account.trade_suspended_by_user,
+                "multiplier": account.multiplier,
+                "shorting_enabled": account.shorting_enabled,
+                "equity": account.equity,
+                "last_equity": account.last_equity,
+                "long_market_value": account.long_market_value,
+                "short_market_value": account.short_market_value,
+                "initial_margin": account.initial_margin,
+                "maintenance_margin": account.maintenance_margin,
+                "last_maintenance_margin": account.last_maintenance_margin,
+                "sma": account.sma,
+                "daytrade_count": account.daytrade_count
+            }
             
-            return GetAccountResult(
-                account=alpaca_account,
+            return ActionResult(
                 success=True,
-                message="Account information retrieved successfully"
+                message="Account information retrieved successfully.",
+                extra={"account": account_info}
             )
             
         except APIError as e:
             if e.status_code == 401:
                 raise AuthenticationError(f"Authentication failed: {e}")
-            raise AlpacaError(f"Failed to get account: {e}")
+            raise AlpacaError(f"Failed to get account: {e}.")
         except Exception as e:
-            raise AlpacaError(f"Failed to get account: {e}")
+            raise AlpacaError(f"Failed to get account: {e}.")
         
-    async def get_assets(self, request: GetAssetsRequest) -> GetAssetsResult:
+    async def get_assets(self, request: GetAssetsRequest) -> ActionResult:
         """Get assets information."""
         try:
             # Convert string parameters to Alpaca enums if provided
@@ -243,27 +236,28 @@ class AlpacaService:
             
             alpaca_assets = []
             for asset in assets:
-                alpaca_assets.append(AlpacaAsset(
-                    id=asset.id,
-                    symbol=asset.symbol,
-                    name=asset.name,
-                    asset_class=asset.asset_class,
-                    exchange=asset.exchange,
-                    status=asset.status,
-                    tradable=asset.tradable,
-                    marginable=asset.marginable,
-                    shortable=asset.shortable,
-                    easy_to_borrow=asset.easy_to_borrow,
-                    fractionable=asset.fractionable
-                ))
+                alpaca_assets.append({
+                    "id": asset.id,
+                    "symbol": asset.symbol,
+                    "name": asset.name,
+                    "asset_class": asset.asset_class,
+                    "exchange": asset.exchange,
+                    "status": asset.status,
+                    "tradable": asset.tradable,
+                    "marginable": asset.marginable,
+                    "shortable": asset.shortable,
+                    "easy_to_borrow": asset.easy_to_borrow,
+                    "fractionable": asset.fractionable
+                })
             
-            return GetAssetsResult(
-                assets=alpaca_assets,
+            return ActionResult(
                 success=True,
-                message=f"Retrieved {len(alpaca_assets)} assets"
+                message=f"Retrieved {len(alpaca_assets)} assets.",
+                extra={"assets": alpaca_assets}
             )
             
         except APIError as e:
-            raise AlpacaError(f"Failed to get assets: {e}")
+            raise AlpacaError(f"Failed to get assets: {e}.")
         except Exception as e:
-            raise AlpacaError(f"Failed to get assets: {e}")
+            raise AlpacaError(f"Failed to get assets: {e}.")
+        

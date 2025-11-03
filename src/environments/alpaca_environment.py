@@ -4,10 +4,8 @@ from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
-from typing import Any, Dict, Optional, Type, List
+from typing import Any, Dict, Optional, Type
 from pydantic import BaseModel, Field, SecretStr, ConfigDict
-from decimal import Decimal
-from datetime import datetime
 
 from src.logger import logger
 from src.environments.protocol.environment import BaseEnvironment
@@ -18,9 +16,7 @@ from src.environments.alpacaentry.exceptions import (
 )
 from src.environments.alpacaentry.types import (
     GetAccountRequest,
-    GetPositionsRequest,
     GetAssetsRequest,
-    GetAssetsResult,
 )
 from src.utils import dedent, get_env, assemble_project_path
 
@@ -91,7 +87,7 @@ class AlpacaEnvironment(BaseEnvironment):
     @ecp.action(name="get_account", 
                 type="Alpaca Trading", 
                 description="Get account information including buying power, cash, and portfolio value")
-    async def get_account(self) -> str:
+    async def get_account(self) -> Dict[str, Any]:
         """Get account information.
         
         Returns:
@@ -101,34 +97,52 @@ class AlpacaEnvironment(BaseEnvironment):
             request = GetAccountRequest()
             result = await self.alpaca_service.get_account(request)
             
-            if not result.success or not result.account:
-                return f"| ❌ {result.message}"
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
             
-            account = result.account
+            account = result.extra["account"]
             result_text = dedent(f"""
                 Account Information:
-                Account Number: {account.account_number}
-                Status: {account.status}
-                Currency: {account.currency}
-                Buying Power: ${account.buying_power:,.2f}
-                Cash: ${account.cash:,.2f}
-                Portfolio Value: ${account.portfolio_value:,.2f}
-                Equity: ${account.equity:,.2f}
-                Pattern Day Trader: {account.pattern_day_trader}
-                Trading Blocked: {account.trading_blocked}
-                Shorting Enabled: {account.shorting_enabled}
-                Day Trade Count: {account.daytrade_count}
+                Account Number: {account["account_number"]}
+                Status: {account["status"]}
+                Currency: {account["currency"]}
+                Buying Power: ${account["buying_power"]:,.2f}
+                Cash: ${account["cash"]:,.2f}
+                Portfolio Value: ${account["portfolio_value"]:,.2f}
+                Equity: ${account["equity"]:,.2f}
+                Pattern Day Trader: {account["pattern_day_trader"]}
+                Trading Blocked: {account["trading_blocked"]}
+                Shorting Enabled: {account["shorting_enabled"]}
+                Day Trade Count: {account["daytrade_count"]}
                 """)
-            return result_text
+            extra = result.extra
+            
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": extra
+            }
         except AuthenticationError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
         except Exception as e:
-            return f"Failed to get account information: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to get account information: {str(e)}",
+                "extra": {"error": str(e)}
+            }
         
     @ecp.action(name="get_assets", 
                 type="Alpaca Trading", 
                 description="Get all assets information including symbols, names, types, and status")
-    async def get_assets(self, status: Optional[str] = None, asset_class: Optional[str] = None) -> str:
+    async def get_assets(self, status: Optional[str] = None, asset_class: Optional[str] = None) -> Dict[str, Any]:
         """Get all assets information.
         
         Returns:
@@ -138,19 +152,36 @@ class AlpacaEnvironment(BaseEnvironment):
             request = GetAssetsRequest(status=status, asset_class=asset_class)
             result = await self.alpaca_service.get_assets(request)
             
-            if not result.success or not result.assets:
-                return f"| ❌ {result.message}"
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
                 
-            assets = result.assets
+            assets = result.extra["assets"]
             result_text = dedent(f"""
-                Assets Information:
-                {len(assets)} assets found
+                {len(assets)} assets found, list of assets:
+                {", ".join([asset["symbol"] for asset in assets])}
                 """)
-            return result_text
+            extra = result.extra
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": extra
+            }
         except AuthenticationError as e:
-            return str(e)
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
         except Exception as e:
-            return f"Failed to get assets information: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Failed to get assets information: {str(e)}",
+                "extra": {"error": str(e)}
+            }
 
     # --------------- Environment Interface Methods ---------------
     async def get_info(self) -> Dict[str, Any]:
@@ -162,31 +193,6 @@ class AlpacaEnvironment(BaseEnvironment):
             "authenticated": self.alpaca_service is not None,
         }
 
-    async def health_check(self) -> Dict[str, Any]:
-        """Perform health check."""
-        try:
-            if self.alpaca_service is None:
-                return {"status": "unhealthy", "error": "Not initialized"}
-            
-            # Test service access by getting account info
-            request = GetAccountRequest()
-            result = await self.alpaca_service.get_account(request)
-            
-            if not result.success:
-                return {"status": "unhealthy", "error": result.message}
-            
-            return {
-                "status": "healthy",
-                "account_number": result.account.account_number,
-                "account_status": result.account.status,
-                "is_paper_trading": "paper" in self.base_url,
-            }
-        except Exception as e:
-            return {
-                "status": "unhealthy",
-                "error": str(e),
-            }
-
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Alpaca trading environment."""
         try:
@@ -194,38 +200,25 @@ class AlpacaEnvironment(BaseEnvironment):
             account_request = GetAccountRequest()
             account_result = await self.alpaca_service.get_account(account_request)
             
-            # Get positions
-            positions_request = GetPositionsRequest()
-            positions_result = await self.alpaca_service.get_positions(positions_request)
-            
-            # Get open orders
-            orders_request = GetOrdersRequest(status="open")
-            orders_result = await self.alpaca_service.get_orders(orders_request)
-            
-            state_text = dedent(f"""
+            state = dedent(f"""
+                <info>
                 Alpaca Paper Trading Environment:
-                Account Status: {account_result.account.status if account_result.success else 'Unknown'}
-                Buying Power: ${account_result.account.buying_power:,.2f} if account_result.success else 'Unknown'
-                Cash: ${account_result.account.cash:,.2f} if account_result.success else 'Unknown'
-                Portfolio Value: ${account_result.account.portfolio_value:,.2f} if account_result.success else 'Unknown'
-                Positions: {len(positions_result.positions) if positions_result.success else 0}
-                Open Orders: {len(orders_result.orders) if orders_result.success else 0}
-                Mode: Paper Trading
-            """)
-            
+                Account Status: {account_result.extra["account"]["status"]}
+                </info>
+                """)
+            extra = account_result.extra
             return {
-                "state": state_text,
-                "extra": {
-                    "account": account_result.account if account_result.success else None,
-                    "positions": positions_result.positions if positions_result.success else [],
-                    "open_orders": orders_result.orders if orders_result.success else [],
-                },
+                "state": state,
+                "extra": extra
+            }
+        except AuthenticationError as e:
+            return {
+                "state": str(e),
+                "extra": {"error": str(e)}
             }
         except Exception as e:
             logger.error(f"Failed to get Alpaca state: {e}")
             return {
-                "state": str(e),
-                "extra": {
-                    "error": str(e),
-                },
+                "state": f"Failed to get Alpaca state: {str(e)}",
+                "extra": {"error": str(e)}
             }

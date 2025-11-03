@@ -6,40 +6,26 @@ from typing import Optional, List, Tuple
 from github import Github, GithubException
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 
+from src.environments.protocol.types import ActionResult
 from src.environments.github.types import (
     GitHubRepository,
     GitHubUser, 
     GitStatus,
     CreateRepositoryRequest, 
-    CreateRepositoryResult,
     ForkRepositoryRequest, 
-    ForkRepositoryResult,
     DeleteRepositoryRequest, 
-    DeleteRepositoryResult,
     GetRepositoryRequest, 
-    GetRepositoryResult,
     CloneRepositoryRequest,
-    CloneRepositoryResult,
     InitRepositoryRequest, 
-    InitRepositoryResult,
     GitCommitRequest, 
-    GitCommitResult,
     GitPushRequest,
-    GitPushResult,
     GitPullRequest, 
-    GitPullResult,
     GitFetchRequest,
-    GitFetchResult,
     GitCreateBranchRequest, 
-    GitCreateBranchResult,
     GitCheckoutBranchRequest,
-    GitCheckoutBranchResult,
     GitListBranchesRequest,
-    GitListBranchesResult,
     GitDeleteBranchRequest,
-    GitDeleteBranchResult,
-    GitStatusRequest,
-    GitStatusResult
+    GitStatusRequest
 )
 from src.environments.github.exceptions import (
     GitHubError, 
@@ -121,7 +107,7 @@ class GitHubService:
 
     # --------------- Repository Operations ---------------
 
-    async def create_repository(self, request: CreateRepositoryRequest) -> CreateRepositoryResult:
+    async def create_repository(self, request: CreateRepositoryRequest) -> ActionResult:
         """Create a new GitHub repository."""
         try:
             # Get the PyGithub user object for creating repositories
@@ -151,10 +137,30 @@ class GitHubService:
                 updated_at=repo.updated_at
             )
             
-            return CreateRepositoryResult(
-                repository=repository,
+            # Convert dataclass to dict for serialization
+            repo_dict = {
+                "full_name": repository.full_name,
+                "name": repository.name,
+                "owner": repository.owner,
+                "description": repository.description,
+                "private": repository.private,
+                "html_url": repository.html_url,
+                "clone_url": repository.clone_url,
+                "ssh_url": repository.ssh_url,
+                "language": repository.language,
+                "stargazers_count": repository.stargazers_count,
+                "forks_count": repository.forks_count,
+                "created_at": repository.created_at.isoformat() if repository.created_at else None,
+                "updated_at": repository.updated_at.isoformat() if repository.updated_at else None
+            }
+            
+            return ActionResult(
                 success=True,
-                message=f"Successfully created repository {request.name}"
+                message=f"Successfully created repository {request.name}",
+                extra={
+                    "repository": repo_dict,
+                    "name": request.name
+                }
             )
             
         except GithubException as e:
@@ -168,19 +174,19 @@ class GitHubService:
             elif e.status == 404:
                 error_msg = "User not found or repository creation failed"
             
-            return CreateRepositoryResult(
-                repository=None,
+            return ActionResult(
                 success=False,
-                message=error_msg
+                message=error_msg,
+                extra={"error": error_msg, "name": request.name, "status_code": e.status}
             )
         except Exception as e:
-            return CreateRepositoryResult(
-                repository=None,
+            return ActionResult(
                 success=False,
-                message=f"Failed to create repository '{request.name}': {e}"
+                message=f"Failed to create repository '{request.name}': {str(e)}",
+                extra={"error": str(e), "name": request.name}
             )
 
-    async def fork_repository(self, request: ForkRepositoryRequest) -> ForkRepositoryResult:
+    async def fork_repository(self, request: ForkRepositoryRequest) -> ActionResult:
         """Fork a repository to your account."""
         try:
             # Get the original repository
@@ -231,7 +237,7 @@ class GitHubService:
                 message=f"Failed to fork repository '{request.owner}/{request.repo}': {e}"
             )
 
-    async def delete_repository(self, request: DeleteRepositoryRequest) -> DeleteRepositoryResult:
+    async def delete_repository(self, request: DeleteRepositoryRequest) -> ActionResult:
         """Delete a repository."""
         try:
             repository = await asyncio.to_thread(self.github.get_repo, f"{request.owner}/{request.repo}")
@@ -259,7 +265,7 @@ class GitHubService:
                 message=f"Failed to delete repository '{request.owner}/{request.repo}': {e}"
             )
 
-    async def get_repository(self, request: GetRepositoryRequest) -> GetRepositoryResult:
+    async def get_repository(self, request: GetRepositoryRequest) -> ActionResult:
         """Get repository information."""
         try:
             repository = await asyncio.to_thread(self.github.get_repo, f"{request.owner}/{request.repo}")
@@ -320,7 +326,7 @@ class GitHubService:
         except Exception as e:
             return False, "", str(e)
 
-    async def clone_repository(self, request: CloneRepositoryRequest) -> CloneRepositoryResult:
+    async def clone_repository(self, request: CloneRepositoryRequest) -> ActionResult:
         """Clone a repository to local directory."""
         try:
             repo_url = f"https://github.com/{request.owner}/{request.repo}.git"
@@ -369,7 +375,7 @@ class GitHubService:
                 message=f"Failed to clone repository '{request.owner}/{request.repo}': {str(e)}"
             )
 
-    async def init_repository(self, request: InitRepositoryRequest) -> InitRepositoryResult:
+    async def init_repository(self, request: InitRepositoryRequest) -> ActionResult:
         """Initialize a local directory as Git repository."""
         try:
             local_path = Path(request.local_path)
@@ -421,7 +427,7 @@ class GitHubService:
 
     # --------------- Git Operations ---------------
 
-    async def git_commit(self, request: GitCommitRequest) -> GitCommitResult:
+    async def git_commit(self, request: GitCommitRequest) -> ActionResult:
         """Commit changes to local repository."""
         try:
             # Add files using git command
@@ -493,7 +499,7 @@ class GitHubService:
                 message=f"Failed to commit in '{request.local_path}': {str(e)}"
             )
 
-    async def git_push(self, request: GitPushRequest) -> GitPushResult:
+    async def git_push(self, request: GitPushRequest) -> ActionResult:
         """Push changes to remote repository."""
         try:
             # Get current branch if not specified
@@ -552,7 +558,7 @@ class GitHubService:
                 message=f"Failed to push from '{request.local_path}': {str(e)}"
             )
 
-    async def git_pull(self, request: GitPullRequest) -> GitPullResult:
+    async def git_pull(self, request: GitPullRequest) -> ActionResult:
         """Pull changes from remote repository.
         
         Args:
@@ -611,7 +617,7 @@ class GitHubService:
                 message=f"Failed to pull to '{request.local_path}': {str(e)}"
             )
 
-    async def git_fetch(self, request: GitFetchRequest) -> GitFetchResult:
+    async def git_fetch(self, request: GitFetchRequest) -> ActionResult:
         """Fetch changes from remote repository.
         
         Args:
@@ -658,7 +664,7 @@ class GitHubService:
 
     # --------------- Branch Operations ---------------
 
-    async def git_create_branch(self, request: GitCreateBranchRequest) -> GitCreateBranchResult:
+    async def git_create_branch(self, request: GitCreateBranchRequest) -> ActionResult:
         """Create a new branch.
         
         Args:
@@ -706,7 +712,7 @@ class GitHubService:
         except Exception as e:
             raise GitError(f"Failed to create branch '{request.branch_name}': {str(e)}")
 
-    async def git_checkout_branch(self, request: GitCheckoutBranchRequest) -> GitCheckoutBranchResult:
+    async def git_checkout_branch(self, request: GitCheckoutBranchRequest) -> ActionResult:
         """Checkout an existing branch.
         
         Args:
@@ -740,7 +746,7 @@ class GitHubService:
         except Exception as e:
             raise GitError(f"Failed to checkout branch '{request.branch_name}': {str(e)}")
 
-    async def git_list_branches(self, request: GitListBranchesRequest) -> GitListBranchesResult:
+    async def git_list_branches(self, request: GitListBranchesRequest) -> ActionResult:
         """List all branches.
         
         Args:
@@ -797,7 +803,7 @@ class GitHubService:
         except Exception as e:
             raise GitError(f"Failed to list branches: {str(e)}")
 
-    async def git_delete_branch(self, request: GitDeleteBranchRequest) -> GitDeleteBranchResult:
+    async def git_delete_branch(self, request: GitDeleteBranchRequest) -> ActionResult:
         """Delete a branch.
         
         Args:

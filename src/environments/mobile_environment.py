@@ -111,7 +111,7 @@ class MobileEnvironment(BaseEnvironment):
         description="Tap at specified coordinates on the mobile device",
         type="Mobile Environment",
     )
-    async def tap(self, x: int, y: int) -> str:
+    async def tap(self, x: int, y: int) -> Dict[str, Any]:
         """
         Tap at specified coordinates on the mobile device.
         
@@ -120,7 +120,7 @@ class MobileEnvironment(BaseEnvironment):
             y (int): Y coordinate for tap
             
         Returns:
-            TapResult: Result of the tap operation
+            Dict with success, message, and extra fields
         """
         try:
             
@@ -152,22 +152,42 @@ class MobileEnvironment(BaseEnvironment):
             
             # Perform tap
             request = TapRequest(x=inverse_x, y=inverse_y)
-            await self.mobile_service.tap(request)
+            result = await self.mobile_service.tap(request)
             
             self.step_number += 1
             
-            return f"Tapped at ({x}, {y})"
+            extra = {
+                "x": x,
+                "y": y,
+                "inverse_x": inverse_x,
+                "inverse_y": inverse_y,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            elif hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Tapped at ({x}, {y})",
+                "extra": extra
+            }
             
         except Exception as e:
             logger.error(f"Error in tap operation: {e}")
-            return f"Tap failed: {e}"
+            return {
+                "success": False,
+                "message": f"Tap failed: {str(e)}",
+                "extra": {"error": str(e), "x": x, "y": y}
+            }
     
     @ecp.action(
         name="swipe",
         description="Swipe at specified coordinates on the mobile device",
         type="Mobile Environment",
     )
-    async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300) -> str:
+    async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300) -> Dict[str, Any]:
         """
         Swipe gesture from start to end coordinates.
         
@@ -179,7 +199,7 @@ class MobileEnvironment(BaseEnvironment):
             duration (int): Swipe duration in milliseconds
             
         Returns:
-            SwipeResult: Result of the swipe operation
+            Dict with success, message, and extra fields
         """
         try:
             # Draw a path on the screenshot
@@ -223,22 +243,41 @@ class MobileEnvironment(BaseEnvironment):
             )
             
             # Perform swipe
-            await self.mobile_service.swipe(request)
+            result = await self.mobile_service.swipe(request)
             
             self.step_number += 1
             
-            return f"Swiped from ({start_x}, {start_y}) to ({end_x}, {end_y})"
+            extra = {
+                "start_x": start_x,
+                "start_y": start_y,
+                "end_x": end_x,
+                "end_y": end_y,
+                "duration": duration,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Swiped from ({start_x}, {start_y}) to ({end_x}, {end_y})",
+                "extra": extra
+            }
             
         except Exception as e:
             logger.error(f"Error in swipe operation: {e}")
-            return f"Swipe failed: {e}"
+            return {
+                "success": False,
+                "message": f"Swipe failed: {str(e)}",
+                "extra": {"error": str(e), "start_x": start_x, "start_y": start_y, "end_x": end_x, "end_y": end_y}
+            }
     
     @ecp.action(
         name="press",
         description="Long press at specified coordinates on the mobile device",
         type="Mobile Environment",
     )
-    async def press(self, x: int, y: int, duration: int = 1000) -> str:
+    async def press(self, x: int, y: int, duration: int = 1000) -> Dict[str, Any]:
         """
         Long press at specified coordinates.
         
@@ -248,7 +287,7 @@ class MobileEnvironment(BaseEnvironment):
             duration (int): Press duration in milliseconds
             
         Returns:
-            PressResult: Result of the press operation
+            Dict with success, message, and extra fields
         """
         try:
             # Draw a cursor on the screenshot
@@ -274,22 +313,39 @@ class MobileEnvironment(BaseEnvironment):
             request = PressRequest(x=inverse_x, y=inverse_y, duration=duration)
             
             # Perform press
-            await self.mobile_service.press(request)
+            result = await self.mobile_service.press(request)
             
             self.step_number += 1
             
-            return f"Pressed at ({x}, {y}) for {duration}ms"
+            extra = {
+                "x": x,
+                "y": y,
+                "duration": duration,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Pressed at ({x}, {y}) for {duration}ms",
+                "extra": extra
+            }
         
         except Exception as e:
             logger.error(f"Error in press operation: {e}")
-            return f"Press failed: {e}"
+            return {
+                "success": False,
+                "message": f"Press failed: {str(e)}",
+                "extra": {"error": str(e), "x": x, "y": y, "duration": duration}
+            }
     
     @ecp.action(
         name="type",
         description="Type text at the current cursor position on the mobile device",
         type="Mobile Environment",
     )
-    async def type_text(self, text: str) -> str:
+    async def type_text(self, text: str) -> Dict[str, Any]:
         """
         Type text on the mobile device.
         
@@ -297,7 +353,7 @@ class MobileEnvironment(BaseEnvironment):
             text (str): Text to input
             
         Returns:
-            TypeTextResult: Result of the type operation
+            Dict with success, message, and extra fields
         """
         try:
             # DO NOT draw anything on the screenshot
@@ -318,22 +374,37 @@ class MobileEnvironment(BaseEnvironment):
             request = TypeTextRequest(text=text)
             
             # Perform type text
-            await self.mobile_service.type_text(request)
+            result = await self.mobile_service.type_text(request)
             
             self.step_number += 1
             
-            return f"Typed text: {text}"
+            extra = {
+                "text": text,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Typed text: {text}",
+                "extra": extra
+            }
         
         except Exception as e:
             logger.error(f"Error in type operation: {e}")
-            return f"Type failed: {e}"
+            return {
+                "success": False,
+                "message": f"Type failed: {str(e)}",
+                "extra": {"error": str(e), "text": text}
+            }
     
     @ecp.action(
         name="key_event",
         description="Press a key on the mobile device",
         type="Mobile Environment",
     )
-    async def key_event(self, keycode: int) -> str:
+    async def key_event(self, keycode: int) -> Dict[str, Any]:
         """
         Press a key on the mobile device.
         
@@ -341,7 +412,7 @@ class MobileEnvironment(BaseEnvironment):
             keycode (int): Android keycode to press
             
         Returns:
-            KeyEventResult: Result of the key event operation
+            Dict with success, message, and extra fields
         """
         try:
             # DO NOT draw anything on the screenshot
@@ -362,15 +433,30 @@ class MobileEnvironment(BaseEnvironment):
             request = KeyEventRequest(keycode=keycode)
             
             # Perform key event
-            await self.mobile_service.key_event(request)
+            result = await self.mobile_service.key_event(request)
             
             self.step_number += 1
             
-            return f"Key event: {keycode}"
+            extra = {
+                "keycode": keycode,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Key event: {keycode}",
+                "extra": extra
+            }
         
         except Exception as e:
             logger.error(f"Error in key event operation: {e}")
-            return f"Key event failed: {e}"
+            return {
+                "success": False,
+                "message": f"Key event failed: {str(e)}",
+                "extra": {"error": str(e), "keycode": keycode}
+            }
     
     # ==================== ADVANCED OPERATIONS ====================
     
@@ -379,7 +465,7 @@ class MobileEnvironment(BaseEnvironment):
         description="Swipe along a path of coordinates on the mobile device",
         type="Mobile Environment",
     )
-    async def swipe_path(self, path: List[List[int]], duration: int = 300) -> str:
+    async def swipe_path(self, path: List[List[int]], duration: int = 300) -> Dict[str, Any]:
         """
         Swipe along a path of coordinates.
         
@@ -388,7 +474,7 @@ class MobileEnvironment(BaseEnvironment):
             duration (int): Total swipe duration in milliseconds
             
         Returns:
-            str: Result of the swipe path operation
+            Dict with success, message, and extra fields
         """
         try:
             # Draw a path on the screenshot
@@ -422,15 +508,31 @@ class MobileEnvironment(BaseEnvironment):
             request = SwipePathRequest(path=new_path, duration=duration)
             
             # Perform swipe path
-            await self.mobile_service.swipe_path(request)
+            result = await self.mobile_service.swipe_path(request)
             
             self.step_number += 1
             
-            return f"Swiped path with {len(path)} points"
+            extra = {
+                "path": path,
+                "duration": duration,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Swiped path with {len(path)} points",
+                "extra": extra
+            }
         
         except Exception as e:
             logger.error(f"Error in swipe path operation: {e}")
-            return f"Swipe path failed: {e}"
+            return {
+                "success": False,
+                "message": f"Swipe path failed: {str(e)}",
+                "extra": {"error": str(e), "path": path, "duration": duration}
+            }
     
     # ==================== SCROLL OPERATIONS ====================
     
@@ -439,7 +541,7 @@ class MobileEnvironment(BaseEnvironment):
         description="Scroll on the mobile device in specified direction",
         type="Mobile Environment",
     )
-    async def scroll(self, direction: str, distance: int = 500) -> str:
+    async def scroll(self, direction: str, distance: int = 500) -> Dict[str, Any]:
         """
         Scroll on the mobile device in specified direction.
         
@@ -448,7 +550,7 @@ class MobileEnvironment(BaseEnvironment):
             distance: Scroll distance in pixels
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             # DO NOT draw anything on the screenshot
@@ -469,39 +571,87 @@ class MobileEnvironment(BaseEnvironment):
             request = ScrollRequest(direction=direction, distance=distance)
             
             # Perform scroll
-            await self.mobile_service.scroll(request)
+            result = await self.mobile_service.scroll(request)
             
             self.step_number += 1
             
-            return f"Scrolled {direction} by {distance} pixels"
+            extra = {
+                "direction": direction,
+                "distance": distance,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'extra') and result.extra:
+                extra.update(result.extra)
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Scrolled {direction} by {distance} pixels",
+                "extra": extra
+            }
         
         except Exception as e:
             logger.error(f"Error in scroll operation: {e}")
-            return f"Scroll failed: {e}"
+            return {
+                "success": False,
+                "message": f"Scroll failed: {str(e)}",
+                "extra": {"error": str(e), "direction": direction, "distance": distance}
+            }
         
     @ecp.action(
         name="screenshot",
         description="Take a screenshot of the mobile device",
         type="Mobile Environment",
     )
-    async def taske_screenshot(self) -> str:
-        # DO NOT capture the screenshot here, just return the screenshot path
-        return f"Screenshot taken successfully: {self.screenshot.screenshot_path}."
+    async def taske_screenshot(self) -> Dict[str, Any]:
+        """Take a screenshot of the mobile device.
+        
+        Returns:
+            Dict with success, message, and extra fields
+        """
+        try:
+            # DO NOT capture the screenshot here, just return the screenshot path
+            screenshot_path = self.screenshot.screenshot_path if self.screenshot else None
+            
+            return {
+                "success": True,
+                "message": f"Screenshot taken successfully: {screenshot_path}." if screenshot_path else "Screenshot not available",
+                "extra": {"screenshot_path": screenshot_path} if screenshot_path else {}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get screenshot: {str(e)}",
+                "extra": {"error": str(e)}
+            }
     
     @ecp.action(
         name="wait",
         description="Wait for a specified duration",
         type="Mobile Environment",
     )
-    async def wait(self, duration: int) -> str:
+    async def wait(self, duration: int) -> Dict[str, Any]:
         """
         Wait for a specified duration in seconds.
         
         Args:
             duration (int): Wait duration in seconds
+        
+        Returns:
+            Dict with success, message, and extra fields
         """
-        await asyncio.sleep(int(duration))
-        return f"Waited for {duration} seconds"
+        try:
+            await asyncio.sleep(int(duration))
+            return {
+                "success": True,
+                "message": f"Waited for {duration} seconds",
+                "extra": {"duration": duration}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Wait failed: {str(e)}",
+                "extra": {"error": str(e), "duration": duration}
+            }
         
     def transform_screenshot(self, screenshot: Image.Image) -> Image.Image:
         """Transform the screenshot to the target window size."""

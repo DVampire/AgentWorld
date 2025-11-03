@@ -89,7 +89,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
         type="Operator Browser Environment",
         description="Click at specified coordinates on the page",
     )
-    async def click(self, x: int, y: int, button: str = "left") -> str:
+    async def click(self, x: int, y: int, button: str = "left") -> Dict[str, Any]:
         """Click at specified coordinates on the page.
         
         Args:
@@ -98,7 +98,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             button (str): Mouse button to click (left, right, middle)
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = ClickRequest(x=x, y=y, button=button)
@@ -118,20 +118,34 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             )
             self.step_number += 1
             
-            await self.operator_browser_service.click(request)
+            result = await self.operator_browser_service.click(request)
             
-            return f"Clicked at ({x}, {y}) with {button} button"
+            extra = result.extra.copy() if result.extra else {}
+            extra["x"] = x
+            extra["y"] = y
+            extra["button"] = button
+            extra["screenshot_path"] = screenshot_path
+            
+            return {
+                "success": result.success,
+                "message": result.message,
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Click action failed: {e}")
-            return f"❌ Click action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Click action failed: {str(e)}",
+                "extra": {"error": str(e), "x": x, "y": y, "button": button}
+            }
     
     @ecp.action(
         name="double_click",
         description="Double click at specified coordinates on the page",
         type="Operator Browser Environment",
     )
-    async def double_click(self, x: int, y: int, button: str = "left") -> str:
+    async def double_click(self, x: int, y: int, button: str = "left") -> Dict[str, Any]:
         """Double click at specified coordinates on the page.
         
         Args:
@@ -140,7 +154,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             button (str): Mouse button to double click (left, right, middle)
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = DoubleClickRequest(x=x, y=y, button=button)
@@ -159,22 +173,41 @@ class OperatorBrowserEnvironment(BaseEnvironment):
                 transform_info=None
             )
             
-            await self.operator_browser_service.double_click(request)
+            result = await self.operator_browser_service.double_click(request)
             
             self.step_number += 1
             
-            return f"Double clicked at ({x}, {y}) with {button} button"
+            extra = {
+                "x": x,
+                "y": y,
+                "button": button,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Double clicked at ({x}, {y}) with {button} button",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Double click action failed: {e}")
-            return f"❌ Double click action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Double click action failed: {str(e)}",
+                "extra": {"error": str(e), "x": x, "y": y, "button": button}
+            }
     
     @ecp.action(
         name="scroll",
         description="Scroll at specified coordinates with given offsets",
         type="Operator Browser Environment",
     )
-    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> str:
+    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> Dict[str, Any]:
         """Scroll at specified coordinates with given offsets.
         
         Args:
@@ -184,7 +217,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             scroll_y (int): Vertical scroll offset
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = ScrollRequest(x=x, y=y, scroll_x=scroll_x, scroll_y=scroll_y)
@@ -192,7 +225,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             # Draw scroll on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_scroll.png'
-            screenshot = decode_image_base64(result.screenshot)
+            screenshot = decode_image_base64(result.screenshot if hasattr(result, 'screenshot') and result.screenshot else self.screenshot.screenshot)
             screenshot = await self.screenshot_service.draw_scroll(screenshot, x, y, scroll_x, scroll_y)
             screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
             screenshot_description = f"Action: Scroll at ({x}, {y}) with offset ({scroll_x}, {scroll_y})"
@@ -206,25 +239,45 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.step_number += 1
             
-            return result.message
+            extra = {
+                "x": x,
+                "y": y,
+                "scroll_x": scroll_x,
+                "scroll_y": scroll_y,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Scrolled at ({x}, {y}) with offset ({scroll_x}, {scroll_y})",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Scroll action failed: {e}")
-            return f"❌ Scroll action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Scroll action failed: {str(e)}",
+                "extra": {"error": str(e), "x": x, "y": y, "scroll_x": scroll_x, "scroll_y": scroll_y}
+            }
     
     @ecp.action(
         name="type",
         description="Type text at the current cursor position",
         type="Operator Browser Environment",
     )
-    async def type_text(self, text: str) -> str:
+    async def type_text(self, text: str) -> Dict[str, Any]:
         """Type text at the current cursor position.
         
         Args:
             text (str): Text to type
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = TypeRequest(text=text)
@@ -232,7 +285,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             # DO NOT draw anything on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_type.png'
-            screenshot = decode_image_base64(result.screenshot)
+            screenshot = decode_image_base64(result.screenshot if hasattr(result, 'screenshot') and result.screenshot else self.screenshot.screenshot)
             screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
             screenshot_description = f"Action: Type text: {text}"
             self.previous_screenshot = ScreenshotInfo(
@@ -245,25 +298,42 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.step_number += 1
             
-            return result.message
+            extra = {
+                "text": text,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Typed text: {text}",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Type action failed: {e}")
-            return f"❌ Type action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Type action failed: {str(e)}",
+                "extra": {"error": str(e), "text": text}
+            }
     
     @ecp.action(
         name="wait",
         description="Wait for specified milliseconds",
         type="Operator Browser Environment",
     )
-    async def wait(self, ms: int) -> str:
+    async def wait(self, ms: int) -> Dict[str, Any]:
         """Wait for specified milliseconds.
         
         Args:
             ms (int): Number of milliseconds to wait
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = WaitRequest(ms=ms)
@@ -273,7 +343,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             # DO NOT draw anything on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_wait.png'
-            screenshot = decode_image_base64(result.screenshot)
+            screenshot = decode_image_base64(result.screenshot if hasattr(result, 'screenshot') and result.screenshot else self.screenshot.screenshot)
             screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
             screenshot_description = f"Action: Wait for {ms}ms"
             self.previous_screenshot = ScreenshotInfo(
@@ -286,18 +356,35 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.step_number += 1
             
-            return result.message
+            extra = {
+                "ms": ms,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Waited for {ms}ms",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Wait action failed: {e}")
-            return f"❌ Wait action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Wait action failed: {str(e)}",
+                "extra": {"error": str(e), "ms": ms}
+            }
     
     @ecp.action(
         name="move",
         description="Move mouse to specified coordinates",
         type="Operator Browser Environment",
     )
-    async def move(self, x: int, y: int) -> str:
+    async def move(self, x: int, y: int) -> Dict[str, Any]:
         """Move mouse to specified coordinates.
         
         Args:
@@ -305,7 +392,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             y (int): Y coordinate to move to
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = MoveRequest(x=x, y=y)
@@ -313,7 +400,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             # Draw cursor on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_move.png'
-            screenshot = decode_image_base64(result.screenshot)
+            screenshot = decode_image_base64(result.screenshot if hasattr(result, 'screenshot') and result.screenshot else self.screenshot.screenshot)
             screenshot = await self.screenshot_service.draw_cursor(screenshot, x, y)
             screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
             screenshot_description = f"Action: Move to ({x}, {y})"
@@ -327,25 +414,43 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.step_number += 1
             
-            return result.message
+            extra = {
+                "x": x,
+                "y": y,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Moved to ({x}, {y})",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Move action failed: {e}")
-            return f"❌ Move action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Move action failed: {str(e)}",
+                "extra": {"error": str(e), "x": x, "y": y}
+            }
     
     @ecp.action(
         name="keypress",
         description="Press specified keys",
         type="Operator Browser Environment",
     )
-    async def keypress(self, keys: List[str]) -> str:
+    async def keypress(self, keys: List[str]) -> Dict[str, Any]:
         """Press specified keys.
         
         Args:
             keys (List[str]): List of keys to press
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = KeypressRequest(keys=keys)
@@ -353,7 +458,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             # DO NOT draw anything on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_keypress.png'
-            screenshot = decode_image_base64(result.screenshot)
+            screenshot = decode_image_base64(result.screenshot if hasattr(result, 'screenshot') and result.screenshot else self.screenshot.screenshot)
             screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
             screenshot_description = f"Action: Keypress: {keys}"
             self.previous_screenshot = ScreenshotInfo(
@@ -366,25 +471,42 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.step_number += 1
             
-            return result.message
+            extra = {
+                "keys": keys,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Pressed keys: {keys}",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Keypress action failed: {e}")
-            return f"❌ Keypress action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Keypress action failed: {str(e)}",
+                "extra": {"error": str(e), "keys": keys}
+            }
     
     @ecp.action(
         name="drag",
         description="Drag mouse along specified path",
         type="Operator Browser Environment",
     )
-    async def drag(self, path: List[List[int]]) -> str:
+    async def drag(self, path: List[List[int]]) -> Dict[str, Any]:
         """Drag mouse along specified path.
         
         Args:
             path (List[List[int]]): Path to drag, e.g., [[x1, y1], [x2, y2]]
             
         Returns:
-            str: Result message
+            Dict with success, message, and extra fields
         """
         try:
             request = DragRequest(path=path)
@@ -392,7 +514,7 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             # Draw path on the screenshot
             screenshot_filename = f'step_{self.step_number:04d}_drag.png'
-            screenshot = decode_image_base64(result.screenshot)
+            screenshot = decode_image_base64(result.screenshot if hasattr(result, 'screenshot') and result.screenshot else self.screenshot.screenshot)
             screenshot = await self.screenshot_service.draw_path(screenshot, path)
             screenshot_path = await self.screenshot_service.store_screenshot(screenshot, self.step_number, screenshot_filename)
             screenshot_description = f"Action: Drag along path with {len(path)} points"
@@ -410,11 +532,28 @@ class OperatorBrowserEnvironment(BaseEnvironment):
             
             self.step_number += 1
             
-            return result.message
+            extra = {
+                "path": path,
+                "screenshot_path": screenshot_path
+            }
+            if hasattr(result, 'screenshot') and result.screenshot:
+                extra["screenshot"] = result.screenshot
+            if hasattr(result, 'screenshot_description'):
+                extra["screenshot_description"] = result.screenshot_description
+            
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "message": result.message if hasattr(result, 'message') else f"Dragged along path with {len(path)} points",
+                "extra": extra
+            }
                 
         except Exception as e:
             logger.error(f"| ❌ Drag action failed: {e}")
-            return f"❌ Drag action failed: {str(e)}"
+            return {
+                "success": False,
+                "message": f"Drag action failed: {str(e)}",
+                "extra": {"error": str(e), "path": path}
+            }
         
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the browser environment.
