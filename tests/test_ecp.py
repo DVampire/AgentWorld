@@ -160,7 +160,7 @@ async def test_alpaca():
         action="get_account",
         input={}
     )
-    logger.info(f"| 📝 Result: {res}")
+    logger.info(f"| 📝 Result: {res['message']}")
     
     res = await ecp.ainvoke(
         name="alpaca",
@@ -170,7 +170,8 @@ async def test_alpaca():
             "asset_class": "crypto"
         }
     )
-    logger.info(f"| 📝 Result: {res}")
+    logger.info(f"| 📝 Result: {res['message']}")
+    
     
 async def main():
     

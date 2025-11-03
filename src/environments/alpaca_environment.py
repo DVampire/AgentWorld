@@ -110,10 +110,10 @@ class AlpacaEnvironment(BaseEnvironment):
                 Account Number: {account["account_number"]}
                 Status: {account["status"]}
                 Currency: {account["currency"]}
-                Buying Power: ${account["buying_power"]:,.2f}
-                Cash: ${account["cash"]:,.2f}
-                Portfolio Value: ${account["portfolio_value"]:,.2f}
-                Equity: ${account["equity"]:,.2f}
+                Buying Power: ${float(account["buying_power"]):,.2f}
+                Cash: ${float(account["cash"]):,.2f}
+                Portfolio Value: ${float(account["portfolio_value"]):,.2f}
+                Equity: ${float(account["equity"]):,.2f}
                 Pattern Day Trader: {account["pattern_day_trader"]}
                 Trading Blocked: {account["trading_blocked"]}
                 Shorting Enabled: {account["shorting_enabled"]}
@@ -204,7 +204,6 @@ class AlpacaEnvironment(BaseEnvironment):
                 <info>
                 Alpaca Paper Trading Environment:
                 Account Status: {account_result.extra["account"]["status"]}
-                </info>
                 """)
             extra = account_result.extra
             return {
