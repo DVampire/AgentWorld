@@ -185,6 +185,18 @@ async def test_alpaca():
     )
     logger.info(f"| 📝 Result: {res['message']}")
     
+    while True:
+        # res = await ecp.ainvoke(
+        #     name="alpaca",
+        #     action="get_data",
+        #     input={
+        #         "symbol": "BTC/USD",
+        #         "data_type": ["bars", "news", "quotes", "orderbooks"],
+        #     }
+        # )
+        # logger.info(f"| 📝 Result: {res['extra']['data']['BTC/USD']['bars']}")
+        await asyncio.sleep(1)
+    
     
 async def main():
     

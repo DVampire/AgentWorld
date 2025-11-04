@@ -4,8 +4,8 @@ from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 import json
-from typing import Any, Dict, Optional, Type, List
-from pydantic import BaseModel, Field, SecretStr, ConfigDict
+from typing import Any, Dict, Optional, Type, List, Union
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.environments.protocol.environment import BaseEnvironment
@@ -18,6 +18,7 @@ from src.environments.alpacaentry.types import (
     GetAccountRequest,
     GetAssetsRequest,
     GetPositionsRequest,
+    GetDataRequest,
 )
 from src.utils import dedent, get_env, assemble_project_path
 
@@ -49,6 +50,8 @@ class AlpacaEnvironment(BaseEnvironment):
         self,
         base_dir: str = None,
         live: bool = False,
+        auto_start_data_stream: bool = True,
+        data_stream_symbols: Optional[List[str]] = None,
         **kwargs
     ):
         """
@@ -57,18 +60,21 @@ class AlpacaEnvironment(BaseEnvironment):
         Args:
             base_dir (str): Base directory for Alpaca operations
             live (bool): Whether to use live trading
+            auto_start_data_stream (bool): Whether to auto start data stream
+            data_stream_symbols (List[str]): The symbols to stream data for
         """
         super().__init__(**kwargs)
         
         self.base_dir = assemble_project_path(base_dir)
         self.accounts = json.loads(get_env("ALPACA_ACCOUNTS").get_secret_value())
-        self.live = live
         
         # Initialize Alpaca paper trading service
         self.alpaca_service = AlpacaService(
             base_dir=self.base_dir,
             accounts=self.accounts,
-            live=self.live,
+            live=live,
+            auto_start_data_stream=auto_start_data_stream,
+            data_stream_symbols=data_stream_symbols,
         )
         
     async def initialize(self) -> None:
@@ -249,6 +255,109 @@ class AlpacaEnvironment(BaseEnvironment):
             return {
                 "success": False,
                 "message": f"Failed to get positions information: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+    
+    @ecp.action(name="get_data",
+                type="Alpaca Trading",
+                description="Get historical data from database (quotes, trades, bars, orderbooks for crypto, or news). Supports multiple symbols and data types. Optional start_date and end_date in format 'YYYY-MM-DD HH:MM:SS'. If not provided, returns latest data.")
+    async def get_data(
+        self, 
+        symbol: Union[str, List[str]], 
+        data_type: Union[str, List[str]], 
+        start_date: Optional[str] = None, 
+        end_date: Optional[str] = None, 
+        limit: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Get historical data from database.
+        
+        Args:
+            symbol: Symbol(s) to query (e.g., 'BTC/USD', 'AAPL', or ['BTC/USD', 'AAPL'])
+            data_type: Type(s) of data to retrieve - 'quotes', 'trades', 'bars', 'orderbooks' (crypto only), or 'news'. Can be a single type or a list of types (e.g., ['bars', 'news'])
+            start_date: Optional start date in format 'YYYY-MM-DD HH:MM:SS' (e.g., '2024-01-01 00:00:00'). If not provided, returns latest data.
+            end_date: Optional end date in format 'YYYY-MM-DD HH:MM:SS' (e.g., '2024-01-31 23:59:59'). If not provided, returns latest data.
+            limit: Optional maximum number of rows to return per symbol/data_type combination
+            
+        Returns:
+            Dictionary with success, message, and extra containing the data organized by symbol:
+            {
+                "success": True,
+                "message": "...",
+                "extra": {
+                    "data": {
+                        "symbol1": {
+                            "bars": [...],
+                            "news": [...],
+                            "quotes": [...]
+                        },
+                        "symbol2": {
+                            "bars": [...],
+                            "trades": [...]
+                        }
+                    },
+                    "symbols": [...],
+                    "data_types": [...],
+                    "row_count": ...
+                }
+            }
+        """
+        try:
+            request = GetDataRequest(
+                symbol=symbol,
+                data_type=data_type,
+                start_date=start_date,
+                end_date=end_date,
+                limit=limit
+            )
+            result = await self.alpaca_service.get_data(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": result.extra
+                }
+            
+            # Data is now organized by symbol: {symbol: {data_type: [...]}}
+            data = result.extra.get("data", {})
+            symbols = result.extra.get("symbols", [])
+            data_types = result.extra.get("data_types", [])
+            row_count = result.extra.get("row_count", 0)
+            
+            # Format message
+            result_message = result.message
+            
+            # Build a summary message showing data structure
+            if isinstance(data, dict) and len(data) > 0:
+                summary_lines = []
+                for sym, type_data in data.items():
+                    type_summary = []
+                    for dt, records in type_data.items():
+                        if records:
+                            type_summary.append(f"{dt}: {len(records)} records")
+                    if type_summary:
+                        summary_lines.append(f"  {sym}: {', '.join(type_summary)}")
+                
+                if summary_lines:
+                    result_message += f"\n\nData summary:\n" + "\n".join(summary_lines)
+            
+            return {
+                "success": True,
+                "message": result_message,
+                "extra": {
+                    "data": data,
+                    "symbols": symbols,
+                    "data_types": data_types,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "row_count": row_count
+                }
+            }
+        except Exception as e:
+            logger.error(f"Error getting data: {e}")
+            return {
+                "success": False,
+                "message": f"Failed to get data: {str(e)}",
                 "extra": {"error": str(e)}
             }
 

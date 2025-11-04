@@ -1,11 +1,12 @@
 """Alpaca trading service implementation using alpaca-py."""
 import threading
 import asyncio
-from datetime import datetime
-from typing import Optional, Union, List, Dict, Set
+import json
+from typing import Optional, Union, List, Dict
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
+import concurrent.futures
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetAssetsRequest as AlpacaGetAssetsRequest
@@ -26,14 +27,21 @@ from src.environments.alpacaentry.types import (
     GetAccountRequest,
     GetAssetsRequest,
     GetPositionsRequest,
+    GetDataRequest,
 )
 from src.environments.alpacaentry.exceptions import (
     AlpacaError,
     AuthenticationError,
 )
+from src.environments.alpacaentry.bars import BarsHandler
+from src.environments.alpacaentry.quotes import QuotesHandler
+from src.environments.alpacaentry.trades import TradesHandler
+from src.environments.alpacaentry.orderbooks import OrderbooksHandler
+from src.environments.alpacaentry.news import NewsHandler
 from src.logger import logger
 from src.environments.database.service import DatabaseService
 from src.environments.database.types import CreateTableRequest, InsertRequest, QueryRequest
+from src.environments.alpacaentry.types import DataStreamType
 
 class AccountInfo(BaseModel):
     """Alpaca account model."""
@@ -49,6 +57,8 @@ class AlpacaService:
         base_dir: Union[str, Path],
         accounts: List[Dict[str, str]],
         live: bool = False,
+        auto_start_data_stream: bool = True,
+        data_stream_symbols: Optional[List[str]] = None,
     ):
         """Initialize Alpaca paper trading service.
         
@@ -72,6 +82,9 @@ class AlpacaService:
         """
         self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
         
+        self.auto_start_data_stream = auto_start_data_stream
+        self.data_stream_symbols = data_stream_symbols
+        
         self.default_account = AccountInfo(**accounts[0])
         self.accounts: Dict[str, AccountInfo] = {
            account["name"]: AccountInfo(**account) for account in accounts
@@ -90,14 +103,19 @@ class AlpacaService:
         self._news_data_stream: Optional[NewsDataStream] = None
         self._option_data_stream: Optional[OptionDataStream] = None
         
-        # Data streaming state
-        self._data_stream_thread: Optional[threading.Thread] = None
-        self._data_stream_running = False
-        self._subscribed_symbols: Set[str] = set()
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Initialize data handlers
+        self._bars_handler: Optional[BarsHandler] = None
+        self._quotes_handler: Optional[QuotesHandler] = None
+        self._orderbooks_handler: Optional[OrderbooksHandler] = None
+        self._trades_handler: Optional[TradesHandler] = None
+        self._news_handler: Optional[NewsHandler] = None
+        
         self._data_queue: Optional[asyncio.Queue] = None
         self._data_semaphore: Optional[asyncio.Semaphore] = None
-        self._max_concurrent_writes: int = 10  # Max concurrent database writes
+        self._data_stream_running: bool = True
+        self._data_stream_thread: Optional[threading.Thread] = None
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._max_concurrent_writes: int = 10 # Max concurrent database writes
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -108,7 +126,7 @@ class AlpacaService:
         """Async context manager exit."""
         await self.cleanup()
 
-    async def initialize(self, auto_start_data_stream: bool = False, data_stream_symbols: Optional[List[str]] = None) -> None:
+    async def initialize(self) -> None:
         """Initialize the Alpaca paper trading service.
         
         Args:
@@ -149,22 +167,26 @@ class AlpacaService:
             
             self._crypto_data_stream = CryptoDataStream(
                 api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key
+                secret_key=self.default_account.secret_key,
+                raw_data=False
             )
             
             self._stock_data_stream = StockDataStream(
                 api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key
+                secret_key=self.default_account.secret_key,
+                raw_data=False
             )
             
             self._news_data_stream = NewsDataStream(
                 api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key
+                secret_key=self.default_account.secret_key,
+                raw_data=False
             )
             
             self._option_data_stream = OptionDataStream(
                 api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key
+                secret_key=self.default_account.secret_key,
+                raw_data=False
             )
             
             # Test connection by getting account info
@@ -172,13 +194,13 @@ class AlpacaService:
                 account = self._trading_clients[account_name].get_account()
                 logger.info(f"| 📝 Connected to Alpaca paper trading account: {account.account_number}")
             
-            symbols = []
+            self.symbols = {}
             # Stock Symbols
             stock_symbols = await self.get_assets(GetAssetsRequest(
                 status=AssetStatus.ACTIVE,
                 asset_class=AssetClass.US_EQUITY))
             stock_symbols = stock_symbols.extra["assets"]
-            symbols.extend(stock_symbols)
+            self.symbols.update({symbol['symbol']: symbol for symbol in stock_symbols})
             logger.info(f"| 📝 Found {len(stock_symbols)} stock symbols.")
             
             # Crypto Symbols
@@ -186,7 +208,7 @@ class AlpacaService:
                 status=AssetStatus.ACTIVE,
                 asset_class=AssetClass.CRYPTO))
             crypto_symbols = crypto_symbols.extra["assets"]
-            symbols.extend(crypto_symbols)
+            self.symbols.update({symbol['symbol']: symbol for symbol in crypto_symbols})
             logger.info(f"| 📝 Found {len(crypto_symbols)} crypto symbols.")
             
             # Perpetual Futures Crypto Symbols
@@ -194,7 +216,7 @@ class AlpacaService:
                 status=AssetStatus.ACTIVE,
                 asset_class=AssetClass.CRYPTO_PERP))
             perpetual_futures_crypto_symbols = perpetual_futures_crypto_symbols.extra["assets"]
-            symbols.extend(perpetual_futures_crypto_symbols)
+            self.symbols.update({symbol['symbol']: symbol for symbol in perpetual_futures_crypto_symbols})
             logger.info(f"| 📝 Found {len(perpetual_futures_crypto_symbols)} perpetual futures crypto symbols.")
             
             # Option Symbols
@@ -202,21 +224,29 @@ class AlpacaService:
                 status=AssetStatus.ACTIVE,
                 asset_class=AssetClass.US_OPTION))
             option_symbols = option_symbols.extra["assets"]
-            symbols.extend(option_symbols)
+            self.symbols.update({symbol['symbol']: symbol for symbol in option_symbols})
             logger.info(f"| 📝 Found {len(option_symbols)} option symbols.")
             
-            logger.info(f"| 📝 Found {len(symbols)} total symbols.")
-            logger.info(f"| 📝 Symbols: {', '.join([symbol['symbol'] for symbol in symbols])}")
+            logger.info(f"| 📝 Found {len(self.symbols)} total symbols.")
+            logger.info(f"| 📝 Symbols: {', '.join([symbol for symbol in self.symbols.keys()])}")
             
             self.database_base_dir = self.base_dir / "database"
             self.database_base_dir.mkdir(parents=True, exist_ok=True)
             self.database_service = DatabaseService(self.database_base_dir)
+            await self.database_service.connect()
+            
+            # Initialize data handlers
+            self._bars_handler = BarsHandler(self.database_service)
+            self._quotes_handler = QuotesHandler(self.database_service)
+            self._trades_handler = TradesHandler(self.database_service)
+            self._orderbooks_handler = OrderbooksHandler(self.database_service)
+            self._news_handler = NewsHandler(self.database_service)
             
             # Optionally start data stream automatically
-            if auto_start_data_stream and data_stream_symbols:
+            if self.auto_start_data_stream and self.data_stream_symbols:
                 # Start data stream in background (non-blocking)
-                self.start_data_stream(data_stream_symbols)
-                logger.info(f"| 📡 Auto-started data stream for {len(data_stream_symbols)} symbols")
+                self.start_data_stream(self.data_stream_symbols)
+                logger.info(f"| 📡 Auto-started data stream for {len(self.data_stream_symbols)} symbols")
             
         except APIError as e:
             if e.status_code == 401:
@@ -229,14 +259,22 @@ class AlpacaService:
         """Cleanup the Alpaca service."""
         self._trading_clients = None
         self._default_trading_client = None
+        
         self._stock_data_client = None
         self._crypto_data_client = None
         self._news_client = None
         self._option_data_client = None
+        
         self._crypto_data_stream = None
         self._stock_data_stream = None
         self._news_data_stream = None
         self._option_data_stream = None
+        
+        self._trades_handler = None
+        self._quotes_handler = None
+        self._bars_handler = None
+        self._orderbooks_handler = None
+        self._news_handler = None
 
     # Account methods
     async def get_account(self, request: GetAccountRequest) -> ActionResult:
@@ -402,194 +440,78 @@ class AlpacaService:
         except Exception as e:
             raise AlpacaError(f"Failed to get positions: {e}.")
     
-    def _sanitize_table_name(self, symbol: str) -> str:
-        """Sanitize symbol name to be used as table name."""
-        # Replace invalid characters with underscore
-        table_name = symbol.replace("/", "_").replace(".", "_").replace("-", "_")
-        # Remove any other invalid characters
-        table_name = "".join(c if c.isalnum() or c == "_" else "_" for c in table_name)
-        return f"data_{table_name}"
-    
-    def _get_asset_class(self, symbol: str, asset_class: AssetClass) -> str:
-        """Determine asset type (stock or crypto) from asset class."""
-        if asset_class == AssetClass.CRYPTO or asset_class == AssetClass.CRYPTO_PERP:
-            return "crypto"
-        elif asset_class == AssetClass.US_EQUITY:
-            return "stock"
-        else:
-            return "other"
-    
-    async def _ensure_table_exists(self, symbol: str, asset_type: str, data_type: str = "quotes") -> None:
-        """Ensure table exists for a symbol and data type.
+    def _normalize_timestamp_in_record(self, record: Dict) -> Dict:
+        """Normalize timestamp field in a database record to 'YYYY-MM-DD HH:MM:SS' format.
         
-        Args:
-            symbol: Symbol name
-            asset_type: Asset type ("crypto" or "stock")
-            data_type: Data type ("quotes", "trades", "bars", "orderbooks")
+        Note: This method is kept for handling historical data only.
+        New data should already be in "YYYY-MM-DD HH:MM:SS" format from _prepare_data_for_insert.
         """
-        base_name = self._sanitize_table_name(symbol)
-        table_name = f"{base_name}_{data_type}"
-        
-        # Check if table already exists
-        check_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
-        check_result = await self.database_service.execute_query(
-            QueryRequest(query=check_query)
-        )
-        
-        if check_result.success and check_result.extra.get("data"):
-            # Table exists
-            return
-        
-        # Create table based on data type and asset type
-        if data_type == "quotes":
-            if asset_type == "crypto":
-                columns = [
-                    {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                    {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "bid_price", "type": "REAL"},
-                    {"name": "bid_size", "type": "REAL"},
-                    {"name": "ask_price", "type": "REAL"},
-                    {"name": "ask_size", "type": "REAL"},
-                    {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-                ]
-            else:  # stock
-                columns = [
-                    {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                    {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "bid_price", "type": "REAL"},
-                    {"name": "bid_size", "type": "REAL"},
-                    {"name": "ask_price", "type": "REAL"},
-                    {"name": "ask_size", "type": "REAL"},
-                    {"name": "tape", "type": "TEXT"},
-                    {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-                ]
-        elif data_type == "trades":
-            if asset_type == "crypto":
-                columns = [
-                    {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                    {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "price", "type": "REAL"},
-                    {"name": "size", "type": "REAL"},
-                    {"name": "trade_id", "type": "TEXT"},
-                    {"name": "taker_side", "type": "TEXT"},
-                    {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-                ]
-            else:  # stock
-                columns = [
-                    {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                    {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                    {"name": "price", "type": "REAL"},
-                    {"name": "size", "type": "REAL"},
-                    {"name": "trade_id", "type": "TEXT"},
-                    {"name": "conditions", "type": "TEXT"},
-                    {"name": "tape", "type": "TEXT"},
-                    {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-                ]
-        elif data_type == "bars":
-            columns = [
-                {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "open", "type": "REAL"},
-                {"name": "high", "type": "REAL"},
-                {"name": "low", "type": "REAL"},
-                {"name": "close", "type": "REAL"},
-                {"name": "volume", "type": "REAL"},
-                {"name": "trade_count", "type": "INTEGER"},
-                {"name": "vwap", "type": "REAL"},
-                {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-            ]
-        elif data_type == "orderbooks":
-            columns = [
-                {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "bids", "type": "TEXT"},  # JSON string for bid/ask arrays
-                {"name": "asks", "type": "TEXT"},
-                {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-            ]
-        elif data_type == "news":
-            columns = [
-                {"name": "id", "type": "INTEGER", "constraints": "AUTOINCREMENT"},
-                {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "symbol", "type": "TEXT"},
-                {"name": "headline", "type": "TEXT"},
-                {"name": "summary", "type": "TEXT"},
-                {"name": "author", "type": "TEXT"},
-                {"name": "source", "type": "TEXT"},
-                {"name": "url", "type": "TEXT"},
-                {"name": "image_url", "type": "TEXT"},
-                {"name": "news_id", "type": "TEXT"},
-                {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
-            ]
-        else:
-            raise ValueError(f"Unknown data type: {data_type}")
-        
-        create_request = CreateTableRequest(
-            table_name=table_name,
-            columns=columns,
-            primary_key="id"
-        )
-        result = await self.database_service.create_table(create_request)
-        if not result.success:
-            logger.error(f"Failed to create table {table_name}: {result.message}")
-            raise AlpacaError(f"Failed to create table {table_name}: {result.message}")
+        if 'timestamp' in record:
+            timestamp_str = record['timestamp'].strftime("%Y-%m-%d %H:%M:%S")
+            record['timestamp'] = timestamp_str
+        return record
     
-    def _prepare_data_for_insert(self, data: Dict, symbol: str, asset_type: str, data_type: str = "quotes") -> Dict:
+    def _prepare_data_for_insert(self, 
+                                 data: Dict, 
+                                 symbol: str, 
+                                 asset_type: AssetClass = AssetClass.US_EQUITY, 
+                                 data_type: DataStreamType = DataStreamType.QUOTES) -> Dict:
         """Prepare data dictionary for database insertion.
         
         Args:
-            data: Raw data from Alpaca stream
+            data: Data dictionary from Alpaca stream
             symbol: Symbol name
-            asset_type: Asset type ("crypto" or "stock")
-            data_type: Data type ("quotes", "trades", "bars", "orderbooks")
+            asset_type: Asset class (AssetClass)
+            data_type: Data type (DataStreamType)
         """
-        import json
+        
+        # Convert timestamp to "YYYY-MM-DD HH:MM:SS" format string
+        data = self._normalize_timestamp_in_record(data)
         
         db_data = {
-            "timestamp": data.get("t", data.get("timestamp", datetime.utcnow().isoformat())),
+            "timestamp": data.get("timestamp"),
             "symbol": symbol,
         }
         
-        if data_type == "quotes":
-            db_data["bid_price"] = data.get("bp")
-            db_data["bid_size"] = data.get("bs")
-            db_data["ask_price"] = data.get("ap")
-            db_data["ask_size"] = data.get("as")
-            if asset_type == "stock":
+        if data_type == DataStreamType.QUOTES:
+            # Support both raw_data format (single letters) and object format (full names)
+            db_data["bid_price"] = data.get("bid_price") if "bid_price" in data else data.get("bp")
+            db_data["bid_size"] = data.get("bid_size") if "bid_size" in data else data.get("bs")
+            db_data["ask_price"] = data.get("ask_price") if "ask_price" in data else data.get("ap")
+            db_data["ask_size"] = data.get("ask_size") if "ask_size" in data else data.get("as")
+            if asset_type == AssetClass.US_EQUITY:
                 db_data["tape"] = data.get("tape")
         
-        elif data_type == "trades":
-            db_data["price"] = data.get("p")
-            db_data["size"] = data.get("s")
-            db_data["trade_id"] = data.get("i")
-            if asset_type == "crypto":
-                db_data["taker_side"] = data.get("tks")
+        elif data_type == DataStreamType.TRADES:
+            # Support both raw_data format (single letters) and object format (full names)
+            db_data["price"] = data.get("price") if "price" in data else data.get("p")
+            db_data["size"] = data.get("size") if "size" in data else data.get("s")
+            db_data["trade_id"] = data.get("trade_id") if "trade_id" in data else data.get("i")
+            if asset_type == AssetClass.CRYPTO:
+                db_data["taker_side"] = data.get("taker_side") if "taker_side" in data else data.get("tks")
             else:  # stock
-                db_data["conditions"] = str(data.get("c", [])) if data.get("c") else None
+                conditions = data.get("conditions") if "conditions" in data else data.get("c", [])
+                db_data["conditions"] = str(conditions) if conditions else None
                 db_data["tape"] = data.get("tape")
         
-        elif data_type == "bars":
-            db_data["open"] = data.get("o")
-            db_data["high"] = data.get("h")
-            db_data["low"] = data.get("l")
-            db_data["close"] = data.get("c")
-            db_data["volume"] = data.get("v")
-            db_data["trade_count"] = data.get("n")
-            db_data["vwap"] = data.get("vw")
+        elif data_type == DataStreamType.BARS:
+            # Support both raw_data format (single letters) and object format (full names)
+            db_data["open"] = data.get("open") if "open" in data else data.get("o")
+            db_data["high"] = data.get("high") if "high" in data else data.get("h")
+            db_data["low"] = data.get("low") if "low" in data else data.get("l")
+            db_data["close"] = data.get("close") if "close" in data else data.get("c")
+            db_data["volume"] = data.get("volume") if "volume" in data else data.get("v")
+            db_data["trade_count"] = data.get("trade_count") if "trade_count" in data else data.get("n")
+            db_data["vwap"] = data.get("vwap") if "vwap" in data else data.get("vw")
         
-        elif data_type == "orderbooks":
+        elif data_type == DataStreamType.ORDERBOOKS:
             # Orderbooks contain arrays of bids and asks
             bids = data.get("bids", [])
             asks = data.get("asks", [])
             db_data["bids"] = json.dumps(bids) if bids else None
             db_data["asks"] = json.dumps(asks) if asks else None
         
-        elif data_type == "news":
+        elif data_type == DataStreamType.NEWS:
             # News data structure
             db_data["headline"] = data.get("headline")
             db_data["summary"] = data.get("summary")
@@ -607,7 +529,10 @@ class AlpacaService:
         
         return db_data
     
-    async def _handle_data(self, data: Dict, symbol: str, asset_type: str, data_type: str = "quotes") -> None:
+    async def _handle_data(self, data: Dict, 
+                           symbol: str, 
+                           asset_type: AssetClass, 
+                           data_type: DataStreamType) -> None:
         """Handle incoming data and write to database with concurrency control.
         
         Args:
@@ -618,21 +543,23 @@ class AlpacaService:
         """
         async with self._data_semaphore:
             try:
-                base_name = self._sanitize_table_name(symbol)
-                table_name = f"{base_name}_{data_type}"
                 db_data = self._prepare_data_for_insert(data, symbol, asset_type, data_type)
                 
-                insert_request = InsertRequest(
-                    table_name=table_name,
-                    data=db_data
-                )
-                result = await self.database_service.insert_data(insert_request)
                 
-                if not result.success:
-                    logger.error(f"Failed to insert {data_type} data for {symbol}: {result.message}")
+                print(db_data)
                 
+                if data_type == DataStreamType.BARS:
+                    await self._bars_handler.stream_insert(db_data, symbol)
+                elif data_type == DataStreamType.QUOTES:
+                    await self._quotes_handler.stream_insert(db_data, symbol)
+                elif data_type == DataStreamType.TRADES:
+                    await self._trades_handler.stream_insert(db_data, symbol)
+                elif data_type == DataStreamType.ORDERBOOKS:
+                    await self._orderbooks_handler.stream_insert(db_data, symbol)
+                elif data_type == DataStreamType.NEWS:
+                    await self._news_handler.stream_insert(db_data, symbol)
             except Exception as e:
-                logger.error(f"Error handling {data_type} data for {symbol}: {e}")
+                logger.error(f"Error in data handler: {e}")
     
     async def _data_processor(self) -> None:
         """Background task to process data from queue."""
@@ -652,68 +579,74 @@ class AlpacaService:
             except Exception as e:
                 logger.error(f"Error in data processor: {e}")
     
-    async def _crypto_quotes_handler(self, data):
-        """Async handler for crypto quotes data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "crypto", "quotes"))
+    async def _quotes_handler_wrapper(self, data, asset_type: AssetClass = AssetClass.CRYPTO):
+        """Unified async handler for quotes data (crypto and stock).
+        
+        Args:
+            data: Quotes data from Alpaca stream
+            asset_type: Asset class (AssetClass)
+        """
+        data = data.model_dump()
+        symbol = data.get("symbol", "")
+        if symbol and self._data_queue:
+            await self._data_queue.put((data, symbol, asset_type, "quotes"))
     
-    async def _crypto_trades_handler(self, data):
-        """Async handler for crypto trades data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "crypto", "trades"))
+    async def _trades_handler_wrapper(self, data, asset_type: AssetClass = AssetClass.CRYPTO):
+        """Unified async handler for trades data (crypto and stock).
+        
+        Args:
+            data: Trades data from Alpaca stream
+            asset_type: Asset class (AssetClass)
+        """
+        data = data.model_dump()
+        symbol = data.get("symbol", "")
+        if symbol and self._data_queue:
+            await self._data_queue.put((data, symbol, asset_type, "trades"))
     
-    async def _crypto_bars_handler(self, data):
-        """Async handler for crypto bars data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "crypto", "bars"))
+    async def _bars_handler_wrapper(self, data, asset_type: AssetClass = AssetClass.CRYPTO):
+        """Unified async handler for bars data (crypto and stock).
+        
+        Args:
+            data: Bars data from Alpaca stream
+            asset_type: Asset class (AssetClass)
+        """
+        data = data.model_dump()
+        symbol = data.get("symbol", "")
+        if symbol and self._data_queue:
+            await self._data_queue.put((data, symbol, asset_type, "bars"))
     
-    async def _crypto_orderbooks_handler(self, data):
-        """Async handler for crypto orderbooks data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "crypto", "orderbooks"))
+    async def _orderbooks_handler_wrapper(self, data, asset_type: AssetClass = AssetClass.CRYPTO):
+        """Async handler for orderbooks data (crypto only).
+        
+        Args:
+            data: Orderbooks data from Alpaca stream
+            asset_type: Asset class (AssetClass)
+        """
+        data = data.model_dump()
+        symbol = data.get("symbol", "")
+        if symbol and self._data_queue:
+            await self._data_queue.put((data, symbol, asset_type, "orderbooks"))
     
-    async def _stock_quotes_handler(self, data):
-        """Async handler for stock quotes data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "stock", "quotes"))
-    
-    async def _stock_trades_handler(self, data):
-        """Async handler for stock trades data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "stock", "trades"))
-    
-    async def _stock_bars_handler(self, data):
-        """Async handler for stock bars data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "stock", "bars"))
-    
-    async def _stock_orderbooks_handler(self, data):
-        """Async handler for stock orderbooks data."""
-        symbol = data.get("S", "")
-        if symbol:
-            await self._data_queue.put((data, symbol, "stock", "orderbooks"))
-    
-    async def _news_handler(self, data):
-        """Async handler for news data."""
+    async def _news_handler_wrapper(self, data, asset_type: AssetClass = AssetClass.CRYPTO):
+        """Async handler for news data.
+        
+        Args:
+            data: News data from Alpaca stream
+            asset_type: Asset class (AssetClass)
+        """
         # News may have multiple symbols or a single symbol
+        data = data.model_dump()
         symbols = data.get("symbols", [])
         if symbols:
             # If multiple symbols, use the first one as the primary symbol
-            symbol = symbols[0] if symbols else "news"
+            symbol = symbols[0] if symbols else None
         else:
-            symbol = data.get("S", "news")  # Fallback to "news" if no symbol
+            symbol = data.get("symbol", None)  # Fallback to None if no symbol
         
-        # News data doesn't have asset_type, use "news" as asset_type
-        await self._data_queue.put((data, symbol, "news", "news"))
+        if symbol and self._data_queue:
+            await self._data_queue.put((data, symbol, asset_type, "news"))
     
-    def _data_stream_worker(self, symbols: List[str], asset_types: Dict[str, str]):
+    def _data_stream_worker(self, symbols: List[str], asset_types: Dict[str, AssetClass]):
         """Worker thread for running data streams."""
         loop = None
         try:
@@ -723,70 +656,64 @@ class AlpacaService:
             self._event_loop = loop
             
             async def setup_and_run():
-                await self.database_service.connect()
-                
-                # Initialize data queue and semaphore for concurrency control
+                # Database is already connected in initialize()
+                # Initialize data queue and semaphore for concurrency control (if needed for trades)
                 self._data_queue = asyncio.Queue(maxsize=1000)  # Buffer up to 1000 items
                 self._data_semaphore = asyncio.Semaphore(self._max_concurrent_writes)
                 
-                # Start background data processor
+                # Start background data processor (for trades, which still use queue)
                 processor_task = asyncio.create_task(self._data_processor())
                 
-                # Separate symbols by type
-                crypto_symbols = [s for s in symbols if asset_types.get(s) == "crypto"]
-                stock_symbols = [s for s in symbols if asset_types.get(s) == "stock"]
-                
-                # Ensure tables exist for all data types
+                # Ensure tables exist for all data types using handlers
                 for symbol in symbols:
-                    asset_type = asset_types.get(symbol, "stock")
-                    # Stock doesn't support orderbooks, only crypto does
-                    data_types = ["quotes", "trades", "bars"]
-                    if asset_type == "crypto":
-                        data_types.append("orderbooks")
-                    for data_type in data_types:
-                        await self._ensure_table_exists(symbol, asset_type, data_type)
+                    asset_type = asset_types.get(symbol, AssetClass.US_EQUITY)
+                    # Ensure bars table exists
+                    if self._bars_handler:
+                        await self._bars_handler.ensure_table_exists(symbol, asset_type)
+                        logger.info(f"| ✅ Bars table created/verified for {symbol}")
+                    # Ensure quotes table exists
+                    if self._quotes_handler:
+                        await self._quotes_handler.ensure_table_exists(symbol, asset_type)
+                        logger.info(f"| ✅ Quotes table created/verified for {symbol}")
+                    # Ensure trades table exists
+                    if self._trades_handler:
+                        await self._trades_handler.ensure_table_exists(symbol, asset_type)
+                        logger.info(f"| ✅ Trades table created/verified for {symbol}")
+                    # Ensure orderbooks table exists (crypto only)
+                    if asset_type == AssetClass.CRYPTO and self._orderbooks_handler:
+                        await self._orderbooks_handler.ensure_table_exists(symbol, asset_type)
+                        logger.info(f"| ✅ Orderbooks table created/verified for {symbol}")
                 
                 # Create news table (news is global, not per-symbol)
-                await self._ensure_table_exists("news", "news", "news")
-                
-                # Initialize and subscribe to crypto stream
-                if crypto_symbols:
-                    self._crypto_data_stream = CryptoDataStream(
-                        api_key=self.default_account.api_key,
-                        secret_key=self.default_account.secret_key
-                    )
-                    for symbol in crypto_symbols:
-                        self._crypto_data_stream.subscribe_quotes(self._crypto_quotes_handler, symbol)
-                        self._crypto_data_stream.subscribe_trades(self._crypto_trades_handler, symbol)
-                        self._crypto_data_stream.subscribe_bars(self._crypto_bars_handler, symbol)
-                        self._crypto_data_stream.subscribe_orderbooks(self._crypto_orderbooks_handler, symbol)
-                        logger.info(f"| 📡 Subscribed to crypto data (quotes, trades, bars, orderbooks): {symbol}")
-                
-                # Initialize and subscribe to stock stream
-                if stock_symbols:
-                    self._stock_data_stream = StockDataStream(
-                        api_key=self.default_account.api_key,
-                        secret_key=self.default_account.secret_key
-                    )
-                    for symbol in stock_symbols:
-                        self._stock_data_stream.subscribe_quotes(self._stock_quotes_handler, symbol)
-                        self._stock_data_stream.subscribe_trades(self._stock_trades_handler, symbol)
-                        self._stock_data_stream.subscribe_bars(self._stock_bars_handler, symbol)
-                        logger.info(f"| 📡 Subscribed to stock data (quotes, trades, bars): {symbol}")
-                
-                # Initialize and subscribe to news stream
-                self._news_data_stream = NewsDataStream(
-                    api_key=self.default_account.api_key,
-                    secret_key=self.default_account.secret_key
-                )
-                # Subscribe to news for all symbols
+                if self._news_handler:
+                    await self._news_handler.ensure_table_exists(symbol, asset_type)
+                    logger.info(f"| ✅ News table created/verified")
+                    
+                # Subscribe to streams
                 for symbol in symbols:
-                    self._news_data_stream.subscribe_news(self._news_handler, symbol)
-                logger.info(f"| 📡 Subscribed to news data for {len(symbols)} symbols")
+                    asset_type = asset_types.get(symbol, AssetClass.US_EQUITY)
+                    
+                    if asset_type == AssetClass.CRYPTO:
+                        self._crypto_data_stream.subscribe_quotes(self._quotes_handler_wrapper, 
+                                                                  symbol)
+                        self._crypto_data_stream.subscribe_trades(self._trades_handler_wrapper, 
+                                                                  symbol)
+                        self._crypto_data_stream.subscribe_bars(self._bars_handler_wrapper,
+                                                                symbol)
+                        self._crypto_data_stream.subscribe_orderbooks(self._orderbooks_handler_wrapper, 
+                                                                      symbol)
+                    elif asset_type == AssetClass.US_EQUITY:
+                        self._stock_data_stream.subscribe_quotes(self._quotes_handler_wrapper, 
+                                                                 symbol)
+                        self._stock_data_stream.subscribe_trades(self._trades_handler_wrapper, 
+                                                                 symbol)
+                        self._stock_data_stream.subscribe_bars(self._bars_handler_wrapper,
+                                                               symbol)
+                    
+                    self._news_data_stream.subscribe_news(self._news_handler_wrapper,
+                                                          symbol)
                 
                 # Run streams in separate threads (they are blocking)
-                import concurrent.futures
-                
                 def run_crypto_stream():
                     if self._crypto_data_stream:
                         self._crypto_data_stream.run()
@@ -802,12 +729,12 @@ class AlpacaService:
                 # Start streams in thread pool
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                     futures = []
-                    if crypto_symbols:
+                    if self._crypto_data_stream:
                         futures.append(executor.submit(run_crypto_stream))
-                    if stock_symbols:
+                    if self._stock_data_stream:
                         futures.append(executor.submit(run_stock_stream))
-                    # Always run news stream
-                    futures.append(executor.submit(run_news_stream))
+                    if self._news_data_stream:
+                        futures.append(executor.submit(run_news_stream))
                     
                     # Run processor in async while streams run in threads
                     try:
@@ -840,7 +767,7 @@ class AlpacaService:
             if loop:
                 loop.close()
     
-    def start_data_stream(self, symbols: List[str], asset_types: Optional[Dict[str, str]] = None) -> None:
+    def start_data_stream(self, symbols: List[str], asset_types: Optional[Dict[str, AssetClass]] = None) -> None:
         """Start real-time data stream collection for given symbols.
         
         This method starts a blocking thread that will collect real-time data
@@ -849,7 +776,7 @@ class AlpacaService:
         
         Args:
             symbols: List of symbols to subscribe to (e.g., ["BTC/USD", "AAPL"])
-            asset_types: Optional dictionary mapping symbol to asset type ("stock" or "crypto")
+            asset_types: Optional dictionary mapping symbol to asset class (AssetClass)
                         If not provided, will be determined from symbol format
         """
         if self._data_stream_running:
@@ -860,16 +787,9 @@ class AlpacaService:
             raise AlpacaError("Database service not initialized. Call initialize() first.")
         
         # Determine asset types if not provided
-        if asset_types is None:
-            asset_types = {}
-            for symbol in symbols:
-                if "/" in symbol:  # Crypto symbols typically have "/"
-                    asset_types[symbol] = "crypto"
-                else:
-                    asset_types[symbol] = "stock"
-        
-        self._subscribed_symbols.update(symbols)
-        self._data_stream_running = True
+        asset_types = {}
+        for symbol in symbols:
+            asset_types[symbol] = self.symbols[symbol]['asset_class']
         
         # Start worker thread (daemon=True so it doesn't block main process)
         # The thread runs in background and will be cleaned up when main process exits
@@ -914,3 +834,107 @@ class AlpacaService:
         
         logger.info("| 🛑 Data stream stopped")
         
+        
+    async def _get_data_from_handler(
+        self, 
+        symbol: str, 
+        data_type: DataStreamType, 
+        start_date: Optional[str] = None, 
+        end_date: Optional[str] = None, 
+        limit: Optional[int] = None
+    ) -> List[Dict]:
+        """Helper method to get data for a single symbol and data_type."""
+        # Determine asset type from symbol
+        if data_type == DataStreamType.QUOTES:
+            return self._quotes_handler.get_data(symbol, start_date, end_date, limit)
+        elif data_type == DataStreamType.TRADES:
+            return self._trades_handler.get_data(symbol, start_date, end_date, limit)
+        elif data_type == DataStreamType.BARS:
+            return self._bars_handler.get_data(symbol, start_date, end_date, limit)
+        elif data_type == DataStreamType.ORDERBOOKS:
+            return self._orderbooks_handler.get_data(symbol, start_date, end_date, limit)
+        elif data_type == DataStreamType.NEWS:
+            return self._news_handler.get_data(symbol, start_date, end_date, limit)
+        else:
+           raise ValueError(f"Invalid data type: {data_type}")
+       
+    async def get_data(self, request: GetDataRequest) -> ActionResult:
+        """Get historical data from database.
+        
+        Args:
+            request: GetDataRequest with symbol (str or list), data_type (str or list), 
+                    optional start_date, end_date, and limit
+            - If start_date and end_date are provided: returns data in that date range
+            - If not provided: returns latest data (sorted by timestamp DESC)
+            - limit: limits the number of records returned per symbol/data_type combination
+            
+        Returns:
+            ActionResult with data organized by symbol in extra field:
+            {
+                "symbol1": {
+                    "bars": [...],
+                    "news": [...],
+                    "quotes": [...]
+                },
+                "symbol2": {
+                    "bars": [...],
+                    "trades": [...]
+                }
+            }
+        """
+        try:
+            if not hasattr(self, 'database_service') or self.database_service is None:
+                raise AlpacaError("Database service not initialized. Call initialize() first.")
+            
+            # Ensure database is connected
+            if not self.database_service._is_connected:
+                await self.database_service.connect()
+            
+            # Normalize symbol and data_type to lists
+            symbols = request.symbol if isinstance(request.symbol, list) else [request.symbol]
+            data_types = request.data_type if isinstance(request.data_type, list) else [request.data_type]
+            data_types = [DataStreamType(data_type) for data_type in data_types]
+            
+            # Organize data by symbol
+            result_data: Dict[str, Dict[str, List[Dict]]] = {}
+            total_rows = 0
+            
+            # Get data for each symbol and data_type combination
+            for symbol in symbols:
+                result_data[symbol] = {}
+                
+                for data_type in data_types:
+                    data = await self._get_data_from_handler(
+                        symbol=symbol,
+                        data_type=data_type,
+                        start_date=request.start_date,
+                        end_date=request.end_date,
+                        limit=request.limit
+                    )
+                    result_data[symbol][data_type.value] = data
+                    total_rows += len(data)
+            
+            # Build message
+            symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"
+            data_type_str = ", ".join([datatype.value for datatype in data_types]) if len(data_types) <= 10 else f"{len(data_types)} types"
+            
+            if request.start_date and request.end_date:
+                message = f"Retrieved {total_rows} records ({data_type_str}) for {symbol_str} from {request.start_date} to {request.end_date}."
+            else:
+                message = f"Retrieved {total_rows} latest records ({data_type_str}) for {symbol_str}."
+            
+            return ActionResult(
+                success=True,
+                message=message,
+                extra={
+                    "data": result_data,
+                    "symbols": symbols,
+                    "data_types": data_types,
+                    "start_date": request.start_date,
+                    "end_date": request.end_date,
+                    "row_count": total_rows
+                }
+            )
+            
+        except Exception as e:
+            raise AlpacaError(f"Failed to get data: {e}.")

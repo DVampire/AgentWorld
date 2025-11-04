@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class QueryRequest(BaseModel):
     """Request for executing a SQL query."""
     query: str = Field(description="SQL query to execute")
-    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Query parameters")
+    parameters: Optional[Union[Dict[str, Any], tuple, list]] = Field(default=None, description="Query parameters (dict for named params, tuple/list for positional params)")
 
 
 class TableInfo(BaseModel):

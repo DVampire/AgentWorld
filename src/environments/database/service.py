@@ -71,7 +71,9 @@ class DatabaseService:
         start_time = time.time()
         
         try:
-            cursor = await self._connection.execute(request.query, request.parameters or {})
+            # Handle both named parameters (dict) and positional parameters (tuple/list)
+            params = request.parameters if request.parameters is not None else {}
+            cursor = await self._connection.execute(request.query, params)
             
             # Check if it's a SELECT query
             if request.query.strip().upper().startswith('SELECT'):
