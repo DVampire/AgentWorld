@@ -3,8 +3,8 @@
 from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
-
-from typing import Any, Dict, Optional, Type
+import json
+from typing import Any, Dict, Optional, Type, List
 from pydantic import BaseModel, Field, SecretStr, ConfigDict
 
 from src.logger import logger
@@ -17,6 +17,7 @@ from src.environments.alpacaentry.exceptions import (
 from src.environments.alpacaentry.types import (
     GetAccountRequest,
     GetAssetsRequest,
+    GetPositionsRequest,
 )
 from src.utils import dedent, get_env, assemble_project_path
 
@@ -47,9 +48,7 @@ class AlpacaEnvironment(BaseEnvironment):
     def __init__(
         self,
         base_dir: str = None,
-        api_key: Optional[SecretStr] = None,
-        secret_key: Optional[SecretStr] = None,
-        data_url: Optional[str] = None,
+        live: bool = False,
         **kwargs
     ):
         """
@@ -57,20 +56,19 @@ class AlpacaEnvironment(BaseEnvironment):
         
         Args:
             base_dir (str): Base directory for Alpaca operations
-            api_key (Optional[SecretStr]): Alpaca API key
-            secret_key (Optional[SecretStr]): Alpaca secret key
-            data_url (Optional[str]): Data API base URL
+            live (bool): Whether to use live trading
         """
         super().__init__(**kwargs)
         
         self.base_dir = assemble_project_path(base_dir)
-        self.api_key = (api_key or get_env("ALPACA_PAPER_TRAING_API_KEY")).get_secret_value()
-        self.secret_key = (secret_key or get_env("ALPACA_PAPER_TRAING_SECRET_KEY")).get_secret_value()
+        self.accounts = json.loads(get_env("ALPACA_ACCOUNTS").get_secret_value())
+        self.live = live
         
         # Initialize Alpaca paper trading service
         self.alpaca_service = AlpacaService(
-            api_key=self.api_key,
-            secret_key=self.secret_key,
+            base_dir=self.base_dir,
+            accounts=self.accounts,
+            live=self.live,
         )
         
     async def initialize(self) -> None:
@@ -87,14 +85,14 @@ class AlpacaEnvironment(BaseEnvironment):
     @ecp.action(name="get_account", 
                 type="Alpaca Trading", 
                 description="Get account information including buying power, cash, and portfolio value")
-    async def get_account(self) -> Dict[str, Any]:
+    async def get_account(self, account_name: str) -> Dict[str, Any]:
         """Get account information.
         
         Returns:
             A string containing detailed account information including buying power, cash, portfolio value, and account status.
         """
         try:
-            request = GetAccountRequest()
+            request = GetAccountRequest(account_name=account_name)
             result = await self.alpaca_service.get_account(request)
             
             if not result.success:
@@ -182,14 +180,84 @@ class AlpacaEnvironment(BaseEnvironment):
                 "message": f"Failed to get assets information: {str(e)}",
                 "extra": {"error": str(e)}
             }
+    
+    @ecp.action(name="get_positions", 
+                type="Alpaca Trading", 
+                description="Get all open positions including symbols, quantities, market values, and unrealized P&L")
+    async def get_positions(self, account_name: str) -> Dict[str, Any]:
+        """Get all open positions.
+        
+        Returns:
+            A string containing detailed positions information including symbols, quantities, market values, and unrealized P&L.
+        """
+        try:
+            request = GetPositionsRequest(account_name=account_name)
+            result = await self.alpaca_service.get_positions(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            positions = result.extra["positions"]
+            
+            if len(positions) == 0:
+                result_text = "No open positions."
+            else:
+                position_lines = []
+                for pos in positions:
+                    try:
+                        qty = float(pos["qty"])
+                        market_value = float(pos["market_value"])
+                        unrealized_pl = float(pos["unrealized_pl"])
+                        unrealized_plpc = float(pos["unrealized_plpc"])
+                        current_price = float(pos["current_price"])
+                        avg_entry_price = float(pos["avg_entry_price"])
+                        
+                        position_lines.append(
+                            f"  {pos['symbol']}: {qty:+.2f} shares @ ${current_price:.2f} "
+                            f"(Avg Entry: ${avg_entry_price:.2f}, Market Value: ${market_value:,.2f}, "
+                            f"P&L: ${unrealized_pl:,.2f} ({unrealized_plpc:.2%}))"
+                        )
+                    except (ValueError, TypeError, KeyError):
+                        # Fallback to string representation if conversion fails
+                        position_lines.append(
+                            f"  {pos.get('symbol', 'N/A')}: {pos.get('qty', 'N/A')} shares "
+                            f"(P&L: {pos.get('unrealized_pl', 'N/A')})"
+                        )
+                
+                result_text = dedent(f"""
+                    {len(positions)} open position(s):
+                    {chr(10).join(position_lines)}
+                    """)
+            
+            extra = result.extra
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get positions information: {str(e)}",
+                "extra": {"error": str(e)}
+            }
 
     # --------------- Environment Interface Methods ---------------
     async def get_info(self) -> Dict[str, Any]:
         """Get environment information."""
         return {
             "type": "alpaca_trading",
-            "base_url": self.base_url,
-            "is_paper_trading": "paper" in self.base_url,
+            "mode": "paper_trading",
             "authenticated": self.alpaca_service is not None,
         }
 

@@ -158,7 +158,9 @@ async def test_alpaca():
     res= await ecp.ainvoke(
         name="alpaca",
         action="get_account",
-        input={}
+        input={
+            "account_name": "account1"
+        }
     )
     logger.info(f"| 📝 Result: {res['message']}")
     
@@ -168,6 +170,17 @@ async def test_alpaca():
         input={
             "status": "active",
             "asset_class": "crypto"
+        }
+    )
+    logger.info(f"| 📝 Result: {res['message']}")
+    for asset in res['extra']['assets']:
+        logger.info(f"| 📝 Asset: {asset}")
+    
+    res = await ecp.ainvoke(
+        name="alpaca",
+        action="get_positions",
+        input={
+            "account_name": "account1"
         }
     )
     logger.info(f"| 📝 Result: {res['message']}")

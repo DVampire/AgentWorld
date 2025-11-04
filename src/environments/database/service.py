@@ -1,16 +1,14 @@
 """Database service using aiosqlite for async database operations."""
 
-import asyncio
 import aiosqlite
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional, Union
 
 from src.environments.protocol.types import ActionResult
 from src.environments.database.types import (
     QueryRequest, 
     TableInfo,
-    DatabaseInfo,
     CreateTableRequest, 
     InsertRequest,
     UpdateRequest,
@@ -19,11 +17,6 @@ from src.environments.database.types import (
     GetTablesRequest
 )
 from src.environments.database.exceptions import (
-    DatabaseError, 
-    InvalidQueryError, 
-    TableNotFoundError,
-    ColumnNotFoundError,
-    ConstraintViolationError, 
     ConnectionError
 )
 
@@ -31,13 +24,13 @@ from src.environments.database.exceptions import (
 class DatabaseService:
     """Async database service using aiosqlite."""
     
-    def __init__(self, db_path: Union[str, Path]):
+    def __init__(self, base_dir: Union[str, Path]):
         """Initialize the database service.
         
         Args:
-            db_path: Path to the SQLite database file
+            base_dir: Base directory for the database
         """
-        self.db_path = Path(db_path) if isinstance(db_path, str) else db_path
+        self.base_dir = Path(base_dir) if isinstance(base_dir, str) else base_dir
         self._connection: Optional[aiosqlite.Connection] = None
         self._is_connected = False
     
@@ -45,9 +38,9 @@ class DatabaseService:
         """Connect to the database."""
         try:
             # Ensure the directory exists
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.base_dir.mkdir(parents=True, exist_ok=True)
             
-            self._connection = await aiosqlite.connect(str(self.db_path))
+            self._connection = await aiosqlite.connect(str(self.base_dir / "database.db"))
             self._is_connected = True
         except Exception as e:
             raise ConnectionError(f"Failed to connect to database: {e}")
@@ -384,7 +377,7 @@ class DatabaseService:
             success=True,
             message=f"Database information retrieved successfully",
             extra={
-                "path": str(self.db_path),
+                "path": str(self.base_dir / "database.db"),
                 "tables": tables,
                 "total_tables": len(tables),
                 "is_connected": self._is_connected
