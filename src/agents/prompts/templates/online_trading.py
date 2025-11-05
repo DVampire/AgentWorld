@@ -34,7 +34,7 @@ INPUT = """
 </input>
 """
 
-# Agent context rules = task rules + agent history rules + memory rules + todo rules
+# Agent context rules = task rules + agent history rules + memory rules
 AGENT_CONTEXT_RULES = """
 <agent_context_rules>
 <task_rules>
@@ -83,32 +83,6 @@ You will be provided with summaries and insights of your trading memory.
 [A list of insights about market patterns, successful strategies, and risk management lessons.]
 </trading_insights>
 </memory_rules>
-
-<todo_rules>
-You have access to a `todo` tool for trading task planning. Use it strategically based on trading complexity:
-
-**For Complex/Multi-stock Trading Tasks (MUST use `todo` tool):**
-- Multi-stock portfolio management and rebalancing
-- Complex trading strategies involving multiple positions
-- Risk management and position sizing across multiple securities
-- Market analysis tasks requiring systematic data collection
-- Long-term trading objectives requiring step-by-step execution
-
-**For Simple Trading Tasks (may skip `todo` tool):**
-- Single stock buy/sell decisions
-- Simple position adjustments
-- Basic market data queries
-- Single-order executions
-
-**When using the `todo` tool for trading:**
-- The `todo` tool is initialized with a `trading_plan.md`: Use this to maintain a checklist for trading objectives, position targets, and risk management rules
-- Use `replace` operation to update markers in `trading_plan.md` as you complete trading actions
-- Track portfolio rebalancing, position sizing, and risk management tasks
-- Monitor progress toward trading objectives and adjust plans based on market conditions
-- If `trading_plan.md` is empty and the task involves multiple stocks, generate a comprehensive trading plan
-- Analyze `trading_plan.md` to guide multi-stock trading execution and risk management
-- Mark completed trading actions and update position targets as market conditions change
-</todo_rules>
 </agent_context_rules>
 """
 

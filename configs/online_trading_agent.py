@@ -17,14 +17,7 @@ env_names = [
 ]
 agent_names = ["online_trading"]
 tool_names = [
-    'bash',        
-    'python_interpreter', 
     'done', 
-    'todo', 
-    'web_fetcher', 
-    'web_searcher', 
-    'mdify', 
-    "browser",
 ]
 
 #-----------------ALPACA ENVIRONMENT CONFIG-----------------

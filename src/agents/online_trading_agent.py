@@ -201,30 +201,18 @@ class OnlineTradingAgent(BaseAgent):
             memory += "<insights>[Current insights are empty.]</insights>\n"
         memory += "</memory>"
         
-        todo = "<todo>"
-        todo_contents = await self._get_todo_contents()
-        todo += todo_contents
-        todo += "</todo>"
-        
         agent_context = dedent(f"""
             <agent_context>
             {task}
             {step_info}
             {agent_history}
             {memory}
-            {todo}
             </agent_context>
         """)
         
         return {
             "agent_context": agent_context,
         }
-    
-    async def _get_todo_contents(self) -> str:
-        """Get the todo contents."""
-        todo_tool = tcp.get("todo")
-        todo_contents = todo_tool.get_todo_content()
-        return todo_contents
         
     async def _get_environment_context(self) -> Dict[str, Any]:
         """Get the environment state."""
