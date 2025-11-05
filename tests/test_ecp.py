@@ -10,6 +10,7 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
+import json
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -20,10 +21,12 @@ from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.tools import tcp
 from src.utils import assemble_project_path
+from src.environments.alpacaentry.service import AlpacaService
+from src.utils import get_env
 
 def parse_args():
-        parser = argparse.ArgumentParser(description='Tool Calling Agent Example')
-        parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
+        parser = argparse.ArgumentParser(description='Online Trading Agent Example')
+        parser.add_argument("--config", default=os.path.join(root, "configs", "online_trading_agent.py"), help="config file path")
         
         parser.add_argument(
             '--cfg-options',
@@ -156,47 +159,12 @@ async def test_operator_browser():
     
 async def test_alpaca():
     # get account
-    res= await ecp.ainvoke(
-        name="alpaca",
-        action="get_account",
-        input={
-            "account_name": "account1"
-        }
-    )
-    logger.info(f"| 📝 Result: {res['message']}")
+    env = ecp.get("alpaca")
     
-    # get positions
-    res = await ecp.ainvoke(
-        name="alpaca",
-        action="get_positions",
-        input={
-            "account_name": "account1"
-        }
-    )
-    logger.info(f"| 📝 Result: {res['message']}")
-    
-    # create order
-    res = await ecp.ainvoke(
-        name="alpaca",
-        action="create_order",
-        input={
-            "account_name": "account1",
-            "symbol": "BTC/USD",
-            "side": "buy",
-            "qty": 0.01
-        }
-    )
-    logger.info(f"| 📝 Result: {res['message']}")
-    
-    # get account
-    res = await ecp.ainvoke(
-        name="alpaca",
-        action="get_account",
-        input={
-            "account_name": "account1"
-        }
-    )
-    logger.info(f"| 📝 Result: {res['message']}")
+    while True:
+        res = await env.get_data()
+        logger.info(f"| 📝 Result: {res['extra']['data']['BTC/USD']['bars']}")
+        await asyncio.sleep(1)
     
 async def main():
     
@@ -211,6 +179,21 @@ async def main():
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
+    
+    # Initialize Alpaca service
+    logger.info("| 🔧 Initializing Alpaca service...")
+    accounts = get_env("ALPACA_ACCOUNTS").get_secret_value()
+    if accounts:
+        accounts = json.loads(accounts)
+    else:
+        accounts = None
+    config.alpaca_service.update(dict(accounts=accounts))
+    alpaca_service = AlpacaService(**config.alpaca_service)
+    await alpaca_service.initialize()
+    for env_name in config.env_names:
+        env_config = config.get(f"{env_name}_environment", None)
+        env_config.update(dict(alpaca_service=alpaca_service))
+    logger.info(f"| ✅ Alpaca service initialized.")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")

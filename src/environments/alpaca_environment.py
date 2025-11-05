@@ -631,7 +631,7 @@ class AlpacaEnvironment(BaseEnvironment):
                 description="Step the trading environment.")
     async def step(self, 
                    symbol: str = "BTC/USD", 
-                   side: str = "hold", 
+                   side: str = "HOLD", # BUY, SELL, HOLD
                    qty: float = 0.00, 
                    ) -> Dict[str, Any]:
         """Step the trading environment.
@@ -648,7 +648,7 @@ class AlpacaEnvironment(BaseEnvironment):
             if side == "hold":
                 return {
                     "success": True,
-                    "message": "Hold order submitted successfully.",
+                    "message": "HOLD action performed successfully. No order submitted.",
                     "extra": {}
                 }
             else:
@@ -707,13 +707,25 @@ class AlpacaEnvironment(BaseEnvironment):
             
             data_request = GetDataRequest(symbol=self.symbol, data_type=self.data_type)
             data_result = await self.alpaca_service.get_data(data_request)
-            bars = data_result.extra.get("bars", [])
-            bars_string = json.dumps(bars, indent=4)
+            
+            bars = {}
+            for symbol, data in data_result.extra.get("data", {}).items():
+                bars[symbol] = data.get("bars", [])
+            
+            bars_string = ""
+            for symbol, bars in bars.items():
+                bars_string += f"Symbol: {symbol}\n"
+                bars_string += "Bars:\n"
+                for bar in bars:
+                    bars_string += json.dumps(bar, indent=4)
+                bars_string += "\n"
+            
             data_string = dedent(f"""
                 <data>
                 {bars_string}
                 </data>
             """)
+            logger.info(f"| 📝 Data: {data_string}")
             
             state = dedent(f"""
                 <state>

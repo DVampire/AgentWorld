@@ -255,8 +255,10 @@ class AlpacaService:
             
             # Optionally start data stream automatically
             if self.auto_start_data_stream and self.symbol:
-                self.start_data_stream(self.symbol)
-                logger.info(f"| 📡 Auto-started data stream for {len(self.symbol)} symbols")
+                # Normalize symbol to list
+                symbols_list = self.symbol if isinstance(self.symbol, list) else [self.symbol]
+                self.start_data_stream(symbols_list)
+                logger.info(f"| 📡 Auto-started data stream for {len(symbols_list)} symbols: {symbols_list}")
             
         except APIError as e:
             if e.status_code == 401:
@@ -475,7 +477,7 @@ class AlpacaService:
                 if data_type == DataStreamType.BARS:
                     result = await self._bars_handler.stream_insert(data, symbol, asset_type)
                     if result:
-                        logger.debug(f"| ✅ Bars data inserted for {symbol}")
+                        logger.info(f"| ✅ Bars data inserted for {symbol}")
                     else:
                         logger.warning(f"| ⚠️  Failed to insert bars data for {symbol}")
                 elif data_type == DataStreamType.QUOTES:
@@ -507,11 +509,13 @@ class AlpacaService:
     
     async def _data_processor(self) -> None:
         """Background task to process data from queue."""
+        logger.info("| 🔄 Data processor started, waiting for data...")
         while self._data_stream_running:
             try:
                 # Get data from queue with timeout
                 item = await asyncio.wait_for(self._data_queue.get(), timeout=1.0)
                 if item is None:  # Poison pill
+                    logger.info("| 🛑 Data processor received poison pill, stopping...")
                     break
                 
                 # Queue item format: (data, symbol, asset_type, data_type_str)
@@ -527,9 +531,10 @@ class AlpacaService:
                 self._data_queue.task_done()
                 
             except asyncio.TimeoutError:
+                # This is normal - just waiting for data
                 continue
             except Exception as e:
-                logger.error(f"Error in data processor: {e}")
+                logger.error(f"| ❌ Error in data processor: {e}", exc_info=True)
     
     async def _quotes_handler_wrapper(self, data, asset_type: AssetClass, symbol: str):
         """Unified async handler for quotes data (crypto and stock).
@@ -600,7 +605,7 @@ class AlpacaService:
             # Use data_symbol for queue check (more robust)
             if data_symbol and self._data_queue:
                 await self._data_queue.put((data, data_symbol, asset_type, "bars"))
-                logger.debug(f"| 📊 Bars data queued for {data_symbol}")
+                logger.info(f"| 📊 Bars data queued for {data_symbol}")
             else:
                 if not data_symbol:
                     logger.warning(f"| ⚠️  Bars data missing symbol: {data}")
@@ -767,6 +772,9 @@ class AlpacaService:
                         logger.info(f"| 📡 Subscribed to stock data (quotes, trades, bars) for {symbol}")
                 
                     self._news_data_stream.subscribe_news(news_handler, symbol)
+                    logger.info(f"| 📡 Subscribed to news data for {symbol}")
+                
+                logger.info(f"| ✅ All subscriptions completed for {len(symbols)} symbols")
                 
                 # Run streams in separate threads (they are blocking)
                 def run_crypto_stream():
@@ -944,7 +952,17 @@ class AlpacaService:
         # Determine asset types if not provided
         asset_types = {}
         for symbol in symbols:
-            asset_types[symbol] = self.symbols[symbol]['asset_class']
+            if symbol not in self.symbols:
+                logger.warning(f"| ⚠️  Symbol {symbol} not found in symbols list. Trying to determine asset class from symbol format...")
+                # Try to determine asset class from symbol format
+                if "/" in symbol:  # Crypto symbols typically contain "/"
+                    asset_types[symbol] = AssetClass.CRYPTO
+                    logger.info(f"| 📝 Detected {symbol} as CRYPTO based on symbol format")
+                else:
+                    asset_types[symbol] = AssetClass.US_EQUITY
+                    logger.info(f"| 📝 Detected {symbol} as US_EQUITY based on symbol format")
+            else:
+                asset_types[symbol] = self.symbols[symbol]['asset_class']
         
         # Set running flag before starting thread
         self._data_stream_running = True
@@ -1068,6 +1086,7 @@ class AlpacaService:
                 result_data[symbol] = {}
                 
                 for data_type in data_types:
+                    logger.info(f"| 🔍 Getting {data_type.value} data for {symbol}...")
                     data = await self._get_data_from_handler(
                         symbol=symbol,
                         data_type=data_type,
@@ -1077,6 +1096,7 @@ class AlpacaService:
                     )
                     result_data[symbol][data_type.value] = data
                     total_rows += len(data)
+                    logger.info(f"| ✅ Retrieved {len(data)} {data_type.value} records for {symbol}")
             
             # Build message
             symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"
