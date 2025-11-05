@@ -19,8 +19,13 @@ from src.environments.alpacaentry.types import (
     GetAssetsRequest,
     GetPositionsRequest,
     GetDataRequest,
+    CreateOrderRequest,
+    GetOrdersRequest,
+    GetOrderRequest,
+    CancelOrderRequest,
+    CancelAllOrdersRequest,
 )
-from src.utils import dedent, get_env, assemble_project_path
+from src.utils import dedent, assemble_project_path
 
 @ecp.environment()
 class AlpacaEnvironment(BaseEnvironment):
@@ -49,9 +54,10 @@ class AlpacaEnvironment(BaseEnvironment):
     def __init__(
         self,
         base_dir: str = None,
-        live: bool = False,
-        auto_start_data_stream: bool = True,
-        data_stream_symbols: Optional[List[str]] = None,
+        account_name: str = None,
+        symbol: Optional[Union[str, List[str]]] = None,
+        data_type: Optional[Union[str, List[str]]] = None,
+        alpaca_service: AlpacaService = None,
         **kwargs
     ):
         """
@@ -66,39 +72,28 @@ class AlpacaEnvironment(BaseEnvironment):
         super().__init__(**kwargs)
         
         self.base_dir = assemble_project_path(base_dir)
-        self.accounts = json.loads(get_env("ALPACA_ACCOUNTS").get_secret_value())
-        
-        # Initialize Alpaca paper trading service
-        self.alpaca_service = AlpacaService(
-            base_dir=self.base_dir,
-            accounts=self.accounts,
-            live=live,
-            auto_start_data_stream=auto_start_data_stream,
-            data_stream_symbols=data_stream_symbols,
-        )
+        self.account_name = account_name
+        self.symbol = symbol
+        self.data_type = data_type
+        self.alpaca_service = alpaca_service
         
     async def initialize(self) -> None:
         """Initialize the Alpaca trading environment."""
-        await self.alpaca_service.initialize()
         logger.info(f"| 🚀 Alpaca Trading Environment initialized at: {self.base_dir}")
         
     async def cleanup(self) -> None:
         """Cleanup the Alpaca trading environment."""
-        await self.alpaca_service.cleanup()
         logger.info("| 🧹 Alpaca Trading Environment cleanup completed")
 
-    # --------------- Account Operations ---------------
-    @ecp.action(name="get_account", 
-                type="Alpaca Trading", 
-                description="Get account information including buying power, cash, and portfolio value")
-    async def get_account(self, account_name: str) -> Dict[str, Any]:
+    async def get_account(self) -> Dict[str, Any]:
         """Get account information.
         
         Returns:
             A string containing detailed account information including buying power, cash, portfolio value, and account status.
         """
         try:
-            request = GetAccountRequest(account_name=account_name)
+            
+            request = GetAccountRequest(account_name=self.account_name)
             result = await self.alpaca_service.get_account(request)
             
             if not result.success:
@@ -143,9 +138,6 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
         
-    @ecp.action(name="get_assets", 
-                type="Alpaca Trading", 
-                description="Get all assets information including symbols, names, types, and status")
     async def get_assets(self, status: Optional[str] = None, asset_class: Optional[str] = None) -> Dict[str, Any]:
         """Get all assets information.
         
@@ -187,17 +179,14 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    @ecp.action(name="get_positions", 
-                type="Alpaca Trading", 
-                description="Get all open positions including symbols, quantities, market values, and unrealized P&L")
-    async def get_positions(self, account_name: str) -> Dict[str, Any]:
+    async def get_positions(self) -> Dict[str, Any]:
         """Get all open positions.
         
         Returns:
             A string containing detailed positions information including symbols, quantities, market values, and unrealized P&L.
         """
         try:
-            request = GetPositionsRequest(account_name=account_name)
+            request = GetPositionsRequest(account_name=self.account_name)
             result = await self.alpaca_service.get_positions(request)
             
             if not result.success:
@@ -258,13 +247,8 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    @ecp.action(name="get_data",
-                type="Alpaca Trading",
-                description="Get historical data from database (quotes, trades, bars, orderbooks for crypto, or news). Supports multiple symbols and data types. Optional start_date and end_date in format 'YYYY-MM-DD HH:MM:SS'. If not provided, returns latest data.")
     async def get_data(
         self, 
-        symbol: Union[str, List[str]], 
-        data_type: Union[str, List[str]], 
         start_date: Optional[str] = None, 
         end_date: Optional[str] = None, 
         limit: Optional[int] = None
@@ -302,9 +286,10 @@ class AlpacaEnvironment(BaseEnvironment):
             }
         """
         try:
+            
             request = GetDataRequest(
-                symbol=symbol,
-                data_type=data_type,
+                symbol=self.symbol,
+                data_type=self.data_type,
                 start_date=start_date,
                 end_date=end_date,
                 limit=limit
@@ -360,32 +345,339 @@ class AlpacaEnvironment(BaseEnvironment):
                 "message": f"Failed to get data: {str(e)}",
                 "extra": {"error": str(e)}
             }
-
-    # --------------- Environment Interface Methods ---------------
-    async def get_info(self) -> Dict[str, Any]:
-        """Get environment information."""
-        return {
-            "type": "alpaca_trading",
-            "mode": "paper_trading",
-            "authenticated": self.alpaca_service is not None,
-        }
+    
+    # --------------- Order Operations ---------------
+    @ecp.action(name="create_order",
+                type="Alpaca Trading",
+                description="Create a market order to buy or sell a symbol. Use either 'qty' (quantity) or 'notional' (dollar amount) for fractional shares.")
+    async def create_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: Optional[float] = None,
+        notional: Optional[float] = None,
+        time_in_force: str = "day"
+    ) -> Dict[str, Any]:
+        """Create a market order.
+        
+        Args:
+            symbol: Symbol to trade (e.g., 'AAPL', 'BTC/USD')
+            side: Order side: 'buy' or 'sell'
+            qty: Optional quantity to trade (for notional orders, use None)
+            notional: Optional notional value to trade (for fractional shares, use this instead of qty)
+            time_in_force: Time in force - 'day' (default), 'gtc', 'opg', 'cls', 'ioc', 'fok'
+            
+        Returns:
+            Dictionary with success, message, and order information
+        """
+        try:
+            
+            request = CreateOrderRequest(
+                account_name=self.account_name,
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                notional=notional,
+                time_in_force=time_in_force
+            )
+            result = await self.alpaca_service.create_order(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            order = result.extra["order"]
+            result_text = dedent(f"""
+                Order submitted successfully:
+                Order ID: {order["id"]}
+                Symbol: {order["symbol"]}
+                Side: {order["side"]}
+                Quantity: {order["qty"] or order["notional"]}
+                Status: {order["status"]}
+                Order Type: {order["order_type"]}
+                Time in Force: {order["time_in_force"]}
+                Submitted At: {order["submitted_at"]}
+                """)
+            
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": result.extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to create order: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+    
+    async def get_orders(
+        self,
+        status: str = "open",
+        limit: Optional[int] = None,
+        after: Optional[str] = None,
+        until: Optional[str] = None,
+        direction: str = "desc"
+    ) -> Dict[str, Any]:
+        """Get orders for an account.
+        
+        Args:
+            account_name: Account name
+            status: Filter by order status: 'open', 'closed', or 'all' (default: 'open')
+            limit: Optional maximum number of orders to return
+            after: Optional return orders after this date (ISO format)
+            until: Optional return orders until this date (ISO format)
+            direction: Sort direction: 'asc' or 'desc' (default: 'desc')
+            
+        Returns:
+            Dictionary with success, message, and list of orders
+        """
+        try:
+            request = GetOrdersRequest(
+                account_name=self.account_name,
+                status=status,
+                limit=limit,
+                after=after,
+                until=until,
+                direction=direction
+            )
+            result = await self.alpaca_service.get_orders(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            orders = result.extra["orders"]
+            
+            if len(orders) == 0:
+                result_text = f"No {status} orders found."
+            else:
+                order_lines = []
+                for order in orders:
+                    qty_display = order.get("qty") or order.get("notional") or "N/A"
+                    filled_qty = order.get("filled_qty", "0")
+                    filled_price = order.get("filled_avg_price") or "N/A"
+                    
+                    order_lines.append(
+                        f"  {order['symbol']}: {order['side']} {qty_display} "
+                        f"(Status: {order['status']}, Filled: {filled_qty} @ {filled_price})"
+                    )
+                
+                result_text = dedent(f"""
+                    {len(orders)} order(s) found:
+                    {chr(10).join(order_lines)}
+                    """)
+            
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": result.extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get orders: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+    
+    async def get_order(self, order_id: str) -> Dict[str, Any]:
+        """Get a specific order by ID.
+        
+        Args:
+            account_name: Account name
+            order_id: Order ID
+            
+        Returns:
+            Dictionary with success, message, and order information
+        """
+        try:
+            request = GetOrderRequest(account_name=self.account_name, order_id=order_id)
+            result = await self.alpaca_service.get_order(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            order = result.extra["order"]
+            qty_display = order.get("qty") or order.get("notional") or "N/A"
+            
+            result_text = dedent(f"""
+                Order Information:
+                Order ID: {order["id"]}
+                Client Order ID: {order["client_order_id"]}
+                Symbol: {order["symbol"]}
+                Side: {order["side"]}
+                Quantity: {qty_display}
+                Filled Quantity: {order.get("filled_qty", "0")}
+                Filled Average Price: {order.get("filled_avg_price") or "N/A"}
+                Status: {order["status"]}
+                Order Type: {order["order_type"]}
+                Time in Force: {order["time_in_force"]}
+                Submitted At: {order.get("submitted_at") or "N/A"}
+                Filled At: {order.get("filled_at") or "N/A"}
+                Canceled At: {order.get("canceled_at") or "N/A"}
+                """)
+            
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": result.extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to get order: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+    
+    @ecp.action(name="cancel_order",
+                type="Alpaca Trading",
+                description="Cancel a specific order by order ID.")
+    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        """Cancel an order.
+        
+        Args:
+            account_name: Account name
+            order_id: Order ID to cancel
+            
+        Returns:
+            Dictionary with success or failure message
+        """
+        try:
+            request = CancelOrderRequest(account_name=self.account_name, order_id=order_id)
+            result = await self.alpaca_service.cancel_order(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            return {
+                "success": True,
+                "message": result.message,
+                "extra": result.extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to cancel order: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+    
+    async def cancel_all_orders(self) -> Dict[str, Any]:
+        """Cancel all orders for an account.
+        """
+        try:
+            request = CancelAllOrdersRequest(account_name=self.account_name)
+            result = await self.alpaca_service.cancel_all_orders(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            return {
+                "success": True,
+                "message": result.message,
+                "extra": result.extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to cancel all orders: {str(e)}",
+                "extra": {"error": str(e)}
+            }
 
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Alpaca trading environment."""
         try:
             # Get account info
-            account_request = GetAccountRequest()
+            account_request = GetAccountRequest(account_name=self.account_name)
             account_result = await self.alpaca_service.get_account(account_request)
+            account_info = dedent(f"""
+                <account_info>
+                {account_result.message}
+                </account_info>
+            """)
+            
+            # Get Positions
+            positions_request = GetPositionsRequest(account_name=self.account_name)
+            positions_result = await self.alpaca_service.get_positions(positions_request)
+            positions_string = dedent(f"""
+                <positions>
+                {positions_result.message}
+                </positions>
+            """)
+            
+            # Get Data
+            data_request = GetDataRequest(symbol=self.symbol, data_type=self.data_type)
+            data_result = await self.alpaca_service.get_data(data_request)
+            bars = data_result.extra.get("bars", [])
+            bars_string = json.dumps(bars, indent=4)
+            data_string = dedent(f"""
+                <data>
+                {bars_string}
+                </data>
+            """)
             
             state = dedent(f"""
-                <info>
-                Alpaca Paper Trading Environment:
-                Account Status: {account_result.extra["account"]["status"]}
-                """)
-            extra = account_result.extra
+                <state>
+                {account_info}
+                {positions_string}
+                {data_string}
+                </state>
+            """)
+            
             return {
                 "state": state,
-                "extra": extra
+                "extra": {
+                    "account": account_result.extra,
+                    "positions": positions_result.extra,
+                    "data": data_result.extra,
+                }
             }
         except AuthenticationError as e:
             return {

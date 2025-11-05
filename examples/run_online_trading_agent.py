@@ -1,0 +1,106 @@
+import os
+import sys
+from dotenv import load_dotenv
+load_dotenv(verbose=True)
+
+from pathlib import Path
+import argparse
+from mmengine import DictAction
+import asyncio
+import json
+
+root = str(Path(__file__).resolve().parents[1])
+sys.path.append(root)
+
+from src.config import config
+from src.logger import logger
+from src.tools import tcp
+from src.environments import ecp
+from src.agents import acp
+from src.transformation import transformation
+from src.infrastructures.models import model_manager
+from src.environments.alpacaentry.service import AlpacaService
+from src.utils import get_env
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='main')
+    parser.add_argument("--config", default=os.path.join(root, "configs", "online_trading_agent.py"), help="config file path")
+
+    parser.add_argument(
+        '--cfg-options',
+        nargs='+',
+        action=DictAction,
+        help='override some settings in the used config, the key-value pair '
+        'in xxx=yyy format will be merged into config file. If the value to '
+        'be overwritten is a list, it should be like key="[a,b]" or key=a,b '
+        'It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" '
+        'Note that the quotation marks are necessary and that no white space '
+        'is allowed.')
+    args = parser.parse_args()
+    return args
+
+async def main():
+    args = parse_args()
+    
+    config.init_config(args.config, args)
+    logger.init_logger(config)
+    logger.info(f"| Config: {config.pretty_text}")
+    
+    # Initialize model manager
+    logger.info("| 🧠 Initializing model manager...")
+    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
+    
+    # Initialize Alpaca service
+    logger.info("| 🔧 Initializing Alpaca service...")
+    accounts = get_env("ALPACA_ACCOUNTS").get_secret_value()
+    if accounts:
+        accounts = json.loads(accounts)
+    else:
+        accounts = None
+    config.alpaca_service.update(dict(accounts=accounts))
+    alpaca_service = AlpacaService(**config.alpaca_service)
+    await alpaca_service.initialize()
+    for env_name in config.env_names:
+        env_config = config.get(f"{env_name}_environment", None)
+        env_config.update(dict(alpaca_service=alpaca_service))
+    logger.info(f"| ✅ Alpaca service initialized.")
+    
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    await ecp.initialize(config.env_names)
+    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
+    await tcp.initialize(config.tool_names)
+    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
+
+    # Initialize agents
+    logger.info("| 🤖 Initializing agents...")
+    await acp.initialize(config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {acp.list()}")
+    
+    # Transformation ECP to TCP
+    logger.info("| 🔄 Transformation start...")
+    await transformation.transform(type="e2t", env_names=config.env_names)
+    logger.info(f"| ✅ Transformation completed: {tcp.list()}")
+    
+    # Example task
+    task = "Hello, how are you?"
+    files = []
+    
+    logger.info(f"| 📋 Task: {task}")
+    logger.info(f"| 📂 Files: {files}")
+    
+    input = {
+        "name": "online_trading",
+        "input": {
+            "task": task,
+            "files": files
+        }
+    }
+    await acp.ainvoke(**input)
+    
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -8,6 +8,7 @@ from .debate_manager import DebateManagerAgent
 from .operator_browser_agent import OperatorBrowserAgent
 from .mobile_agent import MobileAgent
 from .anthropic_mobile_agent import AnthropicMobileAgent
+from .online_trading_agent import OnlineTradingAgent
 from .protocol import acp
 
 
@@ -20,5 +21,6 @@ __all__ = [
     "OperatorBrowserAgent",
     "MobileAgent",
     "AnthropicMobileAgent",
+    "OnlineTradingAgent",
     "acp",
 ]

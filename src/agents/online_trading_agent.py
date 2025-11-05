@@ -1,17 +1,92 @@
 """Online trading agent implementation for multi-stock trading operations."""
 
 import asyncio
-from typing import List, Optional, Type, Dict, Any
-from langchain_core.messages import BaseMessage
+import pandas as pd
 from datetime import datetime
-from pydantic import Field, ConfigDict
+from typing import List, Optional, Type, Dict, Any, Union
+from langchain_core.messages import BaseMessage
+from pydantic import Field, ConfigDict, BaseModel
 
-from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.logger import logger
+from src.utils import dedent
 from src.agents.protocol import acp
 from src.tools.protocol import tcp
-from src.tools.protocol.types import ToolResponse
+from src.environments.protocol import ecp
 from src.agents.protocol.types import InputArgs
+from src.tools.protocol.types import ToolResponse
+from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.infrastructures.memory import EventType
+
+def format_actions(actions: List[BaseModel]) -> str:
+    """Format actions as a Markdown table using pandas."""
+    rows = []
+    for action in actions:
+        if isinstance(action.args, dict):
+            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
+        else:
+            args_str = str(action.args)
+
+        rows.append({
+            "Action": action.name,
+            "Args": args_str,
+            "Output": action.output if action.output is not None else None
+        })
+    
+    df = pd.DataFrame(rows)
+    
+    if df["Output"].isna().all():
+        df = df.drop(columns=["Output"])
+    else:
+        df["Output"] = df["Output"].fillna("None")
+    
+    return df.to_markdown(index=True)
+
+class ThinkOutputBuilder:
+    def __init__(self):
+        self.schemas: Dict[str, type[BaseModel]] = {}
+
+    def register(self, schema: Dict[str, type[BaseModel]]):
+        """Register new args schema"""
+        self.schemas.update(schema)
+        return self  # Support chaining
+
+    def build(self):
+        """Generate Action and ThinkOutput models"""
+
+        # -------- Dynamically generate Action --------
+        schemas = self.schemas
+        ActionArgs = Union[tuple(schemas.values())]
+
+        class Action(BaseModel):
+            name: str = Field(description="The name of the action.")
+            args: ActionArgs = Field(description="The arguments of the action.")
+            output: Optional[str] = Field(default=None, description="The output of the action.")
+            
+            def __str__(self):
+                return f"Action: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
+            
+            def __repr__(self):
+                return self.__str__()
+
+        # -------- Dynamically generate ThinkOutput --------
+        class ThinkOutput(BaseModel):
+            thinking: str = Field(description="A structured <think>-style reasoning block.")
+            memory: str = Field(description="1-3 sentences of specific memory.")
+            action: List[Action] = Field(
+                description='[{"name": "action_name", "args": {...}}, ...]'
+            )
+
+            def __str__(self):
+                return (
+                    f"Thinking: {self.thinking}\n"
+                    f"Memory: {self.memory}\n"
+                    f"Action:\n{format_actions(self.action)}\n"
+                )
+            
+            def __repr__(self):
+                return self.__str__()
+
+        return ThinkOutput
 
 @acp.agent()
 class OnlineTradingAgent(BaseAgent):
@@ -72,6 +147,154 @@ class OnlineTradingAgent(BaseAgent):
         self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
         self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
         
+    async def _get_agent_context(self, task: str) -> Dict[str, Any]:
+        """Get the agent context."""
+        
+        task = f"<task>{task}</task>"
+        
+        step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
+        time_str = datetime.now().isoformat()
+        step_info_description += f'Current date and time: {time_str}'
+        step_info = dedent(f"""
+            <step_info>
+            {step_info_description}
+            </step_info>
+        """)
+        
+        state = await self.memory_manager.get_state(n=self.review_steps)
+        
+        events = state["events"]
+        summaries = state["summaries"]
+        insights = state["insights"]
+        
+        agent_history = "<agent_history>"
+        for event in events:
+            agent_history += f"<step_{event.step_number}>\n"
+            if event.event_type == EventType.TASK_START:
+                agent_history += f"Task Start: {event.data['task']}\n"
+            elif event.event_type == EventType.TASK_END:
+                agent_history += f"Task End: {event.data['result']}\n"
+            elif event.event_type == EventType.ACTION_STEP:
+                agent_history += f"Thinking: {event.data['thinking']}\n"
+                agent_history += f"Memory: {event.data['memory']}\n"
+                agent_history += f"Action: {event.data['action']}\n"
+            agent_history += "\n"
+            agent_history += f"</step_{event.step_number}>\n"
+        agent_history += "</agent_history>"
+        
+        memory = "<memory>"
+        if len(summaries) > 0:
+            memory += dedent(f"""
+                <summaries>
+                {chr(10).join([str(summary) for summary in summaries])}
+                </summaries>
+            """)
+        else:
+            memory += "<summaries>[Current summaries are empty.]</summaries>\n"
+        if len(insights) > 0:
+            memory += dedent(f"""
+                <insights>
+                {chr(10).join([str(insight) for insight in insights])}
+                </insights>
+            """)
+        else:
+            memory += "<insights>[Current insights are empty.]</insights>\n"
+        memory += "</memory>"
+        
+        todo = "<todo>"
+        todo_contents = await self._get_todo_contents()
+        todo += todo_contents
+        todo += "</todo>"
+        
+        agent_context = dedent(f"""
+            <agent_context>
+            {task}
+            {step_info}
+            {agent_history}
+            {memory}
+            {todo}
+            </agent_context>
+        """)
+        
+        return {
+            "agent_context": agent_context,
+        }
+    
+    async def _get_todo_contents(self) -> str:
+        """Get the todo contents."""
+        todo_tool = tcp.get("todo")
+        todo_contents = todo_tool.get_todo_content()
+        return todo_contents
+        
+    async def _get_environment_context(self) -> Dict[str, Any]:
+        """Get the environment state."""
+        environment_context = "<environment_context>"
+        for env_name in ecp.list():
+            rule_string = ecp.get_info(env_name).rules
+            rule_string = dedent(f"""
+                <rules>
+                {rule_string}
+                </rules>
+            """)
+            
+            env_state = await ecp.get_state(env_name)
+            state_string = "<state>"
+            state_string += env_state["state"]
+            extra = env_state["extra"]
+            
+            if "screenshots" in extra:
+                for screenshot in extra["screenshots"]:
+                    state_string += f"\n<img src={screenshot.screenshot_path} alt={screenshot.screenshot_description}/>"
+            state_string += "</state>"
+            
+            environment_context += dedent(f"""
+                <{env_name}>
+                {rule_string}
+                {state_string}
+                </{env_name}>
+            """)
+        
+        environment_context += "</environment_context>"
+        return {
+            "environment_context": environment_context,
+        }
+        
+    async def _get_tool_context(self) -> Dict[str, Any]:
+        """Get the tool context."""
+        tool_context = "<tool_context>"
+        
+        tool_list = [tcp.to_string(tool) for tool in tcp.list()]
+        tool_list_string = "\n".join(tool_list)
+        
+        tool_context += dedent(f"""
+        <tool_list>
+        {tool_list_string}
+        </tool_list>
+        """)
+        
+        tool_context += "</tool_context>"
+        return {
+            "tool_context": tool_context,
+        }
+        
+    async def _get_messages(self, task: str) -> List[BaseMessage]:
+        
+        system_modules = self.prompt_modules
+        system_message = self.prompt_manager.get_system_message(modules=system_modules, reload=False)
+        
+        agent_message_modules = self.prompt_modules
+        agent_message_modules.update(await self._get_agent_context(task))
+        agent_message_modules.update(await self._get_environment_context())
+        agent_message_modules.update(await self._get_tool_context())
+        agent_message = self.prompt_manager.get_agent_message(modules=agent_message_modules, reload=True)
+        
+        messages = [
+            system_message,
+            agent_message,
+        ]
+        
+        return messages
+        
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
         """Think and action for one step."""
         
@@ -99,13 +322,10 @@ class OnlineTradingAgent(BaseAgent):
             think_output = await structured_llm.ainvoke(messages)
             
             thinking = think_output.thinking
-            evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
-            next_goal = think_output.next_goal
             actions = think_output.action
             
             logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
-            logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Actions to execute: {len(actions)}")
             
             # Execute actions sequentially
@@ -141,9 +361,7 @@ class OnlineTradingAgent(BaseAgent):
             
             event_data = {
                 "thinking": thinking,
-                "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
-                "next_goal": next_goal,
                 "action": action_results
             }
             await self.memory_manager.add_event(

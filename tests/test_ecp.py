@@ -155,6 +155,7 @@ async def test_operator_browser():
     logger.info(f"| 📝 Result: {res}")
     
 async def test_alpaca():
+    # get account
     res= await ecp.ainvoke(
         name="alpaca",
         action="get_account",
@@ -164,18 +165,7 @@ async def test_alpaca():
     )
     logger.info(f"| 📝 Result: {res['message']}")
     
-    res = await ecp.ainvoke(
-        name="alpaca",
-        action="get_assets",
-        input={
-            "status": "active",
-            "asset_class": "crypto"
-        }
-    )
-    logger.info(f"| 📝 Result: {res['message']}")
-    for asset in res['extra']['assets']:
-        logger.info(f"| 📝 Asset: {asset}")
-    
+    # get positions
     res = await ecp.ainvoke(
         name="alpaca",
         action="get_positions",
@@ -185,18 +175,28 @@ async def test_alpaca():
     )
     logger.info(f"| 📝 Result: {res['message']}")
     
-    while True:
-        # res = await ecp.ainvoke(
-        #     name="alpaca",
-        #     action="get_data",
-        #     input={
-        #         "symbol": "BTC/USD",
-        #         "data_type": ["bars", "news", "quotes", "orderbooks"],
-        #     }
-        # )
-        # logger.info(f"| 📝 Result: {res['extra']['data']['BTC/USD']['bars']}")
-        await asyncio.sleep(1)
+    # create order
+    res = await ecp.ainvoke(
+        name="alpaca",
+        action="create_order",
+        input={
+            "account_name": "account1",
+            "symbol": "BTC/USD",
+            "side": "buy",
+            "qty": 0.01
+        }
+    )
+    logger.info(f"| 📝 Result: {res['message']}")
     
+    # get account
+    res = await ecp.ainvoke(
+        name="alpaca",
+        action="get_account",
+        input={
+            "account_name": "account1"
+        }
+    )
+    logger.info(f"| 📝 Result: {res['message']}")
     
 async def main():
     

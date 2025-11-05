@@ -2,7 +2,9 @@
 
 # Alpaca Environment Configuration
 environment = dict(
-    auto_start_data_stream=True,
-    data_stream_symbols=["BTC/USD"],
-    base_dir="workdir/alpaca"
+    base_dir="workdir/alpaca",
+    account_name="account1",
+    symbol=["BTC/USD"],
+    data_type=["bars"],
+    alpaca_service=None,
 )
