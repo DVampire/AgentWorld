@@ -3,7 +3,9 @@
 from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
+import asyncio
 import json
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Type, List, Union
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -346,17 +348,13 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    # --------------- Order Operations ---------------
-    @ecp.action(name="create_order",
-                type="Alpaca Trading",
-                description="Create a market order to buy or sell a symbol. Use either 'qty' (quantity) or 'notional' (dollar amount) for fractional shares.")
     async def create_order(
         self,
         symbol: str,
         side: str,
         qty: Optional[float] = None,
         notional: Optional[float] = None,
-        time_in_force: str = "day"
+        time_in_force: str = "ioc"
     ) -> Dict[str, Any]:
         """Create a market order.
         
@@ -557,9 +555,6 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    @ecp.action(name="cancel_order",
-                type="Alpaca Trading",
-                description="Cancel a specific order by order ID.")
     async def cancel_order(self, order_id: str) -> Dict[str, Any]:
         """Cancel an order.
         
@@ -630,7 +625,47 @@ class AlpacaEnvironment(BaseEnvironment):
                 "message": f"Failed to cancel all orders: {str(e)}",
                 "extra": {"error": str(e)}
             }
-
+            
+    @ecp.action(name="step",
+                type="Alpaca Trading",
+                description="Step the trading environment.")
+    async def step(self, 
+                   symbol: str = "BTC/USD", 
+                   side: str = "hold", 
+                   qty: float = 0.00, 
+                   ) -> Dict[str, Any]:
+        """Step the trading environment.
+        
+        Args:
+            symbol (str): Symbol to trade (e.g., 'AAPL', 'BTC/USD')
+            side (str): Order side: 'BUY', 'SELL', 'HOLD' (default: 'HOLD')
+            qty (float): Quantity to trade (default: 0.01)
+        Returns:
+            Dictionary with success, message, and order information
+        """
+        side = side.lower()
+        try:
+            if side == "hold":
+                return {
+                    "success": True,
+                    "message": "Hold order submitted successfully.",
+                    "extra": {}
+                }
+            else:
+                return await self.create_order(symbol, side, qty)
+            
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to step the trading environment: {str(e)}",
+                "extra": {"error": str(e)}
+            }
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Alpaca trading environment."""
         try:
@@ -652,7 +687,24 @@ class AlpacaEnvironment(BaseEnvironment):
                 </positions>
             """)
             
-            # Get Data
+            # Wait until the next minute boundary for minute-level trading
+            # This ensures we get complete minute bar data
+            now = datetime.utcnow()
+            # Calculate seconds until next minute boundary
+            # If we're at second 0, we're already at minute boundary, no need to wait
+            # If we're at second 30, we need to wait 30 seconds to reach minute 1:00
+            if now.second > 0:
+                # Calculate milliseconds to account for microsecond precision
+                microseconds_until_next_minute = (60 - now.second) * 1000000 - now.microsecond
+                wait_time = microseconds_until_next_minute / 1000000.0  # Convert to seconds
+                if wait_time > 0:
+                    logger.info(f"| ⏳ Waiting {wait_time:.2f} seconds until next minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
+            else:
+                logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
+            
             data_request = GetDataRequest(symbol=self.symbol, data_type=self.data_type)
             data_result = await self.alpaca_service.get_data(data_request)
             bars = data_result.extra.get("bars", [])
