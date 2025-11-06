@@ -18,16 +18,13 @@ from alpaca.data.historical import (StockHistoricalDataClient,
                                     CryptoHistoricalDataClient,
                                     NewsClient,
                                     OptionHistoricalDataClient)
-from alpaca.data.live import (CryptoDataStream,
-                              StockDataStream,
-                              NewsDataStream, 
-                              OptionDataStream)
 from alpaca.common.exceptions import APIError
 from pydantic import BaseModel
 
 from src.logger import logger
 from src.environments.protocol.types import ActionResult
 from src.environments.alpacaentry.types import (
+    AccountInfo,
     GetAccountRequest,
     GetAssetsRequest,
     GetPositionsRequest,
@@ -47,16 +44,11 @@ from src.environments.alpacaentry.quotes import QuotesHandler
 from src.environments.alpacaentry.trades import TradesHandler
 from src.environments.alpacaentry.orderbooks import OrderbooksHandler
 from src.environments.alpacaentry.news import NewsHandler
+from src.environments.alpacaentry.producer import DataProducer
+from src.environments.alpacaentry.consumer import DataConsumer
 from src.environments.database.service import DatabaseService
-from src.environments.database.types import CreateTableRequest, InsertRequest, QueryRequest
-from src.environments.alpacaentry.types import DataStreamType
 from src.utils import assemble_project_path
 
-class AccountInfo(BaseModel):
-    """Alpaca account model."""
-    api_key: str
-    secret_key: str
-    name: str
 
 class AlpacaService:
     """Alpaca paper trading service using alpaca-py."""
@@ -110,11 +102,6 @@ class AlpacaService:
         self._news_client: Optional[NewsClient] = None
         self._option_data_client: Optional[OptionHistoricalDataClient] = None
         
-        self._crypto_data_stream: Optional[CryptoDataStream] = None
-        self._stock_data_stream: Optional[StockDataStream] = None
-        self._news_data_stream: Optional[NewsDataStream] = None
-        self._option_data_stream: Optional[OptionDataStream] = None
-        
         # Initialize data handlers
         self._bars_handler: Optional[BarsHandler] = None
         self._quotes_handler: Optional[QuotesHandler] = None
@@ -122,11 +109,10 @@ class AlpacaService:
         self._trades_handler: Optional[TradesHandler] = None
         self._news_handler: Optional[NewsHandler] = None
         
-        self._data_queue: Optional[asyncio.Queue] = None
-        self._data_semaphore: Optional[asyncio.Semaphore] = None
-        self._data_stream_running: bool = False
-        self._data_stream_thread: Optional[threading.Thread] = None
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        # Producer and Consumer
+        self.data_producer: Optional[DataProducer] = None
+        self.data_consumer: Optional[DataConsumer] = None
+        
         self._max_concurrent_writes: int = 10 # Max concurrent database writes
 
     async def __aenter__(self):
@@ -174,30 +160,6 @@ class AlpacaService:
             self._option_data_client = OptionHistoricalDataClient(
                 api_key=self.default_account.api_key,
                 secret_key=self.default_account.secret_key
-            )
-            
-            self._crypto_data_stream = CryptoDataStream(
-                api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key,
-                raw_data=False
-            )
-            
-            self._stock_data_stream = StockDataStream(
-                api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key,
-                raw_data=False
-            )
-            
-            self._news_data_stream = NewsDataStream(
-                api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key,
-                raw_data=False
-            )
-            
-            self._option_data_stream = OptionDataStream(
-                api_key=self.default_account.api_key,
-                secret_key=self.default_account.secret_key,
-                raw_data=False
             )
             
             # Test connection by getting account info
@@ -253,6 +215,26 @@ class AlpacaService:
             self._orderbooks_handler = OrderbooksHandler(self.database_service)
             self._news_handler = NewsHandler(self.database_service)
             
+            # Initialize Producer and Consumer
+            self.data_producer = DataProducer(
+                account=self.default_account,
+                bars_handler=self._bars_handler,
+                quotes_handler=self._quotes_handler,
+                trades_handler=self._trades_handler,
+                orderbooks_handler=self._orderbooks_handler,
+                news_handler=self._news_handler,
+                symbols=self.symbols,
+                max_concurrent_writes=self._max_concurrent_writes
+            )
+            
+            self.data_consumer = DataConsumer(
+                bars_handler=self._bars_handler,
+                quotes_handler=self._quotes_handler,
+                trades_handler=self._trades_handler,
+                orderbooks_handler=self._orderbooks_handler,
+                news_handler=self._news_handler
+            )
+            
             # Optionally start data stream automatically
             if self.auto_start_data_stream and self.symbol:
                 # Normalize symbol to list
@@ -270,9 +252,9 @@ class AlpacaService:
     async def cleanup(self) -> None:
         """Cleanup the Alpaca service."""
         # Stop data stream first to ensure proper cleanup
-        if self._data_stream_running:
+        if self.data_producer and self.data_producer._data_stream_running:
             logger.info("| 🛑 Stopping data stream during cleanup...")
-            self.stop_data_stream()
+            self.data_producer.stop()
             # Wait a bit for threads to finish
             import time
             time.sleep(0.5)
@@ -285,16 +267,14 @@ class AlpacaService:
         self._news_client = None
         self._option_data_client = None
         
-        self._crypto_data_stream = None
-        self._stock_data_stream = None
-        self._news_data_stream = None
-        self._option_data_stream = None
-        
         self._trades_handler = None
         self._quotes_handler = None
         self._bars_handler = None
         self._orderbooks_handler = None
         self._news_handler = None
+        
+        self.data_producer = None
+        self.data_consumer = None
 
     # Account methods
     async def get_account(self, request: GetAccountRequest) -> ActionResult:
@@ -459,669 +439,45 @@ class AlpacaService:
         except Exception as e:
             raise AlpacaError(f"Failed to get positions: {e}.")
     
-    
-    async def _handle_data(self, data: Dict, 
-                           symbol: str, 
-                           asset_type: AssetClass, 
-                           data_type: DataStreamType) -> None:
-        """Handle incoming data and write to database with concurrency control.
-        
-        Args:
-            data: Raw data from Alpaca stream
-            symbol: Symbol name
-            asset_type: Asset type ("crypto" or "stock")
-            data_type: Data type ("quotes", "trades", "bars", "orderbooks")
-        """
-        async with self._data_semaphore:
-            try:
-                if data_type == DataStreamType.BARS:
-                    result = await self._bars_handler.stream_insert(data, symbol, asset_type)
-                    if result:
-                        logger.info(f"| ✅ Bars data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert bars data for {symbol}")
-                elif data_type == DataStreamType.QUOTES:
-                    result = await self._quotes_handler.stream_insert(data, symbol, asset_type)
-                    if result:
-                        logger.debug(f"| ✅ Quotes data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert quotes data for {symbol}")
-                elif data_type == DataStreamType.TRADES:
-                    result = await self._trades_handler.stream_insert(data, symbol, asset_type)
-                    if result:
-                        logger.debug(f"| ✅ Trades data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert trades data for {symbol}")
-                elif data_type == DataStreamType.ORDERBOOKS:
-                    result = await self._orderbooks_handler.stream_insert(data, symbol)
-                    if result:
-                        logger.debug(f"| ✅ Orderbooks data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert orderbooks data for {symbol}")
-                elif data_type == DataStreamType.NEWS:
-                    result = await self._news_handler.stream_insert(data, symbol)
-                    if result:
-                        logger.debug(f"| ✅ News data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert news data for {symbol}")
-            except Exception as e:
-                logger.error(f"| ❌ Error in data handler for {symbol} ({data_type}): {e}", exc_info=True)
-    
-    async def _data_processor(self) -> None:
-        """Background task to process data from queue."""
-        logger.info("| 🔄 Data processor started, waiting for data...")
-        while self._data_stream_running:
-            try:
-                # Get data from queue with timeout
-                item = await asyncio.wait_for(self._data_queue.get(), timeout=1.0)
-                if item is None:  # Poison pill
-                    logger.info("| 🛑 Data processor received poison pill, stopping...")
-                    break
-                
-                # Queue item format: (data, symbol, asset_type, data_type_str)
-                if len(item) == 4:
-                    data, symbol, asset_type, data_type_str = item
-                    # Convert string data_type to DataStreamType enum
-                    data_type = DataStreamType(data_type_str)
-                else:
-                    logger.error(f"| ❌ Unexpected queue item format: {item}")
-                    continue
-                
-                await self._handle_data(data, symbol, asset_type, data_type)
-                self._data_queue.task_done()
-                
-            except asyncio.TimeoutError:
-                # This is normal - just waiting for data
-                continue
-            except Exception as e:
-                logger.error(f"| ❌ Error in data processor: {e}", exc_info=True)
-    
-    async def _quotes_handler_wrapper(self, data, asset_type: AssetClass, symbol: str):
-        """Unified async handler for quotes data (crypto and stock).
-        
-        Args:
-            data: Quotes data from Alpaca stream
-            asset_type: Asset class (AssetClass)
-            symbol: Symbol name (provided for verification)
-        """
-        try:
-            data = data.model_dump()
-            # Extract symbol from data or use provided symbol
-            data_symbol = data.get("symbol", "")
-            if not data_symbol:
-                data_symbol = symbol
-            # Use data_symbol for queue check (more robust)
-            if data_symbol and self._data_queue:
-                await self._data_queue.put((data, data_symbol, asset_type, "quotes"))
-                logger.debug(f"| 📊 Quotes data queued for {data_symbol}")
-            else:
-                if not data_symbol:
-                    logger.warning(f"| ⚠️  Quotes data missing symbol: {data}")
-                if not self._data_queue:
-                    logger.warning(f"| ⚠️  Data queue not initialized when quotes data received")
-        except Exception as e:
-            logger.error(f"| ❌ Error in quotes handler wrapper: {e}", exc_info=True)
-    
-    async def _trades_handler_wrapper(self, data, asset_type: AssetClass, symbol: str):
-        """Unified async handler for trades data (crypto and stock).
-        
-        Args:
-            data: Trades data from Alpaca stream
-            asset_type: Asset class (AssetClass)
-            symbol: Symbol name (provided for verification)
-        """
-        try:
-            data = data.model_dump()
-            # Extract symbol from data or use provided symbol
-            data_symbol = data.get("symbol", "")
-            if not data_symbol:
-                data_symbol = symbol
-            # Use data_symbol for queue check (more robust)
-            if data_symbol and self._data_queue:
-                await self._data_queue.put((data, data_symbol, asset_type, "trades"))
-                logger.debug(f"| 📊 Trades data queued for {data_symbol}")
-            else:
-                if not data_symbol:
-                    logger.warning(f"| ⚠️  Trades data missing symbol: {data}")
-                if not self._data_queue:
-                    logger.warning(f"| ⚠️  Data queue not initialized when trades data received")
-        except Exception as e:
-            logger.error(f"| ❌ Error in trades handler wrapper: {e}", exc_info=True)
-    
-    async def _bars_handler_wrapper(self, data, asset_type: AssetClass, symbol: str):
-        """Unified async handler for bars data (crypto and stock).
-        
-        Args:
-            data: Bars data from Alpaca stream
-            asset_type: Asset class (AssetClass)
-            symbol: Symbol name (provided for verification)
-        """
-        try:
-            data = data.model_dump()
-            # Extract symbol from data or use provided symbol
-            data_symbol = data.get("symbol", "")
-            if not data_symbol:
-                data_symbol = symbol
-            # Use data_symbol for queue check (more robust)
-            if data_symbol and self._data_queue:
-                await self._data_queue.put((data, data_symbol, asset_type, "bars"))
-                logger.info(f"| 📊 Bars data queued for {data_symbol}")
-            else:
-                if not data_symbol:
-                    logger.warning(f"| ⚠️  Bars data missing symbol: {data}")
-                if not self._data_queue:
-                    logger.warning(f"| ⚠️  Data queue not initialized when bars data received")
-        except Exception as e:
-            logger.error(f"| ❌ Error in bars handler wrapper: {e}", exc_info=True)
-    
-    async def _orderbooks_handler_wrapper(self, data, asset_type: AssetClass, symbol: str):
-        """Async handler for orderbooks data (crypto only).
-        
-        Args:
-            data: Orderbooks data from Alpaca stream
-            asset_type: Asset class (should be CRYPTO)
-            symbol: Symbol name (provided for verification)
-        """
-        try:
-            data = data.model_dump()
-            # Extract symbol from data or use provided symbol
-            data_symbol = data.get("symbol", "")
-            if not data_symbol:
-                data_symbol = symbol
-            # Use data_symbol for queue check (more robust)
-            if data_symbol and self._data_queue:
-                await self._data_queue.put((data, data_symbol, asset_type, "orderbooks"))
-                logger.debug(f"| 📊 Orderbooks data queued for {data_symbol}")
-            else:
-                if not data_symbol:
-                    logger.warning(f"| ⚠️  Orderbooks data missing symbol: {data}")
-                if not self._data_queue:
-                    logger.warning(f"| ⚠️  Data queue not initialized when orderbooks data received")
-        except Exception as e:
-            logger.error(f"| ❌ Error in orderbooks handler wrapper: {e}", exc_info=True)
-
-    async def _news_handler_wrapper(self, data, asset_type: AssetClass, symbol: str):
-        """Async handler for news data.
-        
-        Args:
-            data: News data from Alpaca stream
-            asset_type: Asset class (AssetClass)
-            symbol: Symbol name (provided for verification)
-        """
-        try:
-            data = data.model_dump()
-            # News may have symbols array or single symbol
-            data_symbol = data.get("symbols", [])
-            if data_symbol:
-                # Use first symbol if multiple
-                data_symbol = data_symbol[0] if isinstance(data_symbol, list) else data_symbol
-            else:
-                data_symbol = data.get("symbol", "")
-            if not data_symbol:
-                data_symbol = symbol if symbol else ""
-            # News can be queued even without symbol (global news)
-            if self._data_queue:
-                await self._data_queue.put((data, data_symbol, asset_type, "news"))
-                logger.debug(f"| 📊 News data queued for {data_symbol if data_symbol else 'global'}")
-            else:
-                logger.warning(f"| ⚠️  Data queue not initialized when news data received")
-        except Exception as e:
-            logger.error(f"| ❌ Error in news handler wrapper: {e}", exc_info=True)
-    
-    def _data_stream_worker(self, symbols: List[str], asset_types: Dict[str, AssetClass]):
-        """Worker thread for running data streams."""
-        loop = None
-        # Store asset_types for use in processor
-        self._worker_asset_types = asset_types
-        try:
-            # Create new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            self._event_loop = loop
-            
-            async def setup_and_run():
-                # Ensure running flag is set
-                self._data_stream_running = True
-                
-                # Database is already connected in initialize()
-                # Initialize data queue and semaphore for concurrency control
-                self._data_queue = asyncio.Queue(maxsize=1000)  # Buffer up to 1000 items
-                self._data_semaphore = asyncio.Semaphore(self._max_concurrent_writes)
-                
-                logger.info(f"| ✅ Data queue initialized")
-                
-                # Start background data processor
-                processor_task = asyncio.create_task(self._data_processor())
-                logger.info(f"| ✅ Data processor started")
-                
-                # Ensure tables exist for all data types using handlers
-                for symbol in symbols:
-                    asset_type = asset_types.get(symbol, AssetClass.US_EQUITY)
-                    # Ensure bars table exists
-                    if self._bars_handler:
-                        await self._bars_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ Bars table created/verified for {symbol}")
-                    # Ensure quotes table exists
-                    if self._quotes_handler:
-                        await self._quotes_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ Quotes table created/verified for {symbol}")
-                    # Ensure trades table exists
-                    if self._trades_handler:
-                        await self._trades_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ Trades table created/verified for {symbol}")
-                    # Ensure orderbooks table exists (crypto only)
-                    if asset_type == AssetClass.CRYPTO and self._orderbooks_handler:
-                        await self._orderbooks_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ Orderbooks table created/verified for {symbol}")
-                
-                # Create news table (news is global, not per-symbol)
-                if self._news_handler:
-                    await self._news_handler.ensure_table_exists(symbol)
-                logger.info(f"| ✅ News table created/verified")
-                
-                # Subscribe to streams
-                # Alpaca SDK requires async handlers
-                # Create async handlers that schedule operations to our event loop
-                for symbol in symbols:
-                    asset_type = asset_types.get(symbol, AssetClass.US_EQUITY)
-                    
-                    # Create async handlers with proper closure to capture symbol and asset_type
-                    def create_handler(handler_wrapper_func, sym, atype):
-                        async def handler(data):
-                            # Schedule async operation in our event loop
-                            # Check if event loop is still valid and running
-                            if not self._data_stream_running:
-                                # Stream is stopping, ignore new data
-                                return
-                            try:
-                                if self._event_loop and self._event_loop.is_running() and not self._event_loop.is_closed():
-                                    asyncio.run_coroutine_threadsafe(
-                                        handler_wrapper_func(data, atype, sym),
-                                        self._event_loop
-                                    )
-                                else:
-                                    # Event loop not available, ignore (stream is stopping)
-                                    logger.debug(f"| Event loop not available when handler called for {sym}")
-                            except RuntimeError as e:
-                                # RuntimeError can occur during interpreter shutdown
-                                if "interpreter shutdown" in str(e) or "cannot schedule" in str(e).lower():
-                                    logger.debug(f"| Cannot schedule coroutine (interpreter shutdown): {e}")
-                                else:
-                                    logger.warning(f"| ⚠️  Error scheduling coroutine for {sym}: {e}")
-                            except Exception as e:
-                                logger.debug(f"| Error in handler for {sym}: {e}")
-                        return handler
-                    
-                    # Create handlers for this symbol
-                    quotes_handler = create_handler(self._quotes_handler_wrapper, symbol, asset_type)
-                    trades_handler = create_handler(self._trades_handler_wrapper, symbol, asset_type)
-                    bars_handler = create_handler(self._bars_handler_wrapper, symbol, asset_type)
-                    orderbooks_handler = create_handler(self._orderbooks_handler_wrapper, symbol, asset_type)
-                    news_handler = create_handler(self._news_handler_wrapper, symbol, asset_type)
-                    
-                    if asset_type == AssetClass.CRYPTO:
-                        self._crypto_data_stream.subscribe_quotes(quotes_handler, symbol)
-                        self._crypto_data_stream.subscribe_trades(trades_handler, symbol)
-                        self._crypto_data_stream.subscribe_bars(bars_handler, symbol)
-                        self._crypto_data_stream.subscribe_orderbooks(orderbooks_handler, symbol)
-                        logger.info(f"| 📡 Subscribed to crypto data (quotes, trades, bars, orderbooks) for {symbol}")
-                    elif asset_type == AssetClass.US_EQUITY:
-                        self._stock_data_stream.subscribe_quotes(quotes_handler, symbol)
-                        self._stock_data_stream.subscribe_trades(trades_handler, symbol)
-                        self._stock_data_stream.subscribe_bars(bars_handler, symbol)
-                        logger.info(f"| 📡 Subscribed to stock data (quotes, trades, bars) for {symbol}")
-                
-                    self._news_data_stream.subscribe_news(news_handler, symbol)
-                    logger.info(f"| 📡 Subscribed to news data for {symbol}")
-                
-                logger.info(f"| ✅ All subscriptions completed for {len(symbols)} symbols")
-                
-                # Run streams in separate threads (they are blocking)
-                def run_crypto_stream():
-                    try:
-                        if self._crypto_data_stream:
-                            logger.info("| 🚀 Starting crypto data stream...")
-                            self._crypto_data_stream.run()
-                    except Exception as e:
-                        logger.error(f"| ❌ Error in crypto stream: {e}")
-                
-                def run_stock_stream():
-                    try:
-                        if self._stock_data_stream:
-                            logger.info("| 🚀 Starting stock data stream...")
-                            self._stock_data_stream.run()
-                    except Exception as e:
-                        logger.error(f"| ❌ Error in stock stream: {e}")
-                
-                def run_news_stream():
-                    try:
-                        if self._news_data_stream:
-                            logger.info("| 🚀 Starting news data stream...")
-                            self._news_data_stream.run()
-                    except Exception as e:
-                        logger.error(f"| ❌ Error in news stream: {e}")
-                
-                # Use executor as instance variable to avoid resource cleanup issues
-                executor = None
-                futures = []
-                try:
-                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-                    if self._crypto_data_stream:
-                        futures.append(executor.submit(run_crypto_stream))
-                    if self._stock_data_stream:
-                        futures.append(executor.submit(run_stock_stream))
-                    if self._news_data_stream:
-                        futures.append(executor.submit(run_news_stream))
-                    
-                    logger.info(f"| ✅ All streams started in background threads")
-                    
-                    # Run processor in async while streams run in threads
-                    # Keep the event loop running to process data
-                    try:
-                        # Wait for processor task (it runs in a loop)
-                        # Use asyncio.sleep to keep the loop alive
-                        while self._data_stream_running:
-                            await asyncio.sleep(1.0)
-                            # Check if processor task is still running
-                            if processor_task.done():
-                                logger.warning("| ⚠️  Data processor task completed unexpectedly")
-                                break
-                    except asyncio.CancelledError:
-                        pass
-                    except Exception as e:
-                        logger.error(f"| ❌ Error in processor: {e}")
-                    finally:
-                        # Stop streams FIRST to prevent new handlers from being called
-                        logger.info("| 🛑 Stopping streams...")
-                        if self._crypto_data_stream:
-                            try:
-                                self._crypto_data_stream.stop()
-                            except Exception as e:
-                                logger.debug(f"| Error stopping crypto stream: {e}")
-                        if self._stock_data_stream:
-                            try:
-                                self._stock_data_stream.stop()
-                            except Exception as e:
-                                logger.debug(f"| Error stopping stock stream: {e}")
-                        if self._news_data_stream:
-                            try:
-                                self._news_data_stream.stop()
-                            except Exception as e:
-                                logger.debug(f"| Error stopping news stream: {e}")
-                        
-                        # Wait a bit for streams to fully stop before stopping processor
-                        try:
-                            await asyncio.sleep(0.1)
-                        except:
-                            pass
-                        
-                        # Stop processor
-                        if not processor_task.done():
-                            try:
-                                await self._data_queue.put(None)  # Poison pill
-                            except (RuntimeError, asyncio.CancelledError):
-                                # Queue might be closed or event loop shutting down
-                                pass
-                            try:
-                                processor_task.cancel()
-                            except:
-                                pass
-                        try:
-                            await processor_task
-                        except (asyncio.CancelledError, RuntimeError):
-                            pass
-                        
-                        # Wait for streams to finish and shutdown executor
-                        for future in futures:
-                            try:
-                                future.cancel()
-                            except:
-                                pass
-                        # Shutdown executor gracefully
-                        if executor:
-                            try:
-                                executor.shutdown(wait=False, cancel_futures=True)
-                            except (RuntimeError, Exception) as e:
-                                # Ignore shutdown errors during interpreter shutdown
-                                logger.debug(f"| Executor shutdown error (expected during shutdown): {e}")
-                except Exception as e:
-                    logger.error(f"| ❌ Error in stream executor: {e}")
-                    if executor:
-                        try:
-                            executor.shutdown(wait=False, cancel_futures=True)
-                        except:
-                            pass
-            
-            loop.run_until_complete(setup_and_run())
-            
-        except KeyboardInterrupt:
-            logger.info("| 🛑 Data stream stopped by user")
-            self._data_stream_running = False
-        except Exception as e:
-            logger.error(f"| ❌ Error in data stream worker: {e}")
-            self._data_stream_running = False
-        finally:
-            # Clear event loop reference and stop accepting new handlers
-            self._data_stream_running = False
-            self._event_loop = None
-            if loop:
-                try:
-                    # Cancel all pending tasks
-                    pending = asyncio.all_tasks(loop)
-                    for task in pending:
-                        try:
-                            task.cancel()
-                        except:
-                            pass
-                    # Wait for tasks to complete cancellation (with timeout)
-                    if pending:
-                        try:
-                            loop.run_until_complete(asyncio.wait_for(
-                                asyncio.gather(*pending, return_exceptions=True),
-                                timeout=1.0
-                            ))
-                        except (asyncio.TimeoutError, RuntimeError):
-                            # Ignore timeout/runtime errors during shutdown
-                            pass
-                except Exception as e:
-                    logger.debug(f"| Error cancelling tasks: {e}")
-                try:
-                    loop.close()
-                except Exception as e:
-                    logger.debug(f"| Error closing loop: {e}")
-    
     def start_data_stream(self, symbols: List[str], asset_types: Optional[Dict[str, AssetClass]] = None) -> None:
         """Start real-time data stream collection for given symbols.
         
-        This method starts a background daemon thread that will collect real-time data
-        from Alpaca streams and write it to the database. The thread runs in the background
-        and will NOT block the main process.
+        This method delegates to the DataProducer.
         
         Args:
             symbols: List of symbols to subscribe to (e.g., ["BTC/USD", "AAPL"])
             asset_types: Optional dictionary mapping symbol to asset class (AssetClass)
                         If not provided, will be determined from symbol format
         """
-        if self._data_stream_running:
-            logger.warning("| ⚠️  Data stream is already running")
-            return
-        
-        if not hasattr(self, 'database_service') or self.database_service is None:
-            raise AlpacaError("Database service not initialized. Call initialize() first.")
-        
-        # Determine asset types if not provided
-        asset_types = {}
-        for symbol in symbols:
-            if symbol not in self.symbols:
-                logger.warning(f"| ⚠️  Symbol {symbol} not found in symbols list. Trying to determine asset class from symbol format...")
-                # Try to determine asset class from symbol format
-                if "/" in symbol:  # Crypto symbols typically contain "/"
-                    asset_types[symbol] = AssetClass.CRYPTO
-                    logger.info(f"| 📝 Detected {symbol} as CRYPTO based on symbol format")
-                else:
-                    asset_types[symbol] = AssetClass.US_EQUITY
-                    logger.info(f"| 📝 Detected {symbol} as US_EQUITY based on symbol format")
-            else:
-                asset_types[symbol] = self.symbols[symbol]['asset_class']
-        
-        # Set running flag before starting thread
-        self._data_stream_running = True
-        
-        # Start worker thread (daemon=True so it doesn't block main process)
-        # The thread runs in background and will be cleaned up when main process exits
-        self._data_stream_thread = threading.Thread(
-            target=self._data_stream_worker,
-            args=(symbols, asset_types),
-            daemon=True  # Daemon thread so it doesn't block main process
-        )
-        self._data_stream_thread.start()
-        logger.info(f"| 🚀 Started data stream for {len(symbols)} symbols (non-blocking)")
+        if not self.data_producer:
+            raise AlpacaError("Data producer not initialized. Call initialize() first.")
+        self.data_producer.start(symbols, asset_types)
     
     def stop_data_stream(self) -> None:
-        """Stop the data stream."""
-        if not self._data_stream_running:
-            logger.warning("| ⚠️  Data stream is not running")
+        """Stop the data stream.
+        
+        This method delegates to the DataProducer.
+        """
+        if not self.data_producer:
+            logger.warning("| ⚠️  Data producer not initialized")
             return
-        
-        logger.info("| 🛑 Stopping data stream...")
-        self._data_stream_running = False
-        
-        # Stop streams first
-        if self._crypto_data_stream:
-            try:
-                self._crypto_data_stream.stop()
-            except Exception as e:
-                logger.debug(f"| Error stopping crypto stream: {e}")
-        
-        if self._stock_data_stream:
-            try:
-                self._stock_data_stream.stop()
-            except Exception as e:
-                logger.debug(f"| Error stopping stock stream: {e}")
-        
-        if self._news_data_stream:
-            try:
-                self._news_data_stream.stop()
-            except Exception as e:
-                logger.debug(f"| Error stopping news stream: {e}")
-        
-        # Wait for thread to finish (with timeout)
-        if self._data_stream_thread and self._data_stream_thread.is_alive():
-            try:
-                self._data_stream_thread.join(timeout=5)
-                if self._data_stream_thread.is_alive():
-                    logger.warning("| ⚠️  Data stream thread did not finish within timeout")
-            except Exception as e:
-                logger.debug(f"| Error joining thread: {e}")
-        
-        logger.info("| 🛑 Data stream stopped")
-        
-        
-    async def _get_data_from_handler(
-        self, 
-        symbol: str, 
-        data_type: DataStreamType, 
-        start_date: Optional[str] = None, 
-        end_date: Optional[str] = None, 
-        limit: Optional[int] = None
-    ) -> List[Dict]:
-        """Helper method to get data for a single symbol and data_type."""
-        # Determine asset type from symbol
-        if data_type == DataStreamType.QUOTES:
-            return await self._quotes_handler.get_data(symbol, start_date, end_date, limit)
-        elif data_type == DataStreamType.TRADES:
-            return await self._trades_handler.get_data(symbol, start_date, end_date, limit)
-        elif data_type == DataStreamType.BARS:
-            return await self._bars_handler.get_data(symbol, start_date, end_date, limit)
-        elif data_type == DataStreamType.ORDERBOOKS:
-            return await self._orderbooks_handler.get_data(symbol, start_date, end_date, limit)
-        elif data_type == DataStreamType.NEWS:
-            return await self._news_handler.get_data(symbol, start_date, end_date, limit)
-        else:
-           raise ValueError(f"Invalid data type: {data_type}")
-       
+        self.data_producer.stop()
+    
     async def get_data(self, request: GetDataRequest) -> ActionResult:
         """Get historical data from database.
+        
+        This method delegates to the DataConsumer.
         
         Args:
             request: GetDataRequest with symbol (str or list), data_type (str or list), 
                     optional start_date, end_date, and limit
-            - If start_date and end_date are provided: returns data in that date range
-            - If not provided: returns latest data (sorted by timestamp DESC)
-            - limit: limits the number of records returned per symbol/data_type combination
             
         Returns:
-            ActionResult with data organized by symbol in extra field:
-            {
-                "symbol1": {
-                    "bars": [...],
-                    "news": [...],
-                    "quotes": [...]
-                },
-                "symbol2": {
-                    "bars": [...],
-                    "trades": [...]
-                }
-            }
+            ActionResult with data organized by symbol in extra field
         """
-        try:
-            if not hasattr(self, 'database_service') or self.database_service is None:
-                raise AlpacaError("Database service not initialized. Call initialize() first.")
-            
-            # Ensure database is connected
-            if not self.database_service._is_connected:
-                await self.database_service.connect()
-            
-            # Normalize symbol and data_type to lists
-            symbols = request.symbol if isinstance(request.symbol, list) else [request.symbol]
-            data_types = request.data_type if isinstance(request.data_type, list) else [request.data_type]
-            data_types = [DataStreamType(data_type) for data_type in data_types]
-            
-            # Organize data by symbol
-            result_data: Dict[str, Dict[str, List[Dict]]] = {}
-            total_rows = 0
-            
-            # Get data for each symbol and data_type combination
-            for symbol in symbols:
-                result_data[symbol] = {}
-                
-                for data_type in data_types:
-                    logger.info(f"| 🔍 Getting {data_type.value} data for {symbol}...")
-                    data = await self._get_data_from_handler(
-                        symbol=symbol,
-                        data_type=data_type,
-                        start_date=request.start_date,
-                        end_date=request.end_date,
-                        limit=request.limit
-                    )
-                    result_data[symbol][data_type.value] = data
-                    total_rows += len(data)
-                    logger.info(f"| ✅ Retrieved {len(data)} {data_type.value} records for {symbol}")
-            
-            # Build message
-            symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"
-            data_type_str = ", ".join([datatype.value for datatype in data_types]) if len(data_types) <= 10 else f"{len(data_types)} types"
-            
-            if request.start_date and request.end_date:
-                message = f"Retrieved {total_rows} records ({data_type_str}) for {symbol_str} from {request.start_date} to {request.end_date}."
-            else:
-                message = f"Retrieved {total_rows} latest records ({data_type_str}) for {symbol_str}."
-            
-            return ActionResult(
-                success=True,
-                message=message,
-                extra={
-                    "data": result_data,
-                    "symbols": symbols,
-                    "data_types": data_types,
-                    "start_date": request.start_date,
-                    "end_date": request.end_date,
-                    "row_count": total_rows
-                }
-            )
-            
-        except Exception as e:
-            raise AlpacaError(f"Failed to get data: {e}.")
+        if not self.data_consumer:
+            raise AlpacaError("Data consumer not initialized. Call initialize() first.")
+        return await self.data_consumer.get_data(request)
     
     # Order methods
     async def create_order(self, request: CreateOrderRequest) -> ActionResult:
