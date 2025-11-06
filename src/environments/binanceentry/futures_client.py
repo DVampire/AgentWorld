@@ -154,6 +154,29 @@ class BinanceFuturesClient:
         
         return self._request('GET', '/fapi/v2/positionRisk', params=params, signed=True)
     
+    def get_position_mode(self) -> Dict[str, Any]:
+        """Get current position mode (one-way or hedge mode).
+        
+        Returns:
+            Result dictionary with 'dualSidePosition' field (True for hedge mode, False for one-way mode)
+        """
+        return self._request('GET', '/fapi/v1/positionSide/dual', params={}, signed=True)
+    
+    def set_position_mode(self, dual_side_position: bool) -> Dict[str, Any]:
+        """Set position mode.
+        
+        Args:
+            dual_side_position: True for hedge mode (allows both LONG and SHORT positions), 
+                               False for one-way mode (net position only)
+            
+        Returns:
+            Result dictionary
+        """
+        params = {
+            'dualSidePosition': 'true' if dual_side_position else 'false'
+        }
+        return self._request('POST', '/fapi/v1/positionSide/dual', params=params, signed=True)
+    
     def set_leverage(self, symbol: str, leverage: int) -> Dict[str, Any]:
         """Set leverage for a symbol.
         
@@ -190,11 +213,15 @@ class BinanceFuturesClient:
             quantity: Order quantity
             price: Order price (required for LIMIT orders)
             timeInForce: Time in force (required for LIMIT orders)
-            positionSide: Position side ('LONG', 'SHORT', 'BOTH')
+            positionSide: Position side ('LONG', 'SHORT') - only used in hedge mode
             **kwargs: Additional order parameters
             
         Returns:
             Order information dictionary
+            
+        Note:
+            - If account is in one-way mode, positionSide should NOT be specified
+            - If account is in hedge mode, positionSide MUST be specified ('LONG' or 'SHORT')
         """
         params = {
             'symbol': symbol,
@@ -208,8 +235,31 @@ class BinanceFuturesClient:
             params['price'] = price
         if timeInForce:
             params['timeInForce'] = timeInForce
-        if positionSide:
-            params['positionSide'] = positionSide
+        
+        # Check position mode and handle positionSide accordingly
+        try:
+            position_mode = self.get_position_mode()
+            is_hedge_mode = position_mode.get('dualSidePosition', False)
+            
+            if is_hedge_mode:
+                # Hedge mode: positionSide is required
+                if positionSide:
+                    params['positionSide'] = positionSide
+                else:
+                    logger.warning(f"| ⚠️  Hedge mode detected but positionSide not specified. Defaulting to 'BOTH'")
+                    # In hedge mode, if not specified, we might need to determine based on side
+                    # But typically, positionSide should be explicitly provided
+            else:
+                # One-way mode: positionSide should NOT be specified
+                if positionSide:
+                    logger.warning(f"| ⚠️  One-way mode detected but positionSide specified ({positionSide}). Removing positionSide parameter.")
+                    # Don't add positionSide in one-way mode
+        except Exception as e:
+            # If we can't get position mode, use the provided positionSide (if any)
+            # This allows the API to return the error if it's wrong
+            logger.warning(f"| ⚠️  Could not get position mode: {e}. Using provided positionSide: {positionSide}")
+            if positionSide:
+                params['positionSide'] = positionSide
         
         return self._request('POST', '/fapi/v1/order', params=params, signed=True)
     

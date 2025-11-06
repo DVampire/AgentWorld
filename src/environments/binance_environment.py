@@ -669,9 +669,9 @@ class BinanceEnvironment(BaseEnvironment):
                 description="Step the trading environment for perpetual futures trading.")
     async def step(self, 
                    symbol: str = "BTCUSDT", 
-                   action: str = "HOLD",  # LONG, SHORT, CLOSE, HOLD
+                   action: str = "HOLD",  # LONG, SHORT, HOLD
                    qty: float = 0.00,
-                   leverage: Optional[int] = None,
+                   leverage: Optional[int] = 10,
                    ) -> Dict[str, Any]:
         """Step the trading environment for perpetual futures trading.
         
@@ -680,10 +680,9 @@ class BinanceEnvironment(BaseEnvironment):
             action (str): Trading action for perpetual futures:
                 - 'LONG': Open long position (BUY with LONG positionSide)
                 - 'SHORT': Open short position (SELL with SHORT positionSide)
-                - 'CLOSE': Close all positions (opposite side with current positionSide)
                 - 'HOLD': Do nothing (default)
             qty (float): Quantity to trade (default: 0.00)
-            leverage (int): Optional leverage for perpetual futures
+            leverage (int): Leverage for perpetual futures (default: 10x)
         Returns:
             Dictionary with success, message, and order information
         """
@@ -713,47 +712,10 @@ class BinanceEnvironment(BaseEnvironment):
                     leverage=leverage,
                     position_side="SHORT"
                 )
-            elif action == "CLOSE":
-                # Close positions: need to check current position and close opposite
-                # For simplicity, close both LONG and SHORT positions
-                # Close LONG: SELL with LONG positionSide
-                # Close SHORT: BUY with SHORT positionSide
-                # We'll close both sides if qty is provided
-                results = []
-                if qty > 0:
-                    # Try to close LONG position
-                    result_long = await self.create_order(
-                        symbol=symbol,
-                        side="sell",
-                        qty=qty,
-                        position_side="LONG"
-                    )
-                    results.append(result_long)
-                    
-                    # Try to close SHORT position
-                    result_short = await self.create_order(
-                        symbol=symbol,
-                        side="buy",
-                        qty=qty,
-                        position_side="SHORT"
-                    )
-                    results.append(result_short)
-                    
-                    return {
-                        "success": all(r.get("success", False) for r in results),
-                        "message": f"CLOSE action: Attempted to close positions. Results: {[r.get('message', '') for r in results]}",
-                        "extra": {"results": results}
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "message": "CLOSE action requires qty > 0",
-                        "extra": {"error": "qty must be greater than 0 for CLOSE action"}
-                    }
             else:
                 return {
                     "success": False,
-                    "message": f"Invalid action: {action}. Must be LONG, SHORT, CLOSE, or HOLD",
+                    "message": f"Invalid action: {action}. Must be LONG, SHORT, or HOLD",
                     "extra": {"error": f"Invalid action: {action}"}
                 }
             

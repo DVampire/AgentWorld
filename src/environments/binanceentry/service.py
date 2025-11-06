@@ -526,6 +526,20 @@ class BinanceService:
                 # Set leverage if provided
                 futures_client = self._futures_clients[request.account_name]
                 
+                # Check and set position mode if positionSide is specified
+                # If positionSide is provided, we need hedge mode (dual-side position)
+                if request.position_side:
+                    try:
+                        position_mode = await asyncio.to_thread(futures_client.get_position_mode)
+                        is_hedge_mode = position_mode.get('dualSidePosition', False)
+                        
+                        if not is_hedge_mode:
+                            # Switch to hedge mode to support positionSide
+                            logger.info(f"| 🔄 Switching to hedge mode (dual-side position) to support positionSide={request.position_side}")
+                            await asyncio.to_thread(futures_client.set_position_mode, dual_side_position=True)
+                    except Exception as e:
+                        logger.warning(f"| ⚠️  Could not check/set position mode: {e}. Proceeding with order creation.")
+                
                 # Set leverage if provided
                 if request.leverage is not None:
                     await asyncio.to_thread(
