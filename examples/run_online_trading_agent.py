@@ -19,7 +19,7 @@ from src.environments import ecp
 from src.agents import acp
 from src.transformation import transformation
 from src.infrastructures.models import model_manager
-from src.environments.alpacaentry.service import AlpacaService
+from src.environments.binanceentry import BinanceService
 from src.utils import get_env
 
 def parse_args():
@@ -51,20 +51,24 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize Alpaca service
-    logger.info("| 🔧 Initializing Alpaca service...")
-    accounts = get_env("ALPACA_ACCOUNTS").get_secret_value()
-    if accounts:
-        accounts = json.loads(accounts)
-    else:
-        accounts = None
-    config.alpaca_service.update(dict(accounts=accounts))
-    alpaca_service = AlpacaService(**config.alpaca_service)
-    await alpaca_service.initialize()
+    # Initialize Binance service
+    logger.info("| 🔧 Initializing Binance service...")
+    binance_service = None
+    try:
+        accounts = get_env("BINANCE_ACCOUNTS").get_secret_value()
+        if accounts:
+            accounts = json.loads(accounts)
+            config.binance_service.update(dict(accounts=accounts))
+            binance_service = BinanceService(**config.binance_service)
+        else:
+            raise ImportError("BINANCE_ACCOUNTS is not set in .env file.")
+    except Exception as e:
+        raise ImportError(f"Error initializing BinanceService: {e}") from e
+    await binance_service.initialize()
     for env_name in config.env_names:
         env_config = config.get(f"{env_name}_environment", None)
-        env_config.update(dict(alpaca_service=alpaca_service))
-    logger.info(f"| ✅ Alpaca service initialized.")
+        env_config.update(dict(binance_service=binance_service))
+    logger.info(f"| ✅ Binance service initialized.")
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
@@ -87,7 +91,7 @@ async def main():
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
     # Example task
-    task = "Start trading on BTC/USD and maximize the profit until the environment is done."
+    task = "Start trading on BTCUSDT,ETHUSDT simultaneously and maximize the profit until the environment is done."
     files = []
     
     logger.info(f"| 📋 Task: {task}")

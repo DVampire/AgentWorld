@@ -48,6 +48,7 @@ from src.environments.alpacaentry.producer import DataProducer
 from src.environments.alpacaentry.consumer import DataConsumer
 from src.environments.database.service import DatabaseService
 from src.utils import assemble_project_path
+from src.config import config
 
 
 class AlpacaService:
@@ -131,6 +132,9 @@ class AlpacaService:
             auto_start_data_stream: If True, automatically start data stream after initialization
         """
         try:
+            self.base_dir = Path(assemble_project_path(self.base_dir))
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+            
             # Initialize trading client (paper trading only)
             self._trading_clients = {
                 account.name: TradingClient(

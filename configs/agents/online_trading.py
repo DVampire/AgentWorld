@@ -7,7 +7,7 @@ online_trading_agent = dict(
     prompt_name = "online_trading",
     memory_config = None,
     max_tools = 10,
-    max_steps = 50,
+    max_steps = -1,
     review_steps = 5,
     log_max_length = 1000,
 )

@@ -8,6 +8,7 @@ from .operator_browser_environment import OperatorBrowserEnvironment
 from .mobile_environment import MobileEnvironment
 from .anthropic_mobile_environment import AnthropicMobileEnvironment
 from .alpaca_environment import AlpacaEnvironment
+from .binance_environment import BinanceEnvironment
 from .protocol import ecp
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "MobileEnvironment",
     "AnthropicMobileEnvironment",
     "AlpacaEnvironment",
+    "BinanceEnvironment",
     "ecp",
 ]

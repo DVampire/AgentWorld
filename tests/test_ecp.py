@@ -21,7 +21,7 @@ from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.tools import tcp
 from src.utils import assemble_project_path
-from src.environments.alpacaentry.service import AlpacaService
+from src.environments.binanceentry.service import BinanceService
 from src.utils import get_env
 
 def parse_args():
@@ -156,14 +156,14 @@ async def test_operator_browser():
         }
     )
     logger.info(f"| 📝 Result: {res}")
-    
-async def test_alpaca():
+        
+async def test_binance():
     # get account
-    env = ecp.get("alpaca")
+    env = ecp.get("binance")
     
     while True:
         res = await env.get_data()
-        logger.info(f"| 📝 Result: {res['extra']['data']['BTC/USD']['bars']}")
+        logger.info(f"| 📝 Result: {res['extra']['data']['BTCUSDT']['klines']}")
         await asyncio.sleep(1)
     
 async def main():
@@ -180,20 +180,20 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize Alpaca service
-    logger.info("| 🔧 Initializing Alpaca service...")
-    accounts = get_env("ALPACA_ACCOUNTS").get_secret_value()
+    # Initialize Binance service
+    logger.info("| 🔧 Initializing Binance service...")
+    accounts = get_env("BINANCE_ACCOUNTS").get_secret_value()
     if accounts:
         accounts = json.loads(accounts)
     else:
         accounts = None
-    config.alpaca_service.update(dict(accounts=accounts))
-    alpaca_service = AlpacaService(**config.alpaca_service)
-    await alpaca_service.initialize()
+    config.binance_service.update(dict(accounts=accounts))
+    binance_service = BinanceService(**config.binance_service)
+    await binance_service.initialize()
     for env_name in config.env_names:
         env_config = config.get(f"{env_name}_environment", None)
-        env_config.update(dict(alpaca_service=alpaca_service))
-    logger.info(f"| ✅ Alpaca service initialized.")
+        env_config.update(dict(binance_service=binance_service))
+    logger.info(f"| ✅ Binance service initialized.")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
@@ -209,7 +209,7 @@ async def main():
     # await test_file_system()
     # await test_github()
     # await test_operator_browser()
-    await test_alpaca()
+    await test_binance()
     
 
 if __name__ == "__main__":

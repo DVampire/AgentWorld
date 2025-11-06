@@ -17,3 +17,23 @@ max_tokens = 16384
 
 #---------------Window Size Config---------------
 window_size = (1024, 768)
+
+#---------------ALPACA SERVICE CONFIG---------------
+alpaca_service = dict(
+    base_dir=workdir,
+    accounts=None,
+    live=False,
+    auto_start_data_stream=True,
+    symbol=["BTC/USD"],
+    data_type=["bars"],
+)
+
+#---------------BINANCE SERVICE CONFIG---------------
+binance_service = dict(
+    base_dir=workdir,
+    accounts=None,
+    live=False,
+    auto_start_data_stream=True,
+    symbol=["BTCUSDT"],
+    data_type=["klines"],
+)
