@@ -21,7 +21,7 @@ from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.tools import tcp
 from src.utils import assemble_project_path
-from src.environments.binanceentry.service import BinanceService
+from src.environments.hyperliquidentry.service import HyperliquidService
 from src.utils import get_env
 
 def parse_args():
@@ -172,6 +172,22 @@ async def test_binance():
         logger.info(f"| 📝 Result: {res['extra']['data']['BTCUSDT']['klines']}")
         await asyncio.sleep(1)
     
+
+async def test_hyperliquid():
+    # get account
+    env = ecp.get("hyperliquid")
+    
+    account= await env.get_account()
+    logger.info(f"| 📝 Account: {account}")
+    
+    positions= await env.get_positions()
+    logger.info(f"| 📝 Positions: {positions}")
+    
+    while True:
+        res = await env.get_data()
+        logger.info(f"| 📝 Result: {res['extra']['data']['BTC']['candle']}")
+        await asyncio.sleep(1)
+    
 async def main():
     
     args = parse_args()
@@ -186,20 +202,18 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize Binance service
-    logger.info("| 🔧 Initializing Binance service...")
-    accounts = get_env("BINANCE_ACCOUNTS").get_secret_value()
+    # Initialize Hyperliquid service
+    logger.info("| 🔧 Initializing Hyperliquid service...")
+    accounts = get_env("HYPERLIQUID_ACCOUNTS").get_secret_value()
     if accounts:
         accounts = json.loads(accounts)
-    else:
-        accounts = None
-    config.binance_service.update(dict(accounts=accounts))
-    binance_service = BinanceService(**config.binance_service)
-    await binance_service.initialize()
+    config.hyperliquid_service.update(dict(accounts=accounts))
+    hyperliquid_service = HyperliquidService(**config.hyperliquid_service)
+    await hyperliquid_service.initialize()
     for env_name in config.env_names:
         env_config = config.get(f"{env_name}_environment", None)
-        env_config.update(dict(binance_service=binance_service))
-    logger.info(f"| ✅ Binance service initialized.")
+        env_config.update(dict(hyperliquid_service=hyperliquid_service))
+    logger.info(f"| ✅ Hyperliquid service initialized.")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
@@ -215,7 +229,8 @@ async def main():
     # await test_file_system()
     # await test_github()
     # await test_operator_browser()
-    await test_binance()
+    # await test_binance()
+    await test_hyperliquid()
     
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@ class HyperliquidService:
         
         Args:
             base_dir: Base directory for Hyperliquid operations
-            accounts: List of account dictionaries, each containing wallet_address and optional private_key
+            accounts: List of account dictionaries, each containing address and optional private_key
             live: Whether to use live trading (True) or testnet (False)
             auto_start_data_stream: If True, automatically start data stream after initialization
             symbol: Optional symbol(s) to subscribe to
@@ -74,12 +74,12 @@ class HyperliquidService:
             accounts = [
                 {
                     "name": "Account 1",
-                    "wallet_address": "0x...",
+                    "address": "0x...",  # Wallet address
                     "private_key": "0x...",  # Optional, required for trading
                 },
                 {
                     "name": "Account 2",
-                    "wallet_address": "0x...",
+                    "address": "0x...",
                     "private_key": "0x...",
                 }
             ]
@@ -130,8 +130,8 @@ class HyperliquidService:
         if account_name not in self._clients:
             account = self.accounts[account_name]
             self._clients[account_name] = HyperliquidClient(
-                wallet_address=account.api_key,  # Using api_key field for wallet_address
-                private_key=account.api_secret if account.api_secret else None,
+                wallet_address=account.address,  # Wallet address
+                private_key=account.private_key if account.private_key else None,
                 testnet=self.testnet
             )
         return self._clients[account_name]
@@ -154,8 +154,8 @@ class HyperliquidService:
             # Initialize default client
             for account_name, account in self.accounts.items():
                 self._clients[account_name] = HyperliquidClient(
-                    wallet_address=account.api_key,  # Using api_key field for wallet_address
-                    private_key=account.api_secret if account.api_secret else None,
+                    wallet_address=account.address,  # Wallet address
+                    private_key=account.private_key if account.private_key else None,
                     testnet=self.testnet
                 )
             

@@ -557,6 +557,20 @@ class CandleHandler:
             logger.warning(f"| ⚠️  Candle table {candle_table_name} does not exist for {symbol}")
             return []
         
+        # Debug: Check total row count
+        count_query = f"SELECT COUNT(*) as count FROM {candle_table_name}"
+        count_result = await self.database_service.execute_query(QueryRequest(query=count_query))
+        if count_result.success:
+            count = count_result.extra.get("data", [{}])[0].get("count", 0)
+            logger.info(f"| 🔍 Querying candles for {symbol}: table {candle_table_name} has {count} rows")
+        
+        # Check if indicators table exists
+        check_indicators_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{indicators_table_name}'"
+        check_indicators_result = await self.database_service.execute_query(
+            QueryRequest(query=check_indicators_query)
+        )
+        has_indicators_table = check_indicators_result.success and check_indicators_result.extra.get("data")
+        
         # Build query for candles based on whether date range is provided
         if start_date and end_date:
             query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC, open_time ASC"
@@ -585,6 +599,11 @@ class CandleHandler:
                 query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? AND timestamp = ? ORDER BY timestamp ASC, open_time ASC"
                 parameters = (symbol, latest_timestamp)
         
+        # Debug: Log the query being executed
+        logger.debug(f"| 🔍 Executing query for {symbol}: {query}")
+        if parameters:
+            logger.debug(f"| 🔍 Query parameters: {parameters}")
+        
         result = await self.database_service.execute_query(
             QueryRequest(query=query, parameters=parameters)
         )
@@ -604,13 +623,6 @@ class CandleHandler:
         # If limit was specified and we're not using date range, reverse to get chronological order
         if limit and not start_date and not end_date:
             candle_data.reverse()
-        
-        # If indicators table exists, fetch indicators for the same timestamps
-        check_indicators_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{indicators_table_name}'"
-        check_indicators_result = await self.database_service.execute_query(
-            QueryRequest(query=check_indicators_query)
-        )
-        has_indicators_table = check_indicators_result.success and check_indicators_result.extra.get("data")
         
         if has_indicators_table and candle_data:
             # Get all timestamps from candle data

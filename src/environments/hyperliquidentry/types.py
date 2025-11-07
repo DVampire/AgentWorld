@@ -31,9 +31,9 @@ class TradeType(str, Enum):
 
 class AccountInfo(BaseModel):
     """Hyperliquid account model."""
-    api_key: str  # Wallet address
-    api_secret: Optional[str] = None  # Private key for signing (optional, required for trading)
     name: str
+    address: str  # Wallet address (e.g., "0x...")
+    private_key: Optional[str] = None  # Private key for signing (optional, required for trading)
 
 
 class GetAccountRequest(BaseModel):

@@ -49,8 +49,10 @@ class HyperliquidClient:
     def _sign_message(self, message: str) -> Optional[str]:
         """Sign a message using wallet private key.
         
+        Hyperliquid uses EIP-191 signature format.
+        
         Args:
-            message: Message to sign
+            message: Message to sign (JSON string)
             
         Returns:
             Signature string or None if signing fails
@@ -65,8 +67,10 @@ class HyperliquidClient:
         
         try:
             account = Account.from_key(self.private_key)
+            # Hyperliquid uses EIP-191 signature format
             message_hash = encode_defunct(text=message)
             signed_message = account.sign_message(message_hash)
+            # Return signature as hex string (130 characters: 0x + 128 hex chars)
             return signed_message.signature.hex()
         except Exception as e:
             logger.error(f"| ❌ Failed to sign message: {e}")
@@ -110,20 +114,24 @@ class HyperliquidClient:
         """
         url = f"{self.base_url}{endpoint}"
         
-        # For signed requests, we may need to include signature in the payload
-        payload = data or {}
+        # For signed requests, Hyperliquid requires signature in the payload
+        payload = data.copy() if data else {}
         
         if signed and self.private_key:
-            # Hyperliquid uses wallet-based authentication
-            # The signature is typically included in the request body
-            # This is a placeholder - actual implementation depends on Hyperliquid's API spec
-            timestamp = int(time.time() * 1000)
-            message = json.dumps(payload) if payload else ""
+            # Hyperliquid uses wallet-based authentication with EIP-191 signatures
+            # The signature is included in the request body
+            # Create the message to sign (JSON string of the payload)
+            message = json.dumps(payload, separators=(',', ':'))  # Compact JSON
             signature = self._sign_message(message)
             
             if signature:
-                payload['signature'] = signature
-                payload['timestamp'] = timestamp
+                # Add signature and wallet address to payload
+                payload['signature'] = {
+                    'r': '0x' + signature[:64],  # First 64 hex chars
+                    's': '0x' + signature[64:128],  # Next 64 hex chars
+                    'v': int(signature[128:130], 16) if len(signature) > 128 else 27  # Recovery ID
+                }
+                payload['wallet'] = self.wallet_address
         
         try:
             if method.upper() == 'GET':
@@ -140,9 +148,11 @@ class HyperliquidClient:
             
         except requests.exceptions.HTTPError as e:
             error_msg = str(e)
-            if response.status_code == 401:
-                raise Exception(f"(401, 'Invalid authentication', {dict(response.headers)}, None)")
-            raise Exception(f"HTTP {response.status_code}: {response.text}")
+            if hasattr(e.response, 'status_code') and e.response.status_code == 401:
+                raise Exception(f"(401, 'Invalid authentication', {dict(e.response.headers)}, None)")
+            if hasattr(e, 'response') and e.response is not None:
+                raise Exception(f"HTTP {e.response.status_code}: {e.response.text}")
+            raise Exception(f"HTTP error: {error_msg}")
         except requests.exceptions.RequestException as e:
             raise Exception(f"Request failed: {str(e)}")
     
@@ -188,49 +198,83 @@ class HyperliquidClient:
         self,
         symbol: str,
         side: str,
-        order_type: str,
-        size: float,
+        order_type: str = "Market",
+        size: float = None,
         price: Optional[float] = None,
         reduce_only: bool = False,
+        time_in_force: str = "Gtc",
         **kwargs
     ) -> Dict[str, Any]:
-        """Create a new order.
+        """Create a new order (perpetual futures order).
+        
+        Default order type is Market order for perpetual futures.
         
         Args:
-            symbol: Trading symbol (e.g., 'BTC')
+            symbol: Trading symbol (e.g., 'BTC', 'ETH')
             side: Order side ('B' for buy, 'A' for sell)
-            order_type: Order type ('Market' or 'Limit')
-            size: Order size
-            price: Order price (required for Limit orders)
-            reduce_only: Whether this is a reduce-only order
+            order_type: Order type ('Market' or 'Limit'). Default: 'Market'
+            size: Order size (in base units, e.g., 0.1 BTC)
+            price: Order price (required for Limit orders, ignored for Market orders)
+            reduce_only: Whether this is a reduce-only order. Default: False
+            time_in_force: Time in force for limit orders ('Gtc', 'Ioc', 'Alo'). Default: 'Gtc'
             **kwargs: Additional order parameters
             
         Returns:
             Order information dictionary
+            
+        Raises:
+            Exception: If private key is not provided or order creation fails
         """
         if not self.private_key:
             raise Exception("Private key required for order creation")
         
-        # Build order payload
+        if size is None or size <= 0:
+            raise Exception("Order size must be provided and greater than 0")
+        
+        if order_type == 'Limit' and price is None:
+            raise Exception("Price is required for Limit orders")
+        
+        # Hyperliquid uses specific order format
+        # Size is in base units (e.g., 0.1 for 0.1 BTC)
+        # Build order payload according to Hyperliquid API format
         order = {
-            'a': int(size * 1e6),  # Size in base units (assuming 6 decimals)
+            'a': size,  # Size in base units (not multiplied by 1e6)
             'b': side,  # 'B' for buy, 'A' for sell
-            'p': str(price) if price else None,
-            'r': reduce_only,
-            's': symbol,
-            't': {'limit': {'tif': 'Gtc'}} if order_type == 'Limit' else {'market': {}},
+            's': symbol,  # Symbol (e.g., 'BTC', 'ETH')
+            'r': reduce_only,  # Reduce only flag
         }
         
-        # Remove None values
-        order = {k: v for k, v in order.items() if v is not None}
+        # Add order type
+        if order_type == 'Limit':
+            order['p'] = str(price)  # Price as string
+            order['t'] = {
+                'limit': {
+                    'tif': time_in_force  # Time in force: 'Gtc', 'Ioc', 'Alo'
+                }
+            }
+        else:
+            # Market order (default)
+            order['t'] = {'market': {}}
         
-        # Hyperliquid requires signed requests for order creation
-        # The actual signing mechanism may differ - this is a placeholder
-        return self._request('POST', '/exchange', data={
-            'action': {'type': 'order', 'orders': [order], 'grouping': 'na'},
-            'nonce': int(time.time() * 1000),
-            'vaultAddress': None,
-        }, signed=True)
+        # Build exchange request payload
+        # Hyperliquid requires action, nonce, and signature
+        nonce = int(time.time() * 1000)
+        
+        payload = {
+            'action': {
+                'type': 'order',
+                'orders': [order],
+                'grouping': 'na'  # No grouping
+            },
+            'nonce': nonce,
+            'vaultAddress': None,  # None for regular trading
+        }
+        
+        # Make signed request
+        logger.info(f"| 📝 Creating {order_type} order: {side} {size} {symbol} at {price if price else 'market price'}")
+        result = self._request('POST', '/exchange', data=payload, signed=True)
+        
+        return result
     
     def get_order(self, order_id: str, symbol: str) -> Dict[str, Any]:
         """Get order status.

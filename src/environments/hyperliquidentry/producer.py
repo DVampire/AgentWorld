@@ -67,10 +67,13 @@ class DataProducer:
             try:
                 if data_type == DataStreamType.CANDLE:
                     result = await self._candle_handler.stream_insert(data, symbol)
-                    if result.get("success"):
+                    # Handle both ActionResult object and dict
+                    success = result.success if hasattr(result, 'success') else result.get("success", False)
+                    message = result.message if hasattr(result, 'message') else result.get("message", "")
+                    if success:
                         logger.info(f"| ✅ Candle data inserted for {symbol} (timestamp: {data.get('timestamp')})")
                     else:
-                        logger.warning(f"| ⚠️  Failed to insert candle data for {symbol}: {result.get('message')}")
+                        logger.warning(f"| ⚠️  Failed to insert candle data for {symbol}: {message}")
                 elif data_type == DataStreamType.TRADES:
                     result = await self._trades_handler.stream_insert(data, symbol)
                     if result:
@@ -188,6 +191,8 @@ class DataProducer:
             self._event_loop = loop
             
             async def setup_and_run():
+                nonlocal data_types  # Allow modification of outer scope variable
+                
                 self._data_stream_running = True
                 self._data_queue = asyncio.Queue(maxsize=1000)
                 self._data_semaphore = asyncio.Semaphore(self._max_concurrent_writes)

@@ -69,7 +69,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             base_dir (str): Base directory for Hyperliquid operations
             account_name (str): Account name to use
             symbol (str or List[str]): Symbol(s) to trade (e.g., 'BTC', ['BTC', 'ETH'])
-            data_type (str or List[str]): Data type(s) to retrieve (default: 'klines')
+            data_type (str or List[str]): Data type(s) to retrieve (default: 'candle')
             hyperliquid_service (HyperliquidService): Hyperliquid service instance
         """
         super().__init__(**kwargs)
@@ -255,7 +255,7 @@ class HyperliquidEnvironment(BaseEnvironment):
         end_date: Optional[str] = None, 
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Get historical klines data from database.
+        """Get historical candle data from database.
         
         Args:
             start_date: Optional start date in format 'YYYY-MM-DD HH:MM:SS' (e.g., '2024-01-01 00:00:00'). If not provided, returns latest data.
@@ -268,7 +268,7 @@ class HyperliquidEnvironment(BaseEnvironment):
         try:
             request = GetDataRequest(
                 symbol=self.symbol,
-                data_type="klines",
+                data_type="candle",
                 start_date=start_date,
                 end_date=end_date,
                 limit=limit
@@ -285,7 +285,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             # Data is organized by symbol: {symbol: {data_type: [...]}}
             data = result.extra.get("data", {})
             symbols = result.extra.get("symbols", [])
-            data_types = result.extra.get("data_type", "klines")
+            data_types = result.extra.get("data_type", "candle")
             row_count = result.extra.get("row_count", 0)
             
             # Format message
@@ -713,7 +713,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             """)
             
             # Get data (placeholder for now)
-            data_request = GetDataRequest(symbol=self.symbol, data_type="klines")
+            data_request = GetDataRequest(symbol=self.symbol, data_type="candle")
             data_result = await self.hyperliquid_service.get_data(data_request)
             
             data_string = dedent(f"""

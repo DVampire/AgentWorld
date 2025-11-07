@@ -9,7 +9,11 @@ from src.logger import logger
 
 
 class HyperliquidWebSocket:
-    """Hyperliquid WebSocket client for candle, trades, and l2Book streaming."""
+    """Hyperliquid WebSocket client for minute-level candle, trades, and l2Book streaming.
+    
+    This WebSocket is designed for minute-level (1m) candle data streaming.
+    All candle subscriptions default to 1-minute intervals.
+    """
     
     def __init__(
         self,
@@ -19,7 +23,7 @@ class HyperliquidWebSocket:
         on_open: Optional[Callable] = None,
         testnet: bool = False
     ):
-        """Initialize Hyperliquid WebSocket client.
+        """Initialize Hyperliquid WebSocket client for minute-level data streaming.
         
         Args:
             on_message: Callback function for messages (ws, channel, data)
@@ -43,8 +47,10 @@ class HyperliquidWebSocket:
         self.ws: Optional[websocket.WebSocketApp] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        # Default interval for minute-level streaming
+        self._default_interval = "1m"
         # Store subscriptions: {channel_type: [symbols]}
-        self._subscribed_candles: List[str] = []  # candle subscriptions
+        self._subscribed_candles: List[str] = []  # candle subscriptions (1m only)
         self._subscribed_trades: List[str] = []  # trades subscriptions
         self._subscribed_l2books: List[str] = []  # l2Book subscriptions
     
@@ -95,13 +101,20 @@ class HyperliquidWebSocket:
         """Handle candle (OHLCV) data.
         
         Args:
-            data: Candle[] array from Hyperliquid
+            data: Candle[] array or single Candle dict from Hyperliquid
         """
-        if not isinstance(data, list):
+        # Handle both single candle object (dict) and candle array (list)
+        if isinstance(data, dict):
+            # Single candle object - convert to list for processing
+            candles = [data]
+        elif isinstance(data, list):
+            # Candle array
+            candles = data
+        else:
             logger.warning(f"| ⚠️  [CANDLE] Unexpected format: {data}")
             return
         
-        for c in data:
+        for c in candles:
             try:
                 # Hyperliquid candle format:
                 # t/T: 开/收时间 (ms), s: symbol, i: interval,
@@ -113,22 +126,20 @@ class HyperliquidWebSocket:
                 # Get timestamps (in milliseconds)
                 open_time_ms = int(c.get("t", 0))
                 close_time_ms = int(c.get("T", 0))
+                # For 1-minute candle, timestamp should be the minute start time
+                # Add 1 second to close_time to get the next minute start (since close_time is :59)
+                timestamp_ms = close_time_ms + 1000  # Add 1 second to get minute start
                 
-                # Calculate minute start time
-                dt = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc)
-                minute_start = dt.replace(second=0, microsecond=0)
-                minute_end = minute_start.replace(second=59, microsecond=999999)
-                
-                open_time = minute_start.strftime('%Y-%m-%d %H:%M:%S')
-                close_time = minute_end.strftime('%Y-%m-%d %H:%M:%S')
-                timestamp = minute_start.strftime('%Y-%m-%d %H:%M:%S')
+                open_time = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                close_time = datetime.fromtimestamp(close_time_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
                 
                 processed_data = {
                     "symbol": symbol,
                     "interval": c.get("i", "1m"),
-                    "timestamp": timestamp,
-                    "open_time": open_time,
-                    "close_time": close_time,
+                    "timestamp": timestamp,  # Use timestamp (minute start time, e.g., 14:55:00)
+                    "open_time": open_time,  # Use minute start time (open_time)
+                    "close_time": close_time,  # Use minute end time (close_time)
                     "open": float(c.get("o", 0)),
                     "high": float(c.get("h", 0)),
                     "low": float(c.get("l", 0)),
@@ -270,18 +281,18 @@ class HyperliquidWebSocket:
         try:
             logger.info("| ✅ WebSocket opened")
             
-            # Subscribe to candles
+            # Subscribe to candles (minute-level only)
             for symbol in self._subscribed_candles:
                 subscribe_msg = {
                     "method": "subscribe",
                     "subscription": {
                         "type": "candle",
                         "coin": symbol,
-                        "interval": "1m"
+                        "interval": self._default_interval  # Always 1m for minute-level streaming
                     }
                 }
                 ws.send(json.dumps(subscribe_msg))
-                logger.info(f"| 📡 Subscribed to candle: {symbol}")
+                logger.info(f"| 📡 Subscribed to minute-level candle: {symbol} (interval: {self._default_interval})")
                 time.sleep(0.1)  # Small delay between subscriptions
             
             # Subscribe to trades
@@ -316,20 +327,23 @@ class HyperliquidWebSocket:
             logger.error(f"| ❌ Error in on_open callback: {e}", exc_info=True)
     
     def subscribe_candle(self, symbol: str, interval: str = "1m"):
-        """Subscribe to candle stream for a symbol.
+        """Subscribe to minute-level candle stream for a symbol.
+        
+        Note: This WebSocket is designed for minute-level (1m) data streaming.
+        Only 1-minute intervals are supported.
         
         Args:
             symbol: Symbol to subscribe (e.g., 'BTC')
-            interval: Candle interval - must be '1m' for minute-level data
+            interval: Candle interval - must be '1m' for minute-level data (default: "1m")
         """
         if interval != "1m":
-            logger.warning(f"| ⚠️  Only 1m interval is supported for minute-level streaming. Got: {interval}")
+            logger.warning(f"| ⚠️  Only 1m interval is supported for minute-level streaming. Got: {interval}, forcing to 1m")
             interval = "1m"
         
         symbol_upper = symbol.upper()
         if symbol_upper not in self._subscribed_candles:
             self._subscribed_candles.append(symbol_upper)
-            logger.info(f"| 📡 Added candle subscription: {symbol_upper}")
+            logger.info(f"| 📡 Added minute-level candle subscription: {symbol_upper} (interval: {interval})")
     
     def subscribe_trades(self, symbol: str):
         """Subscribe to trades stream for a symbol.
