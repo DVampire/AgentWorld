@@ -84,4 +84,7 @@ binance-sdk-spot
 binance-connector
 websocket-client
 
+# Hyperliquid dependencies
+hyperliquid-python-sdk
+
 

@@ -161,6 +161,12 @@ async def test_binance():
     # get account
     env = ecp.get("binance")
     
+    account= await env.get_account()
+    logger.info(f"| 📝 Account: {account}")
+    
+    positions= await env.get_positions()
+    logger.info(f"| 📝 Positions: {positions}")
+    
     while True:
         res = await env.get_data()
         logger.info(f"| 📝 Result: {res['extra']['data']['BTCUSDT']['klines']}")
