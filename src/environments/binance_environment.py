@@ -787,7 +787,7 @@ class BinanceEnvironment(BaseEnvironment):
             for symbol, klines_list in klines.items():
                 klines_string += f"Symbol: {symbol}\n"
                 klines_string += "Klines:\n"
-                for kline in klines_list[:5]:  # Show only last 5 klines
+                for kline in klines_list:
                     klines_string += json.dumps(kline, indent=4)
                 klines_string += "\n"
             

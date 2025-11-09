@@ -81,7 +81,6 @@ class DataConsumer:
                 )
                 result_data[symbol][data_type.value] = data
                 total_rows += len(data)
-                logger.info(f"| ✅ Retrieved {len(data)} {data_type.value} records for {symbol}")
             
             # Build message
             symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"

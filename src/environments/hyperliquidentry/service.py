@@ -211,7 +211,9 @@ class HyperliquidService:
                         data_types = [DataStreamType(dt) for dt in self.data_type]
                     else:
                         data_types = [DataStreamType(self.data_type)]
+                logger.info(f"| 📡 Auto-starting data stream for {len(symbols)} symbols: {symbols}, data_types: {[dt.value for dt in data_types] if data_types else 'all'}")
                 self.start_data_stream(symbols, data_types)
+                logger.info(f"| ✅ Data stream started successfully")
             
         except Exception as e:
             if "401" in str(e) or "Invalid" in str(e):
@@ -347,15 +349,24 @@ class HyperliquidService:
             all_positions = []
             for position in positions:
                 if isinstance(position, dict):
-                    position_amt = float(position.get('position', {}).get('coin', 0) or 0)
+                    pos_data = position.get('position', {})
+                    # Get position size (szi) - this is the actual position amount
+                    # szi is a string representation of the position size
+                    szi_str = pos_data.get('szi', '0')
+                    try:
+                        position_amt = float(szi_str) if szi_str else 0.0
+                    except (ValueError, TypeError):
+                        position_amt = 0.0
+                    
+                    # Only include positions with non-zero size
                     if position_amt != 0:
                         all_positions.append({
-                            "symbol": position.get('position', {}).get('coin', ''),
+                            "symbol": pos_data.get('coin', ''),
                             "position_amt": str(position_amt),
-                            "entry_price": position.get('position', {}).get('entryPx', '0'),
-                            "mark_price": position.get('position', {}).get('markPx', '0'),
-                            "unrealized_profit": position.get('position', {}).get('unrealizedPnl', '0'),
-                            "leverage": position.get('position', {}).get('leverage', {}).get('value', '1'),
+                            "entry_price": pos_data.get('entryPx', '0'),
+                            "mark_price": pos_data.get('markPx', '0'),
+                            "unrealized_profit": pos_data.get('unrealizedPnl', '0'),
+                            "leverage": pos_data.get('leverage', {}).get('value', '1') if isinstance(pos_data.get('leverage'), dict) else '1',
                             "trade_type": "perpetual",
                         })
             
@@ -450,13 +461,42 @@ class HyperliquidService:
                 reduce_only=request.reduce_only or False
             )
             
+            # Parse order result from SDK
+            # SDK returns: {'status': 'ok', 'response': {'type': 'order', 'data': {'statuses': [...]}}}
+            order_id = 'N/A'
+            order_status = "submitted"
+            error_message = None
+            
+            if isinstance(order_result, dict):
+                if order_result.get('status') == 'ok':
+                    response = order_result.get('response', {})
+                    if response.get('type') == 'order':
+                        data = response.get('data', {})
+                        statuses = data.get('statuses', [])
+                        if statuses:
+                            status = statuses[0]
+                            if 'resting' in status:
+                                # Order was placed successfully
+                                order_id = str(status['resting'].get('oid', 'N/A'))
+                                order_status = "submitted"
+                            elif 'error' in status:
+                                # Order failed
+                                error_message = status.get('error', 'Unknown error')
+                                order_status = "failed"
+                elif 'error' in order_result:
+                    error_message = order_result.get('error', 'Unknown error')
+                    order_status = "failed"
+            
+            if error_message:
+                raise OrderError(f"Order failed: {error_message}")
+            
             # Format order information
             order_info = {
-                "order_id": str(order_result.get('status', {}).get('resting', {}).get('oid', 'N/A')),
+                "order_id": order_id,
                 "symbol": request.symbol,
                 "side": request.side,
                 "type": request.order_type.value,
-                "status": "submitted",
+                "status": order_status,
                 "quantity": str(request.qty),
                 "price": str(request.price) if request.price else None,
                 "trade_type": "perpetual",
@@ -563,10 +603,14 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
+            # Get asset index from symbol
+            asset_index = await asyncio.to_thread(client._get_asset_index, request.symbol)
+            # Convert order_id to int if it's a string
+            order_id_int = int(request.order_id) if isinstance(request.order_id, str) else request.order_id
             result = await asyncio.to_thread(
                 client.cancel_order,
-                order_id=request.order_id,
-                symbol=request.symbol
+                asset_index=asset_index,
+                order_id=order_id_int
             )
             
             return ActionResult(

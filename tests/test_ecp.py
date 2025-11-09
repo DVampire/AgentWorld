@@ -185,7 +185,9 @@ async def test_hyperliquid():
     
     while True:
         res = await env.get_data()
-        logger.info(f"| 📝 Result: {res['extra']['data']['BTC']['candle']}")
+        # Print data for all symbols
+        for symbol, data in res['extra']['data'].items():
+            logger.info(f"| 📝 Result for {symbol}: {data.get('candle', [])}")
         await asyncio.sleep(1)
     
 async def main():

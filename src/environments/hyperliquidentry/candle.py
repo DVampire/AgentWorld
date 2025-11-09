@@ -38,8 +38,10 @@ class CandleHandler:
         """Ensure candle table and indicators table exist for a symbol.
         
         Args:
-            symbol: Symbol name
+            symbol: Symbol name (should be uppercase for consistency)
         """
+        # Normalize symbol to uppercase for consistency
+        symbol = symbol.upper() if symbol else ""
         base_name = self._sanitize_table_name(symbol)
         candle_table_name = f"{base_name}_candle"
         indicators_table_name = f"{base_name}_indicators"
@@ -202,11 +204,14 @@ class CandleHandler:
         
         Args:
             data: Candle data from Hyperliquid WebSocket stream (processed format)
-            symbol: Symbol name
+            symbol: Symbol name (can be lowercase or uppercase)
             
         Returns:
             Insert result
         """
+        # Normalize symbol to uppercase for consistency with database
+        symbol = symbol.upper() if symbol else data.get("symbol", "").upper()
+        
         await self.ensure_table_exists(symbol)
         
         base_name = self._sanitize_table_name(symbol)
@@ -244,14 +249,14 @@ class CandleHandler:
         trade_count = int(data.get("trade_count", 0))
         taker_buy_base_volume = float(data.get("taker_buy_base_volume", 0))
         taker_buy_quote_volume = float(data.get("taker_buy_quote_volume", 0))
-        is_closed = 1  # Always True (already filtered by WebSocket class)
+        is_closed = data.get("is_closed", 1)  # Get is_closed from data, default to 1
         
         logger.info(f"| 📝 Parsed processed data for {symbol}: timestamp={timestamp}, open={open_price}, close={close_price}")
         
         # Insert candle data
         try:
-            # Use uppercase symbol for database
-            db_symbol = symbol.upper() if symbol else data.get("symbol", "").upper()
+            # Symbol is already normalized to uppercase above
+            db_symbol = symbol
             
             insert_request = InsertRequest(
                 table_name=candle_table_name,
@@ -286,24 +291,23 @@ class CandleHandler:
             return {"success": False, "message": str(e)}
         
         if result.success:
-            # Only update cache and calculate indicators for closed candles
-            if is_closed:
-                # Use uppercase symbol for cache and indicators
-                cache_symbol = db_symbol
-                # Update cache
-                await self._update_cache(cache_symbol, {
-                    "timestamp": timestamp,
-                    "open_time": open_time,
-                    "open": open_price,
-                    "high": high_price,
-                    "low": low_price,
-                    "close": close_price,
-                    "volume": volume,
-                    "trade_count": trade_count,
-                })
-                
-                # Calculate and insert indicators for closed candle
-                await self._calculate_and_insert_indicators(cache_symbol, timestamp, open_time)
+            # Update cache and calculate indicators for all candles
+            # Use uppercase symbol for cache and indicators
+            cache_symbol = db_symbol
+            # Update cache
+            await self._update_cache(cache_symbol, {
+                "timestamp": timestamp,
+                "open_time": open_time,
+                "open": open_price,
+                "high": high_price,
+                "low": low_price,
+                "close": close_price,
+                "volume": volume,
+                "trade_count": trade_count,
+            })
+            
+            # Calculate and insert indicators for candle
+            await self._calculate_and_insert_indicators(cache_symbol, timestamp, open_time)
         
         return result
     
@@ -557,13 +561,6 @@ class CandleHandler:
             logger.warning(f"| ⚠️  Candle table {candle_table_name} does not exist for {symbol}")
             return []
         
-        # Debug: Check total row count
-        count_query = f"SELECT COUNT(*) as count FROM {candle_table_name}"
-        count_result = await self.database_service.execute_query(QueryRequest(query=count_query))
-        if count_result.success:
-            count = count_result.extra.get("data", [{}])[0].get("count", 0)
-            logger.info(f"| 🔍 Querying candles for {symbol}: table {candle_table_name} has {count} rows")
-        
         # Check if indicators table exists
         check_indicators_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{indicators_table_name}'"
         check_indicators_result = await self.database_service.execute_query(
@@ -589,13 +586,24 @@ class CandleHandler:
                 )
                 
                 if not max_ts_result.success or not max_ts_result.extra.get("data"):
+                    logger.warning(f"| ⚠️  Failed to get max timestamp for {symbol} from {candle_table_name}: {max_ts_result.message if hasattr(max_ts_result, 'message') else 'No data'}")
                     return []
                 
                 max_ts_data = max_ts_result.extra.get("data", [])
                 if not max_ts_data or not max_ts_data[0].get("max_ts"):
+                    logger.warning(f"| ⚠️  No max timestamp found for {symbol} in {candle_table_name}. Table may be empty.")
+                    # Check if table has any data at all
+                    count_query = f"SELECT COUNT(*) as count FROM {candle_table_name} WHERE symbol = ?"
+                    count_result = await self.database_service.execute_query(
+                        QueryRequest(query=count_query, parameters=(symbol,))
+                    )
+                    if count_result.success and count_result.extra.get("data"):
+                        count = count_result.extra.get("data", [])[0].get("count", 0)
+                        logger.info(f"| 🔍 Table {candle_table_name} has {count} rows for {symbol}")
                     return []
                 
                 latest_timestamp = max_ts_data[0]["max_ts"]
+                logger.debug(f"| 🔍 Latest timestamp for {symbol}: {latest_timestamp}")
                 query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? AND timestamp = ? ORDER BY timestamp ASC, open_time ASC"
                 parameters = (symbol, latest_timestamp)
         
@@ -613,12 +621,30 @@ class CandleHandler:
             return []
         
         candle_data = result.extra.get("data", [])
-        logger.info(f"| 🔍 Query returned {len(candle_data)} rows for {symbol}")
+        logger.info(f"| 🔍 Query returned {len(candle_data)} rows for {symbol} from table {candle_table_name}")
         
         if candle_data:
             logger.debug(f"| 🔍 First row sample: {candle_data[0]}")
         else:
             logger.warning(f"| ⚠️  No candle data returned for {symbol} from table {candle_table_name}")
+            # Check if table has any data at all
+            count_query = f"SELECT COUNT(*) as count FROM {candle_table_name} WHERE symbol = ?"
+            count_result = await self.database_service.execute_query(
+                QueryRequest(query=count_query, parameters=(symbol,))
+            )
+            if count_result.success and count_result.extra.get("data"):
+                count = count_result.extra.get("data", [])[0].get("count", 0)
+                logger.warning(f"| ⚠️  Table {candle_table_name} has {count} total rows for {symbol}, but query returned 0 rows")
+                # Try to get all rows to see what's in the table
+                all_query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? ORDER BY timestamp DESC LIMIT 5"
+                all_result = await self.database_service.execute_query(
+                    QueryRequest(query=all_query, parameters=(symbol,))
+                )
+                if all_result.success and all_result.extra.get("data"):
+                    all_data = all_result.extra.get("data", [])
+                    logger.info(f"| 🔍 Sample rows from {candle_table_name} for {symbol}: {len(all_data)} rows")
+                    if all_data:
+                        logger.info(f"| 🔍 Sample row: {all_data[0]}")
         
         # If limit was specified and we're not using date range, reverse to get chronological order
         if limit and not start_date and not end_date:

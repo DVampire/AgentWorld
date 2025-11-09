@@ -91,15 +91,18 @@ class DataProducer:
     
     async def _data_processor(self) -> None:
         """Process data from queue."""
+        logger.info(f"| 🔄 Data processor started, waiting for data...")
         while self._data_stream_running:
             try:
                 # Get data from queue with timeout
                 data, symbol, data_type = await asyncio.wait_for(
                     self._data_queue.get(), timeout=1.0
                 )
+                logger.debug(f"| 📦 Processing {data_type.value} data for {symbol} from queue")
                 await self._handle_data(data, symbol, data_type)
                 self._data_queue.task_done()
             except asyncio.TimeoutError:
+                # Normal timeout, continue waiting
                 continue
             except Exception as e:
                 logger.error(f"| ❌ Error in data processor: {e}", exc_info=True)
@@ -124,18 +127,13 @@ class DataProducer:
                 
                 symbol = data["symbol"].lower()
                 
-                # Map channel to DataStreamType
+                # Only process minute-level candle data
                 if channel == "candle":
                     data_type = DataStreamType.CANDLE
                     logger.info(f"| 📡 Received candle data for {symbol} (timestamp: {data.get('timestamp')})")
-                elif channel == "trades":
-                    data_type = DataStreamType.TRADES
-                    logger.debug(f"| 📡 Received trades data for {symbol}")
-                elif channel == "l2Book":
-                    data_type = DataStreamType.L2BOOK
-                    logger.debug(f"| 📡 Received l2Book data for {symbol}")
                 else:
-                    logger.warning(f"| 📊 Unknown channel: {channel}")
+                    # Ignore trades and l2Book - only minute-level candle is supported
+                    logger.debug(f"| 📊 Ignoring {channel} data (only minute-level candle is supported)")
                     return
                 
                 # Run the handler in the event loop
@@ -166,12 +164,14 @@ class DataProducer:
             data_type: Data stream type
         """
         try:
+            logger.debug(f"| 📥 Data handler wrapper called for {symbol} ({data_type.value})")
             if self._data_queue:
                 await self._data_queue.put((processed_data, symbol, data_type))
+                logger.debug(f"| ✅ Added {symbol} ({data_type.value}) data to queue")
             else:
-                logger.warning(f"| ⚠️  Data queue not initialized when {data_type.value} data received")
+                logger.warning(f"| ⚠️  Data queue not initialized when {data_type.value} data received for {symbol}")
         except Exception as e:
-            logger.error(f"| ❌ Error in data handler wrapper: {e}", exc_info=True)
+            logger.error(f"| ❌ Error in data handler wrapper for {symbol}: {e}", exc_info=True)
     
     def _data_stream_worker(
         self,
@@ -202,21 +202,20 @@ class DataProducer:
                 processor_task = asyncio.create_task(self._data_processor())
                 logger.info(f"| ✅ Data processor started")
                 
-                # Default to all data types if not specified
+                # Default to candle only (minute-level) if not specified
                 if data_types is None:
-                    data_types = [DataStreamType.CANDLE, DataStreamType.TRADES, DataStreamType.L2BOOK]
+                    data_types = [DataStreamType.CANDLE]
                 
-                # Ensure tables exist for all symbols
+                # Only support minute-level candle subscriptions
+                if DataStreamType.TRADES in data_types or DataStreamType.L2BOOK in data_types:
+                    logger.warning(f"| ⚠️  Only CANDLE (minute-level) subscriptions are supported. Ignoring TRADES and L2BOOK.")
+                    data_types = [DataStreamType.CANDLE]
+                
+                # Ensure tables exist for all symbols (only candle)
                 for symbol in symbols:
                     if DataStreamType.CANDLE in data_types:
                         await self._candle_handler.ensure_table_exists(symbol)
                         logger.info(f"| ✅ Candle table created/verified for {symbol}")
-                    if DataStreamType.TRADES in data_types:
-                        await self._trades_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ Trades table created/verified for {symbol}")
-                    if DataStreamType.L2BOOK in data_types:
-                        await self._l2book_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ L2Book table created/verified for {symbol}")
                 
                 # Create unified message handler
                 on_message = self._create_message_handler()
@@ -231,17 +230,12 @@ class DataProducer:
                     testnet=self.testnet
                 )
                 
-                # Subscribe to data streams
+                # Subscribe to data streams (only minute-level candle)
                 for symbol in symbols:
                     if DataStreamType.CANDLE in data_types:
                         self._ws_client.subscribe_candle(symbol, interval="1m")
-                        logger.info(f"| 📡 Subscribed to candle: {symbol}")
-                    if DataStreamType.TRADES in data_types:
-                        self._ws_client.subscribe_trades(symbol)
-                        logger.info(f"| 📡 Subscribed to trades: {symbol}")
-                    if DataStreamType.L2BOOK in data_types:
-                        self._ws_client.subscribe_l2book(symbol)
-                        logger.info(f"| 📡 Subscribed to l2Book: {symbol}")
+                        logger.info(f"| 📡 Subscribed to minute-level candle: {symbol} (interval: 1m)")
+                    # TRADES and L2BOOK subscriptions are disabled - only minute-level candle is supported
                 
                 # Start WebSocket
                 self._ws_client.start()

@@ -690,6 +690,26 @@ class HyperliquidEnvironment(BaseEnvironment):
                 "message": f"Failed to step the trading environment: {str(e)}",
                 "extra": {"error": str(e)}
             }
+            
+    async def _wait_for_next_minute_boundary(self) -> None:
+        """Wait until the next minute boundary for minute-level trading.
+        
+        This ensures we get complete minute kline data by waiting until the start
+        of the next minute before fetching data.
+        """
+        now = datetime.now(timezone.utc)
+        # Calculate seconds until next minute boundary
+        if now.second > 0:
+            # Calculate milliseconds to account for microsecond precision
+            microseconds_until_next_minute = (60 - now.second) * 1000000 - now.microsecond
+            wait_time = microseconds_until_next_minute / 1000000.0  # Convert to seconds
+            if wait_time > 0:
+                logger.info(f"| ⏳ Waiting {wait_time:.2f} seconds until next minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})...")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
+        else:
+            logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Hyperliquid trading environment."""
@@ -712,13 +732,29 @@ class HyperliquidEnvironment(BaseEnvironment):
                 </positions>
             """)
             
+            # Wait until the next minute boundary for minute-level trading
+            await self._wait_for_next_minute_boundary()
+            
             # Get data (placeholder for now)
             data_request = GetDataRequest(symbol=self.symbol, data_type="candle")
             data_result = await self.hyperliquid_service.get_data(data_request)
             
+            candles = {}
+            for symbol, data in data_result.extra.get("data", {}).items():
+                candles[symbol] = data.get("candle", [])
+            
+            candles_string = ""
+            for symbol, candles_list in candles.items():
+                candles_string += f"Symbol: {symbol}\n"
+                candles_string += "Candles:\n"
+                # Show all candles (usually just the latest one for minute-level trading)
+                for candle in candles_list:
+                    candles_string += json.dumps(candle, indent=4)
+                candles_string += "\n"
+            
             data_string = dedent(f"""
                 <data>
-                {data_result.message}
+                {candles_string}
                 </data>
             """)
             logger.info(f"| 📝 Data: {data_string}")
