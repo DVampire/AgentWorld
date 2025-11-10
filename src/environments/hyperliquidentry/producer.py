@@ -54,6 +54,11 @@ class DataProducer:
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._max_concurrent_writes = max_concurrent_writes
         self._ws_client: Optional[HyperliquidWebSocket] = None
+        
+        # Candle minute buffer:
+        # Key: symbol, Value: {"close_time": str, "data": Dict}
+        # Buffer the latest data for current minute, only insert when minute changes
+        self._candle_minute_buffer: Dict[str, Dict] = {}
     
     async def _handle_data(self, data: Dict, symbol: str, data_type: DataStreamType) -> None:
         """Handle incoming data and write to database.
@@ -66,14 +71,8 @@ class DataProducer:
         async with self._data_semaphore:
             try:
                 if data_type == DataStreamType.CANDLE:
-                    result = await self._candle_handler.stream_insert(data, symbol)
-                    # Handle both ActionResult object and dict
-                    success = result.success if hasattr(result, 'success') else result.get("success", False)
-                    message = result.message if hasattr(result, 'message') else result.get("message", "")
-                    if success:
-                        logger.info(f"| ✅ Candle data inserted for {symbol} (timestamp: {data.get('timestamp')})")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert candle data for {symbol}: {message}")
+                    # Process candle data with minute-level aggregation
+                    await self._process_candle_data(data, symbol)
                 elif data_type == DataStreamType.TRADES:
                     result = await self._trades_handler.stream_insert(data, symbol)
                     if result:
@@ -88,6 +87,63 @@ class DataProducer:
                         logger.warning(f"| ⚠️  Failed to insert l2Book data for {symbol}")
             except Exception as e:
                 logger.error(f"| ❌ Error handling {data_type.value} data for {symbol}: {e}", exc_info=True)
+    
+    async def _process_candle_data(self, data: Dict, symbol: str) -> None:
+        """Process candle data - buffer current minute, insert when minute changes.
+        
+        Strategy:
+        1. WebSocket pushes updates every few seconds for the SAME minute (e.g., 07:14:00-07:14:59)
+        2. We buffer the LATEST update for current minute
+        3. When close_time changes (e.g., from 07:14:59 to 07:15:59), we know previous minute is complete
+        4. Insert the buffered data (which contains the final OHLCV for that minute)
+        
+        This ensures:
+        - Only 1 database write per minute per symbol
+        - We capture the final/complete state of each 1-minute candle
+        
+        Args:
+            data: Candle data from WebSocket (contains close_time)
+            symbol: Symbol name (uppercase)
+        """
+        try:
+            close_time = data.get("close_time")
+            if not close_time:
+                logger.warning(f"| ⚠️  Candle data missing close_time for {symbol}")
+                return
+            
+            # Check if we have buffered data for this symbol
+            if symbol in self._candle_minute_buffer:
+                buffered_close_time = self._candle_minute_buffer[symbol]["close_time"]
+                
+                if close_time != buffered_close_time:
+                    # Minute changed! Insert the buffered (complete) candle from previous minute
+                    buffered_data = self._candle_minute_buffer[symbol]["data"]
+                    logger.info(f"| 🕐 Minute changed for {symbol}: {buffered_close_time} → {close_time}")
+                    logger.info(f"| 📤 Inserting complete candle (close_time: {buffered_close_time})")
+                    
+                    result = await self._candle_handler.stream_insert(buffered_data, symbol)
+                    success = result.success if hasattr(result, 'success') else result.get("success", False)
+                    message = result.message if hasattr(result, 'message') else result.get("message", "")
+                    
+                    if success:
+                        logger.info(f"| ✅ Complete candle inserted for {symbol} (close_time: {buffered_close_time})")
+                    else:
+                        logger.warning(f"| ⚠️  Failed to insert candle for {symbol}: {message}")
+                else:
+                    # Same minute, just update buffer silently
+                    logger.debug(f"| 📦 Updating buffer for {symbol} (same minute: {close_time})")
+            else:
+                # First candle for this symbol
+                logger.info(f"| 🆕 First candle data for {symbol} (close_time: {close_time})")
+            
+            # Update buffer with current data (latest state of current minute)
+            self._candle_minute_buffer[symbol] = {
+                "close_time": close_time,
+                "data": data
+            }
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error processing candle data for {symbol}: {e}", exc_info=True)
     
     async def _data_processor(self) -> None:
         """Process data from queue."""
@@ -108,9 +164,9 @@ class DataProducer:
                 logger.error(f"| ❌ Error in data processor: {e}", exc_info=True)
     
     def _create_message_handler(self):
-        """Create unified message handler for WebSocket client."""
-        def on_message(ws, channel: str, data: Dict):
-            """Handle incoming processed data from WebSocket.
+        """Create unified async message handler for WebSocket client."""
+        async def on_message(ws, channel: str, data: Dict):
+            """Handle incoming processed data from WebSocket (async).
             
             Args:
                 ws: WebSocket connection
@@ -125,7 +181,7 @@ class DataProducer:
                     logger.warning(f"| 📊 Received unexpected data format: {data}")
                     return
                 
-                symbol = data["symbol"].lower()
+                symbol = data["symbol"].upper()  # Keep consistent with subscription (uppercase)
                 
                 # Only process minute-level candle data
                 if channel == "candle":
@@ -136,20 +192,9 @@ class DataProducer:
                     logger.debug(f"| 📊 Ignoring {channel} data (only minute-level candle is supported)")
                     return
                 
-                # Run the handler in the event loop
-                if self._event_loop and self._event_loop.is_running() and not self._event_loop.is_closed():
-                    asyncio.run_coroutine_threadsafe(
-                        self._data_handler_wrapper(data, symbol, data_type),
-                        self._event_loop
-                    )
-                else:
-                    logger.warning(f"| ⚠️  Event loop not available for processing {channel} data")
+                # Process data directly (we're already in async context)
+                await self._data_handler_wrapper(data, symbol, data_type)
                     
-            except RuntimeError as e:
-                if "interpreter shutdown" in str(e) or "cannot schedule" in str(e).lower():
-                    logger.debug(f"| Cannot schedule coroutine (interpreter shutdown): {e}")
-                else:
-                    logger.warning(f"| ⚠️  Error scheduling coroutine: {e}")
             except Exception as e:
                 logger.error(f"| ❌ Error in message handler: {e}", exc_info=True)
         
@@ -160,14 +205,21 @@ class DataProducer:
         
         Args:
             processed_data: Processed data from WebSocket
-            symbol: Symbol name (lowercase)
+            symbol: Symbol name (uppercase)
             data_type: Data stream type
         """
         try:
             logger.debug(f"| 📥 Data handler wrapper called for {symbol} ({data_type.value})")
             if self._data_queue:
-                await self._data_queue.put((processed_data, symbol, data_type))
-                logger.debug(f"| ✅ Added {symbol} ({data_type.value}) data to queue")
+                try:
+                    # Add with timeout to avoid blocking forever if queue is full
+                    await asyncio.wait_for(
+                        self._data_queue.put((processed_data, symbol, data_type)),
+                        timeout=5.0
+                    )
+                    logger.debug(f"| ✅ Added {symbol} ({data_type.value}) data to queue")
+                except asyncio.TimeoutError:
+                    logger.warning(f"| ⚠️  Queue full, dropping {symbol} ({data_type.value}) data")
             else:
                 logger.warning(f"| ⚠️  Data queue not initialized when {data_type.value} data received for {symbol}")
         except Exception as e:
@@ -217,7 +269,7 @@ class DataProducer:
                         await self._candle_handler.ensure_table_exists(symbol)
                         logger.info(f"| ✅ Candle table created/verified for {symbol}")
                 
-                # Create unified message handler
+                # Create unified async message handler
                 on_message = self._create_message_handler()
                 
                 # Initialize WebSocket client
@@ -237,8 +289,8 @@ class DataProducer:
                         logger.info(f"| 📡 Subscribed to minute-level candle: {symbol} (interval: 1m)")
                     # TRADES and L2BOOK subscriptions are disabled - only minute-level candle is supported
                 
-                # Start WebSocket
-                self._ws_client.start()
+                # Start WebSocket (pass current event loop)
+                self._ws_client.start(loop=loop)
                 
                 logger.info(f"| ✅ All subscriptions completed for {len(symbols)} symbols")
                 
@@ -292,10 +344,27 @@ class DataProducer:
         logger.info("| 🛑 Stopping data stream...")
         self._data_stream_running = False
         
-        # Stop WebSocket client
+        # Flush buffered candles before stopping
         try:
-            if self._ws_client:
-                self._ws_client.stop()
+            if self._event_loop and self._candle_handler:
+                logger.info("| 🔄 Flushing buffered candle data...")
+                future = asyncio.run_coroutine_threadsafe(
+                    self._flush_minute_buffer(),
+                    self._event_loop
+                )
+                future.result(timeout=5.0)
+        except Exception as e:
+            logger.warning(f"| ⚠️  Error flushing minute buffer: {e}")
+        
+        # Stop WebSocket client (async)
+        try:
+            if self._ws_client and self._event_loop:
+                logger.info("| 🛑 Stopping WebSocket client...")
+                future = asyncio.run_coroutine_threadsafe(
+                    self._ws_client.stop(),
+                    self._event_loop
+                )
+                future.result(timeout=5.0)
         except Exception as e:
             logger.warning(f"| ⚠️  Error stopping WebSocket client: {e}")
         
@@ -304,4 +373,36 @@ class DataProducer:
             self._data_stream_thread.join(timeout=5.0)
         
         logger.info("| ✅ Data stream stopped")
+    
+    async def _flush_minute_buffer(self) -> None:
+        """Flush all buffered minute data before shutdown.
+        
+        This ensures the last minute's data is not lost when stopping.
+        """
+        if not self._candle_minute_buffer:
+            logger.info("| ℹ️  No buffered candles to flush")
+            return
+        
+        logger.info(f"| 🔄 Flushing {len(self._candle_minute_buffer)} buffered candles...")
+        
+        for symbol, buffer_info in self._candle_minute_buffer.items():
+            try:
+                close_time = buffer_info["close_time"]
+                data = buffer_info["data"]
+                
+                logger.info(f"| 📤 Flushing final candle for {symbol} (close_time: {close_time})")
+                
+                result = await self._candle_handler.stream_insert(data, symbol)
+                success = result.success if hasattr(result, 'success') else result.get("success", False)
+                message = result.message if hasattr(result, 'message') else result.get("message", "")
+                
+                if success:
+                    logger.info(f"| ✅ Flushed candle for {symbol}")
+                else:
+                    logger.warning(f"| ⚠️  Failed to flush candle for {symbol}: {message}")
+            except Exception as e:
+                logger.error(f"| ❌ Error flushing candle for {symbol}: {e}", exc_info=True)
+        
+        self._candle_minute_buffer.clear()
+        logger.info("| ✅ Minute buffer flushed and cleared")
 

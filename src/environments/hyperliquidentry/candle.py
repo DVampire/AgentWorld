@@ -84,6 +84,13 @@ class CandleHandler:
                 logger.error(f"Failed to create candle table {candle_table_name}: {result.message}")
                 raise HyperliquidError(f"Failed to create candle table {candle_table_name}: {result.message}")
             
+            # Create unique constraint to prevent duplicate entries for same minute
+            unique_constraint_name = f"{candle_table_name}_unique_time"
+            unique_query = f"CREATE UNIQUE INDEX IF NOT EXISTS {unique_constraint_name} ON {candle_table_name}(symbol, timestamp, open_time)"
+            unique_result = await self.database_service.execute_query(QueryRequest(query=unique_query))
+            if not unique_result.success:
+                logger.warning(f"Failed to create unique constraint {unique_constraint_name}: {unique_result.message}")
+            
             # Create index for performance optimization
             index_name = f"{candle_table_name}_timestamp_idx"
             index_query = f"CREATE INDEX IF NOT EXISTS {index_name} ON {candle_table_name}(timestamp DESC, open_time DESC)"
@@ -251,65 +258,89 @@ class CandleHandler:
         taker_buy_quote_volume = float(data.get("taker_buy_quote_volume", 0))
         is_closed = data.get("is_closed", 1)  # Get is_closed from data, default to 1
         
-        logger.info(f"| 📝 Parsed processed data for {symbol}: timestamp={timestamp}, open={open_price}, close={close_price}")
+        logger.info(f"| 📝 Inserting complete candle for {symbol}: timestamp={timestamp}, open={open_price}, close={close_price}")
         
-        # Insert candle data
+        # Directly insert the complete candle data (aggregation is done in Producer)
         try:
             # Symbol is already normalized to uppercase above
             db_symbol = symbol
             
-            insert_request = InsertRequest(
-                table_name=candle_table_name,
-                data={
-                    "timestamp": timestamp,
-                    "open_time": open_time,
-                    "close_time": close_time,
-                    "symbol": db_symbol,
-                    "interval": interval,
-                    "open": open_price,
-                    "high": high_price,
-                    "low": low_price,
-                    "close": close_price,
-                    "volume": volume,
-                    "quote_volume": quote_volume,
-                    "trade_count": trade_count,
-                    "taker_buy_base_volume": taker_buy_base_volume,
-                    "taker_buy_quote_volume": taker_buy_quote_volume,
-                    "is_closed": is_closed,
-                }
-            )
-            
-            logger.info(f"| 💾 Inserting candle data into {candle_table_name} for {db_symbol} (timestamp: {timestamp})")
-            result = await self.database_service.insert_data(insert_request)
-            
-            if result.success:
-                logger.info(f"| ✅ Successfully inserted candle data for {db_symbol} (timestamp: {timestamp})")
-            else:
-                logger.error(f"| ❌ Failed to insert candle data for {db_symbol}: {result.message}")
-        except Exception as e:
-            logger.error(f"| ❌ Exception in stream_insert for {symbol}: {e}", exc_info=True)
-            return {"success": False, "message": str(e)}
-        
-        if result.success:
-            # Update cache and calculate indicators for all candles
-            # Use uppercase symbol for cache and indicators
-            cache_symbol = db_symbol
-            # Update cache
-            await self._update_cache(cache_symbol, {
+            candle_data = {
                 "timestamp": timestamp,
                 "open_time": open_time,
+                "close_time": close_time,
+                "symbol": db_symbol,
+                "interval": interval,
                 "open": open_price,
                 "high": high_price,
                 "low": low_price,
                 "close": close_price,
                 "volume": volume,
+                "quote_volume": quote_volume,
                 "trade_count": trade_count,
-            })
+                "taker_buy_base_volume": taker_buy_base_volume,
+                "taker_buy_quote_volume": taker_buy_quote_volume,
+                "is_closed": is_closed,
+            }
             
-            # Calculate and insert indicators for candle
-            await self._calculate_and_insert_indicators(cache_symbol, timestamp, open_time)
-        
-        return result
+            # Check if candle already exists to prevent duplicates
+            check_query = f"SELECT id FROM {candle_table_name} WHERE symbol = ? AND timestamp = ? AND open_time = ?"
+            check_result = await self.database_service.execute_query(
+                QueryRequest(query=check_query, params=[db_symbol, timestamp, open_time])
+            )
+            
+            if check_result.success and check_result.extra.get("data"):
+                # Candle already exists, update it (UPSERT behavior)
+                existing_id = check_result.extra["data"][0][0]
+                update_query = f"""
+                    UPDATE {candle_table_name} 
+                    SET close_time = ?, high = ?, low = ?, close = ?, volume = ?, 
+                        quote_volume = ?, trade_count = ?, taker_buy_base_volume = ?, 
+                        taker_buy_quote_volume = ?, is_closed = ?
+                    WHERE id = ?
+                """
+                update_result = await self.database_service.execute_query(
+                    QueryRequest(
+                        query=update_query, 
+                        params=[
+                            close_time, high_price, low_price, close_price, volume,
+                            quote_volume, trade_count, taker_buy_base_volume,
+                            taker_buy_quote_volume, is_closed, existing_id
+                        ]
+                    )
+                )
+                
+                if update_result.success:
+                    logger.info(f"| ✅ Updated existing candle for {db_symbol} (close_time: {close_time})")
+                    # Update cache and calculate indicators
+                    await self._update_cache(db_symbol, candle_data)
+                    await self._calculate_and_insert_indicators(db_symbol, candle_data["timestamp"], candle_data["open_time"])
+                    return {"success": True, "message": "Candle data updated"}
+                else:
+                    logger.error(f"| ❌ Failed to update candle for {db_symbol}: {update_result.message}")
+                    return {"success": False, "message": update_result.message}
+            else:
+                # Candle doesn't exist, insert new record
+                insert_request = InsertRequest(
+                    table_name=candle_table_name,
+                    data=candle_data
+                )
+                
+                result = await self.database_service.insert_data(insert_request)
+                
+                if result.success:
+                    logger.info(f"| ✅ Inserted new candle for {db_symbol} (close_time: {close_time})")
+                    # Update cache and calculate indicators
+                    await self._update_cache(db_symbol, candle_data)
+                    await self._calculate_and_insert_indicators(db_symbol, candle_data["timestamp"], candle_data["open_time"])
+                    return {"success": True, "message": "Candle data inserted"}
+                else:
+                    logger.error(f"| ❌ Failed to insert candle for {db_symbol}: {result.message}")
+                    return {"success": False, "message": result.message}
+            
+        except Exception as e:
+            logger.error(f"| ❌ Exception in stream_insert for {symbol}: {e}", exc_info=True)
+            return {"success": False, "message": str(e)}
     
     async def _update_cache(self, symbol: str, candle_data: Dict) -> None:
         """Update cache with new candle data.
