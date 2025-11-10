@@ -458,55 +458,125 @@ class HyperliquidService:
                 order_type=request.order_type.value,
                 size=request.qty,
                 price=request.price,
-                reduce_only=request.reduce_only or False
+                reduce_only=request.reduce_only or False,
+                stop_loss_price=request.stop_loss_price,
+                take_profit_price=request.take_profit_price
             )
             
             # Parse order result from SDK
             # SDK returns: {'status': 'ok', 'response': {'type': 'order', 'data': {'statuses': [...]}}}
+            # Or with stop loss/take profit: {'main_order': {...}, 'stop_loss_order': {...}, 'take_profit_order': {...}}
             order_id = 'N/A'
             order_status = "submitted"
             error_message = None
             
-            if isinstance(order_result, dict):
-                if order_result.get('status') == 'ok':
-                    response = order_result.get('response', {})
-                    if response.get('type') == 'order':
-                        data = response.get('data', {})
-                        statuses = data.get('statuses', [])
-                        if statuses:
-                            status = statuses[0]
-                            if 'resting' in status:
-                                # Order was placed successfully
-                                order_id = str(status['resting'].get('oid', 'N/A'))
-                                order_status = "submitted"
-                            elif 'error' in status:
-                                # Order failed
-                                error_message = status.get('error', 'Unknown error')
-                                order_status = "failed"
-                elif 'error' in order_result:
-                    error_message = order_result.get('error', 'Unknown error')
-                    order_status = "failed"
-            
-            if error_message:
-                raise OrderError(f"Order failed: {error_message}")
-            
-            # Format order information
-            order_info = {
-                "order_id": order_id,
-                "symbol": request.symbol,
-                "side": request.side,
-                "type": request.order_type.value,
-                "status": order_status,
-                "quantity": str(request.qty),
-                "price": str(request.price) if request.price else None,
-                "trade_type": "perpetual",
-            }
-            
-            return ActionResult(
-                success=True,
-                message=f"Order {order_info['order_id']} submitted successfully for {request.symbol} ({request.side} {request.qty}).",
-                extra={"order": order_info}
-            )
+            # Check if result contains main_order (new format with stop loss/take profit)
+            if isinstance(order_result, dict) and 'main_order' in order_result:
+                # New format with stop loss/take profit support
+                main_order = order_result.get('main_order', {})
+                stop_loss_order = order_result.get('stop_loss_order')
+                take_profit_order = order_result.get('take_profit_order')
+                stop_loss_error = order_result.get('stop_loss_error')
+                take_profit_error = order_result.get('take_profit_error')
+                
+                # Parse main order
+                if isinstance(main_order, dict):
+                    if main_order.get('status') == 'ok':
+                        response = main_order.get('response', {})
+                        if response.get('type') == 'order':
+                            data = response.get('data', {})
+                            statuses = data.get('statuses', [])
+                            if statuses:
+                                status = statuses[0]
+                                if 'resting' in status:
+                                    order_id = str(status['resting'].get('oid', 'N/A'))
+                                    order_status = "submitted"
+                                elif 'error' in status:
+                                    error_message = status.get('error', 'Unknown error')
+                                    order_status = "failed"
+                    elif 'error' in main_order:
+                        error_message = main_order.get('error', 'Unknown error')
+                        order_status = "failed"
+                
+                # Format order information with stop loss/take profit
+                order_info = {
+                    "order_id": order_id,
+                    "symbol": request.symbol,
+                    "side": request.side,
+                    "type": request.order_type.value,
+                    "status": order_status,
+                    "quantity": str(request.qty),
+                    "price": str(request.price) if request.price else None,
+                    "trade_type": "perpetual",
+                    "stop_loss_price": str(request.stop_loss_price) if request.stop_loss_price else None,
+                    "take_profit_price": str(request.take_profit_price) if request.take_profit_price else None,
+                }
+                
+                # Add stop loss/take profit order info if available
+                if stop_loss_order:
+                    order_info["stop_loss_order"] = stop_loss_order
+                if take_profit_order:
+                    order_info["take_profit_order"] = take_profit_order
+                if stop_loss_error:
+                    order_info["stop_loss_error"] = stop_loss_error
+                if take_profit_error:
+                    order_info["take_profit_error"] = take_profit_error
+                
+                message = f"Order {order_id} submitted successfully for {request.symbol} ({request.side} {request.qty})."
+                if stop_loss_order:
+                    message += f" Stop loss order created at {request.stop_loss_price}."
+                if take_profit_order:
+                    message += f" Take profit order created at {request.take_profit_price}."
+                if stop_loss_error:
+                    message += f" Warning: Stop loss order failed: {stop_loss_error}."
+                if take_profit_error:
+                    message += f" Warning: Take profit order failed: {take_profit_error}."
+                
+                return ActionResult(
+                    success=True,
+                    message=message,
+                    extra={"order": order_info}
+                )
+            else:
+                # Old format (backward compatibility)
+                if isinstance(order_result, dict):
+                    if order_result.get('status') == 'ok':
+                        response = order_result.get('response', {})
+                        if response.get('type') == 'order':
+                            data = response.get('data', {})
+                            statuses = data.get('statuses', [])
+                            if statuses:
+                                status = statuses[0]
+                                if 'resting' in status:
+                                    order_id = str(status['resting'].get('oid', 'N/A'))
+                                    order_status = "submitted"
+                                elif 'error' in status:
+                                    error_message = status.get('error', 'Unknown error')
+                                    order_status = "failed"
+                    elif 'error' in order_result:
+                        error_message = order_result.get('error', 'Unknown error')
+                        order_status = "failed"
+                
+                if error_message:
+                    raise OrderError(f"Order failed: {error_message}")
+                
+                # Format order information
+                order_info = {
+                    "order_id": order_id,
+                    "symbol": request.symbol,
+                    "side": request.side,
+                    "type": request.order_type.value,
+                    "status": order_status,
+                    "quantity": str(request.qty),
+                    "price": str(request.price) if request.price else None,
+                    "trade_type": "perpetual",
+                }
+                
+                return ActionResult(
+                    success=True,
+                    message=f"Order {order_info['order_id']} submitted successfully for {request.symbol} ({request.side} {request.qty}).",
+                    extra={"order": order_info}
+                )
             
         except Exception as e:
             if "401" in str(e) or "Invalid" in str(e):

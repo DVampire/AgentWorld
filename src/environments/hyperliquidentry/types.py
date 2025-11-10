@@ -74,6 +74,8 @@ class CreateOrderRequest(BaseModel):
     leverage: Optional[int] = Field(None, description="Leverage for perpetual futures (optional)")
     reduce_only: Optional[bool] = Field(False, description="Reduce only order (optional)")
     time_in_force: Optional[Literal["Gtc", "Ioc", "Alo"]] = Field(default="Gtc", description="Time in force for limit orders: 'Gtc' (good till cancel), 'Ioc' (immediate or cancel), 'Alo' (add liquidity only)")
+    stop_loss_price: Optional[float] = Field(None, description="Stop loss trigger price (optional). If provided, creates a stop loss order after main order.")
+    take_profit_price: Optional[float] = Field(None, description="Take profit trigger price (optional). If provided, creates a take profit order after main order.")
 
 
 class GetOrdersRequest(BaseModel):

@@ -87,4 +87,8 @@ websocket-client
 # Hyperliquid dependencies
 hyperliquid-python-sdk
 
+# Visualization dependencies
+flask>=3.0.0
+plotly>=5.18.0
+
 

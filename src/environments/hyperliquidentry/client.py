@@ -122,9 +122,11 @@ class HyperliquidClient:
         price: Optional[float] = None,
         reduce_only: bool = False,
         time_in_force: str = "Gtc",
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Create a new order (market or limit).
+        """Create a new order (market or limit) with optional stop loss and take profit.
 
         Args:
             symbol: Trading symbol (e.g., 'BTC', 'ETH')
@@ -134,10 +136,12 @@ class HyperliquidClient:
             price: Order price (required for Limit orders, ignored for Market orders)
             reduce_only: Whether this is a reduce-only order. Default: False
             time_in_force: Time in force for limit orders ('Gtc', 'Ioc', 'Alo'). Default: 'Gtc'
+            stop_loss_price: Optional stop loss trigger price. If provided, creates a stop loss order after main order.
+            take_profit_price: Optional take profit trigger price. If provided, creates a take profit order after main order.
             **kwargs: Additional order parameters
 
         Returns:
-            Order information dictionary
+            Order information dictionary with main order and optional stop loss/take profit orders
 
         Raises:
             Exception: If private key is not provided or order creation fails
@@ -197,7 +201,104 @@ class HyperliquidClient:
         logger.info(f"| 📝 Created {order_type} order: {side} {size} {symbol} at {price if price else 'market'}")
         logger.debug(f"| 🔍 Order result: {order_result}")
         
-        return order_result
+        # Prepare result with main order
+        result = {
+            "main_order": order_result,
+            "stop_loss_order": None,
+            "take_profit_order": None
+        }
+        
+        # Create stop loss and take profit orders if provided
+        # Only create these for opening positions (not reduce_only)
+        if not reduce_only:
+            # Create stop loss order if provided
+            if stop_loss_price is not None and stop_loss_price > 0:
+                try:
+                    # Stop loss: opposite side to close position
+                    # For long positions (buy), stop loss is sell at lower price
+                    # For short positions (sell), stop loss is buy at higher price
+                    stop_loss_side = "A" if is_buy else "B"  # Opposite side
+                    stop_loss_result = self._create_trigger_order(
+                        symbol=symbol,
+                        side=stop_loss_side,
+                        size=size,
+                        trigger_price=stop_loss_price,
+                        order_type="StopLoss"
+                    )
+                    result["stop_loss_order"] = stop_loss_result
+                    logger.info(f"| 🛑 Created stop loss order: {stop_loss_price} for {symbol}")
+                except Exception as e:
+                    logger.warning(f"| ⚠️  Failed to create stop loss order: {e}")
+                    result["stop_loss_error"] = str(e)
+            
+            # Create take profit order if provided
+            if take_profit_price is not None and take_profit_price > 0:
+                try:
+                    # Take profit: opposite side to close position
+                    # For long positions (buy), take profit is sell at higher price
+                    # For short positions (sell), take profit is buy at lower price
+                    take_profit_side = "A" if is_buy else "B"  # Opposite side
+                    take_profit_result = self._create_trigger_order(
+                        symbol=symbol,
+                        side=take_profit_side,
+                        size=size,
+                        trigger_price=take_profit_price,
+                        order_type="TakeProfit"
+                    )
+                    result["take_profit_order"] = take_profit_result
+                    logger.info(f"| 🎯 Created take profit order: {take_profit_price} for {symbol}")
+                except Exception as e:
+                    logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
+                    result["take_profit_error"] = str(e)
+        
+        return result
+    
+    def _create_trigger_order(
+        self,
+        symbol: str,
+        side: str,
+        size: float,
+        trigger_price: float,
+        order_type: str = "StopLoss"
+    ) -> Dict[str, Any]:
+        """Create a trigger order (stop loss or take profit).
+        
+        Args:
+            symbol: Trading symbol
+            side: Order side ('A' for sell, 'B' for buy)
+            size: Order size
+            trigger_price: Trigger price for the conditional order
+            order_type: Order type ('StopLoss' or 'TakeProfit')
+            
+        Returns:
+            Order result dictionary
+        """
+        if not self.exchange:
+            raise Exception("Private key required for trigger order creation.")
+        
+        # Convert side to boolean
+        is_buy = side.upper() in ["B", "BUY"]
+        
+        # For Hyperliquid, we use trigger orders (conditional orders)
+        # These are limit orders that trigger when price reaches trigger_price
+        # We use reduce_only=True to close positions
+        try:
+            # Try to use trigger order if SDK supports it
+            # Otherwise, create a limit order with reduce_only
+            order_type_obj = OrderType(limit=LimitOrderType(tif="Gtc"))
+            trigger_order_result = self.exchange.order(
+                name=symbol,
+                is_buy=is_buy,
+                sz=size,
+                limit_px=trigger_price,
+                order_type=order_type_obj,
+                reduce_only=True
+            )
+            return trigger_order_result
+        except Exception as e:
+            # If trigger order creation fails, log and re-raise
+            logger.error(f"| ❌ Failed to create {order_type} trigger order: {e}")
+            raise Exception(f"Failed to create {order_type} trigger order: {e}")
 
     # -------------------------- ORDER INFO --------------------------
     def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:

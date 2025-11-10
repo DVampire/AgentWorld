@@ -334,19 +334,23 @@ class HyperliquidEnvironment(BaseEnvironment):
         order_type: str = "Market",
         leverage: Optional[int] = None,
         reduce_only: bool = False,
-        time_in_force: str = "Gtc"
+        time_in_force: str = "Gtc",
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Create an order (perpetual futures order).
+        """Create an order (perpetual futures order) with optional stop loss and take profit.
         
         Args:
-            symbol: Symbol to trade (e.g., 'BTC', 'ETH')
-            side: Order side: 'buy' or 'sell'
-            qty: Quantity to trade
-            price: Price for limit orders (required for LIMIT order type)
-            order_type: Order type - 'Market' (default) or 'Limit'
-            leverage: Leverage for perpetual futures (optional)
-            reduce_only: Whether this is a reduce-only order
-            time_in_force: Time in force for limit orders - 'Gtc', 'Ioc', 'Alo' (default: 'Gtc')
+            symbol(str): Symbol to trade (e.g., 'BTC', 'ETH')
+            side(str): Order side: 'buy' or 'sell'
+            qty(Optional[float]): Quantity to trade
+            price(Optional[float]): Price for limit orders (required for LIMIT order type)
+            order_type(str): Order type - 'Market' (default) or 'Limit'
+            leverage(Optional[int]): Leverage for perpetual futures (optional)
+            reduce_only(bool): Whether this is a reduce-only order
+            time_in_force(str): Time in force for limit orders - 'Gtc', 'Ioc', 'Alo' (default: 'Gtc')
+            stop_loss_price(Optional[float]): Optional stop loss trigger price. If provided, creates a stop loss order after main order.
+            take_profit_price(Optional[float]): Optional take profit trigger price. If provided, creates a take profit order after main order.
             
         Returns:
             Dictionary with success, message, and order information
@@ -366,7 +370,9 @@ class HyperliquidEnvironment(BaseEnvironment):
                 price=price,
                 leverage=leverage,
                 reduce_only=reduce_only,
-                time_in_force=time_in_force
+                time_in_force=time_in_force,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price
             )
             result = await self.hyperliquid_service.create_order(request)
             
@@ -388,6 +394,20 @@ class HyperliquidEnvironment(BaseEnvironment):
                 Order Type: {order["type"]}
                 Trade Type: {order["trade_type"]}
                 """)
+            
+            # Add stop loss/take profit info if available
+            if order.get("stop_loss_price"):
+                result_text += f"\nStop Loss Price: {order['stop_loss_price']}"
+            if order.get("take_profit_price"):
+                result_text += f"\nTake Profit Price: {order['take_profit_price']}"
+            if order.get("stop_loss_order"):
+                result_text += f"\nStop Loss Order: Created"
+            if order.get("take_profit_order"):
+                result_text += f"\nTake Profit Order: Created"
+            if order.get("stop_loss_error"):
+                result_text += f"\nStop Loss Error: {order['stop_loss_error']}"
+            if order.get("take_profit_error"):
+                result_text += f"\nTake Profit Error: {order['take_profit_error']}"
             
             return {
                 "success": True,
@@ -633,6 +653,8 @@ class HyperliquidEnvironment(BaseEnvironment):
                    action: str = "HOLD",  # LONG, SHORT, HOLD
                    qty: float = 0.00,
                    leverage: Optional[int] = 10,
+                   stop_loss_price: Optional[float] = None,
+                   take_profit_price: Optional[float] = None,
                    ) -> Dict[str, Any]:
         """Step the trading environment for perpetual futures trading.
         
@@ -644,40 +666,53 @@ class HyperliquidEnvironment(BaseEnvironment):
                 - 'HOLD': Do nothing (default)
             qty (float): Quantity to trade (default: 0.00)
             leverage (int): Leverage for perpetual futures (default: 10x)
+            stop_loss_price (Optional[float]): Optional stop loss trigger price. If provided, creates a stop loss order after main order.
+            take_profit_price (Optional[float]): Optional take profit trigger price. If provided, creates a take profit order after main order.
         Returns:
             Dictionary with success, message, and order information
         """
+        
         action = action.upper()
         try:
             if action == "HOLD":
-                return {
+                result = {
                     "success": True,
                     "message": "HOLD action performed successfully. No order submitted.",
                     "extra": {}
                 }
             elif action == "LONG":
                 # Open long position: BUY
-                return await self.create_order(
+                result = await self.create_order(
                     symbol=symbol,
                     side="buy",
                     qty=qty,
-                    leverage=leverage
+                    leverage=leverage,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price
                 )
             elif action == "SHORT":
                 # Open short position: SELL
-                return await self.create_order(
+                result = await self.create_order(
                     symbol=symbol,
                     side="sell",
                     qty=qty,
-                    leverage=leverage
+                    leverage=leverage,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price
                 )
             else:
-                return {
+                result = {
                     "success": False,
                     "message": f"Invalid action: {action}. Must be LONG, SHORT, or HOLD",
                     "extra": {"error": f"Invalid action: {action}"}
                 }
+                
+            account_request = GetAccountRequest(account_name=self.account_name)
+            account_result = await self.hyperliquid_service.get_account(account_request)
+            result["extra"].update(account_result.extra)
             
+            return result
+        
         except AuthenticationError as e:
             return {
                 "success": False,
@@ -717,19 +752,11 @@ class HyperliquidEnvironment(BaseEnvironment):
             # Get account info
             account_request = GetAccountRequest(account_name=self.account_name)
             account_result = await self.hyperliquid_service.get_account(account_request)
+            
             account_info = dedent(f"""
                 <account_info>
                 {account_result.message}
                 </account_info>
-            """)
-            
-            # Get Positions
-            positions_request = GetPositionsRequest(account_name=self.account_name, trade_type=TradeType.PERPETUAL)
-            positions_result = await self.hyperliquid_service.get_positions(positions_request)
-            positions_string = dedent(f"""
-                <positions>
-                {positions_result.message}
-                </positions>
             """)
             
             # Wait until the next minute boundary for minute-level trading
@@ -762,7 +789,6 @@ class HyperliquidEnvironment(BaseEnvironment):
             state = dedent(f"""
                 <state>
                 {account_info}
-                {positions_string}
                 {data_string}
                 </state>
             """)
@@ -771,8 +797,7 @@ class HyperliquidEnvironment(BaseEnvironment):
                 "state": state,
                 "extra": {
                     "account": account_result.extra,
-                    "positions": positions_result.extra,
-                    "data": data_result.extra,
+                    "input": data_result.extra,
                 }
             }
         except AuthenticationError as e:

@@ -1,6 +1,7 @@
 """Online trading agent implementation for multi-stock trading operations."""
 
 import asyncio
+import os
 import pandas as pd
 from datetime import datetime
 from typing import List, Optional, Type, Dict, Any, Union
@@ -16,6 +17,7 @@ from src.agents.protocol.types import InputArgs
 from src.tools.protocol.types import ToolResponse
 from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.infrastructures.memory import EventType
+from src.tracer import Tracer, Record
 
 def format_actions(actions: List[BaseModel]) -> str:
     """Format actions as a Markdown table using pandas."""
@@ -138,6 +140,9 @@ class OnlineTradingAgent(BaseAgent):
             log_max_length=log_max_length,
             **kwargs)
         
+        self.tracer = Tracer()
+        self.record = Record()
+        
         self.think_output_builder = ThinkOutputBuilder()
         self.think_output_builder.register(tcp.args_schemas())
         self.ThinkOutput = self.think_output_builder.build()
@@ -217,6 +222,9 @@ class OnlineTradingAgent(BaseAgent):
     async def _get_environment_context(self) -> Dict[str, Any]:
         """Get the environment state."""
         environment_context = "<environment_context>"
+        
+        record_observation = {}
+        
         for env_name in ecp.list():
             rule_string = ecp.get_info(env_name).rules
             rule_string = dedent(f"""
@@ -229,6 +237,7 @@ class OnlineTradingAgent(BaseAgent):
             state_string = "<state>"
             state_string += env_state["state"]
             extra = env_state["extra"]
+            record_observation[env_name] = extra
             
             if "screenshots" in extra:
                 for screenshot in extra["screenshots"]:
@@ -241,6 +250,8 @@ class OnlineTradingAgent(BaseAgent):
                 {state_string}
                 </{env_name}>
             """)
+        
+        self.record.observation = record_observation
         
         environment_context += "</environment_context>"
         return {
@@ -306,12 +317,22 @@ class OnlineTradingAgent(BaseAgent):
         done = False
         final_result = None
         
+        record_action = {
+            "thinking": None,
+            "memory": None,
+            "action": [],
+        }
+        
         try:
             think_output = await structured_llm.ainvoke(messages)
             
             thinking = think_output.thinking
             memory = think_output.memory
             actions = think_output.action
+            
+            # Update record action
+            record_action["thinking"] = thinking
+            record_action["memory"] = memory
             
             logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
             logger.info(f"| 🔧 Actions to execute: {len(actions)}")
@@ -328,11 +349,13 @@ class OnlineTradingAgent(BaseAgent):
                 
                 logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
                 
-                tool_result = await tcp.ainvoke(tool_name, input=tool_args)
-                if isinstance(tool_result, ToolResponse):
-                    tool_result = tool_result.message
+                response = await tcp.ainvoke(tool_name, input=tool_args)
+                if isinstance(response, ToolResponse):
+                    tool_result = response.message
+                    response_extra = response.extra if hasattr(response, 'extra') else None
                 else:
-                    tool_result = str(tool_result)
+                    tool_result = str(response)
+                    response_extra = response.get('extra') if isinstance(response, dict) else None
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
@@ -341,6 +364,13 @@ class OnlineTradingAgent(BaseAgent):
                 action_dict = action.model_dump()
                 action_dict["output"] = tool_result
                 action_results.append(action_dict)
+                
+                # Update record action
+                action_extra = {}
+                action_extra.update(action_dict)
+                if response_extra is not None:
+                    action_extra['extra'] = response_extra
+                record_action["action"].append(action_extra)
                     
                 if tool_name == "done":
                     done = True
@@ -352,6 +382,10 @@ class OnlineTradingAgent(BaseAgent):
                 "memory": memory,
                 "action": action_results
             }
+            
+            # Update record action
+            self.record.action = record_action
+            
             await self.memory_manager.add_event(
                 step_number=self.step_number,
                 event_type="action_step",
@@ -420,6 +454,11 @@ class OnlineTradingAgent(BaseAgent):
             # Execute one step
             done, final_result = await self._think_and_action(messages, task_id)
             self.step_number += 1
+            
+            # Update tracer
+            self.tracer.add_record(observation=self.record.observation, 
+                                   action=self.record.action)
+            self.tracer.save_to_json(os.path.join(self.workdir, "tracer.json"))
             
             messages = await self._get_messages(enhanced_task)
             
