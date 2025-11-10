@@ -186,7 +186,7 @@ class DataProducer:
                 # Only process minute-level candle data
                 if channel == "candle":
                     data_type = DataStreamType.CANDLE
-                    logger.info(f"| 📡 Received candle data for {symbol} (timestamp: {data.get('timestamp')})")
+                    logger.debug(f"| 📡 Received candle data for {symbol} (timestamp: {data.get('timestamp')})")
                 else:
                     # Ignore trades and l2Book - only minute-level candle is supported
                     logger.debug(f"| 📊 Ignoring {channel} data (only minute-level candle is supported)")

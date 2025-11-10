@@ -84,7 +84,7 @@ class HyperliquidWebSocket:
             msg = json.loads(message)
             
             # Log all received messages for debugging (show full message)
-            logger.info(f"| 📨 Raw WebSocket message received: {json.dumps(msg, indent=2) if isinstance(msg, dict) else str(msg)}")
+            logger.debug(f"| 📨 Raw WebSocket message received: {json.dumps(msg, indent=2) if isinstance(msg, dict) else str(msg)}")
             
             if not isinstance(msg, dict):
                 logger.warning(f"| 📊 Received non-dict message: {type(msg)}")
@@ -99,7 +99,7 @@ class HyperliquidWebSocket:
                 coin = subscription.get("coin", "unknown")
                 sub_type = subscription.get("type", "unknown")
                 interval = subscription.get("interval", "unknown")
-                logger.info(f"| ✅ Subscription confirmed: coin={coin}, type={sub_type}, interval={interval}")
+                logger.info(f"| ✅ Subscription confirmed: coin={coin}, type={sub_type}, interval={interval}")  
                 return
             
             # Handle error messages
@@ -110,16 +110,16 @@ class HyperliquidWebSocket:
             # Route to appropriate handler based on channel
             # Only process minute-level candle data
             if channel == "candle":
-                logger.info(f"| 📊 Routing to candle handler...")
+                logger.debug(f"| 📊 Routing to candle handler...")
                 await self._handle_candle(data)
             elif channel == "trades":
                 # Ignore trades - only minute-level candle is supported
-                logger.info(f"| 📊 Ignoring trades data (only minute-level candle is supported)")
+                logger.debug(f"| 📊 Ignoring trades data (only minute-level candle is supported)")
             elif channel == "l2Book":
                 # Ignore l2Book - only minute-level candle is supported
-                logger.info(f"| 📊 Ignoring l2Book data (only minute-level candle is supported)")
+                logger.debug(f"| 📊 Ignoring l2Book data (only minute-level candle is supported)")
             else:
-                logger.info(f"| 📊 Received unknown channel: {channel}")
+                logger.debug(f"| 📊 Received unknown channel: {channel}")
                 
         except Exception as e:
             logger.error(f"| ❌ Error in on_message handler: {e}", exc_info=True)
@@ -192,7 +192,7 @@ class HyperliquidWebSocket:
                     "is_closed": is_closed,  # Whether candle is closed
                 }
                 
-                logger.debug(f"| 📊 Processing 1m candle for {symbol} (timestamp: {timestamp}, close_time: {close_time}, is_closed: {is_closed})")
+                logger.debug(f"| 📊 Received 1m candle: {symbol} @ {timestamp} (close: {close_time}, is_closed: {is_closed})")
                 
                 # Call callback with processed data (async)
                 if self.on_message_callback:
@@ -203,8 +203,8 @@ class HyperliquidWebSocket:
                         # Fallback to sync callback
                         self.on_message_callback(ws=self.ws, channel="candle", data=processed_data)
                 else:
-                    # No callback registered, just log the data for debugging
-                    logger.debug(f"| ✅ [CANDLE DATA] {symbol} @ {timestamp} | O:{processed_data['open']} H:{processed_data['high']} L:{processed_data['low']} C:{processed_data['close']} V:{processed_data['volume']}")
+                    # No callback registered, just log the data summary
+                    logger.info(f"| ✅ [CANDLE DATA] {symbol} @ {timestamp} | O:{processed_data['open']} H:{processed_data['high']} L:{processed_data['low']} C:{processed_data['close']} V:{processed_data['volume']}")
                     
             except Exception as e:
                 logger.error(f"| ❌ Error processing candle data: {e}", exc_info=True)
@@ -324,10 +324,10 @@ class HyperliquidWebSocket:
             # Status 1000 with "Inactive" message means server closed due to inactivity
             # We should reconnect in this case
             if self._should_reconnect and close_status_code == 1000 and close_msg == "Inactive":
-                logger.info(f"| 🔄 Server closed connection due to inactivity. Will attempt to reconnect...")
+                logger.debug(f"| 🔄 Server closed connection due to inactivity. Will attempt to reconnect...")
                 if self._reconnect_attempts < self._max_reconnect_attempts:
                     self._reconnect_attempts += 1
-                    logger.info(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
+                    logger.debug(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
                     time.sleep(self._reconnect_delay)
                     # Restart WebSocket connection
                     self._restart_connection()
@@ -338,7 +338,7 @@ class HyperliquidWebSocket:
                 logger.warning(f"| ⚠️  Unexpected WebSocket close. Will attempt to reconnect...")
                 if self._reconnect_attempts < self._max_reconnect_attempts:
                     self._reconnect_attempts += 1
-                    logger.info(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
+                    logger.debug(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
                     time.sleep(self._reconnect_delay)
                     self._restart_connection()
                 else:
@@ -352,7 +352,7 @@ class HyperliquidWebSocket:
     def _on_open(self, ws):
         """Internal open handler - sends subscription messages."""
         try:
-            logger.info("| ✅ WebSocket opened")
+            logger.debug("| ✅ WebSocket opened")
             
             # Ensure candle subscription list contains ALL coins when enabled
             if self.auto_subscribe_all_candles:
@@ -483,7 +483,7 @@ class HyperliquidWebSocket:
         """Main async loop to receive WebSocket messages."""
         while self._running and self._should_reconnect:
             try:
-                logger.debug(f"| 🚀 Connecting to Hyperliquid WebSocket: {self.base_url}")
+                logger.info(f"| 🚀 Connecting to Hyperliquid WebSocket: {self.base_url}")
                 
                 async with websockets.connect(
                     self.base_url,
@@ -491,7 +491,7 @@ class HyperliquidWebSocket:
                     ping_timeout=5
                 ) as websocket:
                     self.ws = websocket
-                    logger.debug("| ✅ WebSocket connected")
+                    logger.info("| ✅ WebSocket connected")
                     
                     # Reset reconnect attempts on successful connection
                     self._reconnect_attempts = 0
@@ -513,7 +513,7 @@ class HyperliquidWebSocket:
                         await self._on_message(message)
                         
             except websockets.exceptions.ConnectionClosed as e:
-                logger.warning(f"| 🛑 WebSocket closed: {e}")
+                logger.info(f"| 🛑 WebSocket closed: {e}")
                 if self.on_close_callback:
                     if asyncio.iscoroutinefunction(self.on_close_callback):
                         await self.on_close_callback(self.ws)
@@ -523,7 +523,7 @@ class HyperliquidWebSocket:
                 # Reconnect logic
                 if self._should_reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
                     self._reconnect_attempts += 1
-                    logger.debug(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
+                    logger.info(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
                     await asyncio.sleep(self._reconnect_delay)
                 else:
                     logger.error(f"| ❌ Maximum reconnection attempts reached or reconnection disabled")
@@ -539,7 +539,7 @@ class HyperliquidWebSocket:
                 
                 if self._should_reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
                     self._reconnect_attempts += 1
-                    logger.debug(f"| 🔄 Error occurred. Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
+                    logger.info(f"| 🔄 Error occurred. Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
                     await asyncio.sleep(self._reconnect_delay)
                 else:
                     break
@@ -547,7 +547,7 @@ class HyperliquidWebSocket:
     async def _send_subscriptions(self):
         """Send subscription messages for all registered symbols."""
         # Subscribe to candles (minute-level only)
-        logger.debug(f"| 📡 Subscribing to {len(self._subscribed_candles)} symbols: {self._subscribed_candles}")
+        logger.info(f"| 📡 Subscribing to {len(self._subscribed_candles)} candle symbols: {self._subscribed_candles}")
         for symbol in self._subscribed_candles:
             subscribe_msg = {
                 "method": "subscribe",
@@ -571,7 +571,7 @@ class HyperliquidWebSocket:
                 }
             }
             await self.ws.send(json.dumps(subscribe_msg))
-            logger.info(f"| 📡 Subscribed to trades: {symbol}")
+            logger.debug(f"| 📡 Subscribed to trades: {symbol}")
             await asyncio.sleep(0.1)
         
         # Subscribe to l2Book
@@ -584,7 +584,7 @@ class HyperliquidWebSocket:
                 }
             }
             await self.ws.send(json.dumps(subscribe_msg))
-            logger.info(f"| 📡 Subscribed to l2Book: {symbol}")
+            logger.debug(f"| 📡 Subscribed to l2Book: {symbol}")
             await asyncio.sleep(0.1)
     
     def start(self, loop: Optional[asyncio.AbstractEventLoop] = None):
