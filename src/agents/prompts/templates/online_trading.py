@@ -145,12 +145,14 @@ Exhibit the following reasoning patterns for successful trading:
 - Focus on quality over quantity - fewer well-planned trades with proper risk management are better than frequent small trades
 
 **Position Holding and Profit Management**
-- Once a position is opened, allow it time to develop - do not prematurely close profitable positions
-- **CRITICAL: Trigger prices set too close to current price will cause premature position closure, preventing you from holding positions long enough**
-- Do not constantly adjust stop loss/take profit trigger prices unless there is a significant change in market structure
-- Let profits run - do not close winning positions too early by setting take profit trigger price too close
-- Only adjust take profit trigger price if price has moved significantly in your favor and you want to lock in partial profits
-- Remember that positions need time to develop - trigger prices that are too close will cut trades short before they can reach their potential
+- Once a position is opened, allow it time to develop within the minute-level timeframe - typically several minutes to allow the trade thesis to play out
+- **CRITICAL: For minute-level trading, balance between giving positions room to develop and protecting capital quickly**
+- Set trigger prices based on technical levels and volatility (ATR), ensuring they are:
+  * Close enough to technical levels to provide meaningful protection and profit targets
+  * Far enough from entry to avoid premature closure from normal price fluctuations
+- Do not constantly adjust stop loss/take profit trigger prices unless there is a significant change in market structure or price has moved substantially in your favor
+- Let profits run to technical targets - do not close winning positions prematurely, but use trailing stop strategies if price moves significantly in your favor
+- For minute-level trading, "time to develop" means minutes not hours - if a position hasn't moved toward target within reasonable time and technical structure has changed, consider re-evaluation
 
 **Risk Management and Position Sizing**
 - Assess portfolio risk and determine appropriate position sizing before executing trades across multiple assets
@@ -165,21 +167,26 @@ Exhibit the following reasoning patterns for successful trading:
 
 **Stop Loss and Take Profit Placement**
 - In perpetual futures contracts, stop loss and take profit are trigger prices - specific price levels that automatically close the position when reached
-- **CRITICAL: Setting trigger prices too close to current price causes premature position closure and prevents holding positions long enough to capture meaningful moves**
-- **CRITICAL: Stop loss trigger price too close to entry = position closes on normal market noise, leading to frequent exits and inability to hold positions**
-- **CRITICAL: Take profit trigger price too close to entry = position closes too early, preventing profits from running and limiting trade potential**
-- **CRITICAL: When calculating trigger prices, ensure sufficient distance from entry price - typically at least 3-5% for stop loss and 5-10% for take profit (or equivalent based on volatility and technical levels)**
-- Calculate trigger prices based on technical analysis (support/resistance, trend lines, volatility bands, ATR-based levels), but ensure they are far enough from entry to allow positions to develop
-- Stop loss price should be set at meaningful technical levels, NOT too close to entry price
-- Stop loss trigger price should be placed beyond normal price noise and market fluctuations to avoid premature exits and excessive trading frequency
-- Avoid setting stop loss trigger price too tight relative to current market volatility and price action - give the position room to breathe
-- Take profit trigger price should allow the trade to develop and capture trend movements - set it far enough to let profits run
-- Take profit trigger price should be set at significant technical targets (resistance/support levels, trend extensions, Fibonacci levels) rather than arbitrary prices close to entry
-- For long positions: stop loss trigger price below entry price at key support levels, take profit trigger price above entry price at resistance or trend extension levels
-- For short positions: stop loss trigger price above entry price at key resistance levels, take profit trigger price below entry price at support or trend extension levels
-- Ensure stop loss and take profit trigger prices provide appropriate risk-reward ratios based on the trade setup and market conditions, with take profit targets that justify the risk taken
-- **CRITICAL: Before setting trigger prices, calculate the percentage distance from entry: (trigger_price - entry_price) / entry_price * 100. Ensure stop loss is at least 3-5% away and take profit is at least 5-10% away (adjust based on asset volatility and technical levels)**
-- Always specify the actual trigger price value (not a percentage), but verify the percentage distance ensures sufficient room for the position to develop
+- **CRITICAL: For minute-level intraday trading (1min, 5min, 15min), use tighter stop loss and take profit distances based on volatility and recent price action**
+- **CRITICAL: Calculate trigger prices based on technical analysis and volatility indicators (ATR, Bollinger Bands, recent support/resistance) to find the closest meaningful levels**
+- Calculate trigger prices dynamically based on:
+  * **ATR (Average True Range)**: Use 1-2x ATR for stop loss distance, 2-3x ATR for take profit distance
+  * **Recent support/resistance**: Identify the nearest technical levels within reasonable distance
+  * **Bollinger Bands**: Use band distance as reference for volatility-adjusted trigger prices
+  * **Recent price swings**: Analyze recent minute-level candles to understand typical price movements
+- **Distance Guidelines for Minute-Level Crypto Trading**:
+  * **Stop loss**: Typically 0.5-1.5% from entry (adjust based on volatility and ATR)
+  * **Take profit**: Typically 1.0-3.0% from entry (adjust based on technical targets and volatility)
+  * **High volatility periods**: Use wider distances (1.5-2.5% stop loss, 3-5% take profit)
+  * **Low volatility periods**: Use tighter distances (0.3-0.8% stop loss, 0.8-2% take profit)
+- **CRITICAL: Always calculate actual volatility before setting trigger prices - never use fixed percentages without checking current market conditions**
+- Stop loss price should be set just beyond the nearest technical support (for LONG) or resistance (for SHORT), ensuring it's based on actual price structure
+- Take profit price should be set at the nearest significant resistance (for LONG) or support (for SHORT) that provides favorable risk-reward ratio (at least 1.5:1)
+- For long positions: stop loss trigger price below entry price at nearest key support level, take profit trigger price above entry price at nearest resistance level
+- For short positions: stop loss trigger price above entry price at nearest key resistance level, take profit trigger price below entry price at nearest support level
+- **CRITICAL: Prioritize technical levels over arbitrary percentages - if nearest support is 0.3% away and next is 1.2% away, use technical judgment to decide which provides better protection**
+- Ensure stop loss and take profit trigger prices provide appropriate risk-reward ratios (minimum 1.5:1, ideally 2:1 or better) based on the trade setup and market conditions
+- Always specify the actual trigger price value (not a percentage), calculated from current technical analysis and volatility metrics
 
 **Portfolio Coordination**
 - Monitor multiple positions simultaneously across different assets and coordinate trading actions efficiently
@@ -192,14 +199,17 @@ Exhibit the following reasoning patterns for successful trading:
 - Verify stop loss and take profit trigger prices are set correctly relative to entry price:
   * For LONG positions: stop_loss_price < entry_price < take_profit_price
   * For SHORT positions: take_profit_price < entry_price < stop_loss_price
-- Verify that stop loss and take profit trigger prices are based on technical analysis (support/resistance, trend lines, volatility) rather than arbitrary prices
-- **CRITICAL: Before executing, calculate and verify the percentage distance from entry price:**
-  * Stop loss distance: |stop_loss_price - entry_price| / entry_price * 100
-  * Take profit distance: |take_profit_price - entry_price| / entry_price * 100
-  * Ensure stop loss is at least 3-5% away from entry (or more based on volatility)
-  * Ensure take profit is at least 5-10% away from entry (or more based on technical targets)
-  * If distances are too small, adjust trigger prices to provide sufficient room for the position to develop
-- **CRITICAL: Verify that trigger prices are far enough from entry to allow the position to develop and avoid premature closure**
+- **CRITICAL: Before executing, verify trigger prices are based on technical analysis and volatility:**
+  * Calculate current ATR and use it as reference for distance (stop loss: 1-2x ATR, take profit: 2-3x ATR)
+  * Identify nearest support/resistance levels and verify trigger prices align with them
+  * Calculate percentage distances: |trigger_price - entry_price| / entry_price * 100
+  * For minute-level crypto trading: stop loss typically 0.5-1.5%, take profit typically 1.0-3.0% (adjust for volatility)
+  * Verify risk-reward ratio is at least 1.5:1, ideally 2:1 or better
+- **CRITICAL: Ensure trigger prices are close enough to nearest technical levels but far enough to avoid noise:**
+  * Too tight (< 0.3% in low volatility) = premature exit from normal fluctuations
+  * Too wide (> 2% when nearest support is 0.5% away) = unnecessary risk exposure
+  * Find the optimal balance: nearest meaningful technical level that provides adequate protection
+- **CRITICAL: Always calculate actual volatility (ATR) before setting distances - adapt to current market conditions rather than using fixed percentages**
 </reasoning_rules>
 
 <tool_use_rules>

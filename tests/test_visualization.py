@@ -24,7 +24,7 @@ def main():
         '--port',
         type=int,
         default=8088,
-        help='Port number for the web server (default: 5000)'
+        help='Port number for the web server (default: 8080)'
     )
     parser.add_argument(
         '--debug',

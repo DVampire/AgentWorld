@@ -1,6 +1,8 @@
 """Tracer visualization module for displaying agent execution records."""
 
 import json
+import threading
+import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from flask import Flask, render_template, jsonify
@@ -24,16 +26,40 @@ class TracerVisualizer:
                         template_folder=str(Path(__file__).parent / "templates"),
                         static_folder=str(Path(__file__).parent / "static"))
         self.records: List[Dict[str, Any]] = []
+        self._data_lock = threading.Lock()
+        self._stop_reload_thread = threading.Event()
         self._setup_routes()
         self._load_data()
+        
+        # Start auto-reload thread (reload every 60 seconds)
+        self._reload_thread = threading.Thread(target=self._auto_reload_data, daemon=True)
+        self._reload_thread.start()
     
     def _load_data(self):
         """Load data from tracer.json file."""
         if not self.tracer_json_path.exists():
-            raise FileNotFoundError(f"Tracer JSON file not found: {self.tracer_json_path}")
+            print(f"Warning: Tracer JSON file not found: {self.tracer_json_path}")
+            return
         
-        with open(self.tracer_json_path, 'r', encoding='utf-8') as f:
-            self.records = json.load(f)
+        try:
+            with open(self.tracer_json_path, 'r', encoding='utf-8') as f:
+                new_records = json.load(f)
+            
+            # Update records with thread lock
+            with self._data_lock:
+                self.records = new_records
+            
+            print(f"Data loaded: {len(self.records)} records from {self.tracer_json_path}")
+        except Exception as e:
+            print(f"Error loading data: {e}")
+    
+    def _auto_reload_data(self):
+        """Auto-reload data every 60 seconds in background thread."""
+        while not self._stop_reload_thread.is_set():
+            time.sleep(60)  # Wait 60 seconds
+            if not self._stop_reload_thread.is_set():
+                print("Auto-reloading data...")
+                self._load_data()
     
     def _extract_account_value(self, record: Dict[str, Any]) -> Optional[float]:
         """Extract account value from a record."""
@@ -150,7 +176,11 @@ class TracerVisualizer:
         crypto_prices = {}  # Dict[symbol] -> List[price]
         crypto_symbols = set()  # Track all symbols
         
-        for idx, record in enumerate(self.records):
+        # Create a copy of records with thread lock
+        with self._data_lock:
+            records_copy = self.records.copy()
+        
+        for idx, record in enumerate(records_copy):
             timestamp = record.get("timestamp", "")
             account_value = self._extract_account_value(record)
             
@@ -447,6 +477,9 @@ class TracerVisualizer:
         def get_data():
             """Get chart data."""
             try:
+                # Reload data on each request (when page refreshes)
+                self._load_data()
+                
                 data = self._prepare_chart_data()
                 
                 # Check if we have data
@@ -489,9 +522,19 @@ class TracerVisualizer:
                 })
             return jsonify({"error": "Invalid point index"}), 404
     
+    def stop(self):
+        """Stop the auto-reload thread."""
+        self._stop_reload_thread.set()
+        if self._reload_thread.is_alive():
+            self._reload_thread.join(timeout=2.0)
+    
     def run(self, debug: bool = False):
         """Run the web server."""
         print(f"Starting visualization server on http://localhost:{self.port}")
         print(f"Open your browser and navigate to http://localhost:{self.port}")
-        self.app.run(host='0.0.0.0', port=self.port, debug=debug)
+        print(f"Auto-reload enabled: data will refresh every 60 seconds")
+        try:
+            self.app.run(host='0.0.0.0', port=self.port, debug=debug)
+        finally:
+            self.stop()
 
