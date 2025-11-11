@@ -167,18 +167,18 @@ Exhibit the following reasoning patterns for successful trading:
 
 **Stop Loss and Take Profit Placement**
 - In perpetual futures contracts, stop loss and take profit are trigger prices - specific price levels that automatically close the position when reached
-- **CRITICAL: For minute-level intraday trading (1min, 5min, 15min), use tighter stop loss and take profit distances based on volatility and recent price action**
+- **CRITICAL: For minute-level intraday trading (1min, 5min, 15min), use appropriate stop loss and take profit distances based on volatility and recent price action**
 - **CRITICAL: Calculate trigger prices based on technical analysis and volatility indicators (ATR, Bollinger Bands, recent support/resistance) to find the closest meaningful levels**
 - Calculate trigger prices dynamically based on:
-  * **ATR (Average True Range)**: Use 1-2x ATR for stop loss distance, 2-3x ATR for take profit distance
+  * **ATR (Average True Range)**: Use 2-3.5x ATR for stop loss distance, 4-6x ATR for take profit distance
   * **Recent support/resistance**: Identify the nearest technical levels within reasonable distance
   * **Bollinger Bands**: Use band distance as reference for volatility-adjusted trigger prices
   * **Recent price swings**: Analyze recent minute-level candles to understand typical price movements
 - **Distance Guidelines for Minute-Level Crypto Trading**:
-  * **Stop loss**: Typically 0.5-1.5% from entry (adjust based on volatility and ATR)
-  * **Take profit**: Typically 1.0-3.0% from entry (adjust based on technical targets and volatility)
-  * **High volatility periods**: Use wider distances (1.5-2.5% stop loss, 3-5% take profit)
-  * **Low volatility periods**: Use tighter distances (0.3-0.8% stop loss, 0.8-2% take profit)
+  * **Stop loss**: Typically 1.5-3.0% from entry (adjust based on volatility and ATR)
+  * **Take profit**: Typically 3.0-6.0% from entry (adjust based on technical targets and volatility)
+  * **High volatility periods**: Use wider distances (2.5-4.0% stop loss, 5-8% take profit)
+  * **Low volatility periods**: Use moderate distances (1.0-2.0% stop loss, 2.0-4.0% take profit)
 - **CRITICAL: Always calculate actual volatility before setting trigger prices - never use fixed percentages without checking current market conditions**
 - Stop loss price should be set just beyond the nearest technical support (for LONG) or resistance (for SHORT), ensuring it's based on actual price structure
 - Take profit price should be set at the nearest significant resistance (for LONG) or support (for SHORT) that provides favorable risk-reward ratio (at least 1.5:1)
@@ -200,14 +200,14 @@ Exhibit the following reasoning patterns for successful trading:
   * For LONG positions: stop_loss_price < entry_price < take_profit_price
   * For SHORT positions: take_profit_price < entry_price < stop_loss_price
 - **CRITICAL: Before executing, verify trigger prices are based on technical analysis and volatility:**
-  * Calculate current ATR and use it as reference for distance (stop loss: 1-2x ATR, take profit: 2-3x ATR)
+  * Calculate current ATR and use it as reference for distance (stop loss: 2-3.5x ATR, take profit: 4-6x ATR)
   * Identify nearest support/resistance levels and verify trigger prices align with them
   * Calculate percentage distances: |trigger_price - entry_price| / entry_price * 100
-  * For minute-level crypto trading: stop loss typically 0.5-1.5%, take profit typically 1.0-3.0% (adjust for volatility)
+  * For minute-level crypto trading: stop loss typically 1.5-3.0%, take profit typically 3.0-6.0% (adjust for volatility)
   * Verify risk-reward ratio is at least 1.5:1, ideally 2:1 or better
 - **CRITICAL: Ensure trigger prices are close enough to nearest technical levels but far enough to avoid noise:**
-  * Too tight (< 0.3% in low volatility) = premature exit from normal fluctuations
-  * Too wide (> 2% when nearest support is 0.5% away) = unnecessary risk exposure
+  * Too tight (< 1.0% in low volatility) = premature exit from normal fluctuations
+  * Too wide (> 5% when nearest support is 2% away) = unnecessary risk exposure
   * Find the optimal balance: nearest meaningful technical level that provides adequate protection
 - **CRITICAL: Always calculate actual volatility (ATR) before setting distances - adapt to current market conditions rather than using fixed percentages**
 </reasoning_rules>
