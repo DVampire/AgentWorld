@@ -758,7 +758,7 @@ class HyperliquidEnvironment(BaseEnvironment):
                 description="Step the trading environment for perpetual futures trading.")
     async def step(self, 
                    symbol: str = "BTC", 
-                   action: str = "HOLD",  # LONG, SHORT, HOLD
+                   action: str = "HOLD",  # LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD
                    qty: float = 0.00,
                    leverage: Optional[int] = 10,
                    stop_loss_price: Optional[float] = None,
@@ -766,11 +766,26 @@ class HyperliquidEnvironment(BaseEnvironment):
                    ) -> Dict[str, Any]:
         """Step the trading environment for perpetual futures trading.
         
+        Hyperliquid Perpetual Futures Trading Rules:
+        ┌──────────────┬─────────────────────────┐
+        │ Action       │ Description             │
+        ├──────────────┼─────────────────────────┤
+        │ LONG         │ Open long position      │
+        │ CLOSE_LONG   │ Close long position     │
+        │ SHORT        │ Open short position     │
+        │ CLOSE_SHORT  │ Close short position    │
+        │ HOLD         │ Do nothing              │
+        └──────────────┴─────────────────────────┘
+        
+        Note: Closing positions uses market orders for better execution.
+        
         Args:
             symbol (str): Symbol to trade (e.g., 'BTC', 'ETH')
             action (str): Trading action for perpetual futures:
-                - 'LONG': Open long position (BUY)
-                - 'SHORT': Open short position (SELL)
+                - 'LONG': Open long position
+                - 'SHORT': Open short position
+                - 'CLOSE_LONG': Close long position (market order)
+                - 'CLOSE_SHORT': Close short position (market order)
                 - 'HOLD': Do nothing (default)
             qty (float): Quantity to trade (default: 0.00)
             leverage (int): Leverage for perpetual futures (default: 10x)
@@ -789,29 +804,51 @@ class HyperliquidEnvironment(BaseEnvironment):
                     "extra": {}
                 }
             elif action == "LONG":
-                # Open long position: BUY
+                # Open long position: BUY, reduce_only=False
                 result = await self.create_order(
                     symbol=symbol,
                     side="buy",
                     qty=qty,
+                    order_type="Market",
                     leverage=leverage,
+                    reduce_only=False,
                     stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price
                 )
             elif action == "SHORT":
-                # Open short position: SELL
+                # Open short position: SELL, reduce_only=False
                 result = await self.create_order(
                     symbol=symbol,
                     side="sell",
                     qty=qty,
+                    order_type="Market",
                     leverage=leverage,
+                    reduce_only=False,
                     stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price
+                )
+            elif action == "CLOSE_LONG":
+                # Close long position: SELL, reduce_only=True, Market order
+                result = await self.create_order(
+                    symbol=symbol,
+                    side="sell",
+                    qty=qty,
+                    order_type="Market",
+                    reduce_only=True
+                )
+            elif action == "CLOSE_SHORT":
+                # Close short position: BUY, reduce_only=True, Market order
+                result = await self.create_order(
+                    symbol=symbol,
+                    side="buy",
+                    qty=qty,
+                    order_type="Market",
+                    reduce_only=True
                 )
             else:
                 result = {
                     "success": False,
-                    "message": f"Invalid action: {action}. Must be LONG, SHORT, or HOLD",
+                    "message": f"Invalid action: {action}. Must be LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, or HOLD",
                     "extra": {"error": f"Invalid action: {action}"}
                 }
                 
