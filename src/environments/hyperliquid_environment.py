@@ -79,6 +79,13 @@ class HyperliquidEnvironment(BaseEnvironment):
         self.symbol = symbol
         self.data_type = data_type
         self.hyperliquid_service = hyperliquid_service
+        
+        # Performance tracking
+        self.account_value = None
+        self.initial_account_value = None
+        self.max_account_value = None
+        self.max_drawdown = 0.0
+        self.total_profit = 0.0
     
     async def initialize(self) -> None:
         """Initialize the Hyperliquid trading environment."""
@@ -87,6 +94,77 @@ class HyperliquidEnvironment(BaseEnvironment):
     async def cleanup(self) -> None:
         """Cleanup the Hyperliquid trading environment."""
         logger.info("| 🧹 Hyperliquid Trading Environment cleanup completed")
+        
+    async def _calculate_matrics(self, account_value: float) -> Dict[str, Any]:
+        """Calculate real-time performance metrics including profit and max drawdown.
+        
+        Args:
+            account_value: Current account value
+            
+        Returns:
+            Dictionary containing performance metrics
+        """
+        # Ensure account_value is float
+        try:
+            account_value = float(account_value)
+        except (ValueError, TypeError):
+            logger.warning(f"| ⚠️  Invalid account_value type: {type(account_value)}, value: {account_value}")
+            account_value = 0.0
+        
+        # Initialize on first call
+        if self.initial_account_value is None:
+            self.initial_account_value = account_value
+            self.account_value = account_value
+            self.max_account_value = account_value
+            logger.info(f"| 📊 Initial account value set: ${account_value:,.2f}")
+            
+        pre_account_value = self.account_value
+        current_account_value = account_value
+        
+        # Update current account value
+        self.account_value = current_account_value
+        
+        # Calculate profit (absolute and percentage)
+        self.total_profit = current_account_value - self.initial_account_value
+        profit_percentage = (self.total_profit / self.initial_account_value * 100) if self.initial_account_value > 0 else 0.0
+        
+        # Update max account value (peak)
+        if current_account_value > self.max_account_value:
+            self.max_account_value = current_account_value
+        
+        # Calculate current drawdown from peak
+        current_drawdown = 0.0
+        current_drawdown_percentage = 0.0
+        if self.max_account_value > 0:
+            current_drawdown = self.max_account_value - current_account_value
+            current_drawdown_percentage = (current_drawdown / self.max_account_value * 100)
+        
+        # Update max drawdown
+        if current_drawdown > self.max_drawdown:
+            self.max_drawdown = current_drawdown
+        
+        # Calculate max drawdown percentage
+        max_drawdown_percentage = (self.max_drawdown / self.max_account_value * 100) if self.max_account_value > 0 else 0.0
+        
+        # Calculate period return (since last update)
+        period_return = current_account_value - pre_account_value
+        period_return_percentage = (period_return / pre_account_value * 100) if pre_account_value > 0 else 0.0
+        
+        metrics = {
+            "current_account_value": current_account_value,
+            "initial_account_value": self.initial_account_value,
+            "max_account_value": self.max_account_value,
+            "total_profit": self.total_profit,
+            "profit_percentage": profit_percentage,
+            "current_drawdown": current_drawdown,
+            "current_drawdown_percentage": current_drawdown_percentage,
+            "max_drawdown": self.max_drawdown,
+            "max_drawdown_percentage": max_drawdown_percentage,
+            "period_return": period_return,
+            "period_return_percentage": period_return_percentage,
+        }
+        
+        return metrics
     
     async def get_account(self) -> Dict[str, Any]:
         """Get account information.
@@ -106,17 +184,47 @@ class HyperliquidEnvironment(BaseEnvironment):
                 }
             
             account = result.extra["account"]
+            
+            # Convert account_value to float to avoid type comparison errors
+            account_value_raw = account.get("margin_summary", {}).get("accountValue", 0)
+            try:
+                account_value = float(account_value_raw)
+            except (ValueError, TypeError):
+                account_value = 0.0
+            
+            asset_positions = json.dumps(account.get("asset_positions", []), indent=4)
+            
+            # Calculate performance metrics
+            metrics = None
+            if account_value > 0:
+                metrics = await self._calculate_matrics(account_value)
+            
+            # Build result text with metrics
+            metrics_text = ""
+            if metrics:
+                metrics_text = dedent(f"""
+                Performance Metrics:
+                Total Profit: ${metrics['total_profit']:,.2f} ({metrics['profit_percentage']:+.2f}%)
+                Current Drawdown: ${metrics['current_drawdown']:,.2f} ({metrics['current_drawdown_percentage']:.2f}%)
+                Max Drawdown: ${metrics['max_drawdown']:,.2f} ({metrics['max_drawdown_percentage']:.2f}%)
+                """)
+            
             result_text = dedent(f"""
                 Account Information:
-                Wallet Address: {account.get("wallet_address", "N/A")}
-                
-                Margin Summary:
-                {json.dumps(account.get("margin_summary", {}), indent=2)}
-                
-                Asset Positions:
-                {json.dumps(account.get("asset_positions", []), indent=2)}
+                Timestamp: {account.get("time", "N/A")}
+                Account Value: ${account_value:,.2f}
+                Asset Positions: {asset_positions}
+                {metrics_text}
                 """)
-            extra = result.extra
+            
+            extra = {
+                "account_value": account_value,
+                "asset_positions": asset_positions,
+                "time": account.get("time", "N/A"),
+            }
+            
+            if metrics:
+                extra["metrics"] = metrics
             
             return {
                 "success": True,
@@ -707,9 +815,21 @@ class HyperliquidEnvironment(BaseEnvironment):
                     "extra": {"error": f"Invalid action: {action}"}
                 }
                 
+            # Get account information and calculate metrics
             account_request = GetAccountRequest(account_name=self.account_name)
             account_result = await self.hyperliquid_service.get_account(account_request)
             result["extra"].update(account_result.extra)
+            
+            # Calculate performance metrics
+            account_value_raw = account_result.extra.get("account", {}).get("margin_summary", {}).get("accountValue", 0)
+            try:
+                account_value = float(account_value_raw)
+            except (ValueError, TypeError):
+                account_value = 0.0
+            
+            if account_value > 0:
+                metrics = await self._calculate_matrics(account_value)
+                result["extra"]["metrics"] = metrics
             
             return result
         

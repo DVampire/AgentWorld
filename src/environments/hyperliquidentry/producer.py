@@ -55,10 +55,18 @@ class DataProducer:
         self._max_concurrent_writes = max_concurrent_writes
         self._ws_client: Optional[HyperliquidWebSocket] = None
         
-        # Candle minute buffer:
-        # Key: symbol, Value: {"close_time": str, "data": Dict}
-        # Buffer the latest data for current minute, only insert when minute changes
-        self._candle_minute_buffer: Dict[str, Dict] = {}
+        # Candle data buffer: store latest candle data for current minute
+        # Key: symbol, Value: latest candle data dict
+        # Hyperliquid pushes multiple updates for same minute, we keep only the latest
+        self._candle_buffer: Dict[str, Dict] = {}
+        
+        # Track current minute being buffered for each symbol
+        # Key: symbol, Value: current_minute_timestamp (e.g., "10:00:00")
+        self._current_minute: Dict[str, str] = {}
+        
+        # Track if we're waiting for first complete minute
+        # Key: symbol, Value: bool (True if waiting)
+        self._waiting_for_new_minute: Dict[str, bool] = {}
     
     async def _handle_data(self, data: Dict, symbol: str, data_type: DataStreamType) -> None:
         """Handle incoming data and write to database.
@@ -89,61 +97,102 @@ class DataProducer:
                 logger.error(f"| ❌ Error handling {data_type.value} data for {symbol}: {e}", exc_info=True)
     
     async def _process_candle_data(self, data: Dict, symbol: str) -> None:
-        """Process candle data - buffer current minute, insert when minute changes.
+        """Process candle data - keep latest update for current minute, insert when minute changes.
         
         Strategy:
-        1. WebSocket pushes updates every few seconds for the SAME minute (e.g., 07:14:00-07:14:59)
-        2. We buffer the LATEST update for current minute
-        3. When close_time changes (e.g., from 07:14:59 to 07:15:59), we know previous minute is complete
-        4. Insert the buffered data (which contains the final OHLCV for that minute)
+        Hyperliquid pushes multiple updates for the SAME minute (e.g., 10:01:00)
+        - Each update contains the latest OHLCV state for that minute
+        - We keep only the LATEST update (most complete data)
+        - When new minute starts, insert the latest data from previous minute
+        
+        Example timeline:
+        - Program starts at 10:00:35 → Wait for new minute
+        - 10:00:45 update arrives → Skip (incomplete minute)
+        - 10:01:02 update #1 arrives → Buffer (replace any previous 10:01 data)
+        - 10:01:05 update #2 arrives → Buffer (replace update #1)
+        - 10:01:30 update #3 arrives → Buffer (replace update #2)
+        - 10:01:55 update #4 arrives → Buffer (replace update #3) ← Latest state
+        - 10:02:00 update arrives → Insert buffered 10:01 data (update #4) → Start buffering 10:02
         
         This ensures:
-        - Only 1 database write per minute per symbol
-        - We capture the final/complete state of each 1-minute candle
+        - Only 1 database write per minute
+        - We get the most complete/accurate data (last update of the minute)
+        - No need to aggregate - Hyperliquid already provides complete OHLCV
         
         Args:
-            data: Candle data from WebSocket (contains close_time)
+            data: Complete candle data from WebSocket (OHLCV for current minute)
             symbol: Symbol name (uppercase)
         """
         try:
-            close_time = data.get("close_time")
-            if not close_time:
-                logger.warning(f"| ⚠️  Candle data missing close_time for {symbol}")
+            timestamp = data.get("timestamp")  # Minute timestamp (e.g., "10:00:00")
+            if not timestamp:
+                logger.warning(f"| ⚠️  Candle data missing timestamp for {symbol}")
                 return
             
-            # Check if we have buffered data for this symbol
-            if symbol in self._candle_minute_buffer:
-                buffered_close_time = self._candle_minute_buffer[symbol]["close_time"]
-                
-                if close_time != buffered_close_time:
-                    # Minute changed! Insert the buffered (complete) candle from previous minute
-                    buffered_data = self._candle_minute_buffer[symbol]["data"]
-                    logger.info(f"| 🕐 Minute changed for {symbol}: {buffered_close_time} → {close_time}")
-                    logger.info(f"| 📤 Inserting complete candle (close_time: {buffered_close_time})")
-                    
-                    result = await self._candle_handler.stream_insert(buffered_data, symbol)
-                    success = result.success if hasattr(result, 'success') else result.get("success", False)
-                    message = result.message if hasattr(result, 'message') else result.get("message", "")
-                    
-                    if success:
-                        logger.info(f"| ✅ Complete candle inserted for {symbol} (close_time: {buffered_close_time})")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert candle for {symbol}: {message}")
-                else:
-                    # Same minute, just update buffer silently
-                    logger.debug(f"| 📦 Updating buffer for {symbol} (same minute: {close_time})")
-            else:
-                # First candle for this symbol
-                logger.info(f"| 🆕 First candle data for {symbol} (close_time: {close_time})")
+            # Initialize tracking for this symbol
+            if symbol not in self._waiting_for_new_minute:
+                self._waiting_for_new_minute[symbol] = True
+                logger.info(f"| ⏳ Waiting for first complete minute for {symbol}")
             
-            # Update buffer with current data (latest state of current minute)
-            self._candle_minute_buffer[symbol] = {
-                "close_time": close_time,
-                "data": data
-            }
+            current_minute = self._current_minute.get(symbol)
+            
+            # Check if new minute started
+            if current_minute is None:
+                # First data point
+                if self._waiting_for_new_minute[symbol]:
+                    # Skip first incomplete minute
+                    logger.info(f"| 🚫 Skipping incomplete minute for {symbol} @ {timestamp}")
+                    self._waiting_for_new_minute[symbol] = False
+                    self._current_minute[symbol] = timestamp
+                    self._candle_buffer[symbol] = data
+                    return
+                else:
+                    # Should not happen, but handle gracefully
+                    self._current_minute[symbol] = timestamp
+                    self._candle_buffer[symbol] = data
+            
+            elif timestamp != current_minute:
+                # New minute started! Insert previous minute's latest data
+                logger.info(f"| 🕐 New minute for {symbol}: {current_minute} → {timestamp}")
+                
+                if symbol in self._candle_buffer and self._candle_buffer[symbol]:
+                    # Insert the latest (most complete) data from previous minute
+                    latest_data = self._candle_buffer[symbol]
+                    logger.info(f"| 📤 Inserting latest data for {symbol} @ {current_minute}")
+                    await self._insert_candle(latest_data, symbol, current_minute)
+                else:
+                    logger.warning(f"| ⚠️  No buffered data for {symbol} @ {current_minute}")
+                
+                # Start buffering new minute
+                self._current_minute[symbol] = timestamp
+                self._candle_buffer[symbol] = data
+            else:
+                # Same minute - update buffer with latest data (replace previous)
+                self._candle_buffer[symbol] = data
+                logger.debug(f"| 📦 Updated buffer for {symbol} @ {timestamp} (keeping latest)")
             
         except Exception as e:
             logger.error(f"| ❌ Error processing candle data for {symbol}: {e}", exc_info=True)
+    
+    async def _insert_candle(self, data: Dict, symbol: str, timestamp: str) -> None:
+        """Insert candle data into database.
+        
+        Args:
+            data: Candle data to insert
+            symbol: Symbol name
+            timestamp: Timestamp of the candle
+        """
+        try:
+            result = await self._candle_handler.stream_insert(data, symbol)
+            success = result.success if hasattr(result, 'success') else result.get("success", False)
+            message = result.message if hasattr(result, 'message') else result.get("message", "")
+            
+            if success:
+                logger.info(f"| ✅ Candle inserted for {symbol} @ {timestamp}")
+            else:
+                logger.warning(f"| ⚠️  Failed to insert candle for {symbol} @ {timestamp}: {message}")
+        except Exception as e:
+            logger.error(f"| ❌ Error inserting candle for {symbol} @ {timestamp}: {e}", exc_info=True)
     
     async def _data_processor(self) -> None:
         """Process data from queue."""
@@ -349,12 +398,12 @@ class DataProducer:
             if self._event_loop and self._candle_handler:
                 logger.info("| 🔄 Flushing buffered candle data...")
                 future = asyncio.run_coroutine_threadsafe(
-                    self._flush_minute_buffer(),
+                    self._flush_candle_buffers(),
                     self._event_loop
                 )
-                future.result(timeout=5.0)
+                future.result(timeout=10.0)
         except Exception as e:
-            logger.warning(f"| ⚠️  Error flushing minute buffer: {e}")
+            logger.warning(f"| ⚠️  Error flushing candle buffers: {e}")
         
         # Stop WebSocket client (async)
         try:
@@ -364,7 +413,13 @@ class DataProducer:
                     self._ws_client.stop(),
                     self._event_loop
                 )
-                future.result(timeout=5.0)
+                future.result(timeout=10.0)  # Increased timeout to 10 seconds
+        except asyncio.CancelledError:
+            # CancelledError is expected when stopping, not an error
+            logger.debug("| ℹ️  WebSocket stop task was cancelled (expected)")
+        except TimeoutError:
+            # Timeout is not critical, WebSocket will be stopped anyway
+            logger.warning("| ⚠️  WebSocket stop timed out, but continuing cleanup...")
         except Exception as e:
             logger.warning(f"| ⚠️  Error stopping WebSocket client: {e}")
         
@@ -374,35 +429,33 @@ class DataProducer:
         
         logger.info("| ✅ Data stream stopped")
     
-    async def _flush_minute_buffer(self) -> None:
-        """Flush all buffered minute data before shutdown.
+    async def _flush_candle_buffers(self) -> None:
+        """Flush all buffered candle data before shutdown.
         
-        This ensures the last minute's data is not lost when stopping.
+        Inserts the latest buffered data for all symbols.
         """
-        if not self._candle_minute_buffer:
+        if not self._candle_buffer:
             logger.info("| ℹ️  No buffered candles to flush")
             return
         
-        logger.info(f"| 🔄 Flushing {len(self._candle_minute_buffer)} buffered candles...")
+        logger.info(f"| 🔄 Flushing buffers for {len(self._candle_buffer)} symbols...")
         
-        for symbol, buffer_info in self._candle_minute_buffer.items():
+        for symbol, latest_data in self._candle_buffer.items():
+            if not latest_data:
+                continue
+                
             try:
-                close_time = buffer_info["close_time"]
-                data = buffer_info["data"]
-                
-                logger.info(f"| 📤 Flushing final candle for {symbol} (close_time: {close_time})")
-                
-                result = await self._candle_handler.stream_insert(data, symbol)
-                success = result.success if hasattr(result, 'success') else result.get("success", False)
-                message = result.message if hasattr(result, 'message') else result.get("message", "")
-                
-                if success:
-                    logger.info(f"| ✅ Flushed candle for {symbol}")
-                else:
-                    logger.warning(f"| ⚠️  Failed to flush candle for {symbol}: {message}")
+                current_minute = self._current_minute.get(symbol)
+                if current_minute:
+                    logger.info(f"| 📤 Flushing latest data for {symbol} @ {current_minute}")
+                    # Insert the latest buffered data
+                    await self._insert_candle(latest_data, symbol, current_minute)
             except Exception as e:
-                logger.error(f"| ❌ Error flushing candle for {symbol}: {e}", exc_info=True)
+                logger.error(f"| ❌ Error flushing buffer for {symbol}: {e}", exc_info=True)
         
-        self._candle_minute_buffer.clear()
-        logger.info("| ✅ Minute buffer flushed and cleared")
+        # Clear all buffers
+        self._candle_buffer.clear()
+        self._current_minute.clear()
+        self._waiting_for_new_minute.clear()
+        logger.info("| ✅ Candle buffers flushed and cleared")
 

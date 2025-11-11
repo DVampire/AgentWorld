@@ -3,6 +3,7 @@ import asyncio
 import json
 from typing import Optional, Union, List, Dict
 from pathlib import Path
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
@@ -304,9 +305,12 @@ class HyperliquidService:
             
             # Format account data
             account_data = {
-                "wallet_address": client.wallet_address,
                 "margin_summary": account_info.get('marginSummary', {}),
+                "cross_margin_summary": account_info.get('crossMarginSummary', {}),
+                "cross_maintenance_margin_used": account_info.get('crossMarginSummary', {}).get('totalMarginUsed', 0),
+                "withdrawable": account_info.get('withdrawable', 0),
                 "asset_positions": account_info.get('assetPositions', []),
+                "time": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
                 "trade_type": "perpetual",
             }
             

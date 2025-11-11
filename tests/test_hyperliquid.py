@@ -129,12 +129,7 @@ def test_get_account():
         account = client.get_account()
         print(f"✅ Account info retrieved successfully")
         print(f"Keys: {list(account.keys())}")
-        
-        # Show some account details
-        if isinstance(account, dict):
-            for key in ['marginSummary', 'assetPositions', 'withdrawable']:
-                if key in account:
-                    print(f"  {key}: {account[key]}")
+        print(f"Account: {account}")
         
         return account
     except Exception as e:
@@ -469,17 +464,17 @@ async def async_main():
     print()
     
     # Test 1: Get exchange info
-    # exchange_info = test_get_exchange_info()
+    exchange_info = test_get_exchange_info()
     
     # Test 2: Get asset index
-    # if exchange_info:
-    #     test_get_asset_index()
+    if exchange_info:
+        test_get_asset_index()
     
     # Test 3: Get account
-    # test_get_account()
+    test_get_account()
     
     # Test 4: Get positions
-    # test_get_positions()
+    test_get_positions()
     
     # Test 5: Create market order (commented out by default - requires private key)
     # Uncomment to test order creation
@@ -497,11 +492,11 @@ async def async_main():
     # await test_websocket_candles(use_testnet=False)
     
     # Test 8: Complete data flow (WebSocket -> Producer -> Database -> Consumer)
-    print("\n" + "=" * 60)
-    print("Starting Complete Data Flow Test...")
-    print("=" * 60)
-    # Use mainnet (testnet=False) because it has more active trading
-    await test_complete_data_flow(use_testnet=False)
+    # print("\n" + "=" * 60)
+    # print("Starting Complete Data Flow Test...")
+    # print("=" * 60)
+    # # Use mainnet (testnet=False) because it has more active trading
+    # await test_complete_data_flow(use_testnet=False)
     
     print("\n" + "=" * 60)
     print("Test Suite Completed")

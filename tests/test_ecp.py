@@ -178,7 +178,7 @@ async def test_hyperliquid():
     env = ecp.get("hyperliquid")
     
     account= await env.get_account()
-    logger.info(f"| 📝 Account: {account}")
+    logger.info(f"| 📝 Account: {account['message']}")
     
     positions= await env.get_positions()
     logger.info(f"| 📝 Positions: {positions}")

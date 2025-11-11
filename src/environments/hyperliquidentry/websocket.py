@@ -481,68 +481,74 @@ class HyperliquidWebSocket:
     
     async def _run_forever(self):
         """Main async loop to receive WebSocket messages."""
-        while self._running and self._should_reconnect:
-            try:
-                logger.info(f"| 🚀 Connecting to Hyperliquid WebSocket: {self.base_url}")
-                
-                async with websockets.connect(
-                    self.base_url,
-                    ping_interval=10,
-                    ping_timeout=5
-                ) as websocket:
-                    self.ws = websocket
-                    logger.info("| ✅ WebSocket connected")
+        try:
+            while self._running and self._should_reconnect:
+                try:
+                    logger.info(f"| 🚀 Connecting to Hyperliquid WebSocket: {self.base_url}")
                     
-                    # Reset reconnect attempts on successful connection
-                    self._reconnect_attempts = 0
-                    
-                    # Send subscriptions
-                    await self._send_subscriptions()
-                    
-                    # Call on_open callback
-                    if self.on_open_callback:
-                        if asyncio.iscoroutinefunction(self.on_open_callback):
-                            await self.on_open_callback(websocket)
-                        else:
-                            self.on_open_callback(websocket)
-                    
-                    # Receive messages
-                    async for message in websocket:
-                        if not self._running:
-                            break
-                        await self._on_message(message)
+                    async with websockets.connect(
+                        self.base_url,
+                        ping_interval=10,
+                        ping_timeout=5
+                    ) as websocket:
+                        self.ws = websocket
+                        logger.info("| ✅ WebSocket connected")
                         
-            except websockets.exceptions.ConnectionClosed as e:
-                logger.info(f"| 🛑 WebSocket closed: {e}")
-                if self.on_close_callback:
-                    if asyncio.iscoroutinefunction(self.on_close_callback):
-                        await self.on_close_callback(self.ws)
-                    else:
-                        self.on_close_callback(self.ws)
-                
-                # Reconnect logic
-                if self._should_reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
-                    self._reconnect_attempts += 1
-                    logger.info(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
-                    await asyncio.sleep(self._reconnect_delay)
-                else:
-                    logger.error(f"| ❌ Maximum reconnection attempts reached or reconnection disabled")
-                    break
+                        # Reset reconnect attempts on successful connection
+                        self._reconnect_attempts = 0
+                        
+                        # Send subscriptions
+                        await self._send_subscriptions()
+                        
+                        # Call on_open callback
+                        if self.on_open_callback:
+                            if asyncio.iscoroutinefunction(self.on_open_callback):
+                                await self.on_open_callback(websocket)
+                            else:
+                                self.on_open_callback(websocket)
+                        
+                        # Receive messages
+                        async for message in websocket:
+                            if not self._running:
+                                break
+                            await self._on_message(message)
+                            
+                except websockets.exceptions.ConnectionClosed as e:
+                    logger.info(f"| 🛑 WebSocket closed: {e}")
+                    if self.on_close_callback:
+                        if asyncio.iscoroutinefunction(self.on_close_callback):
+                            await self.on_close_callback(self.ws)
+                        else:
+                            self.on_close_callback(self.ws)
                     
-            except Exception as e:
-                logger.error(f"| ❌ WebSocket error: {e}", exc_info=True)
-                if self.on_error_callback:
-                    if asyncio.iscoroutinefunction(self.on_error_callback):
-                        await self.on_error_callback(self.ws, e)
+                    # Reconnect logic
+                    if self._should_reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
+                        self._reconnect_attempts += 1
+                        logger.info(f"| 🔄 Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
+                        await asyncio.sleep(self._reconnect_delay)
                     else:
-                        self.on_error_callback(self.ws, e)
-                
-                if self._should_reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
-                    self._reconnect_attempts += 1
-                    logger.info(f"| 🔄 Error occurred. Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
-                    await asyncio.sleep(self._reconnect_delay)
-                else:
-                    break
+                        logger.error(f"| ❌ Maximum reconnection attempts reached or reconnection disabled")
+                        break
+                        
+                except Exception as e:
+                    logger.error(f"| ❌ WebSocket error: {e}", exc_info=True)
+                    if self.on_error_callback:
+                        if asyncio.iscoroutinefunction(self.on_error_callback):
+                            await self.on_error_callback(self.ws, e)
+                        else:
+                            self.on_error_callback(self.ws, e)
+                    
+                    if self._should_reconnect and self._reconnect_attempts < self._max_reconnect_attempts:
+                        self._reconnect_attempts += 1
+                        logger.info(f"| 🔄 Error occurred. Reconnection attempt {self._reconnect_attempts}/{self._max_reconnect_attempts} in {self._reconnect_delay} seconds...")
+                        await asyncio.sleep(self._reconnect_delay)
+                    else:
+                        break
+        except asyncio.CancelledError:
+            # Task was cancelled, clean exit
+            logger.info("| ℹ️  WebSocket task cancelled")
+        except Exception as e:
+            logger.error(f"| ❌ Unexpected error in _run_forever: {e}", exc_info=True)
     
     async def _send_subscriptions(self):
         """Send subscription messages for all registered symbols."""
@@ -625,18 +631,27 @@ class HyperliquidWebSocket:
         
         logger.info("| 🛑 Stopping Hyperliquid WebSocket...")
         
+        # First cancel the task to interrupt any blocking operations
+        if self._task and not self._task.done():
+            self._task.cancel()
+        
+        # Then close the WebSocket connection
         if self.ws:
             try:
                 await self.ws.close()
             except Exception as e:
                 logger.warning(f"| ⚠️  Error closing WebSocket: {e}")
         
+        # Wait for task to complete (should be quick now)
         if self._task and not self._task.done():
-            self._task.cancel()
             try:
-                await self._task
+                await asyncio.wait_for(self._task, timeout=2.0)
             except asyncio.CancelledError:
                 pass
+            except asyncio.TimeoutError:
+                logger.warning("| ⚠️  Task cancellation timed out")
+            except Exception as e:
+                logger.warning(f"| ⚠️  Error waiting for task: {e}")
         
         logger.info("| ✅ Hyperliquid WebSocket stopped")
     
