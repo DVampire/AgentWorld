@@ -2,13 +2,11 @@
 
 from typing import Dict, Optional, Any, List
 import logging
-import time
 
 # Hyperliquid Python SDK
 try:
     from hyperliquid.exchange import Exchange
     from hyperliquid.info import Info
-    from hyperliquid.utils.signing import OrderType, LimitOrderType
     from eth_account import Account
     HYPERLIQUID_SDK_AVAILABLE = True
 except ImportError:
@@ -120,29 +118,27 @@ class HyperliquidClient:
         side: str,
         order_type: str = "Market",
         size: float = None,
-        price: Optional[float] = None,
-        reduce_only: bool = False,
-        time_in_force: str = "Gtc",
+        price: Optional[float] = None, # only for limit orders
         stop_loss_price: Optional[float] = None,
         take_profit_price: Optional[float] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Create a new order (market or limit) with optional stop loss and take profit.
+        """Create a market order for perpetual futures with optional stop loss and take profit.
+        
+        For market orders with TP/SL, uses bulk_orders to submit all orders at once.
+        For market orders without TP/SL, uses market_open for better slippage handling.
 
         Args:
             symbol: Trading symbol (e.g., 'BTC', 'ETH')
             side: Order side ('B' or 'BUY' for buy, 'A' or 'SELL' for sell)
             order_type: Order type ('Market' or 'Limit'). Default: 'Market'
             size: Order size (in base units, e.g., 0.1 BTC)
-            price: Order price (required for Limit orders, ignored for Market orders)
-            reduce_only: Whether this is a reduce-only order. Default: False
-            time_in_force: Time in force for limit orders ('Gtc', 'Ioc', 'Alo'). Default: 'Gtc'
-            stop_loss_price: Optional stop loss trigger price. If provided, creates a stop loss order after main order.
-            take_profit_price: Optional take profit trigger price. If provided, creates a take profit order after main order.
-            **kwargs: Additional order parameters
+            price: Order price (ignored for Market orders)
+            stop_loss_price: Optional stop loss trigger price
+            take_profit_price: Optional take profit trigger price
 
         Returns:
-            Order information dictionary with main order and optional stop loss/take profit orders
+            Order information dictionary
 
         Raises:
             Exception: If private key is not provided or order creation fails
@@ -153,331 +149,161 @@ class HyperliquidClient:
         if size is None or size <= 0:
             raise Exception("Order size must be provided and greater than 0")
 
-        if order_type == "Limit" and price is None:
-            raise Exception("Price is required for Limit orders")
-
         # Convert side to boolean
         is_buy = side.upper() in ["B", "BUY"]
         
-        # Build order according to Hyperliquid SDK format
-        # For perpetual futures:
-        # - Market orders: use market_open() which calculates slippage price automatically
-        # - Limit orders: use order() with specified price
         if order_type == "Limit":
-            # Limit order for perpetual futures
-            order_type_obj = OrderType(limit=LimitOrderType(tif=time_in_force))
-            order_result = self.exchange.order(
+            if price is None:
+                raise Exception("Price must be provided for limit orders")
+            open_order_result = self.exchange.order(
                 name=symbol,
                 is_buy=is_buy,
                 sz=size,
                 limit_px=price,
-                order_type=order_type_obj,
-                reduce_only=reduce_only
+                order_type={"limit": {"tif": "Gtc"}},
+                reduce_only=False
             )
+            logger.info(f"| 📝 Limit order created: {symbol} {'LONG' if is_buy else 'SHORT'} {size} @ {price}")
+        elif order_type == "Market":
+            open_order_result = self.exchange.market_open(
+                name=symbol,
+                is_buy=is_buy,
+                sz=size,
+                px=None,
+                slippage=0.05,
+                cloid=None,
+                builder=None,
+            )
+            logger.info(f"| 📝 Market order created: {symbol} {'LONG' if is_buy else 'SHORT'} {size}")
             
-            logger.info(f"| 📝 Created {order_type} order: {side} {size} {symbol} at {price}")
-            logger.debug(f"| 🔍 Order result: {order_result}")
-            
-            result = {
-                "main_order": order_result,
-                "stop_loss_order": None,
-                "take_profit_order": None
-            }
-            
-            # For limit orders, check if order filled immediately
-            # If filled, create stop loss/take profit orders; if resting, they'll be created later
-            if not reduce_only:
-                main_order_success = self._check_order_success(order_result)
-                if main_order_success:
-                    # Check if order was filled (not just resting)
-                    order_filled = self._check_order_filled(order_result)
-                    if order_filled:
-                        # Order filled immediately, wait for position and create stop loss/take profit
-                        time.sleep(0.5)
-                        self._create_stop_loss_take_profit(
-                            symbol=symbol,
-                            is_buy=is_buy,
-                            size=size,
-                            stop_loss_price=stop_loss_price,
-                            take_profit_price=take_profit_price,
-                            result=result
-                        )
-                    else:
-                        # Order is resting, stop loss/take profit will be created when it fills
-                        logger.info(f"| ℹ️  Limit order is resting, stop loss/take profit will be created when order fills")
-            
+        result = {
+            "open_order": open_order_result,
+            "stop_loss_order": None,
+            "take_profit_order": None
+        }
+        
+        if not stop_loss_price and not take_profit_price:
             return result
-        else:
-            # Market order - use market_open/market_close which handles slippage
-            # For market orders, we can't use bulk_orders because market_open/market_close
-            # are separate methods that handle slippage calculation
-            if reduce_only:
-                # For reduce-only orders, use market_close() which closes positions
-                order_result = self.exchange.market_close(
-                    coin=symbol,
-                    sz=size,
-                    px=None,  # Let SDK calculate market price with slippage
-                    slippage=0.05,  # Default 5% slippage
-                    cloid=None,
-                    builder=None
-                )
-            else:
-                # For opening positions, use market_open() which handles slippage
-                # market_open calculates aggressive market price with slippage and uses IoC
-                order_result = self.exchange.market_open(
-                    name=symbol,
-                    is_buy=is_buy,
-                    sz=size,
-                    px=None,  # Let SDK calculate market price with slippage
-                    slippage=0.05,  # Default 5% slippage
-                    cloid=None,
-                    builder=None
-                )
-            
-            logger.info(f"| 📝 Created {order_type} order: {side} {size} {symbol} at {price if price else 'market'}")
-            logger.debug(f"| 🔍 Order result: {order_result}")
-            
-            # Prepare result with main order
-            result = {
-                "main_order": order_result,
-                "stop_loss_order": None,
-                "take_profit_order": None
-            }
-            
-            # For market orders, create stop loss/take profit after main order fills
-            # (since market orders should fill immediately)
-            if not reduce_only:
-                # Check if main order was successful
-                main_order_success = self._check_order_success(order_result)
-                
-                if main_order_success:
-                    # Wait briefly for position to be established
-                    time.sleep(0.5)
-                    
-                    # Create stop loss and take profit orders
-                    self._create_stop_loss_take_profit(
-                        symbol=symbol,
-                        is_buy=is_buy,
-                        size=size,
-                        stop_loss_price=stop_loss_price,
-                        take_profit_price=take_profit_price,
-                        result=result
-                    )
-            
-            return result
-    
-    def _check_order_success(self, order_result: Dict[str, Any]) -> bool:
-        """Check if an order was successful.
         
-        Args:
-            order_result: Order result from Hyperliquid SDK
-            
-        Returns:
-            True if order was successful (filled or resting), False otherwise
-        """
-        if isinstance(order_result, dict):
-            status = order_result.get("status")
-            if status == "ok":
-                response = order_result.get("response", {})
-                if isinstance(response, dict):
-                    data = response.get("data", {})
-                    statuses = data.get("statuses", [])
-                    # Check if any status indicates success (filled or resting)
-                    for status_item in statuses:
-                        if isinstance(status_item, dict):
-                            if "filled" in status_item or "resting" in status_item:
-                                return True
-        return False
-    
-    def _check_order_filled(self, order_result: Dict[str, Any]) -> bool:
-        """Check if an order was filled (not just resting).
+        # Determine order sides for TP/SL
+        # For LONG: main order is BUY, close orders are SELL
+        # For SHORT: main order is SELL, close orders are BUY
+        close_is_buy = not is_buy
         
-        Args:
-            order_result: Order result from Hyperliquid SDK
-            
-        Returns:
-            True if order was filled, False if resting or failed
-        """
-        if isinstance(order_result, dict):
-            status = order_result.get("status")
-            if status == "ok":
-                response = order_result.get("response", {})
-                if isinstance(response, dict):
-                    data = response.get("data", {})
-                    statuses = data.get("statuses", [])
-                    # Check if any status indicates filled (not just resting)
-                    for status_item in statuses:
-                        if isinstance(status_item, dict):
-                            if "filled" in status_item:
-                                return True
-        return False
-    
-    def _create_stop_loss_take_profit(
-        self,
-        symbol: str,
-        is_buy: bool,
-        size: float,
-        stop_loss_price: Optional[float],
-        take_profit_price: Optional[float],
-        result: Dict[str, Any]
-    ):
-        """Create stop loss and take profit orders after main order fills.
+        # Helper function to round prices to avoid precision issues
+        def round_price(price: float) -> float:
+            """Round price to avoid float_to_wire precision errors."""
+            return round(float(f"{price:.8f}"), 8)
         
-        Both stop loss and take profit are created as exchange trigger orders (reduce-only limit orders).
-        
-        Args:
-            symbol: Trading symbol
-            is_buy: Whether main order was a buy order (True for LONG, False for SHORT)
-            size: Order size
-            stop_loss_price: Optional stop loss trigger price
-            take_profit_price: Optional take profit trigger price
-            result: Result dictionary to update with stop loss/take profit orders
-        """
-        # Verify position exists before creating trigger orders
-        try:
-            positions = self.get_positions()
-            position_exists = False
-            for pos in positions:
-                # Handle different position formats
-                if isinstance(pos, dict):
-                    # Format: {"type": "oneWay", "position": {"coin": "BTC", ...}}
-                    pos_data = pos.get("position", pos)
-                    coin = pos_data.get("coin", "")
-                    if coin.upper() == symbol.upper():
-                        position_exists = True
-                        break
-            if not position_exists:
-                logger.warning(f"| ⚠️  Position for {symbol} not found yet, trigger orders may fail")
-        except Exception as e:
-            logger.warning(f"| ⚠️  Could not verify position: {e}")
-        
-        # Create stop loss order if provided - use exchange trigger order
-        if stop_loss_price is not None and stop_loss_price > 0:
+        # Create take profit order if provided
+        if take_profit_price:
             try:
-                # Stop loss: opposite side to close position
-                # For long positions (buy), stop loss is sell at lower price
-                # For short positions (sell), stop loss is buy at higher price
-                stop_loss_side = "A" if is_buy else "B"  # Opposite side
-                stop_loss_result = self._create_trigger_order(
-                    symbol=symbol,
-                    side=stop_loss_side,
-                    size=size,
-                    trigger_price=stop_loss_price,
-                    order_type="StopLoss"
+                tp_price = round_price(take_profit_price)
+                tp_order_result = self.exchange.order(
+                    name=symbol,
+                    is_buy=close_is_buy,
+                    sz=size,
+                    limit_px=tp_price,
+                    order_type={"trigger": {"isMarket": False, "triggerPx": tp_price, "tpsl": "tp"}},
+                    reduce_only=True
                 )
-                result["stop_loss_order"] = stop_loss_result
-                logger.info(f"| 🛡️  Created stop loss order at {stop_loss_price} for {symbol}")
+                result["take_profit_order"] = tp_order_result
+                logger.info(f"| 🎯 Take profit order created at {tp_price}")
+            except Exception as e:
+                logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
+                result["take_profit_error"] = str(e)
+        
+        # Create stop loss order if provided
+        if stop_loss_price:
+            try:
+                sl_price = round_price(stop_loss_price)
+                sl_order_result = self.exchange.order(
+                    name=symbol,
+                    is_buy=close_is_buy,
+                    sz=size,
+                    limit_px=sl_price,
+                    order_type={"trigger": {"isMarket": False, "triggerPx": sl_price, "tpsl": "sl"}},
+                    reduce_only=True
+                )
+                result["stop_loss_order"] = sl_order_result
+                logger.info(f"| 🛡️  Stop loss order created at {sl_price}")
             except Exception as e:
                 logger.warning(f"| ⚠️  Failed to create stop loss order: {e}")
                 result["stop_loss_error"] = str(e)
         
-        # Create take profit order if provided
-        if take_profit_price is not None and take_profit_price > 0:
-            try:
-                # Take profit: opposite side to close position
-                # For long positions (buy), take profit is sell at higher price
-                # For short positions (sell), take profit is buy at lower price
-                take_profit_side = "A" if is_buy else "B"  # Opposite side
-                take_profit_result = self._create_trigger_order(
-                    symbol=symbol,
-                    side=take_profit_side,
-                    size=size,
-                    trigger_price=take_profit_price,
-                    order_type="TakeProfit"
-                )
-                result["take_profit_order"] = take_profit_result
-                logger.info(f"| 🎯 Created take profit order at {take_profit_price} for {symbol}")
-            except Exception as e:
-                logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
-                result["take_profit_error"] = str(e)
+        return result
     
-    # -------------------------- HELPERS: PRICES & POSITIONS --------------------------
-    def _get_last_mid_price(self, symbol: str) -> Optional[float]:
-        """Get last mid price for a given symbol using Info."""
-        try:
-            # Map human-readable symbol to internal coin string
-            coin = None
-            if hasattr(self.info, "name_to_coin"):
-                coin = self.info.name_to_coin.get(symbol, None)
-            # Fallback: try using symbol directly
-            coin_key = coin if coin else symbol
-            # Determine dex namespace if present (e.g., "perp:BTC")
-            dex = coin_key.split(":")[0] if ":" in coin_key else ""
-            mids = self.info.all_mids(dex)
-            if coin_key in mids:
-                return float(mids[coin_key])
-            # Try without dex map
-            mids2 = self.info.all_mids("")
-            if coin_key in mids2:
-                return float(mids2[coin_key])
-        except Exception as e:
-            logger.debug(f"| ℹ️  _get_last_mid_price failed for {symbol}: {e}")
-        return None
-
-    def _get_open_position_for_symbol(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Return the open position dict for the given symbol, or None if not found."""
-        try:
-            positions = self.get_positions()
-            for pos in positions:
-                if not isinstance(pos, dict):
-                    continue
-                pos_data = pos.get("position", pos)
-                coin = pos_data.get("coin", "")
-                if coin.upper() == symbol.upper():
-                    return pos_data
-        except Exception as e:
-            logger.debug(f"| ℹ️  _get_open_position_for_symbol failed for {symbol}: {e}")
-        return None
-
-    # -------------------------- STOP LOSS GUARD (DEPRECATED) --------------------------
-    # Note: Stop loss is now handled via exchange trigger orders, not local guards.
-    # The following methods are kept for backward compatibility but are no longer used.
-    def _create_trigger_order(
+    # -------------------------- Close Order -------------------------
+    def close_order(
         self,
         symbol: str,
         side: str,
         size: float,
-        trigger_price: float,
-        order_type: str = "StopLoss"
+        order_type: str = "Market",
+        price: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Create a trigger order (stop loss or take profit).
+        """Close a position (reduce-only order).
         
         Args:
-            symbol: Trading symbol
-            side: Order side ('A' for sell, 'B' for buy)
-            size: Order size
-            trigger_price: Trigger price for the conditional order
-            order_type: Order type ('StopLoss' or 'TakeProfit')
+            symbol: Trading symbol (e.g., 'BTC', 'ETH')
+            side: Order side to close position ('B' or 'BUY' to close SHORT, 'A' or 'SELL' to close LONG)
+            size: Position size to close (in base units, e.g., 0.1 BTC)
+            order_type: Order type ('Market' or 'Limit'). Default: 'Market'
+            price: Order price (required for Limit orders, ignored for Market orders)
             
         Returns:
             Order result dictionary
+            
+        Raises:
+            Exception: If private key is not provided or order creation fails
         """
         if not self.exchange:
-            raise Exception("Private key required for trigger order creation.")
+            raise Exception("Private key required for order closing. Call set_private_key() first.")
+        
+        if size is None or size <= 0:
+            raise Exception("Size must be provided and greater than 0")
+        
+        if order_type == "Limit" and price is None:
+            raise Exception("Price must be provided for limit orders")
         
         # Convert side to boolean
+        # For closing LONG position: side should be SELL (is_buy=False)
+        # For closing SHORT position: side should be BUY (is_buy=True)
         is_buy = side.upper() in ["B", "BUY"]
         
-        # For Hyperliquid, we use trigger orders (conditional orders)
-        # These are limit orders that trigger when price reaches trigger_price
-        # We use reduce_only=True to close positions
-        try:
-            # Try to use trigger order if SDK supports it
-            # Otherwise, create a limit order with reduce_only
-            order_type_obj = OrderType(limit=LimitOrderType(tif="Gtc"))
-            trigger_order_result = self.exchange.order(
+        if order_type == "Limit":
+            # Use order() with reduce_only=True for limit orders
+            # For limit orders, we need to manually specify the direction
+            # LONG position: close with SELL (is_buy=False)
+            # SHORT position: close with BUY (is_buy=True)
+            close_order_result = self.exchange.order(
                 name=symbol,
                 is_buy=is_buy,
                 sz=size,
-                limit_px=trigger_price,
-                order_type=order_type_obj,
+                limit_px=price,
+                order_type={"limit": {"tif": "Gtc"}},
                 reduce_only=True
             )
-            return trigger_order_result
-        except Exception as e:
-            # If trigger order creation fails, log and re-raise
-            logger.error(f"| ❌ Failed to create {order_type} trigger order: {e}")
-            raise Exception(f"Failed to create {order_type} trigger order: {e}")
+            logger.info(f"| 🗑️  Limit close order created: {symbol} {'BUY' if is_buy else 'SELL'} {size} @ {price}")
+        
+        elif order_type == "Market":
+            # Use market_close for market orders (handles slippage automatically)
+            # Note: market_close automatically determines direction by checking position:
+            # - If szi < 0 (SHORT), it uses BUY to close
+            # - If szi > 0 (LONG), it uses SELL to close
+            # So the side parameter is ignored for Market orders, but kept for consistency
+            close_order_result = self.exchange.market_close(
+                coin=symbol,
+                sz=size,
+                px=None,
+                slippage=0.05,
+                cloid=None,
+                builder=None
+            )
+            logger.info(f"| 🗑️  Market close order created: {symbol} (auto-determined direction)")
+            
+        return {"close_order": close_order_result}
+        
 
     # -------------------------- ORDER INFO --------------------------
     def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:

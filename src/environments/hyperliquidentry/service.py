@@ -22,6 +22,7 @@ from src.environments.hyperliquidentry.types import (
     GetOrderRequest,
     CancelOrderRequest,
     CancelAllOrdersRequest,
+    CloseOrderRequest,
     TradeType,
     OrderType,
 )
@@ -471,7 +472,6 @@ class HyperliquidService:
                 order_type=request.order_type.value,
                 size=request.qty,
                 price=request.price,
-                reduce_only=request.reduce_only or False,
                 stop_loss_price=request.stop_loss_price,
                 take_profit_price=request.take_profit_price
             )
@@ -639,6 +639,8 @@ class HyperliquidService:
             if "401" in str(e) or "Invalid" in str(e):
                 raise AuthenticationError(f"Authentication failed: {e}")
             raise HyperliquidError(f"Failed to get orders: {e}")
+        
+    
     
     async def get_order(self, request: GetOrderRequest) -> ActionResult:
         """Get a specific order by ID.
@@ -732,4 +734,94 @@ class HyperliquidService:
             if "401" in str(e) or "Invalid" in str(e):
                 raise AuthenticationError(f"Authentication failed: {e}")
             raise HyperliquidError(f"Failed to cancel all orders: {e}")
+    
+    async def close_order(self, request: CloseOrderRequest) -> ActionResult:
+        """Close a position (reduce-only order).
+        
+        Args:
+            request: CloseOrderRequest with account_name, symbol, side, size, order_type, optional price
+            
+        Returns:
+            ActionResult with close order information
+        """
+        try:
+            if request.size is None or request.size <= 0:
+                raise HyperliquidError("'size' must be provided and greater than 0")
+            
+            if request.order_type == OrderType.LIMIT and request.price is None:
+                raise HyperliquidError("'price' must be provided for LIMIT orders")
+            
+            # Validate symbol
+            if request.symbol not in self.symbols:
+                raise InvalidSymbolError(f"Symbol {request.symbol} not found or not tradable")
+            
+            client = self._get_client(request.account_name)
+            
+            # Convert side to Hyperliquid format
+            side = "B" if request.side.lower() == "buy" else "A"
+            
+            # Close position
+            close_result = await asyncio.to_thread(
+                client.close_order,
+                symbol=request.symbol,
+                side=side,
+                size=request.size,
+                order_type=request.order_type.value,
+                price=request.price
+            )
+            
+            # Parse close order result
+            close_order_data = close_result.get('close_order', {})
+            order_id = 'N/A'
+            order_status = "submitted"
+            error_message = None
+            
+            if isinstance(close_order_data, dict):
+                if close_order_data.get('status') == 'ok':
+                    response = close_order_data.get('response', {})
+                    if response.get('type') == 'order':
+                        data = response.get('data', {})
+                        statuses = data.get('statuses', [])
+                        if statuses:
+                            status = statuses[0]
+                            if 'resting' in status:
+                                order_id = str(status['resting'].get('oid', 'N/A'))
+                                order_status = "submitted"
+                            elif 'filled' in status:
+                                order_id = str(status['filled'].get('oid', 'N/A'))
+                                order_status = "filled"
+                            elif 'error' in status:
+                                error_message = status.get('error', 'Unknown error')
+                                order_status = "failed"
+                elif 'error' in close_order_data:
+                    error_message = close_order_data.get('error', 'Unknown error')
+                    order_status = "failed"
+            
+            if error_message:
+                raise OrderError(f"Close order failed: {error_message}")
+            
+            # Format close order information
+            close_order_info = {
+                "order_id": order_id,
+                "symbol": request.symbol,
+                "side": request.side,
+                "type": request.order_type.value,
+                "status": order_status,
+                "quantity": str(request.size),
+                "price": str(request.price) if request.price else None,
+                "trade_type": "perpetual",
+            }
+            
+            return ActionResult(
+                success=True,
+                message=f"Close order {order_id} submitted successfully for {request.symbol} ({request.side} {request.size}).",
+                extra={"close_order": close_order_info}
+            )
+            
+        except Exception as e:
+            if "401" in str(e) or "Invalid" in str(e):
+                raise AuthenticationError(f"Authentication failed: {e}")
+            if 'insufficient' in str(e).lower() or 'balance' in str(e).lower():
+                raise InsufficientFundsError(f"Insufficient funds: {e}")
+            raise OrderError(f"Failed to close order: {e}")
 

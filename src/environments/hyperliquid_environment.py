@@ -22,10 +22,10 @@ from src.environments.hyperliquidentry.types import (
     GetPositionsRequest,
     GetDataRequest,
     CreateOrderRequest,
-    GetOrdersRequest,
     GetOrderRequest,
     CancelOrderRequest,
     CancelAllOrdersRequest,
+    CloseOrderRequest,
     TradeType,
 )
 from src.utils import dedent, assemble_project_path
@@ -220,6 +220,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             extra = {
                 "account_value": account_value,
                 "asset_positions": asset_positions,
+                "account": account,
                 "time": account.get("time", "N/A"),
             }
             
@@ -441,8 +442,6 @@ class HyperliquidEnvironment(BaseEnvironment):
         price: Optional[float] = None,
         order_type: str = "Market",
         leverage: Optional[int] = None,
-        reduce_only: bool = False,
-        time_in_force: str = "Gtc",
         stop_loss_price: Optional[float] = None,
         take_profit_price: Optional[float] = None
     ) -> Dict[str, Any]:
@@ -496,8 +495,6 @@ class HyperliquidEnvironment(BaseEnvironment):
                 qty=qty,
                 price=price,
                 leverage=leverage,
-                reduce_only=reduce_only,
-                time_in_force=time_in_force,
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price
             )
@@ -551,6 +548,91 @@ class HyperliquidEnvironment(BaseEnvironment):
             return {
                 "success": False,
                 "message": f"Failed to create order: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+    
+    async def close_order(
+        self,
+        symbol: str,
+        side: str,
+        size: float,
+        order_type: str = "Market",
+        price: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Close a position (reduce-only order).
+        
+        Args:
+            symbol: Symbol to close position for (e.g., 'BTC', 'ETH')
+            side: Order side to close position:
+                - 'sell' or 'A': Close LONG position (sell to close)
+                - 'buy' or 'B': Close SHORT position (buy to close)
+            size: Position size to close (in base units, e.g., 0.1 BTC)
+            order_type: Order type - 'Market' (default) or 'Limit'
+                - 'Market': Uses market_close which automatically determines direction by checking position
+                - 'Limit': Requires manual side specification (side parameter is used)
+            price: Order price (required for LIMIT order type, ignored for Market orders)
+            
+        Returns:
+            Dictionary with success, message, and close order information
+            
+        Note:
+            For Market orders, the side parameter is kept for consistency but the actual direction
+            is automatically determined by checking the position (szi < 0 for SHORT uses BUY, szi > 0 for LONG uses SELL).
+            For Limit orders, the side parameter is required and used to specify the direction.
+        """
+        try:
+            from src.environments.hyperliquidentry.types import OrderType
+            
+            order_type_enum = OrderType.MARKET if order_type == "Market" else OrderType.LIMIT
+            
+            request = CloseOrderRequest(
+                account_name=self.account_name,
+                symbol=symbol,
+                side=side,
+                size=size,
+                order_type=order_type_enum,
+                price=price,
+                trade_type=TradeType.PERPETUAL
+            )
+            result = await self.hyperliquid_service.close_order(request)
+            
+            if not result.success:
+                return {
+                    "success": False,
+                    "message": result.message,
+                    "extra": {"error": result.message}
+                }
+            
+            close_order = result.extra.get("close_order", {})
+            result_text = dedent(f"""
+                Close order submitted successfully:
+                Order ID: {close_order.get("order_id", "N/A")}
+                Symbol: {close_order.get("symbol")}
+                Side: {close_order.get("side")}
+                Quantity: {close_order.get("quantity")}
+                Status: {close_order.get("status")}
+                Order Type: {close_order.get("type")}
+                Trade Type: {close_order.get("trade_type")}
+                """)
+            
+            if close_order.get("price"):
+                result_text += f"\nPrice: {close_order['price']}"
+            
+            return {
+                "success": True,
+                "message": result_text,
+                "extra": result.extra
+            }
+        except AuthenticationError as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "extra": {"error": str(e)}
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Failed to close order: {str(e)}",
                 "extra": {"error": str(e)}
             }
     
@@ -835,6 +917,93 @@ class HyperliquidEnvironment(BaseEnvironment):
         
         action = action.upper()
         try:
+            # Validate stop loss and take profit prices for LONG/SHORT actions
+            if action in ["LONG", "SHORT"]:
+                if stop_loss_price is None or take_profit_price is None:
+                    return {
+                        "success": False,
+                        "message": f"Error: {action} action requires both stop_loss_price and take_profit_price. Both must be provided.",
+                        "extra": {"error": "Missing stop_loss_price or take_profit_price"}
+                    }
+                
+                # Get current market price to validate trigger prices
+                try:
+                    data_request = GetDataRequest(
+                        account_name=self.account_name,
+                        symbol=symbol,
+                        data_type="candle",
+                        interval="1m",
+                        limit=1
+                    )
+                    data_result = await self.hyperliquid_service.get_data(data_request)
+                    if data_result.success and data_result.extra.get("data"):
+                        latest_candle = data_result.extra["data"][-1]
+                        current_price = float(latest_candle.get("close", 0))
+                        
+                        if current_price > 0:
+                            # Validate price relationships
+                            if action == "LONG":
+                                # For LONG: stop_loss < entry < take_profit
+                                if stop_loss_price >= current_price:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Stop loss price (${stop_loss_price:,.2f}) must be below current price (${current_price:,.2f}) for LONG position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
+                                        "extra": {"error": "Invalid stop loss price for LONG"}
+                                    }
+                                if take_profit_price <= current_price:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Take profit price (${take_profit_price:,.2f}) must be above current price (${current_price:,.2f}) for LONG position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
+                                        "extra": {"error": "Invalid take profit price for LONG"}
+                                    }
+                                # Check minimum distance (at least 1.0% to avoid immediate execution and reduce trading frequency)
+                                stop_loss_distance = (current_price - stop_loss_price) / current_price * 100
+                                take_profit_distance = (take_profit_price - current_price) / current_price * 100
+                                if stop_loss_distance < 1.0:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Stop loss price too close to current price ({stop_loss_distance:.2f}% away). Minimum distance: 1.0% (prefer 3-5% to reduce trading frequency). Current: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}. Consider using wider distances (5-10%) to allow positions time to develop.",
+                                        "extra": {"error": "Stop loss too close to current price"}
+                                    }
+                                if take_profit_distance < 1.0:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Take profit price too close to current price ({take_profit_distance:.2f}% away). Minimum distance: 1.0% (prefer 5-10% to reduce trading frequency). Current: ${current_price:,.2f}, Take profit: ${take_profit_price:,.2f}. Consider using wider distances (10-20%) to allow positions time to develop.",
+                                        "extra": {"error": "Take profit too close to current price"}
+                                    }
+                            elif action == "SHORT":
+                                # For SHORT: take_profit < entry < stop_loss
+                                if stop_loss_price <= current_price:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Stop loss price (${stop_loss_price:,.2f}) must be above current price (${current_price:,.2f}) for SHORT position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
+                                        "extra": {"error": "Invalid stop loss price for SHORT"}
+                                    }
+                                if take_profit_price >= current_price:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Take profit price (${take_profit_price:,.2f}) must be below current price (${current_price:,.2f}) for SHORT position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
+                                        "extra": {"error": "Invalid take profit price for SHORT"}
+                                    }
+                                # Check minimum distance (at least 1.0% to avoid immediate execution and reduce trading frequency)
+                                stop_loss_distance = (stop_loss_price - current_price) / current_price * 100
+                                take_profit_distance = (current_price - take_profit_price) / current_price * 100
+                                if stop_loss_distance < 1.0:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Stop loss price too close to current price ({stop_loss_distance:.2f}% away). Minimum distance: 1.0% (prefer 3-5% to reduce trading frequency). Current: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}. Consider using wider distances (5-10%) to allow positions time to develop.",
+                                        "extra": {"error": "Stop loss too close to current price"}
+                                    }
+                                if take_profit_distance < 1.0:
+                                    return {
+                                        "success": False,
+                                        "message": f"Error: Take profit price too close to current price ({take_profit_distance:.2f}% away). Minimum distance: 1.0% (prefer 5-10% to reduce trading frequency). Current: ${current_price:,.2f}, Take profit: ${take_profit_price:,.2f}. Consider using wider distances (10-20%) to allow positions time to develop.",
+                                        "extra": {"error": "Take profit too close to current price"}
+                                    }
+                except Exception as e:
+                    logger.warning(f"| ⚠️  Could not validate trigger prices against current price: {e}")
+                    # Continue with order creation if price check fails (non-blocking)
+            
             if action == "HOLD":
                 result = {
                     "success": True,
@@ -849,7 +1018,6 @@ class HyperliquidEnvironment(BaseEnvironment):
                     qty=qty,
                     order_type="Market",
                     leverage=leverage,
-                    reduce_only=False,
                     stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price
                 )
@@ -861,27 +1029,28 @@ class HyperliquidEnvironment(BaseEnvironment):
                     qty=qty,
                     order_type="Market",
                     leverage=leverage,
-                    reduce_only=False,
                     stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price
                 )
             elif action == "CLOSE_LONG":
-                # Close long position: SELL, reduce_only=True, Market order
-                result = await self.create_order(
+                # Close long position: SELL to close LONG position
+                # Note: For Market orders, market_close automatically determines direction,
+                # but we specify side="sell" for consistency (LONG position requires SELL to close)
+                result = await self.close_order(
                     symbol=symbol,
-                    side="sell",
-                    qty=qty,
-                    order_type="Market",
-                    reduce_only=True
+                    side="sell",  # SELL to close LONG position
+                    size=qty,
+                    order_type="Market"
                 )
             elif action == "CLOSE_SHORT":
-                # Close short position: BUY, reduce_only=True, Market order
-                result = await self.create_order(
+                # Close short position: BUY to close SHORT position
+                # Note: For Market orders, market_close automatically determines direction,
+                # but we specify side="buy" for consistency (SHORT position requires BUY to close)
+                result = await self.close_order(
                     symbol=symbol,
-                    side="buy",
-                    qty=qty,
-                    order_type="Market",
-                    reduce_only=True
+                    side="buy",  # BUY to close SHORT position
+                    size=qty,
+                    order_type="Market"
                 )
             else:
                 result = {
@@ -945,53 +1114,78 @@ class HyperliquidEnvironment(BaseEnvironment):
         """Get the current state of the Hyperliquid trading environment."""
         try:
             # Get account info
-            account_request = GetAccountRequest(account_name=self.account_name)
-            account_result = await self.hyperliquid_service.get_account(account_request)
-            
-            account_info = dedent(f"""
-                <account_info>
-                {account_result.message}
-                </account_info>
+            account_result = await self.get_account()
+            account_result = account_result.get("extra", {})
+            account_info = account_result.get("account", {})
+            metrics = account_result.get("metrics", {})
+            account_string = ""
+            account_string += dedent(f"""
+                Timestamp: {account_info.get("time", "N/A")}
+                Account Value: ${float(account_info.get("margin_summary", {}).get("accountValue", 0)):.2f},
+                Total Profit: ${float(metrics.get("total_profit", 0)):.2f} ({float(metrics.get("profit_percentage", 0)):.2f}%),
+                Current Drawdown: ${float(metrics.get("current_drawdown", 0)):.2f} ({float(metrics.get("current_drawdown_percentage", 0)):.2f}%),
+                Max Drawdown: ${float(metrics.get("max_drawdown", 0)):.2f} ({float(metrics.get("max_drawdown_percentage", 0)):.2f}%),
+                Period Return: ${float(metrics.get("period_return", 0)):.2f} ({float(metrics.get("period_return_percentage", 0)):.2f}%),
             """)
+            account_string = dedent(f"""
+                <account>
+                {account_string}
+                </account>
+            """)
+            logger.info(f"| 📝 Account String: {account_string}")
+            
+            # Get positions
+            positions_result = await self.get_positions()
+            positions_result = positions_result.get("extra", {})
+            positions_list = positions_result.get("positions", [])
+            positions_string = dedent(f"""
+                <positions>
+                Current Positions: {json.dumps(positions_list, indent=4)}
+                </positions>
+            """)
+            logger.info(f"| 📝 Positions String: {positions_string}")
+            
+            # Get orders
+            orders_result = await self.get_orders()
+            orders_result = orders_result.get("extra", {})
+            orders_list = orders_result.get("orders", [])
+            orders_string = dedent(f"""
+                <orders>
+                Current Orders: {json.dumps(orders_list, indent=4)}
+                </orders>
+            """)
+            logger.info(f"| 📝 Orders String: {orders_string}")
             
             # Wait until the next minute boundary for minute-level trading
             await self._wait_for_next_minute_boundary()
             
             # Get data (placeholder for now)
-            data_request = GetDataRequest(symbol=self.symbol, data_type="candle")
-            data_result = await self.hyperliquid_service.get_data(data_request)
-            
+            data_result = await self.get_data()
+            data_result = data_result.get("extra", {})
             candles = {}
-            for symbol, data in data_result.extra.get("data", {}).items():
+            for symbol, data in data_result.get("data", {}).items():
                 candles[symbol] = data.get("candle", [])
-            
             candles_string = ""
             for symbol, candles_list in candles.items():
-                symbol_string = dedent(f"""
-                    Symbol: {symbol}
-                """)
+                symbol_string = dedent(f"""Symbol: {symbol}""")
                 
                 for candle in candles_list:
                     
                     symbol_string += dedent(f"""
                             Timestamp: {candle["timestamp"]}
-                            Open: {candle["open"]}
-                            High: {candle["high"]}
-                            Low: {candle["low"]}
-                            Close: {candle["close"]}
-                            Volume: {candle["volume"]}
+                            Open: {float(candle["open"]):.2f}
+                            High: {float(candle["high"]):.2f}
+                            Low: {float(candle["low"]):.2f}
+                            Close: {float(candle["close"]):.2f}
+                            Volume: {float(candle["volume"]):.2f}
                     """)
                     
                     indicators = candle["indicators"]
                     if len(indicators) > 0:
-                        indicators_string = ", ".join([f"{indicator}: {value:.2f}" for indicator, value in indicators.items()])
-                        symbol_string += dedent(f"""
-                            Indicators: {indicators_string}
-                        """)
+                        indicators_string = ", ".join([f"{indicator}: {float(value):.2f}" for indicator, value in indicators.items()])
+                        symbol_string += dedent(f"""Indicators: {indicators_string}""")
                     else:
-                        symbol_string += dedent(f"""
-                            Indicators: No indicators available now.
-                        """)
+                        symbol_string += dedent(f"""Indicators: No indicators available now.""")
                         
                 candles_string += symbol_string + "\n"
             
@@ -1005,6 +1199,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             state = dedent(f"""
                 <state>
                 {account_info}
+                {orders_string}
                 {data_string}
                 </state>
             """)
@@ -1012,8 +1207,10 @@ class HyperliquidEnvironment(BaseEnvironment):
             return {
                 "state": state,
                 "extra": {
-                    "account": account_result.extra,
-                    "input": data_result.extra,
+                    "account": account_result,
+                    "positions": positions_result,
+                    "orders": orders_result,
+                    "input": data_result,
                 }
             }
         except AuthenticationError as e:

@@ -188,7 +188,7 @@ def test_create_order():
     client = HyperliquidClient(
         wallet_address=wallet_address,
         private_key=private_key,
-        testnet=True  # Use testnet for testing
+        testnet=False  # Use testnet for testing
     )
     
     try:
@@ -198,8 +198,9 @@ def test_create_order():
             symbol="BTC",
             side="buy",  # Will be converted to boolean
             order_type="Market",
-            size=0.01,
-            reduce_only=False
+            size=0.0001,
+            stop_loss_price=100000.0,
+            take_profit_price=110000.0
         )
         
         print(f"✅ Order created successfully")
@@ -478,7 +479,7 @@ async def async_main():
     
     # Test 5: Create market order (commented out by default - requires private key)
     # Uncomment to test order creation
-    # test_create_order()
+    test_create_order()
     
     # Test 6: Create limit order (commented out by default - requires private key)
     # Uncomment to test limit order creation

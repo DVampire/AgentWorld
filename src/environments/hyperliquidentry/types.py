@@ -72,7 +72,6 @@ class CreateOrderRequest(BaseModel):
     qty: Optional[float] = Field(None, description="Quantity to trade")
     price: Optional[float] = Field(None, description="Price for limit order (required for LIMIT order type)")
     leverage: Optional[int] = Field(None, description="Leverage for perpetual futures (optional)")
-    reduce_only: Optional[bool] = Field(False, description="Reduce only order (optional)")
     time_in_force: Optional[Literal["Gtc", "Ioc", "Alo"]] = Field(default="Gtc", description="Time in force for limit orders: 'Gtc' (good till cancel), 'Ioc' (immediate or cancel), 'Alo' (add liquidity only)")
     stop_loss_price: Optional[float] = Field(None, description="Stop loss trigger price (optional). If provided, creates a stop loss order after main order.")
     take_profit_price: Optional[float] = Field(None, description="Take profit trigger price (optional). If provided, creates a take profit order after main order.")
@@ -108,4 +107,15 @@ class CancelAllOrdersRequest(BaseModel):
     account_name: str = Field(description="Account name")
     symbol: Optional[str] = Field(None, description="Symbol to cancel orders for (if None, cancels all orders)")
     trade_type: Optional[TradeType] = Field(None, description="Trade type: 'perpetual'")
+
+
+class CloseOrderRequest(BaseModel):
+    """Request for closing a position."""
+    account_name: str = Field(description="Account name to use for closing the position")
+    symbol: str = Field(description="Symbol to close position for (e.g., 'BTC', 'ETH')")
+    side: Literal["buy", "sell"] = Field(description="Order side to close position: 'buy' to close SHORT, 'sell' to close LONG")
+    size: float = Field(description="Position size to close (in base units, e.g., 0.1 BTC)")
+    order_type: OrderType = Field(default=OrderType.MARKET, description="Order type: 'Market' for market order, 'Limit' for limit order")
+    price: Optional[float] = Field(None, description="Price for limit order (required for LIMIT order type)")
+    trade_type: TradeType = Field(default=TradeType.PERPETUAL, description="Trade type: 'perpetual' for perpetual futures")
 
