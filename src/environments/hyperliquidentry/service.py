@@ -430,13 +430,22 @@ class HyperliquidService:
     
     # Order methods
     async def create_order(self, request: CreateOrderRequest) -> ActionResult:
-        """Create an order (perpetual futures order).
+        """Create an order (perpetual futures order) with automatic stop loss and take profit.
+        
+        For each LONG or SHORT order, this method will create:
+        1. Main order: Opens the position (BUY for LONG, SELL for SHORT)
+        2. Stop loss order (if stop_loss_price provided): Reduce-only limit order to close position at stop loss price
+        3. Take profit order (if take_profit_price provided): Reduce-only limit order to close position at take profit price
+        
+        Both stop loss and take profit orders are submitted to the exchange as trigger orders.
+        When either price is reached, the corresponding order will execute automatically to close the position.
         
         Args:
-            request: CreateOrderRequest with account_name, symbol, side, order_type, qty, etc.
+            request: CreateOrderRequest with account_name, symbol, side, order_type, qty, 
+                    stop_loss_price (optional), take_profit_price (optional), etc.
             
         Returns:
-            ActionResult with order information
+            ActionResult with order information including main_order, stop_loss_order, and take_profit_order
         """
         try:
             if request.qty is None:

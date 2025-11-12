@@ -446,7 +446,24 @@ class HyperliquidEnvironment(BaseEnvironment):
         stop_loss_price: Optional[float] = None,
         take_profit_price: Optional[float] = None
     ) -> Dict[str, Any]:
-        """Create an order (perpetual futures order) with optional stop loss and take profit.
+        """Create an order (perpetual futures order) with automatic stop loss and take profit protection.
+        
+        For each LONG or SHORT order (when reduce_only=False), this method will create:
+        1. Main order: Opens the position at market or limit price
+        2. Stop loss order (if stop_loss_price provided): Exchange trigger order to close position at stop loss price
+        3. Take profit order (if take_profit_price provided): Exchange trigger order to close position at take profit price
+        
+        Both stop loss and take profit are reduce-only limit orders submitted to the exchange.
+        They will automatically execute when the trigger price is reached to close the position.
+        
+        Examples:
+            LONG position at $100,000:
+            - Stop loss at $97,000 (3% below entry, protects against downside)
+            - Take profit at $106,000 (6% above entry, locks in profit)
+            
+            SHORT position at $100,000:
+            - Stop loss at $103,000 (3% above entry, protects against upside)
+            - Take profit at $94,000 (6% below entry, locks in profit)
         
         Args:
             symbol(str): Symbol to trade (e.g., 'BTC', 'ETH')
@@ -455,13 +472,15 @@ class HyperliquidEnvironment(BaseEnvironment):
             price(Optional[float]): Price for limit orders (required for LIMIT order type)
             order_type(str): Order type - 'Market' (default) or 'Limit'
             leverage(Optional[int]): Leverage for perpetual futures (optional)
-            reduce_only(bool): Whether this is a reduce-only order
+            reduce_only(bool): Whether this is a reduce-only order (for closing positions)
             time_in_force(str): Time in force for limit orders - 'Gtc', 'Ioc', 'Alo' (default: 'Gtc')
-            stop_loss_price(Optional[float]): Optional stop loss trigger price. If provided, creates a stop loss order after main order.
-            take_profit_price(Optional[float]): Optional take profit trigger price. If provided, creates a take profit order after main order.
+            stop_loss_price(Optional[float]): Stop loss trigger price (absolute price, not percentage).
+                For LONG: should be below entry price. For SHORT: should be above entry price.
+            take_profit_price(Optional[float]): Take profit trigger price (absolute price, not percentage).
+                For LONG: should be above entry price. For SHORT: should be below entry price.
             
         Returns:
-            Dictionary with success, message, and order information
+            Dictionary with success, message, and order information including stop_loss_order and take_profit_order status
         """
         try:
             from src.environments.hyperliquidentry.types import OrderType
@@ -767,25 +786,44 @@ class HyperliquidEnvironment(BaseEnvironment):
         """Step the trading environment for perpetual futures trading.
         
         Hyperliquid Perpetual Futures Trading Rules:
-        ┌──────────────┬─────────────────────────┐
-        │ Action       │ Description             │
-        ├──────────────┼─────────────────────────┤
-        │ LONG         │ Open long position      │
-        │ CLOSE_LONG   │ Close long position     │
-        │ SHORT        │ Open short position     │
-        │ CLOSE_SHORT  │ Close short position    │
-        │ HOLD         │ Do nothing              │
-        └──────────────┴─────────────────────────┘
+        ┌──────────────┬─────────────────────────────────────────────────────────────┐
+        │ Action       │ Description                                                 │
+        ├──────────────┼─────────────────────────────────────────────────────────────┤
+        │ LONG         │ Open long position + create stop loss & take profit orders │
+        │ CLOSE_LONG   │ Close long position (market order)                         │
+        │ SHORT        │ Open short position + create stop loss & take profit orders│
+        │ CLOSE_SHORT  │ Close short position (market order)                        │
+        │ HOLD         │ Do nothing                                                  │
+        └──────────────┴─────────────────────────────────────────────────────────────┘
         
-        Note: Closing positions uses market orders for better execution.
+        Important: For LONG and SHORT actions, if stop_loss_price and take_profit_price are provided,
+        two additional reduce-only orders will be automatically created on the exchange:
+        1. Stop loss order: Closes position if price moves against you (limits loss)
+        2. Take profit order: Closes position if price reaches target (locks in profit)
+        
+        These are exchange orders that execute automatically, protecting your position even if
+        the program stops running.
+        
+        Examples:
+            LONG BTC at $100,000 with stop_loss_price=$97,000, take_profit_price=$106,000
+            → Creates 3 orders:
+              1. BUY 0.01 BTC at market (main order)
+              2. SELL 0.01 BTC at $97,000 (stop loss, reduce-only)
+              3. SELL 0.01 BTC at $106,000 (take profit, reduce-only)
+            
+            SHORT ETH at $3,000 with stop_loss_price=$3,090, take_profit_price=$2,820
+            → Creates 3 orders:
+              1. SELL 0.1 ETH at market (main order)
+              2. BUY 0.1 ETH at $3,090 (stop loss, reduce-only)
+              3. BUY 0.1 ETH at $2,820 (take profit, reduce-only)
         
         Args:
             symbol (str): Symbol to trade (e.g., 'BTC', 'ETH')
             action (str): Trading action for perpetual futures:
-                - 'LONG': Open long position
-                - 'SHORT': Open short position
-                - 'CLOSE_LONG': Close long position (market order)
-                - 'CLOSE_SHORT': Close short position (market order)
+                - 'LONG': Open long position (with optional stop loss & take profit)
+                - 'SHORT': Open short position (with optional stop loss & take profit)
+                - 'CLOSE_LONG': Close long position (market order, no stop loss/take profit)
+                - 'CLOSE_SHORT': Close short position (market order, no stop loss/take profit)
                 - 'HOLD': Do nothing (default)
             qty (float): Quantity to trade (default: 0.00)
             leverage (int): Leverage for perpetual futures (default: 10x)
@@ -929,12 +967,33 @@ class HyperliquidEnvironment(BaseEnvironment):
             
             candles_string = ""
             for symbol, candles_list in candles.items():
-                candles_string += f"Symbol: {symbol}\n"
-                candles_string += "Candles:\n"
-                # Show all candles (usually just the latest one for minute-level trading)
+                symbol_string = dedent(f"""
+                    Symbol: {symbol}
+                """)
+                
                 for candle in candles_list:
-                    candles_string += json.dumps(candle, indent=4)
-                candles_string += "\n"
+                    
+                    symbol_string += dedent(f"""
+                            Timestamp: {candle["timestamp"]}
+                            Open: {candle["open"]}
+                            High: {candle["high"]}
+                            Low: {candle["low"]}
+                            Close: {candle["close"]}
+                            Volume: {candle["volume"]}
+                    """)
+                    
+                    indicators = candle["indicators"]
+                    if len(indicators) > 0:
+                        indicators_string = ", ".join([f"{indicator}: {value:.2f}" for indicator, value in indicators.items()])
+                        symbol_string += dedent(f"""
+                            Indicators: {indicators_string}
+                        """)
+                    else:
+                        symbol_string += dedent(f"""
+                            Indicators: No indicators available now.
+                        """)
+                        
+                candles_string += symbol_string + "\n"
             
             data_string = dedent(f"""
                 <data>

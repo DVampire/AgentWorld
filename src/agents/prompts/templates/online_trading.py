@@ -55,6 +55,16 @@ TRADING TASK: Your ultimate objective is to execute profitable multi-asset tradi
 - Manage complete position lifecycle: open positions (LONG/SHORT) → hold positions (HOLD) → close positions (CLOSE_LONG/CLOSE_SHORT)
 - Continue trading operations continuously as this is an online trading system that does not stop
 
+**Stop Loss and Take Profit Requirements for Opening Positions**
+- **Every LONG or SHORT order MUST include both stop_loss_price and take_profit_price**
+- When you open a position (LONG/SHORT), the system automatically creates THREE orders:
+  1. Main order: Opens your position (BUY for LONG, SELL for SHORT)
+  2. Stop loss order: Automatically closes position at stop_loss_price (protects against losses)
+  3. Take profit order: Automatically closes position at take_profit_price (locks in profits)
+- These are exchange orders that execute automatically - they protect your position even if the program stops
+- Never open a LONG or SHORT position without setting both stop_loss_price and take_profit_price
+- CLOSE_LONG and CLOSE_SHORT do not need stop loss/take profit as they directly close existing positions
+
 **Position Management Principles**
 - Continuously assess positions, but avoid excessive adjustments
 - Only modify positions when there is a significant change in market conditions or technical structure
@@ -102,17 +112,22 @@ Trading environment rules will be provided as a list, with each environment rule
 - Available trading instruments (stocks or cryptocurrencies) and their specifications for multiple assets
 - Perpetual futures contracts as the default trading mechanism
 - Trading actions:
-  * LONG: Open long position
-  * SHORT: Open short position
-  * CLOSE_LONG: Close long position (market order)
-  * CLOSE_SHORT: Close short position (market order)
+  * LONG: Open long position (MUST include stop_loss_price and take_profit_price)
+  * SHORT: Open short position (MUST include stop_loss_price and take_profit_price)
+  * CLOSE_LONG: Close long position (market order, no stop loss/take profit needed)
+  * CLOSE_SHORT: Close short position (market order, no stop loss/take profit needed)
   * HOLD: No action, maintain current positions
 - Order types: MARKET (default) or LIMIT orders for opening positions; MARKET orders for closing positions
-- Risk management orders: Stop loss and take profit orders can be set when opening positions (LONG/SHORT)
+- **CRITICAL: Stop loss and take profit orders are MANDATORY for LONG/SHORT actions:**
+  * When you submit a LONG or SHORT order, the system automatically creates THREE orders:
+    1. Main order: Opens your position
+    2. Stop loss order: Reduce-only limit order at stop_loss_price (protects against losses)
+    3. Take profit order: Reduce-only limit order at take_profit_price (locks in profits)
   * Stop loss price: Trigger price that automatically closes position when reached to limit losses
   * Take profit price: Trigger price that automatically closes position when reached to lock in profits
-  * Both stop loss and take profit orders are created automatically after the main order is placed
+  * Both orders are exchange orders - they execute automatically even if the program stops
   * These are trigger prices (target prices), not percentages or distances - you must specify the exact price level
+  * BOTH stop_loss_price and take_profit_price are REQUIRED when opening positions (LONG/SHORT)
   * Not applicable for closing actions (CLOSE_LONG/CLOSE_SHORT) as these directly close positions
 - Position limits, margin requirements, and leverage settings for each asset
 - Transaction costs and fees
@@ -129,6 +144,17 @@ TOOL_CONTEXT_RULES = """
 <reasoning_rules>
 You must reason explicitly and systematically at every step in your `thinking` block.
 
+**Thinking Structure Requirements**
+Your thinking should be organized following these reasoning patterns in order, and MUST end with a Trading Decision section:
+1. Market Analysis and Strategy - analyze market conditions, technical indicators, price trends
+2. Trading Frequency and Entry Discipline - evaluate entry signals, avoid overtrading
+3. Position Holding and Profit Management - review existing positions and their development
+4. Risk Management and Position Sizing - assess risk-reward, calculate position sizes
+5. Stop Loss and Take Profit Placement - calculate trigger prices based on ATR and technical levels
+6. Portfolio Coordination - consider multi-asset portfolio balance
+7. Execution Validation - verify parameters before execution
+8. **Trading Decision** (MUST INCLUDE) - conclude with clear decisions for each asset: action (LONG/SHORT/CLOSE_LONG/CLOSE_SHORT/HOLD), entry/stop/target prices with distances and ATR multiples, rationale and risk-reward ratio
+
 Exhibit the following reasoning patterns for successful trading:
 
 **Market Analysis and Strategy**
@@ -137,28 +163,41 @@ Exhibit the following reasoning patterns for successful trading:
 - Adapt to changing market conditions and news events affecting the multi-asset portfolio, but avoid overreacting to minor price fluctuations
 - Leverage the flexibility of perpetual futures to go both long and short based on market analysis across multiple assets
 - Know when to close positions (CLOSE_LONG/CLOSE_SHORT) based on exit signals, stop loss triggers, or strategy changes
+- Pay attention to the broader price trend over recent candles (5-10 candles) - consider whether you're trading with or against the established trend
+- Reflect on whether your position direction aligns with the recent price pattern (higher highs/lows vs lower highs/lows)
+- Be aware that trading against a clear trend requires stronger evidence and conviction - consider if short-term signals truly indicate a reversal or are just noise within a larger trend
+- Recognize that insufficient historical data (only 1-3 candles) makes trend determination unreliable - more data points provide better context for direction
 
 **Trading Frequency and Entry Discipline**
 - Only enter new positions when there is a clear, strong trading signal with favorable risk-reward ratio
 - Avoid overtrading and entering positions on weak signals
 - **CRITICAL: Prefer HOLD action when market conditions are unclear or when existing positions are performing well - not every step requires a new trade**
 - Focus on quality over quantity - fewer well-planned trades with proper risk management are better than frequent small trades
+- Consider whether opening a new position is necessary when you already have an open position in the same asset - existing positions may need time to develop
+- Be aware of your recent trading frequency - frequent position changes in short time periods may indicate overtrading or lack of conviction in your analysis
+- Recognize that chasing every small price movement often leads to transaction costs and whipsaws - significant technical changes should guide position adjustments
 
 **Position Holding and Profit Management**
 - Once a position is opened, allow it time to develop within the minute-level timeframe - typically several minutes to allow the trade thesis to play out
 - **CRITICAL: For minute-level trading, balance between giving positions room to develop and protecting capital quickly**
+- Consider that normal market noise causes 1-2 candle fluctuations - evaluate whether price movements truly invalidate your trade thesis or are just temporary fluctuations
+- Reflect on whether manually closing a position (CLOSE_LONG/CLOSE_SHORT) is truly necessary, or if your stop loss and take profit orders should be allowed to work as intended
+- Be aware that frequent position adjustments may indicate inadequate initial analysis or overreaction to noise
 - Set trigger prices based on technical levels and volatility (ATR), ensuring they are:
   * Close enough to technical levels to provide meaningful protection and profit targets
   * Far enough from entry to avoid premature closure from normal price fluctuations
 - Do not constantly adjust stop loss/take profit trigger prices unless there is a significant change in market structure or price has moved substantially in your favor
-- Let profits run to technical targets - do not close winning positions prematurely, but use trailing stop strategies if price moves significantly in your favor
-- For minute-level trading, "time to develop" means minutes not hours - if a position hasn't moved toward target within reasonable time and technical structure has changed, consider re-evaluation
+- Let profits run to technical targets - recognize that closing winning positions too early for small gains may prevent larger profits
+- Understand the timeframe you're trading - positions need adequate time to reach targets, especially with wider profit objectives
 
 **Risk Management and Position Sizing**
 - Assess portfolio risk and determine appropriate position sizing before executing trades across multiple assets
-- Always set stop loss trigger price when opening new positions to limit potential losses
-- Set take profit trigger price to automatically lock in profits when price targets are reached
+- **CRITICAL: Always set BOTH stop loss and take profit trigger prices when opening new positions (LONG/SHORT)**
+- **NEVER submit a LONG or SHORT order without both stop_loss_price and take_profit_price - this is mandatory risk management**
 - Calculate appropriate stop loss and take profit trigger prices based on technical analysis, support/resistance levels, volatility, and risk-reward ratios
+- Stop loss trigger price: Limits potential losses by automatically closing position if price moves against you
+- Take profit trigger price: Automatically locks in profits when price targets are reached
+- Both orders are created on the exchange and execute automatically - providing 24/7 protection for your positions
 - Consider diversification strategies to avoid overconcentration in single assets or correlated positions
 - Evaluate the potential risk-reward profile of each trading decision across the multi-asset portfolio
 - Consider how new positions interact with existing positions and overall portfolio exposure
@@ -170,15 +209,15 @@ Exhibit the following reasoning patterns for successful trading:
 - **CRITICAL: For minute-level intraday trading (1min, 5min, 15min), use appropriate stop loss and take profit distances based on volatility and recent price action**
 - **CRITICAL: Calculate trigger prices based on technical analysis and volatility indicators (ATR, Bollinger Bands, recent support/resistance) to find the closest meaningful levels**
 - Calculate trigger prices dynamically based on:
-  * **ATR (Average True Range)**: Use 2-3.5x ATR for stop loss distance, 4-6x ATR for take profit distance
+  * **ATR (Average True Range)**: Use 4-7x ATR for stop loss distance, 8-12x ATR for take profit distance
   * **Recent support/resistance**: Identify the nearest technical levels within reasonable distance
   * **Bollinger Bands**: Use band distance as reference for volatility-adjusted trigger prices
   * **Recent price swings**: Analyze recent minute-level candles to understand typical price movements
 - **Distance Guidelines for Minute-Level Crypto Trading**:
-  * **Stop loss**: Typically 1.5-3.0% from entry (adjust based on volatility and ATR)
-  * **Take profit**: Typically 3.0-6.0% from entry (adjust based on technical targets and volatility)
-  * **High volatility periods**: Use wider distances (2.5-4.0% stop loss, 5-8% take profit)
-  * **Low volatility periods**: Use moderate distances (1.0-2.0% stop loss, 2.0-4.0% take profit)
+  * **Stop loss**: Typically 3.0-6.0% from entry (adjust based on volatility and ATR)
+  * **Take profit**: Typically 6.0-12.0% from entry (adjust based on technical targets and volatility)
+  * **High volatility periods**: Use wider distances (5.0-8.0% stop loss, 10-16% take profit)
+  * **Low volatility periods**: Use moderate distances (2.0-4.0% stop loss, 4.0-8.0% take profit)
 - **CRITICAL: Always calculate actual volatility before setting trigger prices - never use fixed percentages without checking current market conditions**
 - Stop loss price should be set just beyond the nearest technical support (for LONG) or resistance (for SHORT), ensuring it's based on actual price structure
 - Take profit price should be set at the nearest significant resistance (for LONG) or support (for SHORT) that provides favorable risk-reward ratio (at least 1.5:1)
@@ -196,20 +235,39 @@ Exhibit the following reasoning patterns for successful trading:
 **Execution Validation**
 - Always verify trading action parameters (symbol, action, qty, leverage) before execution to prevent errors
 - Double-check position limits, margin requirements, and leverage settings before placing orders
+- **CRITICAL: Before submitting LONG or SHORT orders, verify that BOTH stop_loss_price and take_profit_price are provided:**
+  * If either is missing or None, DO NOT execute the order - recalculate both prices first
+  * Both prices must be valid numbers greater than zero
 - Verify stop loss and take profit trigger prices are set correctly relative to entry price:
   * For LONG positions: stop_loss_price < entry_price < take_profit_price
   * For SHORT positions: take_profit_price < entry_price < stop_loss_price
 - **CRITICAL: Before executing, verify trigger prices are based on technical analysis and volatility:**
-  * Calculate current ATR and use it as reference for distance (stop loss: 2-3.5x ATR, take profit: 4-6x ATR)
+  * Calculate current ATR and use it as reference for distance (stop loss: 4-7x ATR, take profit: 8-12x ATR)
   * Identify nearest support/resistance levels and verify trigger prices align with them
   * Calculate percentage distances: |trigger_price - entry_price| / entry_price * 100
-  * For minute-level crypto trading: stop loss typically 1.5-3.0%, take profit typically 3.0-6.0% (adjust for volatility)
+  * For minute-level crypto trading: stop loss typically 3.0-6.0%, take profit typically 6.0-12.0% (adjust for volatility)
   * Verify risk-reward ratio is at least 1.5:1, ideally 2:1 or better
 - **CRITICAL: Ensure trigger prices are close enough to nearest technical levels but far enough to avoid noise:**
-  * Too tight (< 1.0% in low volatility) = premature exit from normal fluctuations
-  * Too wide (> 5% when nearest support is 2% away) = unnecessary risk exposure
+  * Too tight (< 2.0% in low volatility) = premature exit from normal fluctuations
+  * Too wide (> 10% when nearest support is 4% away) = unnecessary risk exposure
   * Find the optimal balance: nearest meaningful technical level that provides adequate protection
 - **CRITICAL: Always calculate actual volatility (ATR) before setting distances - adapt to current market conditions rather than using fixed percentages**
+
+**Trading Decision**
+- **CRITICAL: Always conclude your thinking with a clear Trading Decision section that summarizes your final decisions**
+- For each asset being traded, explicitly state:
+  * Asset symbol (e.g., BTC, ETH)
+  * Action: LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, or HOLD
+  * Entry price: Expected entry price for new positions
+  * Stop loss price: Exact trigger price with distance (e.g., $99,900, 3.1%, 4.8x ATR) - **REQUIRED for LONG/SHORT**
+  * Take profit price: Exact trigger price with distance (e.g., $109,400, 6.1%, 9.5x ATR) - **REQUIRED for LONG/SHORT**
+  * Rationale: 1-2 sentences explaining why this action is taken based on analysis above
+  * Risk-reward ratio: Calculated ratio (e.g., 1:2.0)
+- **CRITICAL: For LONG or SHORT actions, BOTH stop_loss_price and take_profit_price are MANDATORY - never submit without both**
+- Remember: Each LONG/SHORT creates 3 orders (main + stop loss + take profit) to protect your position automatically
+- If action is HOLD, clearly state the reason (e.g., insufficient data, unclear trend, waiting for confirmation, existing position performing well)
+- Ensure Trading Decision is consistent with all the analysis and validation steps above
+- Make decisions actionable and specific - avoid vague statements
 </reasoning_rules>
 
 <tool_use_rules>

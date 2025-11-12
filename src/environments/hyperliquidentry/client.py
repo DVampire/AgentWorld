@@ -3,7 +3,6 @@
 from typing import Dict, Optional, Any, List
 import logging
 import time
-import threading
 
 # Hyperliquid Python SDK
 try:
@@ -324,9 +323,11 @@ class HyperliquidClient:
     ):
         """Create stop loss and take profit orders after main order fills.
         
+        Both stop loss and take profit are created as exchange trigger orders (reduce-only limit orders).
+        
         Args:
             symbol: Trading symbol
-            is_buy: Whether main order was a buy order
+            is_buy: Whether main order was a buy order (True for LONG, False for SHORT)
             size: Order size
             stop_loss_price: Optional stop loss trigger price
             take_profit_price: Optional take profit trigger price
@@ -350,16 +351,24 @@ class HyperliquidClient:
         except Exception as e:
             logger.warning(f"| ⚠️  Could not verify position: {e}")
         
-        # IMPORTANT: For stop loss, do NOT place a reduce_only limit at the trigger price.
-        # That will often execute immediately at a better price. Instead, arm a local guard
-        # that will market-close the position when the trigger is crossed.
+        # Create stop loss order if provided - use exchange trigger order
         if stop_loss_price is not None and stop_loss_price > 0:
             try:
-                self._start_stop_loss_guard(symbol=symbol, trigger_price=stop_loss_price)
-                result["stop_loss_order"] = {"status": "armed", "trigger_price": stop_loss_price}
-                logger.info(f"| 🛡️  Armed local stop loss guard at {stop_loss_price} for {symbol}")
+                # Stop loss: opposite side to close position
+                # For long positions (buy), stop loss is sell at lower price
+                # For short positions (sell), stop loss is buy at higher price
+                stop_loss_side = "A" if is_buy else "B"  # Opposite side
+                stop_loss_result = self._create_trigger_order(
+                    symbol=symbol,
+                    side=stop_loss_side,
+                    size=size,
+                    trigger_price=stop_loss_price,
+                    order_type="StopLoss"
+                )
+                result["stop_loss_order"] = stop_loss_result
+                logger.info(f"| 🛡️  Created stop loss order at {stop_loss_price} for {symbol}")
             except Exception as e:
-                logger.warning(f"| ⚠️  Failed to arm stop loss guard: {e}")
+                logger.warning(f"| ⚠️  Failed to create stop loss order: {e}")
                 result["stop_loss_error"] = str(e)
         
         # Create take profit order if provided
@@ -377,7 +386,7 @@ class HyperliquidClient:
                     order_type="TakeProfit"
                 )
                 result["take_profit_order"] = take_profit_result
-                logger.info(f"| 🎯 Created take profit order: {take_profit_price} for {symbol}")
+                logger.info(f"| 🎯 Created take profit order at {take_profit_price} for {symbol}")
             except Exception as e:
                 logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
                 result["take_profit_error"] = str(e)
@@ -420,90 +429,9 @@ class HyperliquidClient:
             logger.debug(f"| ℹ️  _get_open_position_for_symbol failed for {symbol}: {e}")
         return None
 
-    # -------------------------- STOP LOSS GUARD (LOCAL) --------------------------
-    def _start_stop_loss_guard(self, symbol: str, trigger_price: float) -> None:
-        """Start a background thread that market-closes the position when trigger is crossed."""
-        t = threading.Thread(
-            target=self._stop_loss_guard_loop,
-            args=(symbol, trigger_price),
-            daemon=True,
-        )
-        t.start()
-
-    def _stop_loss_guard_loop(self, symbol: str, trigger_price: float) -> None:
-        """Background loop to monitor price and close position on stop trigger."""
-        try:
-            # Wait for position to appear (up to 5 seconds)
-            max_wait_ms = 5000
-            waited = 0
-            pos = self._get_open_position_for_symbol(symbol)
-            while pos is None and waited < max_wait_ms:
-                time.sleep(0.1)
-                waited += 100
-                pos = self._get_open_position_for_symbol(symbol)
-            if pos is None:
-                logger.warning(f"| ⚠️  Stop loss guard: no position for {symbol} after wait; aborting guard")
-                return
-
-            # Determine direction by signed size (szi)
-            try:
-                szi = float(pos.get("szi", "0"))
-            except Exception:
-                szi = 0.0
-            if szi == 0.0:
-                logger.info(f"| ℹ️  Stop loss guard: position size is zero for {symbol}; exiting guard")
-                return
-            is_long = szi > 0
-
-            # Monitor price and close when trigger crossed
-            while True:
-                last = self._get_last_mid_price(symbol)
-                # If price unavailable, retry
-                if last is None:
-                    time.sleep(0.2)
-                    # Re-check if position still exists
-                    pos = self._get_open_position_for_symbol(symbol)
-                    if pos is None:
-                        return
-                    continue
-
-                # Re-check position
-                pos = self._get_open_position_for_symbol(symbol)
-                if pos is None:
-                    # Position closed elsewhere
-                    return
-                try:
-                    szi = float(pos.get("szi", "0"))
-                except Exception:
-                    szi = 0.0
-                if szi == 0.0:
-                    # Already closed
-                    return
-
-                # Trigger condition
-                if (is_long and last <= trigger_price) or ((not is_long) and last >= trigger_price):
-                    try:
-                        # Close entire position size
-                        close_sz = abs(szi)
-                        logger.info(f"| 🛑 Stop loss triggered for {symbol} at {last} (trigger {trigger_price}); closing {close_sz}")
-                        self.exchange.market_close(
-                            coin=symbol,
-                            sz=close_sz,
-                            px=None,
-                            slippage=Exchange.DEFAULT_SLIPPAGE if hasattr(Exchange, "DEFAULT_SLIPPAGE") else 0.05,
-                            cloid=None,
-                            builder=None,
-                        )
-                    except Exception as e:
-                        logger.error(f"| ❌ Stop loss market close failed for {symbol}: {e}")
-                    finally:
-                        return
-
-                # Throttle
-                time.sleep(0.2)
-        except Exception as e:
-            logger.error(f"| ❌ Stop loss guard loop exception for {symbol}: {e}")
-    
+    # -------------------------- STOP LOSS GUARD (DEPRECATED) --------------------------
+    # Note: Stop loss is now handled via exchange trigger orders, not local guards.
+    # The following methods are kept for backward compatibility but are no longer used.
     def _create_trigger_order(
         self,
         symbol: str,
