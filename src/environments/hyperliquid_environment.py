@@ -43,12 +43,13 @@ class HyperliquidEnvironment(BaseEnvironment):
         "has_vision": False,
         "additional_rules": {
             "state": "The state of the Hyperliquid trading environment including account information, positions, and market data.",
-            "interaction": dedent(f"""
-                Guidelines for interacting with the Hyperliquid trading environment:
-                - Always check account status before placing orders
-                - Verify sufficient balance before buying
-                - Hyperliquid supports perpetual futures trading only
-                - Monitor positions and orders regularly
+            "interaction": dedent("""
+                There are example actions for the `step` action:
+                    - SHOTR: {"symbol": "BTC", "action": "SHORT", "qty": 0.01, "leverage": 10, "stop_loss_price": 100000, "take_profit_price": 110000}
+                    - LONG: {"symbol": "BTC", "action": "LONG", "qty": 0.01, "leverage": 10, "stop_loss_price": 90000, "take_profit_price": 110000}
+                    - CLOSE_LONG: {"symbol": "BTC", "action": "CLOSE_LONG"}
+                    - CLOSE_SHORT: {"symbol": "BTC", "action": "CLOSE_SHORT"}
+                    - HOLD: {"symbol": "BTC", "action": "HOLD"}
             """),
         }
     }, description="The metadata of the Hyperliquid trading environment.")
@@ -860,7 +861,7 @@ class HyperliquidEnvironment(BaseEnvironment):
     async def step(self, 
                    symbol: str = "BTC", 
                    action: str = "HOLD",  # LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD
-                   qty: float = 0.00,
+                   qty: float = 0.0,
                    leverage: Optional[int] = 10,
                    stop_loss_price: Optional[float] = None,
                    take_profit_price: Optional[float] = None,
@@ -907,10 +908,10 @@ class HyperliquidEnvironment(BaseEnvironment):
                 - 'CLOSE_LONG': Close long position (market order, no stop loss/take profit)
                 - 'CLOSE_SHORT': Close short position (market order, no stop loss/take profit)
                 - 'HOLD': Do nothing (default)
-            qty (float): Quantity to trade (default: 0.00)
-            leverage (int): Leverage for perpetual futures (default: 10x)
-            stop_loss_price (Optional[float]): Optional stop loss trigger price. If provided, creates a stop loss order after main order.
-            take_profit_price (Optional[float]): Optional take profit trigger price. If provided, creates a take profit order after main order.
+            qty (float): Quantity to trade.
+            leverage (Optional[int]): Leverage for perpetual futures.
+            stop_loss_price (Optional[float]): Stop loss trigger price (absolute price, not percentage). Must be provided for LONG and SHORT actions.
+            take_profit_price (Optional[float]): Take profit trigger price (absolute price, not percentage). Must be provided for LONG and SHORT actions.
         Returns:
             Dictionary with success, message, and order information
         """
