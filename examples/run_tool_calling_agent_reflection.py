@@ -1,11 +1,11 @@
 """
-使用Reflection优化Tool Calling Agent的示例
+Example script that optimizes a tool calling agent with the Reflection optimizer.
 
-Reflection优化器通过以下步骤优化Agent的提示词：
-1. 执行任务并获取结果
-2. 反思分析执行过程中的问题和改进点
-3. 基于反思改进提示词
-4. 重复上述步骤，直到达到指定迭代次数
+The Reflection optimizer updates the agent prompt via the following loop:
+1. Execute the task and collect the result.
+2. Reflect on the execution to identify issues and improvements.
+3. Refine the prompt based on the reflection.
+4. Repeat until the configured number of iterations is reached.
 """
 
 import os
@@ -81,13 +81,13 @@ async def main():
     await transformation.transform(type="e2t", env_names=config.env_names)
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
-    # Get agent instance - 使用get_info()同步方法获取AgentInfo，然后访问instance
+    # Get the agent instance; use the synchronous get_info() helper to access AgentInfo and then use .instance.
     agent_info = acp.get_info("tool_calling")
     if agent_info is None:
         raise ValueError(f"Agent 'tool_calling' not found. Available agents: {acp.list()}")
     agent = agent_info.instance
     
-    # Example task - 可以修改为你想要优化的任务
+    # Example task; replace with the task you want to optimize.
     task = "How are you!"
     files = []
     
@@ -96,8 +96,8 @@ async def main():
     logger.info(f"| 🤖 Using Reflection optimization method")
     logger.info(f"| 💡 Reflection优化器会使用Agent自己的模型进行反思和改进")
     
-    # 运行带Reflection优化的Agent
-    # 注意：Reflection优化器使用agent自己的model进行反思和改进，不需要额外的optimizer_model
+    # Run the agent with Reflection optimization.
+    # Note: the Reflection optimizer relies on the agent's own model for reflection, so no extra optimizer_model is required.
     optimizer = await optimize_agent_with_reflection(
         agent=agent,
         task=task,
