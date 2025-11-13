@@ -77,3 +77,18 @@ imageio-ffmpeg>=0.6.0
 adbutils>=2.10.2
 av>=15.1.0
 
+# Binance dependencies
+binance-sdk-derivatives-trading-usds-futures
+binance-sdk-derivatives-trading-coin-futures
+binance-sdk-spot
+binance-connector
+websocket-client
+
+# Hyperliquid dependencies
+hyperliquid-python-sdk
+
+# Visualization dependencies
+flask>=3.0.0
+plotly>=5.18.0
+
+

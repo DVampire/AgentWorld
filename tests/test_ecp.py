@@ -21,7 +21,7 @@ from src.infrastructures.models import model_manager
 from src.environments import ecp
 from src.tools import tcp
 from src.utils import assemble_project_path
-from src.environments.alpacaentry.service import AlpacaService
+from src.environments.hyperliquidentry.service import HyperliquidService
 from src.utils import get_env
 
 def parse_args():
@@ -156,15 +156,44 @@ async def test_operator_browser():
         }
     )
     logger.info(f"| 📝 Result: {res}")
-    
-async def test_alpaca():
+        
+async def test_binance():
     # get account
-    env = ecp.get("alpaca")
+    env = ecp.get("binance")
+    
+    account= await env.get_account()
+    logger.info(f"| 📝 Account: {account}")
+    
+    positions= await env.get_positions()
+    logger.info(f"| 📝 Positions: {positions}")
     
     while True:
         res = await env.get_data()
-        logger.info(f"| 📝 Result: {res['extra']['data']['BTC/USD']['bars']}")
+        logger.info(f"| 📝 Result: {res['extra']['data']['BTCUSDT']['klines']}")
         await asyncio.sleep(1)
+    
+
+async def test_hyperliquid():
+    # get account
+    env = ecp.get("hyperliquid")
+    
+    account= await env.get_account()
+    logger.info(f"| 📝 Account: {account['message']}")
+    
+    positions= await env.get_positions()
+    logger.info(f"| 📝 Positions: {positions}")
+    
+    order_result = await env.step(symbol="BTC", action="LONG", qty=1e-5, leverage=10, stop_loss_price=90000, take_profit_price=110000)
+    logger.info(f"| 📝 Order result: {order_result}")
+    
+    # while True:
+    #     res = await env.get_data()
+    #     # Print data for all symbols
+    #     for symbol, data in res['extra']['data'].items():
+    #         logger.info(f"| 📝 Result for {symbol}: {data.get('candle', [])}")
+    #     await asyncio.sleep(1)
+        
+        
     
 async def main():
     
@@ -180,20 +209,18 @@ async def main():
     await model_manager.initialize(use_local_proxy=config.use_local_proxy)
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # Initialize Alpaca service
-    logger.info("| 🔧 Initializing Alpaca service...")
-    accounts = get_env("ALPACA_ACCOUNTS").get_secret_value()
+    # Initialize Hyperliquid service
+    logger.info("| 🔧 Initializing Hyperliquid service...")
+    accounts = get_env("HYPERLIQUID_ACCOUNTS").get_secret_value()
     if accounts:
         accounts = json.loads(accounts)
-    else:
-        accounts = None
-    config.alpaca_service.update(dict(accounts=accounts))
-    alpaca_service = AlpacaService(**config.alpaca_service)
-    await alpaca_service.initialize()
+    config.hyperliquid_service.update(dict(accounts=accounts))
+    hyperliquid_service = HyperliquidService(**config.hyperliquid_service)
+    await hyperliquid_service.initialize()
     for env_name in config.env_names:
         env_config = config.get(f"{env_name}_environment", None)
-        env_config.update(dict(alpaca_service=alpaca_service))
-    logger.info(f"| ✅ Alpaca service initialized.")
+        env_config.update(dict(hyperliquid_service=hyperliquid_service))
+    logger.info(f"| ✅ Hyperliquid service initialized.")
     
     # Initialize tool manager
     logger.info("| 🛠️ Initializing tool manager...")
@@ -209,7 +236,8 @@ async def main():
     # await test_file_system()
     # await test_github()
     # await test_operator_browser()
-    await test_alpaca()
+    # await test_binance()
+    await test_hyperliquid()
     
 
 if __name__ == "__main__":

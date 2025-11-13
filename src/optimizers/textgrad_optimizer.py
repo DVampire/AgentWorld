@@ -3,9 +3,6 @@ TextGrad optimizer module.
 Contains the optimizer that tunes agent prompts using TextGrad.
 """
 
-import os
-import sys
-from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any
 
@@ -17,7 +14,7 @@ from src.optimizers.base_optimizer import BaseOptimizer
 class TextGradOptimizer(BaseOptimizer):
     """Optimizer that leverages TextGrad to improve agent prompts."""
     
-    def __init__(self, agent, log_dir: str):
+    def __init__(self, agent):
         """
         Initialize the optimizer.
 
@@ -191,7 +188,6 @@ class TextGradOptimizer(BaseOptimizer):
             
             if not self.optimizable_tg_vars:
                 logger.warning("| ⚠️ No optimizable variables found. Skipping optimization.")
-                self.logger.write("⚠️ 未找到可优化的变量，跳过优化")
                 return
             
             # 3. Create the optimizer (standard TextGrad API).
@@ -212,7 +208,6 @@ class TextGradOptimizer(BaseOptimizer):
             )
             
             logger.info(f"| 🔄 Starting TextGrad optimization with {optimization_steps} steps...")
-            self.logger.write(f"\n🔄 开始TextGrad优化，共 {optimization_steps} 步\n")
             
             # 4. Iterate through optimization steps.
             for opt_step in range(optimization_steps):
@@ -235,17 +230,14 @@ class TextGradOptimizer(BaseOptimizer):
                 
                 # 4.2 Run the agent with the current prompts.
                 logger.info(f"| 🚀 Running agent with current prompts...")
-                self.logger.write("🚀 使用当前提示词运行Agent...")
                 agent_result = await self.agent.ainvoke(task=task, files=files)
                 logger.info(f"| 📋 Agent result: {str(agent_result)[:200]}...")
-                self.logger.write(f"📋 Agent结果: {str(agent_result)[:500]}...\n")
                 
                 # 4.3 Define the loss function based on the execution result.
                 loss_fn = self.define_loss_function(agent_result, task, self.agent.max_steps)
                 
                 # 4.4 Compute the loss and perform backpropagation.
                 logger.info(f"| 📉 Computing loss and gradients...")
-                self.logger.write("📉 计算损失和梯度...")
                 
                 # Create the response variable that represents the agent output.
                 response_var = tg.Variable(
@@ -257,7 +249,6 @@ class TextGradOptimizer(BaseOptimizer):
                 # Compute the loss.
                 loss = loss_fn(response_var)
                 logger.info(f"| 📊 Loss: {loss.value[:200]}...")
-                self.logger.write(f"📊 Loss: {loss.value[:500]}...\n")
                 
                 # Manually add loss feedback to prompt variables (they are detached from the computation graph).
                 # We therefore create gradients for each optimizable variable explicitly.
@@ -275,18 +266,15 @@ class TextGradOptimizer(BaseOptimizer):
                 
                 # 4.5 Perform the optimizer step (update prompts).
                 logger.info(f"| ✨ Updating prompts with TextGrad...")
-                self.logger.write("✨ 使用TextGrad更新提示词...")
                 try:
                     optimizer.step()
                 except IndexError as e:
                     logger.error(f"| ❌ Optimizer step failed: {e}")
-                    self.logger.write(f"❌ 优化步骤失败: {e}")
                     logger.warning(f"| ⚠️ LLM response may not have followed the required format. Trying with a stronger model or retry...")
                     # Consider adding retry logic or switching to a stronger model here.
                     raise
                 
                 logger.info(f"| ✅ Optimization step {opt_step + 1} completed\n")
-                self.logger.write(f"✅ 优化步骤 {opt_step + 1} 完成\n")
                 
                 # 4.6 Sync optimized values back to the original variables.
                 for tg_var in self.optimizable_tg_vars:
@@ -299,14 +287,12 @@ class TextGradOptimizer(BaseOptimizer):
                 self.clear_prompt_caches()
             
             logger.info(f"| 🎉 Optimization completed!")
-            self.logger.write("\n🎉 优化完成!")
             
             # 5. Output a summary of the final optimized variables.
             logger.info(f"| 📊 Final optimized variables (summary):")
             self.logger.write("\n📊 最终优化变量摘要:")
             for tg_var in self.optimizable_tg_vars:
                 logger.info(f"|   - {tg_var.role_description[:60]}: {tg_var.value[:150]}...")
-                self.logger.write(f"   - {tg_var.role_description[:60]}: {tg_var.value[:200]}...")
         
         finally:
             # Close the optimization log file.
@@ -332,8 +318,7 @@ async def optimize_agent_with_textgrad(
     task: str,
     files: Optional[List[str]] = None,
     optimization_steps: int = 3,
-    optimizer_model: str = "gpt-4o",
-    log_dir: Optional[str] = None
+    optimizer_model: str = "gpt-4o"
 ):
     """
     Convenience function that optimizes an agent prompt using TextGrad.

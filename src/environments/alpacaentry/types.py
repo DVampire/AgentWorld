@@ -13,6 +13,13 @@ class DataStreamType(str, Enum):
     ORDERBOOKS = "orderbooks"
     NEWS = "news"
 
+
+class AccountInfo(BaseModel):
+    """Alpaca account model."""
+    api_key: str
+    secret_key: str
+    name: str
+
 class GetAccountRequest(BaseModel):
     """Request for getting account information."""
     account_name: str

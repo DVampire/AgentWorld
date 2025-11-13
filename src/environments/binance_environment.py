@@ -1,4 +1,4 @@
-"""Alpaca Trading Environment for AgentWorld - provides Alpaca trading operations as an environment."""
+"""Binance Trading Environment for AgentWorld - provides Binance trading operations as an environment."""
 
 from __future__ import annotations
 from dotenv import load_dotenv
@@ -12,11 +12,11 @@ from pydantic import BaseModel, Field, ConfigDict
 from src.logger import logger
 from src.environments.protocol.environment import BaseEnvironment
 from src.environments.protocol import ecp
-from src.environments.alpacaentry.service import AlpacaService
-from src.environments.alpacaentry.exceptions import (
+from src.environments.binanceentry.service import BinanceService
+from src.environments.binanceentry.exceptions import (
     AuthenticationError,
 )
-from src.environments.alpacaentry.types import (
+from src.environments.binanceentry.types import (
     GetAccountRequest,
     GetAssetsRequest,
     GetPositionsRequest,
@@ -26,32 +26,33 @@ from src.environments.alpacaentry.types import (
     GetOrderRequest,
     CancelOrderRequest,
     CancelAllOrdersRequest,
+    TradeType,
 )
 from src.utils import dedent, assemble_project_path
 
 @ecp.environment()
-class AlpacaEnvironment(BaseEnvironment):
-    """Alpaca Trading Environment that provides Alpaca trading operations as an environment interface."""
+class BinanceEnvironment(BaseEnvironment):
+    """Binance Trading Environment that provides Binance trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="alpaca", description="The name of the Alpaca trading environment.")
-    type: str = Field(default="Alpaca Trading", description="The type of the Alpaca trading environment.")
-    description: str = Field(default="Alpaca trading environment for real-time data and trading operations", description="The description of the Alpaca trading environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Alpaca trading environment.")
+    name: str = Field(default="binance", description="The name of the Binance trading environment.")
+    type: str = Field(default="Binance Trading", description="The type of the Binance trading environment.")
+    description: str = Field(default="Binance trading environment for real-time data and trading operations", description="The description of the Binance trading environment.")
+    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Binance trading environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
-            "state": "The state of the Alpaca trading environment including account information, positions, and market data.",
+            "state": "The state of the Binance trading environment including account information, positions, and market data.",
             "interaction": dedent(f"""
-                Guidelines for interacting with the Alpaca trading environment:
+                Guidelines for interacting with the Binance trading environment:
                 - Always check account status before placing orders
-                - Verify sufficient buying power before buying
-                - Check market hours before trading
-                - Use paper trading for testing strategies
+                - Verify sufficient balance before buying
+                - Default to perpetual futures trading for orders
+                - Default to futures WebSocket for klines data
                 - Monitor positions and orders regularly
             """),
         }
-    }, description="The metadata of the Alpaca trading environment.")
+    }, description="The metadata of the Binance trading environment.")
     
     def __init__(
         self,
@@ -59,17 +60,18 @@ class AlpacaEnvironment(BaseEnvironment):
         account_name: str = None,
         symbol: Optional[Union[str, List[str]]] = None,
         data_type: Optional[Union[str, List[str]]] = None,
-        alpaca_service: AlpacaService = None,
+        binance_service: BinanceService = None,
         **kwargs
     ):
         """
-        Initialize the Alpaca paper trading environment.
+        Initialize the Binance trading environment.
         
         Args:
-            base_dir (str): Base directory for Alpaca operations
-            live (bool): Whether to use live trading
-            auto_start_data_stream (bool): Whether to auto start data stream
-            data_stream_symbols (List[str]): The symbols to stream data for
+            base_dir (str): Base directory for Binance operations
+            account_name (str): Account name to use
+            symbol (str or List[str]): Symbol(s) to trade (e.g., 'BTCUSDT', ['BTCUSDT', 'ETHUSDT'])
+            data_type (str or List[str]): Data type(s) to retrieve (default: 'klines')
+            binance_service (BinanceService): Binance service instance
         """
         super().__init__(**kwargs)
         
@@ -77,26 +79,25 @@ class AlpacaEnvironment(BaseEnvironment):
         self.account_name = account_name
         self.symbol = symbol
         self.data_type = data_type
-        self.alpaca_service = alpaca_service
-        
+        self.binance_service = binance_service
+    
     async def initialize(self) -> None:
-        """Initialize the Alpaca trading environment."""
-        logger.info(f"| 🚀 Alpaca Trading Environment initialized at: {self.base_dir}")
-        
+        """Initialize the Binance trading environment."""
+        logger.info(f"| 🚀 Binance Trading Environment initialized at: {self.base_dir}")
+    
     async def cleanup(self) -> None:
-        """Cleanup the Alpaca trading environment."""
-        logger.info("| 🧹 Alpaca Trading Environment cleanup completed")
-
+        """Cleanup the Binance trading environment."""
+        logger.info("| 🧹 Binance Trading Environment cleanup completed")
+    
     async def get_account(self) -> Dict[str, Any]:
-        """Get account information.
+        """Get account information (defaults to futures account).
         
         Returns:
-            A string containing detailed account information including buying power, cash, portfolio value, and account status.
+            A string containing detailed account information including balances, permissions, and futures account info.
         """
         try:
-            
             request = GetAccountRequest(account_name=self.account_name)
-            result = await self.alpaca_service.get_account(request)
+            result = await self.binance_service.get_account(request)
             
             if not result.success:
                 return {
@@ -108,17 +109,19 @@ class AlpacaEnvironment(BaseEnvironment):
             account = result.extra["account"]
             result_text = dedent(f"""
                 Account Information:
-                Account Number: {account["account_number"]}
-                Status: {account["status"]}
-                Currency: {account["currency"]}
-                Buying Power: ${float(account["buying_power"]):,.2f}
-                Cash: ${float(account["cash"]):,.2f}
-                Portfolio Value: ${float(account["portfolio_value"]):,.2f}
-                Equity: ${float(account["equity"]):,.2f}
-                Pattern Day Trader: {account["pattern_day_trader"]}
-                Trading Blocked: {account["trading_blocked"]}
-                Shorting Enabled: {account["shorting_enabled"]}
-                Day Trade Count: {account["daytrade_count"]}
+                Account Type: {account.get("account_type", "N/A")}
+                Permissions: {', '.join(account.get("permissions", []))}
+                
+                Spot Balances:
+                {self._format_balances(account.get("balances", []))}
+                
+                Futures Account:
+                Total Wallet Balance: {account.get("futures_total_wallet_balance", "N/A")}
+                Available Balance: {account.get("futures_available_balance", "N/A")}
+                Total Unrealized Profit: {account.get("futures_total_unrealized_profit", "N/A")}
+                
+                Futures Assets:
+                {self._format_futures_assets(account.get("futures_assets", []))}
                 """)
             extra = result.extra
             
@@ -139,7 +142,36 @@ class AlpacaEnvironment(BaseEnvironment):
                 "message": f"Failed to get account information: {str(e)}",
                 "extra": {"error": str(e)}
             }
+    
+    def _format_balances(self, balances: List[Dict]) -> str:
+        """Format spot balances for display."""
+        if not balances:
+            return "  No spot balances"
         
+        lines = []
+        for balance in balances:
+            free = float(balance.get("free", 0))
+            locked = float(balance.get("locked", 0))
+            total = free + locked
+            if total > 0:
+                lines.append(f"  {balance.get('asset', 'N/A')}: Free={free}, Locked={locked}, Total={total}")
+        
+        return "\n".join(lines) if lines else "  No non-zero balances"
+    
+    def _format_futures_assets(self, assets: List[Dict]) -> str:
+        """Format futures assets for display."""
+        if not assets:
+            return "  No futures assets"
+        
+        lines = []
+        for asset in assets:
+            asset_name = asset.get("asset", "N/A")
+            wallet_balance = asset.get("walletBalance", "N/A")
+            available_balance = asset.get("availableBalance", "N/A")
+            lines.append(f"  {asset_name}: Wallet={wallet_balance}, Available={available_balance}")
+        
+        return "\n".join(lines) if lines else "  No futures assets"
+    
     async def get_assets(self, status: Optional[str] = None, asset_class: Optional[str] = None) -> Dict[str, Any]:
         """Get all assets information.
         
@@ -148,7 +180,7 @@ class AlpacaEnvironment(BaseEnvironment):
         """
         try:
             request = GetAssetsRequest(status=status, asset_class=asset_class)
-            result = await self.alpaca_service.get_assets(request)
+            result = await self.binance_service.get_assets(request)
             
             if not result.success:
                 return {
@@ -156,7 +188,7 @@ class AlpacaEnvironment(BaseEnvironment):
                     "message": result.message,
                     "extra": {"error": result.message}
                 }
-                
+            
             assets = result.extra["assets"]
             result_text = dedent(f"""
                 {len(assets)} assets found, list of assets:
@@ -181,15 +213,18 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    async def get_positions(self) -> Dict[str, Any]:
-        """Get all open positions.
+    async def get_positions(self, trade_type: Optional[TradeType] = TradeType.PERPETUAL) -> Dict[str, Any]:
+        """Get all open positions (defaults to perpetual futures positions).
+        
+        Args:
+            trade_type: Trade type to filter by (default: PERPETUAL for futures positions)
         
         Returns:
-            A string containing detailed positions information including symbols, quantities, market values, and unrealized P&L.
+            A string containing detailed positions information including symbols, quantities, entry prices, and unrealized P&L.
         """
         try:
-            request = GetPositionsRequest(account_name=self.account_name)
-            result = await self.alpaca_service.get_positions(request)
+            request = GetPositionsRequest(account_name=self.account_name, trade_type=trade_type)
+            result = await self.binance_service.get_positions(request)
             
             if not result.success:
                 return {
@@ -206,23 +241,25 @@ class AlpacaEnvironment(BaseEnvironment):
                 position_lines = []
                 for pos in positions:
                     try:
-                        qty = float(pos["qty"])
-                        market_value = float(pos["market_value"])
-                        unrealized_pl = float(pos["unrealized_pl"])
-                        unrealized_plpc = float(pos["unrealized_plpc"])
-                        current_price = float(pos["current_price"])
-                        avg_entry_price = float(pos["avg_entry_price"])
+                        symbol = pos.get("symbol", "N/A")
+                        position_amt = float(pos.get("position_amt", 0))
+                        entry_price = float(pos.get("entry_price", 0))
+                        mark_price = float(pos.get("mark_price", 0))
+                        unrealized_profit = float(pos.get("unrealized_profit", 0))
+                        leverage = pos.get("leverage", "N/A")
+                        position_side = pos.get("position_side", "N/A")
+                        trade_type_str = pos.get("trade_type", "N/A")
                         
                         position_lines.append(
-                            f"  {pos['symbol']}: {qty:+.2f} shares @ ${current_price:.2f} "
-                            f"(Avg Entry: ${avg_entry_price:.2f}, Market Value: ${market_value:,.2f}, "
-                            f"P&L: ${unrealized_pl:,.2f} ({unrealized_plpc:.2%}))"
+                            f"  {symbol} ({trade_type_str}): {position_amt:+.6f} @ Entry: {entry_price}, "
+                            f"Mark: {mark_price}, Leverage: {leverage}x, Side: {position_side}, "
+                            f"P&L: {unrealized_profit:.6f}"
                         )
                     except (ValueError, TypeError, KeyError):
                         # Fallback to string representation if conversion fails
                         position_lines.append(
-                            f"  {pos.get('symbol', 'N/A')}: {pos.get('qty', 'N/A')} shares "
-                            f"(P&L: {pos.get('unrealized_pl', 'N/A')})"
+                            f"  {pos.get('symbol', 'N/A')}: {pos.get('position_amt', 'N/A')} "
+                            f"(P&L: {pos.get('unrealized_profit', 'N/A')})"
                         )
                 
                 result_text = dedent(f"""
@@ -255,48 +292,25 @@ class AlpacaEnvironment(BaseEnvironment):
         end_date: Optional[str] = None, 
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Get historical data from database.
+        """Get historical klines data from database.
         
         Args:
-            symbol: Symbol(s) to query (e.g., 'BTC/USD', 'AAPL', or ['BTC/USD', 'AAPL'])
-            data_type: Type(s) of data to retrieve - 'quotes', 'trades', 'bars', 'orderbooks' (crypto only), or 'news'. Can be a single type or a list of types (e.g., ['bars', 'news'])
             start_date: Optional start date in format 'YYYY-MM-DD HH:MM:SS' (e.g., '2024-01-01 00:00:00'). If not provided, returns latest data.
             end_date: Optional end date in format 'YYYY-MM-DD HH:MM:SS' (e.g., '2024-01-31 23:59:59'). If not provided, returns latest data.
-            limit: Optional maximum number of rows to return per symbol/data_type combination
+            limit: Optional maximum number of rows to return per symbol
             
         Returns:
-            Dictionary with success, message, and extra containing the data organized by symbol:
-            {
-                "success": True,
-                "message": "...",
-                "extra": {
-                    "data": {
-                        "symbol1": {
-                            "bars": [...],
-                            "news": [...],
-                            "quotes": [...]
-                        },
-                        "symbol2": {
-                            "bars": [...],
-                            "trades": [...]
-                        }
-                    },
-                    "symbols": [...],
-                    "data_types": [...],
-                    "row_count": ...
-                }
-            }
+            Dictionary with success, message, and extra containing the data organized by symbol
         """
         try:
-            
             request = GetDataRequest(
                 symbol=self.symbol,
-                data_type=self.data_type,
+                data_type="klines",
                 start_date=start_date,
                 end_date=end_date,
                 limit=limit
             )
-            result = await self.alpaca_service.get_data(request)
+            result = await self.binance_service.get_data(request)
             
             if not result.success:
                 return {
@@ -305,10 +319,10 @@ class AlpacaEnvironment(BaseEnvironment):
                     "extra": result.extra
                 }
             
-            # Data is now organized by symbol: {symbol: {data_type: [...]}}
+            # Data is organized by symbol: {symbol: {data_type: [...]}}
             data = result.extra.get("data", {})
             symbols = result.extra.get("symbols", [])
-            data_types = result.extra.get("data_types", [])
+            data_types = result.extra.get("data_type", "klines")
             row_count = result.extra.get("row_count", 0)
             
             # Format message
@@ -334,7 +348,7 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {
                     "data": data,
                     "symbols": symbols,
-                    "data_types": data_types,
+                    "data_type": data_types,
                     "start_date": start_date,
                     "end_date": end_date,
                     "row_count": row_count
@@ -353,32 +367,44 @@ class AlpacaEnvironment(BaseEnvironment):
         symbol: str,
         side: str,
         qty: Optional[float] = None,
-        notional: Optional[float] = None,
-        time_in_force: str = "ioc"
+        price: Optional[float] = None,
+        order_type: str = "MARKET",
+        leverage: Optional[int] = None,
+        position_side: Optional[str] = None,
+        time_in_force: str = "GTC"
     ) -> Dict[str, Any]:
-        """Create a market order.
+        """Create an order (defaults to perpetual futures market order).
         
         Args:
-            symbol: Symbol to trade (e.g., 'AAPL', 'BTC/USD')
+            symbol: Symbol to trade (e.g., 'BTCUSDT', 'ETHUSDT')
             side: Order side: 'buy' or 'sell'
-            qty: Optional quantity to trade (for notional orders, use None)
-            notional: Optional notional value to trade (for fractional shares, use this instead of qty)
-            time_in_force: Time in force - 'day' (default), 'gtc', 'opg', 'cls', 'ioc', 'fok'
+            qty: Quantity to trade
+            price: Price for limit orders (required for LIMIT order type)
+            order_type: Order type - 'MARKET' (default) or 'LIMIT'
+            leverage: Leverage for perpetual futures (optional)
+            time_in_force: Time in force for limit orders - 'GTC', 'IOC', 'FOK' (default: 'GTC')
             
         Returns:
             Dictionary with success, message, and order information
         """
         try:
+            from src.environments.binanceentry.types import OrderType
+            
+            order_type_enum = OrderType.MARKET if order_type.upper() == "MARKET" else OrderType.LIMIT
             
             request = CreateOrderRequest(
                 account_name=self.account_name,
                 symbol=symbol,
                 side=side,
+                trade_type=TradeType.PERPETUAL,  # Default to perpetual futures
+                order_type=order_type_enum,
                 qty=qty,
-                notional=notional,
+                price=price,
+                leverage=leverage,
+                position_side=position_side,
                 time_in_force=time_in_force
             )
-            result = await self.alpaca_service.create_order(request)
+            result = await self.binance_service.create_order(request)
             
             if not result.success:
                 return {
@@ -390,14 +416,13 @@ class AlpacaEnvironment(BaseEnvironment):
             order = result.extra["order"]
             result_text = dedent(f"""
                 Order submitted successfully:
-                Order ID: {order["id"]}
+                Order ID: {order["order_id"]}
                 Symbol: {order["symbol"]}
                 Side: {order["side"]}
-                Quantity: {order["qty"] or order["notional"]}
+                Quantity: {order["quantity"]}
                 Status: {order["status"]}
-                Order Type: {order["order_type"]}
-                Time in Force: {order["time_in_force"]}
-                Submitted At: {order["submitted_at"]}
+                Order Type: {order["type"]}
+                Trade Type: {order["trade_type"]}
                 """)
             
             return {
@@ -420,35 +445,33 @@ class AlpacaEnvironment(BaseEnvironment):
     
     async def get_orders(
         self,
-        status: str = "open",
+        trade_type: Optional[TradeType] = TradeType.PERPETUAL,
+        symbol: Optional[str] = None,
         limit: Optional[int] = None,
-        after: Optional[str] = None,
-        until: Optional[str] = None,
-        direction: str = "desc"
+        order_id: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Get orders for an account.
+        """Get orders for an account (defaults to perpetual futures orders).
         
         Args:
-            account_name: Account name
-            status: Filter by order status: 'open', 'closed', or 'all' (default: 'open')
+            trade_type: Trade type to filter by (default: PERPETUAL for futures orders)
+            symbol: Optional symbol to filter by
             limit: Optional maximum number of orders to return
-            after: Optional return orders after this date (ISO format)
-            until: Optional return orders until this date (ISO format)
-            direction: Sort direction: 'asc' or 'desc' (default: 'desc')
+            order_id: Optional order ID to filter by
             
         Returns:
             Dictionary with success, message, and list of orders
         """
         try:
+            from src.environments.binanceentry.types import GetOrdersRequest
+            
             request = GetOrdersRequest(
                 account_name=self.account_name,
-                status=status,
+                trade_type=trade_type,
+                symbol=symbol,
                 limit=limit,
-                after=after,
-                until=until,
-                direction=direction
+                order_id=order_id
             )
-            result = await self.alpaca_service.get_orders(request)
+            result = await self.binance_service.get_orders(request)
             
             if not result.success:
                 return {
@@ -460,17 +483,16 @@ class AlpacaEnvironment(BaseEnvironment):
             orders = result.extra["orders"]
             
             if len(orders) == 0:
-                result_text = f"No {status} orders found."
+                result_text = f"No {trade_type.value} orders found."
             else:
                 order_lines = []
                 for order in orders:
-                    qty_display = order.get("qty") or order.get("notional") or "N/A"
-                    filled_qty = order.get("filled_qty", "0")
-                    filled_price = order.get("filled_avg_price") or "N/A"
+                    qty_display = order.get("quantity", "N/A")
+                    filled_qty = order.get("executed_qty", "0")
                     
                     order_lines.append(
                         f"  {order['symbol']}: {order['side']} {qty_display} "
-                        f"(Status: {order['status']}, Filled: {filled_qty} @ {filled_price})"
+                        f"(Status: {order['status']}, Filled: {filled_qty}, Trade Type: {order.get('trade_type', 'N/A')})"
                     )
                 
                 result_text = dedent(f"""
@@ -496,19 +518,25 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    async def get_order(self, order_id: str) -> Dict[str, Any]:
-        """Get a specific order by ID.
+    async def get_order(self, order_id: str, symbol: str, trade_type: TradeType = TradeType.PERPETUAL) -> Dict[str, Any]:
+        """Get a specific order by ID (defaults to perpetual futures order).
         
         Args:
-            account_name: Account name
             order_id: Order ID
+            symbol: Symbol
+            trade_type: Trade type (default: PERPETUAL for futures order)
             
         Returns:
             Dictionary with success, message, and order information
         """
         try:
-            request = GetOrderRequest(account_name=self.account_name, order_id=order_id)
-            result = await self.alpaca_service.get_order(request)
+            request = GetOrderRequest(
+                account_name=self.account_name,
+                order_id=order_id,
+                symbol=symbol,
+                trade_type=trade_type
+            )
+            result = await self.binance_service.get_order(request)
             
             if not result.success:
                 return {
@@ -518,23 +546,19 @@ class AlpacaEnvironment(BaseEnvironment):
                 }
             
             order = result.extra["order"]
-            qty_display = order.get("qty") or order.get("notional") or "N/A"
+            qty_display = order.get("quantity", "N/A")
             
             result_text = dedent(f"""
                 Order Information:
-                Order ID: {order["id"]}
-                Client Order ID: {order["client_order_id"]}
+                Order ID: {order["order_id"]}
+                Client Order ID: {order.get("client_order_id", "N/A")}
                 Symbol: {order["symbol"]}
                 Side: {order["side"]}
                 Quantity: {qty_display}
-                Filled Quantity: {order.get("filled_qty", "0")}
-                Filled Average Price: {order.get("filled_avg_price") or "N/A"}
+                Executed Quantity: {order.get("executed_qty", "0")}
                 Status: {order["status"]}
-                Order Type: {order["order_type"]}
-                Time in Force: {order["time_in_force"]}
-                Submitted At: {order.get("submitted_at") or "N/A"}
-                Filled At: {order.get("filled_at") or "N/A"}
-                Canceled At: {order.get("canceled_at") or "N/A"}
+                Order Type: {order["type"]}
+                Trade Type: {order.get("trade_type", "N/A")}
                 """)
             
             return {
@@ -555,19 +579,25 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    async def cancel_order(self, order_id: str) -> Dict[str, Any]:
-        """Cancel an order.
+    async def cancel_order(self, order_id: str, symbol: str, trade_type: TradeType = TradeType.PERPETUAL) -> Dict[str, Any]:
+        """Cancel an order (defaults to perpetual futures order).
         
         Args:
-            account_name: Account name
             order_id: Order ID to cancel
+            symbol: Symbol
+            trade_type: Trade type (default: PERPETUAL for futures order)
             
         Returns:
             Dictionary with success or failure message
         """
         try:
-            request = CancelOrderRequest(account_name=self.account_name, order_id=order_id)
-            result = await self.alpaca_service.cancel_order(request)
+            request = CancelOrderRequest(
+                account_name=self.account_name,
+                order_id=order_id,
+                symbol=symbol,
+                trade_type=trade_type
+            )
+            result = await self.binance_service.cancel_order(request)
             
             if not result.success:
                 return {
@@ -594,12 +624,20 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
     
-    async def cancel_all_orders(self) -> Dict[str, Any]:
-        """Cancel all orders for an account.
+    async def cancel_all_orders(self, symbol: Optional[str] = None, trade_type: TradeType = TradeType.PERPETUAL) -> Dict[str, Any]:
+        """Cancel all orders for an account (defaults to perpetual futures orders).
+        
+        Args:
+            symbol: Optional symbol to cancel orders for
+            trade_type: Trade type (default: PERPETUAL for futures orders)
         """
         try:
-            request = CancelAllOrdersRequest(account_name=self.account_name)
-            result = await self.alpaca_service.cancel_all_orders(request)
+            request = CancelAllOrdersRequest(
+                account_name=self.account_name,
+                symbol=symbol,
+                trade_type=trade_type
+            )
+            result = await self.binance_service.cancel_all_orders(request)
             
             if not result.success:
                 return {
@@ -625,34 +663,61 @@ class AlpacaEnvironment(BaseEnvironment):
                 "message": f"Failed to cancel all orders: {str(e)}",
                 "extra": {"error": str(e)}
             }
-            
+    
     @ecp.action(name="step",
-                type="Alpaca Trading",
-                description="Step the trading environment.")
+                type="Binance Trading",
+                description="Step the trading environment for perpetual futures trading.")
     async def step(self, 
-                   symbol: str = "BTC/USD", 
-                   side: str = "HOLD", # BUY, SELL, HOLD
-                   qty: float = 0.00, 
+                   symbol: str = "BTCUSDT", 
+                   action: str = "HOLD",  # LONG, SHORT, HOLD
+                   qty: float = 0.00,
+                   leverage: Optional[int] = 10,
                    ) -> Dict[str, Any]:
-        """Step the trading environment.
+        """Step the trading environment for perpetual futures trading.
         
         Args:
-            symbol (str): Symbol to trade (e.g., 'AAPL', 'BTC/USD')
-            side (str): Order side: 'BUY', 'SELL', 'HOLD' (default: 'HOLD')
-            qty (float): Quantity to trade (default: 0.01)
+            symbol (str): Symbol to trade (e.g., 'BTCUSDT', 'ETHUSDT')
+            action (str): Trading action for perpetual futures:
+                - 'LONG': Open long position (BUY with LONG positionSide)
+                - 'SHORT': Open short position (SELL with SHORT positionSide)
+                - 'HOLD': Do nothing (default)
+            qty (float): Quantity to trade (default: 0.00)
+            leverage (int): Leverage for perpetual futures (default: 10x)
         Returns:
             Dictionary with success, message, and order information
         """
-        side = side.lower()
+        action = action.upper()
         try:
-            if side == "hold":
+            if action == "HOLD":
                 return {
                     "success": True,
                     "message": "HOLD action performed successfully. No order submitted.",
                     "extra": {}
                 }
+            elif action == "LONG":
+                # Open long position: BUY with LONG positionSide
+                return await self.create_order(
+                    symbol=symbol,
+                    side="buy",
+                    qty=qty,
+                    leverage=leverage,
+                    position_side="LONG"
+                )
+            elif action == "SHORT":
+                # Open short position: SELL with SHORT positionSide
+                return await self.create_order(
+                    symbol=symbol,
+                    side="sell",
+                    qty=qty,
+                    leverage=leverage,
+                    position_side="SHORT"
+                )
             else:
-                return await self.create_order(symbol, side, qty)
+                return {
+                    "success": False,
+                    "message": f"Invalid action: {action}. Must be LONG, SHORT, or HOLD",
+                    "extra": {"error": f"Invalid action: {action}"}
+                }
             
         except AuthenticationError as e:
             return {
@@ -666,17 +731,15 @@ class AlpacaEnvironment(BaseEnvironment):
                 "message": f"Failed to step the trading environment: {str(e)}",
                 "extra": {"error": str(e)}
             }
-            
+    
     async def _wait_for_next_minute_boundary(self) -> None:
         """Wait until the next minute boundary for minute-level trading.
         
-        This ensures we get complete minute bar data by waiting until the start
+        This ensures we get complete minute kline data by waiting until the start
         of the next minute before fetching data.
         """
         now = datetime.now(timezone.utc)
         # Calculate seconds until next minute boundary
-        # If we're at second 0, we're already at minute boundary, no need to wait
-        # If we're at second 30, we need to wait 30 seconds to reach minute 1:00
         if now.second > 0:
             # Calculate milliseconds to account for microsecond precision
             microseconds_until_next_minute = (60 - now.second) * 1000000 - now.microsecond
@@ -690,20 +753,20 @@ class AlpacaEnvironment(BaseEnvironment):
             logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
     
     async def get_state(self) -> Dict[str, Any]:
-        """Get the current state of the Alpaca trading environment."""
+        """Get the current state of the Binance trading environment."""
         try:
-            # Get account info
+            # Get account info (futures account info is included)
             account_request = GetAccountRequest(account_name=self.account_name)
-            account_result = await self.alpaca_service.get_account(account_request)
+            account_result = await self.binance_service.get_account(account_request)
             account_info = dedent(f"""
                 <account_info>
                 {account_result.message}
                 </account_info>
             """)
             
-            # Get Positions
-            positions_request = GetPositionsRequest(account_name=self.account_name)
-            positions_result = await self.alpaca_service.get_positions(positions_request)
+            # Get Positions (default to perpetual futures)
+            positions_request = GetPositionsRequest(account_name=self.account_name, trade_type=TradeType.PERPETUAL)
+            positions_result = await self.binance_service.get_positions(positions_request)
             positions_string = dedent(f"""
                 <positions>
                 {positions_result.message}
@@ -713,24 +776,24 @@ class AlpacaEnvironment(BaseEnvironment):
             # Wait until the next minute boundary for minute-level trading
             await self._wait_for_next_minute_boundary()
             
-            data_request = GetDataRequest(symbol=self.symbol, data_type=self.data_type)
-            data_result = await self.alpaca_service.get_data(data_request)
+            data_request = GetDataRequest(symbol=self.symbol, data_type="klines")
+            data_result = await self.binance_service.get_data(data_request)
             
-            bars = {}
+            klines = {}
             for symbol, data in data_result.extra.get("data", {}).items():
-                bars[symbol] = data.get("bars", [])
+                klines[symbol] = data.get("klines", [])
             
-            bars_string = ""
-            for symbol, bars in bars.items():
-                bars_string += f"Symbol: {symbol}\n"
-                bars_string += "Bars:\n"
-                for bar in bars:
-                    bars_string += json.dumps(bar, indent=4)
-                bars_string += "\n"
+            klines_string = ""
+            for symbol, klines_list in klines.items():
+                klines_string += f"Symbol: {symbol}\n"
+                klines_string += "Klines:\n"
+                for kline in klines_list:
+                    klines_string += json.dumps(kline, indent=4)
+                klines_string += "\n"
             
             data_string = dedent(f"""
                 <data>
-                {bars_string}
+                {klines_string}
                 </data>
             """)
             logger.info(f"| 📝 Data: {data_string}")
@@ -757,8 +820,9 @@ class AlpacaEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
         except Exception as e:
-            logger.error(f"Failed to get Alpaca state: {e}")
+            logger.error(f"Failed to get Binance state: {e}")
             return {
-                "state": f"Failed to get Alpaca state: {str(e)}",
+                "state": f"Failed to get Binance state: {str(e)}",
                 "extra": {"error": str(e)}
             }
+
