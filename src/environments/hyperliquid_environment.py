@@ -1054,7 +1054,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             positions_list = positions_result.get("positions", [])
             positions_string = ""
             for position in positions_list:
-                positions_string += f"Symbol: {position['symbol']}, Trade Type: {position['trade_type']}, Leverage: {position['leverage']}, Position Amount: {position['position_amt']}, Entry Price: {position['entry_price']}, Unrealized Profit: {position['unrealized_profit']}\n"
+                positions_string += f"Symbol: {position['symbol']}, Trade Type: {position['trade_type']}, Leverage: {position['leverage']}, Position Amount: {position['position_amt']}, Entry Price: {position['entry_price']}, Unrealized Profit: {position['unrealized_profit'] * 100:.2f}%\n"
             positions_string = dedent(f"""
                 <positions>
                 {positions_string}
