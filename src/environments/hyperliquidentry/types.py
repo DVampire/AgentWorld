@@ -41,6 +41,16 @@ class GetAccountRequest(BaseModel):
     account_name: str
 
 
+class GetExchangeInfoRequest(BaseModel):
+    """Request for getting exchange information."""
+    pass
+
+
+class GetSymbolInfoRequest(BaseModel):
+    """Request for getting symbol information."""
+    symbol: str = Field(description="Symbol to get info for (e.g., 'BTC', 'ETH')")
+
+
 class GetAssetsRequest(BaseModel):
     """Request for getting assets (trading symbols)."""
     status: Optional[str] = Field(None, description="Filter by asset status")

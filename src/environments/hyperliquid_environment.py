@@ -43,14 +43,6 @@ class HyperliquidEnvironment(BaseEnvironment):
         "has_vision": False,
         "additional_rules": {
             "state": "The state of the Hyperliquid trading environment including account information, positions, and market data.",
-            "interaction": dedent("""
-                There are example actions for the `step` action:
-                    - SHOTR: {"symbol": "BTC", "action": "SHORT", "qty": 0.01, "leverage": 10, "stop_loss_price": 100000, "take_profit_price": 110000}
-                    - LONG: {"symbol": "BTC", "action": "LONG", "qty": 0.01, "leverage": 10, "stop_loss_price": 90000, "take_profit_price": 110000}
-                    - CLOSE_LONG: {"symbol": "BTC", "action": "CLOSE_LONG"}
-                    - CLOSE_SHORT: {"symbol": "BTC", "action": "CLOSE_SHORT"}
-                    - HOLD: {"symbol": "BTC", "action": "HOLD"}
-            """),
         }
     }, description="The metadata of the Hyperliquid trading environment.")
     
@@ -253,8 +245,9 @@ class HyperliquidEnvironment(BaseEnvironment):
             A string containing detailed assets information including symbols and status.
         """
         try:
-            request = GetAssetsRequest(status=status, asset_class=asset_class)
-            result = await self.hyperliquid_service.get_assets(request)
+            from src.environments.hyperliquidentry.types import GetExchangeInfoRequest
+            request = GetExchangeInfoRequest()
+            result = await self.hyperliquid_service.get_exchange_info(request)
             
             if not result.success:
                 return {
@@ -263,16 +256,19 @@ class HyperliquidEnvironment(BaseEnvironment):
                     "extra": {"error": result.message}
                 }
             
-            assets = result.extra["assets"]
+            exchange_info = result.extra["exchange_info"]
+            universe = exchange_info.get("universe", [])
+            symbols = [{"symbol": coin.get("name", "") if isinstance(coin, dict) else str(coin)} for coin in universe]
+            
             result_text = dedent(f"""
-                {len(assets)} assets found, list of assets:
-                {", ".join([asset["symbol"] for asset in assets])}
+                {len(symbols)} symbols found, list of symbols:
+                {", ".join([symbol["symbol"] for symbol in symbols])}
                 """)
-            extra = result.extra
+            
             return {
                 "success": True,
                 "message": result_text,
-                "extra": extra
+                "extra": {"symbols": symbols, "exchange_info": exchange_info}
             }
         except AuthenticationError as e:
             return {
@@ -508,31 +504,26 @@ class HyperliquidEnvironment(BaseEnvironment):
                     "extra": {"error": result.message}
                 }
             
-            order = result.extra["order"]
+            order_info = result.extra["order_info"]
             result_text = dedent(f"""
                 Order submitted successfully:
-                Order ID: {order["order_id"]}
-                Symbol: {order["symbol"]}
-                Side: {order["side"]}
-                Quantity: {order["quantity"]}
-                Status: {order["status"]}
-                Order Type: {order["type"]}
-                Trade Type: {order["trade_type"]}
+                Order ID: {order_info["order_id"]}
+                Symbol: {order_info["symbol"]}
+                Side: {order_info["side"]}
+                Quantity: {order_info["quantity"]}
+                Status: {order_info["order_status"]}
+                Order Type: {order_info["order_type"]}
                 """)
             
             # Add stop loss/take profit info if available
-            if order.get("stop_loss_price"):
-                result_text += f"\nStop Loss Price: {order['stop_loss_price']}"
-            if order.get("take_profit_price"):
-                result_text += f"\nTake Profit Price: {order['take_profit_price']}"
-            if order.get("stop_loss_order"):
+            if order_info.get("stop_loss_order"):
                 result_text += f"\nStop Loss Order: Created"
-            if order.get("take_profit_order"):
+            if order_info.get("take_profit_order"):
                 result_text += f"\nTake Profit Order: Created"
-            if order.get("stop_loss_error"):
-                result_text += f"\nStop Loss Error: {order['stop_loss_error']}"
-            if order.get("take_profit_error"):
-                result_text += f"\nTake Profit Error: {order['take_profit_error']}"
+            if order_info.get("stop_loss_error"):
+                result_text += f"\nStop Loss Error: {order_info['stop_loss_error']}"
+            if order_info.get("take_profit_error"):
+                result_text += f"\nTake Profit Error: {order_info['take_profit_error']}"
             
             return {
                 "success": True,
@@ -857,7 +848,16 @@ class HyperliquidEnvironment(BaseEnvironment):
     
     @ecp.action(name="step",
                 type="Hyperliquid Trading",
-                description="Step the trading environment for perpetual futures trading.")
+                description=dedent("""
+                    Step the trading environment for perpetual futures trading.
+                    Example:
+                        - SHORT: {"symbol": "BTC", "action": "SHORT", "qty": 0.01, "leverage": 10, "stop_loss_price": 100000, "take_profit_price": 110000}
+                        - LONG: {"symbol": "BTC", "action": "LONG", "qty": 0.01, "leverage": 10, "stop_loss_price": 90000, "take_profit_price": 110000}
+                        - CLOSE_LONG: {"symbol": "BTC", "action": "CLOSE_LONG"}
+                        - CLOSE_SHORT: {"symbol": "BTC", "action": "CLOSE_SHORT"}
+                        - HOLD: {"symbol": "BTC", "action": "HOLD"}
+                    """)
+                )
     async def step(self, 
                    symbol: str = "BTC", 
                    action: str = "HOLD",  # LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD
@@ -918,93 +918,6 @@ class HyperliquidEnvironment(BaseEnvironment):
         
         action = action.upper()
         try:
-            # Validate stop loss and take profit prices for LONG/SHORT actions
-            if action in ["LONG", "SHORT"]:
-                if stop_loss_price is None or take_profit_price is None:
-                    return {
-                        "success": False,
-                        "message": f"Error: {action} action requires both stop_loss_price and take_profit_price. Both must be provided.",
-                        "extra": {"error": "Missing stop_loss_price or take_profit_price"}
-                    }
-                
-                # Get current market price to validate trigger prices
-                try:
-                    data_request = GetDataRequest(
-                        account_name=self.account_name,
-                        symbol=symbol,
-                        data_type="candle",
-                        interval="1m",
-                        limit=1
-                    )
-                    data_result = await self.hyperliquid_service.get_data(data_request)
-                    if data_result.success and data_result.extra.get("data"):
-                        latest_candle = data_result.extra["data"][-1]
-                        current_price = float(latest_candle.get("close", 0))
-                        
-                        if current_price > 0:
-                            # Validate price relationships
-                            if action == "LONG":
-                                # For LONG: stop_loss < entry < take_profit
-                                if stop_loss_price >= current_price:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Stop loss price (${stop_loss_price:,.2f}) must be below current price (${current_price:,.2f}) for LONG position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
-                                        "extra": {"error": "Invalid stop loss price for LONG"}
-                                    }
-                                if take_profit_price <= current_price:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Take profit price (${take_profit_price:,.2f}) must be above current price (${current_price:,.2f}) for LONG position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
-                                        "extra": {"error": "Invalid take profit price for LONG"}
-                                    }
-                                # Check minimum distance (at least 1.0% to avoid immediate execution and reduce trading frequency)
-                                stop_loss_distance = (current_price - stop_loss_price) / current_price * 100
-                                take_profit_distance = (take_profit_price - current_price) / current_price * 100
-                                if stop_loss_distance < 1.0:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Stop loss price too close to current price ({stop_loss_distance:.2f}% away). Minimum distance: 1.0% (prefer 3-5% to reduce trading frequency). Current: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}. Consider using wider distances (5-10%) to allow positions time to develop.",
-                                        "extra": {"error": "Stop loss too close to current price"}
-                                    }
-                                if take_profit_distance < 1.0:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Take profit price too close to current price ({take_profit_distance:.2f}% away). Minimum distance: 1.0% (prefer 5-10% to reduce trading frequency). Current: ${current_price:,.2f}, Take profit: ${take_profit_price:,.2f}. Consider using wider distances (10-20%) to allow positions time to develop.",
-                                        "extra": {"error": "Take profit too close to current price"}
-                                    }
-                            elif action == "SHORT":
-                                # For SHORT: take_profit < entry < stop_loss
-                                if stop_loss_price <= current_price:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Stop loss price (${stop_loss_price:,.2f}) must be above current price (${current_price:,.2f}) for SHORT position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
-                                        "extra": {"error": "Invalid stop loss price for SHORT"}
-                                    }
-                                if take_profit_price >= current_price:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Take profit price (${take_profit_price:,.2f}) must be below current price (${current_price:,.2f}) for SHORT position. Current price: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}, Take profit: ${take_profit_price:,.2f}",
-                                        "extra": {"error": "Invalid take profit price for SHORT"}
-                                    }
-                                # Check minimum distance (at least 1.0% to avoid immediate execution and reduce trading frequency)
-                                stop_loss_distance = (stop_loss_price - current_price) / current_price * 100
-                                take_profit_distance = (current_price - take_profit_price) / current_price * 100
-                                if stop_loss_distance < 1.0:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Stop loss price too close to current price ({stop_loss_distance:.2f}% away). Minimum distance: 1.0% (prefer 3-5% to reduce trading frequency). Current: ${current_price:,.2f}, Stop loss: ${stop_loss_price:,.2f}. Consider using wider distances (5-10%) to allow positions time to develop.",
-                                        "extra": {"error": "Stop loss too close to current price"}
-                                    }
-                                if take_profit_distance < 1.0:
-                                    return {
-                                        "success": False,
-                                        "message": f"Error: Take profit price too close to current price ({take_profit_distance:.2f}% away). Minimum distance: 1.0% (prefer 5-10% to reduce trading frequency). Current: ${current_price:,.2f}, Take profit: ${take_profit_price:,.2f}. Consider using wider distances (10-20%) to allow positions time to develop.",
-                                        "extra": {"error": "Take profit too close to current price"}
-                                    }
-                except Exception as e:
-                    logger.warning(f"| ⚠️  Could not validate trigger prices against current price: {e}")
-                    # Continue with order creation if price check fails (non-blocking)
-            
             if action == "HOLD":
                 result = {
                     "success": True,

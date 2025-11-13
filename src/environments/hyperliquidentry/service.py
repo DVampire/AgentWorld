@@ -14,6 +14,8 @@ from src.environments.protocol.types import ActionResult
 from src.environments.hyperliquidentry.types import (
     AccountInfo,
     GetAccountRequest,
+    GetExchangeInfoRequest,
+    GetSymbolInfoRequest,
     GetAssetsRequest,
     GetPositionsRequest,
     GetDataRequest,
@@ -164,9 +166,7 @@ class HyperliquidService:
             # Test connection by getting default account info
             for account_name in self.accounts.keys():
                 try:
-                    account_info = await asyncio.to_thread(
-                        self._clients[account_name].get_account
-                    )
+                    account_info = await self._clients[account_name].get_account()
                     logger.info(f"| 📝 Connected to Hyperliquid {'live' if self.live else 'testnet'} account: {account_name}")
                 except Exception as e:
                     logger.warning(f"| ⚠️  Failed to connect to account {account_name}: {e}")
@@ -227,9 +227,7 @@ class HyperliquidService:
         try:
             # Get exchange info
             client = self._get_client(self.default_account.name)
-            exchange_info = await asyncio.to_thread(
-                client.get_exchange_info
-            )
+            exchange_info = await client.get_exchange_info()
             
             self.symbols = {}
             # Parse exchange info to extract symbols
@@ -292,6 +290,28 @@ class HyperliquidService:
         self._l2book_handler = None
         self.data_producer = None
         self.data_consumer = None
+        
+    # Get Exchange Info
+    async def get_exchange_info(self, request: GetExchangeInfoRequest) -> ActionResult:
+        """Get exchange information including available symbols.
+        
+        Args:
+            request: GetExchangeInfoRequest with optional account_name
+            
+        Returns:
+            ActionResult with exchange information
+        """
+        try:
+            client = self._get_client(self.default_account.name)
+            exchange_info = await client.get_exchange_info()
+            return ActionResult(
+                success=True,
+                message=f"Exchange information retrieved successfully.",
+                extra={"exchange_info": exchange_info}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get exchange info: {e}")
     
     # Account methods
     async def get_account(self, request: GetAccountRequest) -> ActionResult:
@@ -302,7 +322,7 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
-            account_info = await asyncio.to_thread(client.get_account)
+            account_info = await client.get_account()
             
             # Format account data
             account_data = {
@@ -326,20 +346,28 @@ class HyperliquidService:
                 raise AuthenticationError(f"Authentication failed: {e}")
             raise HyperliquidError(f"Failed to get account: {e}")
     
-    async def get_assets(self, request: GetAssetsRequest) -> ActionResult:
-        """Get available trading symbols."""
+    # Get Symbol Info
+    async def get_symbol_info(self, request: GetSymbolInfoRequest) -> ActionResult:
+        """Get symbol information for a specific symbol.
+        
+        Args:
+            request: GetSymbolInfoRequest with symbol name
+            
+        Returns:
+            ActionResult with symbol information
+        """
         try:
-            # Return all symbols we loaded during initialization
-            assets = list(self.symbols.values())
+            client = self._get_client(self.default_account.name)
+            symbol_info = await client.get_symbol_info(request.symbol)
             
             return ActionResult(
                 success=True,
-                message=f"Retrieved {len(assets)} symbols.",
-                extra={"assets": assets}
+                message=f"Symbol information retrieved successfully for {request.symbol}.",
+                extra={"symbol_info": symbol_info}
             )
             
         except Exception as e:
-            raise HyperliquidError(f"Failed to get assets: {e}")
+            raise HyperliquidError(f"Failed to get symbol info: {e}")
     
     async def get_positions(self, request: GetPositionsRequest) -> ActionResult:
         """Get all positions.
@@ -349,7 +377,7 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
-            positions = await asyncio.to_thread(client.get_positions)
+            positions = await client.get_positions()
             
             all_positions = []
             for position in positions:
@@ -431,22 +459,13 @@ class HyperliquidService:
     
     # Order methods
     async def create_order(self, request: CreateOrderRequest) -> ActionResult:
-        """Create an order (perpetual futures order) with automatic stop loss and take profit.
-        
-        For each LONG or SHORT order, this method will create:
-        1. Main order: Opens the position (BUY for LONG, SELL for SHORT)
-        2. Stop loss order (if stop_loss_price provided): Reduce-only limit order to close position at stop loss price
-        3. Take profit order (if take_profit_price provided): Reduce-only limit order to close position at take profit price
-        
-        Both stop loss and take profit orders are submitted to the exchange as trigger orders.
-        When either price is reached, the corresponding order will execute automatically to close the position.
+        """Create an order (perpetual futures order) with optional stop loss and take profit.
         
         Args:
-            request: CreateOrderRequest with account_name, symbol, side, order_type, qty, 
-                    stop_loss_price (optional), take_profit_price (optional), etc.
+            request: CreateOrderRequest with account_name, symbol, side, order_type, qty, etc.
             
         Returns:
-            ActionResult with order information including main_order, stop_loss_order, and take_profit_order
+            ActionResult with order information
         """
         try:
             if request.qty is None:
@@ -464,9 +483,8 @@ class HyperliquidService:
             # Convert side to Hyperliquid format
             side = "B" if request.side.lower() == "buy" else "A"
             
-            # Create order
-            order_result = await asyncio.to_thread(
-                client.create_order,
+            # Create order via client
+            order_result = await client.create_order(
                 symbol=request.symbol,
                 side=side,
                 order_type=request.order_type.value,
@@ -476,120 +494,59 @@ class HyperliquidService:
                 take_profit_price=request.take_profit_price
             )
             
-            # Parse order result from SDK
-            # SDK returns: {'status': 'ok', 'response': {'type': 'order', 'data': {'statuses': [...]}}}
-            # Or with stop loss/take profit: {'main_order': {...}, 'stop_loss_order': {...}, 'take_profit_order': {...}}
+            # Parse main order result
+            main_order = order_result.get('main_order', {})
+            if main_order.get('status') != 'ok':
+                error_msg = main_order.get('error', 'Order failed')
+                raise OrderError(f"Order failed: {error_msg}")
+            
+            # Extract order ID and status from response
+            response = main_order.get('response', {})
+            data = response.get('data', {})
+            statuses = data.get('statuses', [])
+            
             order_id = 'N/A'
             order_status = "submitted"
-            error_message = None
+            if statuses:
+                status = statuses[0]
+                if 'filled' in status:
+                    order_id = str(status['filled'].get('oid', 'N/A'))
+                    order_status = "filled"
+                elif 'resting' in status:
+                    order_id = str(status['resting'].get('oid', 'N/A'))
+                    order_status = "submitted"
+                elif 'error' in status:
+                    raise OrderError(f"Order failed: {status.get('error', 'Unknown error')}")
             
-            # Check if result contains main_order (new format with stop loss/take profit)
-            if isinstance(order_result, dict) and 'main_order' in order_result:
-                # New format with stop loss/take profit support
-                main_order = order_result.get('main_order', {})
-                stop_loss_order = order_result.get('stop_loss_order')
-                take_profit_order = order_result.get('take_profit_order')
-                stop_loss_error = order_result.get('stop_loss_error')
-                take_profit_error = order_result.get('take_profit_error')
-                
-                # Parse main order
-                if isinstance(main_order, dict):
-                    if main_order.get('status') == 'ok':
-                        response = main_order.get('response', {})
-                        if response.get('type') == 'order':
-                            data = response.get('data', {})
-                            statuses = data.get('statuses', [])
-                            if statuses:
-                                status = statuses[0]
-                                if 'resting' in status:
-                                    order_id = str(status['resting'].get('oid', 'N/A'))
-                                    order_status = "submitted"
-                                elif 'error' in status:
-                                    error_message = status.get('error', 'Unknown error')
-                                    order_status = "failed"
-                    elif 'error' in main_order:
-                        error_message = main_order.get('error', 'Unknown error')
-                        order_status = "failed"
-                
-                # Format order information with stop loss/take profit
-                order_info = {
-                    "order_id": order_id,
-                    "symbol": request.symbol,
-                    "side": request.side,
-                    "type": request.order_type.value,
-                    "status": order_status,
-                    "quantity": str(request.qty),
-                    "price": str(request.price) if request.price else None,
-                    "trade_type": "perpetual",
-                    "stop_loss_price": str(request.stop_loss_price) if request.stop_loss_price else None,
-                    "take_profit_price": str(request.take_profit_price) if request.take_profit_price else None,
-                }
-                
-                # Add stop loss/take profit order info if available
-                if stop_loss_order:
-                    order_info["stop_loss_order"] = stop_loss_order
-                if take_profit_order:
-                    order_info["take_profit_order"] = take_profit_order
-                if stop_loss_error:
-                    order_info["stop_loss_error"] = stop_loss_error
-                if take_profit_error:
-                    order_info["take_profit_error"] = take_profit_error
-                
-                message = f"Order {order_id} submitted successfully for {request.symbol} ({request.side} {request.qty})."
-                if stop_loss_order:
-                    message += f" Stop loss order created at {request.stop_loss_price}."
-                if take_profit_order:
-                    message += f" Take profit order created at {request.take_profit_price}."
-                if stop_loss_error:
-                    message += f" Warning: Stop loss order failed: {stop_loss_error}."
-                if take_profit_error:
-                    message += f" Warning: Take profit order failed: {take_profit_error}."
-                
-                return ActionResult(
-                    success=True,
-                    message=message,
-                    extra={"order": order_info}
-                )
-            else:
-                # Old format (backward compatibility)
-                if isinstance(order_result, dict):
-                    if order_result.get('status') == 'ok':
-                        response = order_result.get('response', {})
-                        if response.get('type') == 'order':
-                            data = response.get('data', {})
-                            statuses = data.get('statuses', [])
-                            if statuses:
-                                status = statuses[0]
-                                if 'resting' in status:
-                                    order_id = str(status['resting'].get('oid', 'N/A'))
-                                    order_status = "submitted"
-                                elif 'error' in status:
-                                    error_message = status.get('error', 'Unknown error')
-                                    order_status = "failed"
-                    elif 'error' in order_result:
-                        error_message = order_result.get('error', 'Unknown error')
-                        order_status = "failed"
-                
-                if error_message:
-                    raise OrderError(f"Order failed: {error_message}")
-                
-                # Format order information
-                order_info = {
-                    "order_id": order_id,
-                    "symbol": request.symbol,
-                    "side": request.side,
-                    "type": request.order_type.value,
-                    "status": order_status,
-                    "quantity": str(request.qty),
-                    "price": str(request.price) if request.price else None,
-                    "trade_type": "perpetual",
-                }
-                
-                return ActionResult(
-                    success=True,
-                    message=f"Order {order_info['order_id']} submitted successfully for {request.symbol} ({request.side} {request.qty}).",
-                    extra={"order": order_info}
-                )
+            # Build order info
+            order_info = {
+                "order_id": order_id,
+                "order_status": order_status,
+                "symbol": request.symbol,
+                "side": request.side,
+                "order_type": request.order_type.value,
+                "quantity": request.qty,
+                "price": request.price,
+                "main_order": main_order,
+            }
+            
+            # Add TP/SL info if present
+            if order_result.get('stop_loss_order'):
+                order_info["stop_loss_order"] = order_result['stop_loss_order']
+            if order_result.get('take_profit_order'):
+                order_info["take_profit_order"] = order_result['take_profit_order']
+            if order_result.get('stop_loss_error'):
+                order_info["stop_loss_error"] = order_result['stop_loss_error']
+            if order_result.get('take_profit_error'):
+                order_info["take_profit_error"] = order_result['take_profit_error']
+            
+            message = f"Order {order_id} {order_status} for {request.symbol} ({request.side} {request.qty})"
+            
+            return ActionResult(
+                success=True,
+                message=message,
+                extra={"order_info": order_info}
+            )
             
         except Exception as e:
             if "401" in str(e) or "Invalid" in str(e):
@@ -606,10 +563,8 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
-            open_orders = await asyncio.to_thread(
-                client.get_open_orders,
-                symbol=request.symbol
-            )
+            orders_list = await client.get_orders()
+            open_orders = [o for o in orders_list if o.get("coin") == request.symbol] if request.symbol else orders_list
             
             all_orders = []
             for order in open_orders:
@@ -650,11 +605,16 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
-            order = await asyncio.to_thread(
-                client.get_order,
-                order_id=request.order_id,
-                symbol=request.symbol
-            )
+            all_orders = await client.get_orders()
+            # Find order by ID and symbol
+            order = None
+            for o in all_orders:
+                if str(o.get('oid')) == str(request.order_id) and o.get('coin') == request.symbol:
+                    order = o
+                    break
+            
+            if not order:
+                raise NotFoundError(f"Order {request.order_id} not found for symbol {request.symbol}")
             
             order_info = {
                 "order_id": str(order.get('oid', 'N/A')),
@@ -688,15 +648,11 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
-            # Get asset index from symbol
-            asset_index = await asyncio.to_thread(client._get_asset_index, request.symbol)
+            # Get symbol info
+            symbol_info = await client.get_symbol_info(request.symbol)
             # Convert order_id to int if it's a string
             order_id_int = int(request.order_id) if isinstance(request.order_id, str) else request.order_id
-            result = await asyncio.to_thread(
-                client.cancel_order,
-                asset_index=asset_index,
-                order_id=order_id_int
-            )
+            result = await client.cancel_order(symbol_info=symbol_info, order_id=order_id_int)
             
             return ActionResult(
                 success=True,
@@ -719,10 +675,7 @@ class HyperliquidService:
         """
         try:
             client = self._get_client(request.account_name)
-            result = await asyncio.to_thread(
-                client.cancel_all_orders,
-                symbol=request.symbol
-            )
+            result = await client.cancel_all_orders(symbol=request.symbol)
             
             return ActionResult(
                 success=True,
@@ -761,8 +714,7 @@ class HyperliquidService:
             side = "B" if request.side.lower() == "buy" else "A"
             
             # Close position
-            close_result = await asyncio.to_thread(
-                client.close_order,
+            close_result = await client.close_order(
                 symbol=request.symbol,
                 side=side,
                 size=request.size,

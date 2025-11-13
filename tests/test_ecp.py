@@ -183,12 +183,17 @@ async def test_hyperliquid():
     positions= await env.get_positions()
     logger.info(f"| 📝 Positions: {positions}")
     
-    while True:
-        res = await env.get_data()
-        # Print data for all symbols
-        for symbol, data in res['extra']['data'].items():
-            logger.info(f"| 📝 Result for {symbol}: {data.get('candle', [])}")
-        await asyncio.sleep(1)
+    order_result = await env.step(symbol="BTC", action="LONG", qty=1e-5, leverage=10, stop_loss_price=90000, take_profit_price=110000)
+    logger.info(f"| 📝 Order result: {order_result}")
+    
+    # while True:
+    #     res = await env.get_data()
+    #     # Print data for all symbols
+    #     for symbol, data in res['extra']['data'].items():
+    #         logger.info(f"| 📝 Result for {symbol}: {data.get('candle', [])}")
+    #     await asyncio.sleep(1)
+        
+        
     
 async def main():
     

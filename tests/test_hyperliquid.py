@@ -21,10 +21,12 @@ load_dotenv()
 from src.environments.hyperliquidentry.client import HyperliquidClient
 from src.environments.hyperliquidentry.websocket import HyperliquidWebSocket
 from src.environments.hyperliquidentry.service import HyperliquidService
-from src.environments.hyperliquidentry.types import GetDataRequest
+from src.environments.hyperliquidentry.types import GetDataRequest, CreateOrderRequest, OrderType
+from src.environments.hyperliquid_environment import HyperliquidEnvironment
 from src.logger import logger
 from src.config import config
 from src.utils import get_env
+from src.environments import ecp
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Online Trading Agent Example')
@@ -44,22 +46,31 @@ def parse_args():
         return args
 
 
-def test_get_exchange_info():
-    """Test getting exchange information."""
-    print("=" * 60)
-    print("Testing Hyperliquid get_exchange_info()")
-    print("=" * 60)
+async def test_client():
+    """Test HyperliquidClient basic functionality."""
+    print("=" * 80)
+    print("Testing HyperliquidClient")
+    print("=" * 80)
+    
+    wallet_address = os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", "")
+    testnet = False
     
     # Initialize client (no private key needed for info endpoints)
     client = HyperliquidClient(
-        wallet_address=os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", ""),
-        testnet=True  # Use testnet for testing
+        wallet_address=wallet_address if wallet_address else "",
+        testnet=testnet
     )
     
+    results = {}
+    
+    # Test 1: Get exchange info
+    print("\n" + "-" * 80)
+    print("📋 Test 1: get_exchange_info()")
+    print("-" * 80)
     try:
-        exchange_info = client.get_exchange_info()
+        exchange_info = await client.get_exchange_info()
         print(f"✅ Exchange info retrieved successfully")
-        print(f"Keys: {list(exchange_info.keys())}")
+        print(f"| 📝 Exchange info: \n{json.dumps(exchange_info, indent=4)}")
         
         # Check universe
         universe = exchange_info.get('universe', [])
@@ -69,192 +80,316 @@ def test_get_exchange_info():
         for idx, coin_info in enumerate(universe[:5]):
             if isinstance(coin_info, dict):
                 coin_name = coin_info.get('name', '')
-                print(f"  [{idx}] {coin_name}")
+                print(f"   [{idx}] {coin_name}")
             else:
-                print(f"  [{idx}] {coin_info}")
+                print(f"   [{idx}] {coin_info}")
         
-        return exchange_info
+        results["exchange_info"] = exchange_info
+        
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        return None
-
-
-def test_get_asset_index():
-    """Test getting asset index from symbol."""
-    print("\n" + "=" * 60)
-    print("Testing Hyperliquid _get_asset_index()")
-    print("=" * 60)
+        results["exchange_info"] = None
     
-    client = HyperliquidClient(
-        wallet_address=os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", ""),
-        testnet=True
-    )
-    
+    # Test 2: Get symbol info
+    print("\n" + "-" * 80)
+    print("🔍 Test 2: get_symbol_info()")
+    print("-" * 80)
     try:
         # Test with BTC
-        btc_index = client._get_asset_index("BTC")
-        print(f"✅ BTC asset index: {btc_index}")
+        btc_symbol_info = await client.get_symbol_info("BTC")
+        print(f"✅ BTC symbol info: \n{json.dumps(btc_symbol_info, indent=4)}")
         
         # Test with ETH
-        eth_index = client._get_asset_index("ETH")
-        print(f"✅ ETH asset index: {eth_index}")
+        eth_symbol_info = await client.get_symbol_info("ETH")
+        print(f"✅ ETH symbol info: \n{json.dumps(eth_symbol_info, indent=4)}")
         
-        return True
+        results["symbol_info"] = {"BTC": btc_symbol_info, "ETH": eth_symbol_info}
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        return False
-
-
-def test_get_account():
-    """Test getting account information."""
-    print("\n" + "=" * 60)
-    print("Testing Hyperliquid get_account()")
-    print("=" * 60)
+        results["symbol_info"] = None
     
-    wallet_address = os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", "")
+    # Test 3: Get account (requires wallet address)
+    print("\n" + "-" * 80)
+    print("👤 Test 3: get_account()")
+    print("-" * 80)
     if not wallet_address:
         print("⚠️  HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS not set, skipping account test")
-        return None
+        results["account"] = None
+    else:
+        try:
+            account = await client.get_account()
+            print(f"✅ Account info retrieved successfully")
+            print(f"| 📝 Account: \n{json.dumps(account, indent=4)}")
+            results["account"] = account
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            results["account"] = None
     
-    client = HyperliquidClient(
-        wallet_address=wallet_address,
-        testnet=True
-    )
-    
-    try:
-        account = client.get_account()
-        print(f"✅ Account info retrieved successfully")
-        print(f"Keys: {list(account.keys())}")
-        print(f"Account: {account}")
-        
-        return account
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-
-def test_get_positions():
-    """Test getting positions."""
-    print("\n" + "=" * 60)
-    print("Testing Hyperliquid get_positions()")
-    print("=" * 60)
-    
-    wallet_address = os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", "")
+    # Test 4: Get positions (requires wallet address)
+    print("\n" + "-" * 80)
+    print("📊 Test 4: get_positions()")
+    print("-" * 80)
     if not wallet_address:
         print("⚠️  HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS not set, skipping positions test")
-        return None
+        results["positions"] = None
+    else:
+        try:
+            positions = await client.get_positions()
+            print(f"✅ Positions retrieved successfully")
+            print(f"| 📝 Positions: \n{json.dumps(positions, indent=4)}")
+            results["positions"] = positions
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            results["positions"] = None
     
-    client = HyperliquidClient(
-        wallet_address=wallet_address,
-        testnet=True
-    )
+    # Test 5: Get orders (requires wallet address)
+    print("\n" + "-" * 80)
+    print("📊 Test 5: get_orders()")
+    print("-" * 80)
+    if not wallet_address:
+        print("⚠️  HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS not set, skipping orders test")
+        results["orders"] = None
+    else:
+        try:
+            orders = await client.get_orders()
+            print(f"✅ Orders retrieved successfully")
+            print(f"| 📝 Orders: \n{json.dumps(orders, indent=4)}")
+            results["orders"] = orders
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
+            results["orders"] = None
     
-    try:
-        positions = client.get_positions()
-        print(f"✅ Positions retrieved successfully")
-        print(f"Number of positions: {len(positions)}")
-        
-        for pos in positions[:5]:  # Show first 5 positions
-            if isinstance(pos, dict):
-                print(f"  Position: {pos}")
-        
-        return positions
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+    print("\n" + "=" * 80)
+    print("✅ Client tests completed")
+    print("=" * 80)
+    
+    return results
 
-
-def test_create_order():
-    """Test creating an order (market order)."""
-    print("\n" + "=" * 60)
-    print("Testing Hyperliquid create_order() - Market Order")
-    print("=" * 60)
+async def test_orders():
+    """Test order creation at Client, Service, and Environment layers."""
+    print("\n" + "=" * 80)
+    print("Testing Order Creation at All Layers (Client -> Service -> Environment)")
+    print("=" * 80)
     
     wallet_address = os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", "")
     private_key = os.getenv("HYPERLIQUID_TESTNET_TRADING_PRIVATE_KEY", "")
     
     if not wallet_address or not private_key:
-        print("⚠️  HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS or HYPERLIQUID_TESTNET_TRADING_PRIVATE_KEY not set, skipping order test")
+        print("⚠️  HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS or HYPERLIQUID_TESTNET_TRADING_PRIVATE_KEY not set, skipping test")
         return None
     
-    client = HyperliquidClient(
-        wallet_address=wallet_address,
-        private_key=private_key,
-        testnet=False  # Use testnet for testing
-    )
+    # Test parameters
+    symbol = "BTC"
+    qty = 1e-4  # Small quantity for testing
+    stop_loss_price = 90000.0
+    take_profit_price = 120000.0
+    
+    results = {
+        "client": None,
+        "service": None,
+        "environment": None
+    }
     
     try:
-        # Test market order
-        print("Creating market order: BUY 0.01 BTC")
-        result = client.create_order(
-            symbol="BTC",
-            side="buy",  # Will be converted to boolean
-            order_type="Market",
-            size=0.0001,
-            stop_loss_price=100000.0,
-            take_profit_price=110000.0
+        # ========== Test 1: Client Layer ==========
+        print("\n" + "-" * 80)
+        print("📦 Test 1: Client Layer (HyperliquidClient.create_order)")
+        print("-" * 80)
+        
+        client = HyperliquidClient(
+            wallet_address=wallet_address,
+            private_key=private_key,
+            testnet=False
         )
         
-        print(f"✅ Order created successfully")
-        print(f"Result: {result}")
-        
-        return result
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-
-def test_create_limit_order():
-    """Test creating a limit order."""
-    print("\n" + "=" * 60)
-    print("Testing Hyperliquid create_order() - Limit Order")
-    print("=" * 60)
-    
-    wallet_address = os.getenv("HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS", "")
-    private_key = os.getenv("HYPERLIQUID_TESTNET_TRADING_PRIVATE_KEY", "")
-    
-    if not wallet_address or not private_key:
-        print("⚠️  HYPERLIQUID_TESTNET_TRADING_WALLET_ADDRESS or HYPERLIQUID_TESTNET_TRADING_PRIVATE_KEY not set, skipping limit order test")
-        return None
-    
-    client = HyperliquidClient(
-        wallet_address=wallet_address,
-        private_key=private_key,
-        testnet=True
-    )
-    
-    try:
-        # Get current price (approximate)
-        # For testing, use a price that's likely to not fill immediately
-        test_price = 50000.0  # Example price for BTC
-        
-        print(f"Creating limit order: BUY 0.01 BTC at {test_price}")
-        result = client.create_order(
-            symbol="BTC",
+        print(f"Creating order via Client: BUY {qty} {symbol} (Market)")
+        client_result = await client.create_order(
+            symbol=symbol,
             side="buy",
-            order_type="Limit",
-            size=0.01,
-            price=test_price,
-            time_in_force="Gtc",
-            reduce_only=False
+            order_type="Market",
+            size=qty,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price
         )
         
-        print(f"✅ Limit order created successfully")
-        print(f"Result: {result}")
+        print(f"✅ Client order result:")
+        print(f"   Keys: {list(client_result.keys())}")
+        if 'main_order' in client_result:
+            main_order = client_result.get('main_order', {})
+            print(f"   Main order status: {main_order.get('status', 'N/A')}")
+            if main_order.get('status') == 'ok':
+                response = main_order.get('response', {})
+                if response.get('type') == 'order':
+                    data = response.get('data', {})
+                    statuses = data.get('statuses', [])
+                    if statuses:
+                        status = statuses[0]
+                        if 'filled' in status:
+                            print(f"   Order ID: {status['filled'].get('oid', 'N/A')}")
+                            print(f"   Status: filled")
+                        elif 'resting' in status:
+                            print(f"   Order ID: {status['resting'].get('oid', 'N/A')}")
+                            print(f"   Status: resting (submitted)")
+                        elif 'error' in status:
+                            print(f"   Error: {status.get('error', 'Unknown')}")
         
-        return result
+        if 'stop_loss_order' in client_result and client_result['stop_loss_order']:
+            print(f"   Stop loss order: Created")
+        if 'take_profit_order' in client_result and client_result['take_profit_order']:
+            print(f"   Take profit order: Created")
+        
+        results["client"] = client_result
+        
+        # Wait a bit between orders
+        await asyncio.sleep(2)
+        
+        # ========== Test 2: Service Layer ==========
+        print("\n" + "-" * 80)
+        print("🔧 Test 2: Service Layer (HyperliquidService.create_order)")
+        print("-" * 80)
+        
+        # Setup service
+        base_dir = Path(root) / "workdir" / "test_order_layers"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        accounts = [{
+            "name": "TestAccount",
+            "address": wallet_address,
+            "private_key": private_key
+        }]
+        
+        service = HyperliquidService(
+            base_dir=str(base_dir),
+            accounts=accounts,
+            live=True,  # Use testnet
+            auto_start_data_stream=False,
+            symbol=[symbol],
+            data_type=["candle"]
+        )
+        await service.initialize()
+        
+        print(f"Creating order via Service: BUY {qty} {symbol} (Market)")
+        service_request = CreateOrderRequest(
+            account_name="TestAccount",
+            symbol=symbol,
+            side="buy",
+            order_type=OrderType.MARKET,
+            qty=qty,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price
+        )
+        
+        service_result = await service.create_order(service_request)
+        
+        print(f"✅ Service order result:")
+        print(f"   Success: {service_result.success}")
+        print(f"   Message: {service_result.message}")
+        if service_result.extra:
+            order_info = service_result.extra.get('order_info', {})
+            print(f"   Order ID: {order_info.get('order_id', 'N/A')}")
+            print(f"   Order Status: {order_info.get('order_status', 'N/A')}")
+            if order_info.get('stop_loss_order'):
+                print(f"   Stop Loss Order: Created")
+            if order_info.get('take_profit_order'):
+                print(f"   Take Profit Order: Created")
+            if order_info.get('stop_loss_error'):
+                print(f"   Stop Loss Error: {order_info.get('stop_loss_error')}")
+            if order_info.get('take_profit_error'):
+                print(f"   Take Profit Error: {order_info.get('take_profit_error')}")
+        
+        results["service"] = service_result
+        
+        # Wait a bit between orders
+        await asyncio.sleep(2)
+        
+        # ========== Test 3: Environment Layer ==========
+        print("\n" + "-" * 80)
+        print("🎮 Test 3: Environment Layer (HyperliquidEnvironment.step)")
+        print("-" * 80)
+        
+        env = ecp.get("hyperliquid")
+        
+        print(f"Creating order via Environment: LONG {qty} {symbol} with TP/SL")
+        
+        env_result = await env.step(
+            symbol=symbol,
+            action="LONG",
+            qty=qty,
+            leverage=10,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price
+        )
+        
+        print(f"✅ Environment order result:")
+        print(f"   Success: {env_result.get('success', 'N/A')}")
+        print(f"   Message: {env_result.get('message', 'N/A')}")
+        if 'extra' in env_result:
+            extra = env_result['extra']
+            if 'order_info' in extra:
+                order_info = extra['order_info']
+                print(f"   Order ID: {order_info.get('order_id', 'N/A')}")
+                print(f"   Order Status: {order_info.get('order_status', 'N/A')}")
+                if order_info.get('stop_loss_order'):
+                    print(f"   Stop Loss Order: Created")
+                if order_info.get('take_profit_order'):
+                    print(f"   Take Profit Order: Created")
+                if order_info.get('stop_loss_error'):
+                    print(f"   Stop Loss Error: {order_info.get('stop_loss_error')}")
+                if order_info.get('take_profit_error'):
+                    print(f"   Take Profit Error: {order_info.get('take_profit_error')}")
+        
+        results["environment"] = env_result
+        
+        # ========== Summary ==========
+        print("\n" + "=" * 80)
+        print("📊 Summary")
+        print("=" * 80)
+        
+        print("\n✅ All three layers tested successfully!")
+        print("\nKey Observations:")
+        print("1. Client Layer: Direct SDK call, returns raw SDK response")
+        print("2. Service Layer: Wraps client, returns ActionResult with parsed order info")
+        print("3. Environment Layer: Highest level, uses step() method with action='LONG'")
+        
+        # Check if main orders were created
+        print("\nMain Order Status:")
+        if results["client"] and 'main_order' in results["client"]:
+            client_main = results["client"]["main_order"]
+            if client_main.get('status') == 'ok':
+                print("   ✅ Client: Main order created")
+            else:
+                print("   ❌ Client: Main order failed")
+        else:
+            print("   ⚠️  Client: No main_order in result")
+        
+        if results["service"] and results["service"].success:
+            print("   ✅ Service: Main order created")
+        else:
+            print("   ❌ Service: Main order failed")
+        
+        if results["environment"] and results["environment"].get('success'):
+            print("   ✅ Environment: Main order created")
+        else:
+            print("   ❌ Environment: Main order failed")
+        
+        # Cleanup
+        await env.cleanup()
+        await service.cleanup()
+        
+        return results
+        
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"\n❌ Error during test: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -340,7 +475,6 @@ async def test_websocket_candles(use_testnet: bool = False):
         import traceback
         traceback.print_exc()
         return None
-
 
 async def test_complete_data_flow(use_testnet: bool = False):
     """Test complete data flow from WebSocket to database.
@@ -464,44 +598,12 @@ async def async_main():
     print(f"Test started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
     
-    # Test 1: Get exchange info
-    exchange_info = test_get_exchange_info()
     
-    # Test 2: Get asset index
-    if exchange_info:
-        test_get_asset_index()
+    # Test client basic functionality
+    # await test_client()
     
-    # Test 3: Get account
-    test_get_account()
-    
-    # Test 4: Get positions
-    test_get_positions()
-    
-    # Test 5: Create market order (commented out by default - requires private key)
-    # Uncomment to test order creation
-    test_create_order()
-    
-    # Test 6: Create limit order (commented out by default - requires private key)
-    # Uncomment to test limit order creation
-    # test_create_limit_order()
-    
-    # Test 7: WebSocket candle data stream
-    # print("\n" + "=" * 60)
-    # print("Starting WebSocket Test...")
-    # print("=" * 60)
-    # Use mainnet (testnet=False) because it has more active trading
-    # await test_websocket_candles(use_testnet=False)
-    
-    # Test 8: Complete data flow (WebSocket -> Producer -> Database -> Consumer)
-    # print("\n" + "=" * 60)
-    # print("Starting Complete Data Flow Test...")
-    # print("=" * 60)
-    # # Use mainnet (testnet=False) because it has more active trading
-    # await test_complete_data_flow(use_testnet=False)
-    
-    print("\n" + "=" * 60)
-    print("Test Suite Completed")
-    print("=" * 60)
+    # Test order creation
+    await test_orders()
 
 
 async def main():
@@ -512,6 +614,24 @@ async def main():
     config.init_config(args.config, args)
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
+    
+    # Initialize Hyperliquid service
+    logger.info("| 🔧 Initializing Hyperliquid service...")
+    accounts = get_env("HYPERLIQUID_ACCOUNTS").get_secret_value()
+    if accounts:
+        accounts = json.loads(accounts)
+    config.hyperliquid_service.update(dict(accounts=accounts))
+    hyperliquid_service = HyperliquidService(**config.hyperliquid_service)
+    await hyperliquid_service.initialize()
+    for env_name in config.env_names:
+        env_config = config.get(f"{env_name}_environment", None)
+        env_config.update(dict(hyperliquid_service=hyperliquid_service))
+    logger.info(f"| ✅ Hyperliquid service initialized.")
+    
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    await ecp.initialize(config.env_names)
+    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
     await async_main()
     

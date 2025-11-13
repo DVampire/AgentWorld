@@ -48,6 +48,9 @@ class HyperliquidClient:
         self.exchange = None
         if private_key:
             self._initialize_exchange()
+        
+        # Cache for symbol info
+        self._symbol_infos: Dict[str, Dict[str, Any]] = {}
 
     def _initialize_exchange(self):
         """Initialize Exchange object with account."""
@@ -70,8 +73,29 @@ class HyperliquidClient:
         self._initialize_exchange()
 
     # -------------------------- EXCHANGE INFO --------------------------
-    def get_exchange_info(self) -> Dict[str, Any]:
-        """Get exchange information including available symbols."""
+    async def get_exchange_info(self) -> Dict[str, Any]:
+        """Get exchange information including available symbols.
+        
+        Returns:
+        {
+            'universe': 
+            [
+                {
+                    'szDecimals': 5,
+                    'name': 'BTC',
+                    'maxLeverage': 40, 
+                    'marginTableId': 56
+                }, 
+                {
+                    'szDecimals': 4, 
+                    'name': 'ETH', 
+                    'maxLeverage': 25,
+                    'marginTableId': 55
+                },
+                ... # more symbols
+            ]
+        }
+        """
         try:
             meta = self.info.meta()
             return meta
@@ -79,21 +103,55 @@ class HyperliquidClient:
             logger.error(f"| ❌ Failed to get exchange info: {e}")
             raise Exception(f"Failed to get exchange info: {e}")
 
-    def _get_asset_index(self, symbol: str) -> int:
-        """Get asset index for a symbol."""
-        exchange_info = self.get_exchange_info()
-        universe = exchange_info.get("universe", [])
-        for idx, coin_info in enumerate(universe):
-            if isinstance(coin_info, dict):
-                coin_name = coin_info.get("name", "")
-            else:
-                coin_name = str(coin_info)
-            if coin_name.upper() == symbol.upper():
-                return idx
+    async def get_symbol_info(self, symbol: str) -> Dict[str, Any]:
+        """Get symbol info for a symbol.
+        
+        Args:
+            symbol (str): Symbol to get info for (e.g., 'BTC', 'ETH')
+                
+        Returns:
+        {
+            'name': 'BTC', 
+            'id': 0, 
+            'szDecimals': 5,
+            'maxLeverage': 40,
+            'marginTableId': 56
+        }
+        """
+        symbol_upper = symbol.upper()
+        
+        # Check cache first
+        if symbol_upper in self._symbol_infos:
+            return self._symbol_infos[symbol_upper]
+        
+        # Load all symbols into cache if cache is empty
+        if not self._symbol_infos:
+            exchange_info = await self.get_exchange_info()
+            universe = exchange_info.get("universe", [])
+            for idx, coin_info in enumerate(universe):
+                if isinstance(coin_info, dict):
+                    coin_name = coin_info.get("name", "")
+                else:
+                    coin_name = str(coin_info)
+                
+                coin_name_upper = coin_name.upper()
+                symbol_info = {
+                    "name": coin_name,
+                    "id": idx,
+                    "szDecimals": coin_info.get("szDecimals", 0) if isinstance(coin_info, dict) else 0,
+                    "maxLeverage": coin_info.get("maxLeverage", 0) if isinstance(coin_info, dict) else 0,
+                    "marginTableId": coin_info.get("marginTableId", 0) if isinstance(coin_info, dict) else 0,
+                }
+                self._symbol_infos[coin_name_upper] = symbol_info
+        
+        # Return from cache
+        if symbol_upper in self._symbol_infos:
+            return self._symbol_infos[symbol_upper]
+        
         raise Exception(f"Symbol {symbol} not found in exchange info")
 
     # -------------------------- USER STATE --------------------------
-    def get_user_state(self) -> Dict[str, Any]:
+    async def get_user_state(self) -> Dict[str, Any]:
         """Get user account state."""
         try:
             state = self.info.user_state(self.wallet_address)
@@ -102,17 +160,130 @@ class HyperliquidClient:
             logger.error(f"| ❌ Failed to get user state: {e}")
             raise Exception(f"Failed to get user state: {e}")
 
-    def get_account(self) -> Dict[str, Any]:
-        """Get account information."""
-        return self.get_user_state()
+    async def get_account(self) -> Dict[str, Any]:
+        """Get account information.
+        
+        Returns:
+        {
+            'marginSummary': 
+            {
+                'accountValue': '5.779387',
+                'totalNtlPos': '20.3928', 
+                'totalRawUsd': '-14.613413',
+                'totalMarginUsed': '1.01964'
+            }, 
+            'crossMarginSummary': 
+            {
+                'accountValue': '5.779387', 
+                'totalNtlPos': '20.3928', 
+                'totalRawUsd': '-14.613413',
+                'totalMarginUsed': '1.01964'
+            }, 
+            'crossMaintenanceMarginUsed': '0.25491', 
+            'withdrawable': '3.740107', 
+            'assetPositions': 
+            [
+                {
+                    'type': 'oneWay', 
+                    'position': 
+                    {
+                        'coin': 'BTC', 
+                        'szi': '0.0002',
+                        'leverage': 
+                        {
+                            'type': 'cross',
+                            'value': 20
+                        }, 
+                        'entryPx': '101534.0', 
+                        'positionValue': '20.3928',
+                        'unrealizedPnl': '0.086',
+                        'returnOnEquity': '0.0847006914',
+                        'liquidationPx': '73991.964556962',
+                        'marginUsed': '1.01964', 
+                        'maxLeverage': 40, 
+                        'cumFunding': 
+                        {
+                            'allTime': '0.002094', 
+                            'sinceOpen': '0.000255', 
+                            'sinceChange': '0.000255'
+                        }
+                    }
+                },
+                ... # more positions
+            ], 
+            'time': 1763009096635
+        }
+        """
+        return await self.get_user_state()
 
-    def get_positions(self) -> List[Dict[str, Any]]:
-        """Get open positions."""
-        user_state = self.get_user_state()
+    async def get_positions(self) -> List[Dict[str, Any]]:
+        """Get open positions.
+        
+        Returns:
+        [
+            {
+                "type": "oneWay",
+                "position": {
+                    "coin": "BTC",
+                    "szi": "0.0002",
+                    "leverage": {
+                        "type": "cross",
+                        "value": 20
+                    },
+                    "entryPx": "101534.0",
+                    "positionValue": "20.4308",
+                    "unrealizedPnl": "0.124",
+                    "returnOnEquity": "0.1221265783",
+                    "liquidationPx": "73991.964556962",
+                    "marginUsed": "1.02154",
+                    "maxLeverage": 40,
+                    "cumFunding": {
+                        "allTime": "0.002094",
+                        "sinceOpen": "0.000255",
+                        "sinceChange": "0.000255"
+                    }
+                }
+            }
+        ]
+        """
+        user_state = await self.get_user_state()
         return user_state.get("assetPositions", [])
+    
+    async def get_orders(self) -> List[Dict[str, Any]]:
+        """Get open orders with frontend info (includes orderType for trigger orders).
+        
+        Returns:
+        [
+            {
+                "coin": "BTC",
+                "side": "A",
+                "limitPx": "90000.0",
+                "sz": "0.0001",
+                "oid": 232981894288,
+                "timestamp": 1763003876635,
+                "origSz": "0.0001",
+                "reduceOnly": true,
+                "orderType": {
+                    "trigger": {
+                        "isMarket": false,
+                        "triggerPx": "90000.0",
+                        "tpsl": "tp"
+                    }
+                },
+                "isTrigger": true,
+                "isPositionTpsl": true,
+                "triggerPx": "90000.0",
+                "triggerCondition": "...",
+                "tif": "Gtc"
+            },
+            ... # more orders
+        ]
+        """
+        open_orders = self.info.frontend_open_orders(self.wallet_address)
+        return open_orders
 
     # -------------------------- CREATE ORDER --------------------------
-    def create_order(
+    async def create_order(
         self,
         symbol: str,
         side: str,
@@ -177,7 +348,7 @@ class HyperliquidClient:
             logger.info(f"| 📝 Market order created: {symbol} {'LONG' if is_buy else 'SHORT'} {size}")
             
         result = {
-            "open_order": open_order_result,
+            "main_order": open_order_result,
             "stop_loss_order": None,
             "take_profit_order": None
         }
@@ -195,46 +366,95 @@ class HyperliquidClient:
             """Round price to avoid float_to_wire precision errors."""
             return round(float(f"{price:.8f}"), 8)
         
-        # Create take profit order if provided
+        # Check if there are existing TP/SL orders in the same direction
+        # Only create new TP/SL orders if they don't already exist
+        existing_tp_order = None
+        existing_sl_order = None
+        
+        try:
+            all_orders = await self.get_orders()
+            logger.info(f"| 📝 All orders: {all_orders}")
+            # Determine expected order side for TP/SL
+            # For LONG position: TP/SL are SELL orders (close_is_buy=False, order_side='A')
+            # For SHORT position: TP/SL are BUY orders (close_is_buy=True, order_side='B')
+            expected_side = 'B' if close_is_buy else 'A'
+            logger.info(f"| 📝 Expected side: {expected_side}, Side: {side}")
+            
+            # Check existing trigger orders for the same symbol and direction
+            for order in all_orders:
+                if (order.get("coin") == symbol and 
+                    order.get('isTrigger', False) and
+                    order.get('reduceOnly', False) and
+                    order.get('side') == expected_side):
+                    
+                    trigger_px = order.get('triggerPx')
+                    if trigger_px:
+                        trigger_price = float(trigger_px)
+                        # Compare with the prices we want to create (within 0.01 tolerance)
+                        if take_profit_price and abs(trigger_price - take_profit_price) < 0.01:
+                            existing_tp_order = order
+                        if stop_loss_price and abs(trigger_price - stop_loss_price) < 0.01:
+                            existing_sl_order = order
+
+        except Exception as e:
+            logger.warning(f"| ⚠️  Failed to check existing TP/SL orders: {e}")
+            # Continue anyway - try to create new orders
+        
+        logger.info(f"| 📝 Existing TP order: {existing_tp_order}")
+        logger.info(f"| 📝 Existing SL order: {existing_sl_order}")
+        
         if take_profit_price:
-            try:
-                tp_price = round_price(take_profit_price)
-                tp_order_result = self.exchange.order(
-                    name=symbol,
-                    is_buy=close_is_buy,
-                    sz=size,
-                    limit_px=tp_price,
-                    order_type={"trigger": {"isMarket": False, "triggerPx": tp_price, "tpsl": "tp"}},
-                    reduce_only=True
-                )
-                result["take_profit_order"] = tp_order_result
-                logger.info(f"| 🎯 Take profit order created at {tp_price}")
-            except Exception as e:
-                logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
-                result["take_profit_error"] = str(e)
-        
-        # Create stop loss order if provided
+            if existing_tp_order:
+                # Cancel existing take profit order
+                await self.cancel_order(symbol, existing_tp_order.get('oid'))
+                logger.info(f"| 🗑️  Cancelled existing take profit order {existing_tp_order.get('oid')} before creating new one")
+            else:
+                try:
+                    tp_price = round_price(take_profit_price)
+                    tp_order_result = self.exchange.order(
+                        name=symbol,
+                        is_buy=close_is_buy,
+                        sz=size,
+                        limit_px=tp_price,
+                        order_type={"trigger": {"isMarket": False, "triggerPx": tp_price, "tpsl": "tp"}},
+                        reduce_only=True
+                    )
+                    result["take_profit_order"] = tp_order_result
+                    logger.info(f"| 🎯 Take profit order created at {tp_price}")
+                except Exception as e:
+                    logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
+                    result["take_profit_error"] = str(e)
+        else:
+            result["take_profit_order"] = None
+            
         if stop_loss_price:
-            try:
-                sl_price = round_price(stop_loss_price)
-                sl_order_result = self.exchange.order(
-                    name=symbol,
-                    is_buy=close_is_buy,
-                    sz=size,
-                    limit_px=sl_price,
-                    order_type={"trigger": {"isMarket": False, "triggerPx": sl_price, "tpsl": "sl"}},
-                    reduce_only=True
-                )
-                result["stop_loss_order"] = sl_order_result
-                logger.info(f"| 🛡️  Stop loss order created at {sl_price}")
-            except Exception as e:
-                logger.warning(f"| ⚠️  Failed to create stop loss order: {e}")
-                result["stop_loss_error"] = str(e)
-        
+            if existing_sl_order:
+                # Cancel existing stop loss order
+                await self.cancel_order(symbol, existing_sl_order.get('oid'))
+                logger.info(f"| 🗑️  Cancelled existing stop loss order {existing_sl_order.get('oid')} before creating new one")
+            else:
+                try:
+                    sl_price = round_price(stop_loss_price)
+                    sl_order_result = self.exchange.order(
+                        name=symbol,
+                        is_buy=close_is_buy,
+                        sz=size,
+                        limit_px=sl_price,
+                        order_type={"trigger": {"isMarket": False, "triggerPx": sl_price, "tpsl": "sl"}},
+                        reduce_only=True
+                    )
+                    result["stop_loss_order"] = sl_order_result
+                    logger.info(f"| 🛡️  Stop loss order created at {sl_price}")
+                except Exception as e:
+                    logger.warning(f"| ⚠️  Failed to create stop loss order: {e}")
+                    result["stop_loss_error"] = str(e)
+        else:
+            result["stop_loss_order"] = None
+            
         return result
     
     # -------------------------- Close Order -------------------------
-    def close_order(
+    async def close_order(
         self,
         symbol: str,
         side: str,
@@ -303,44 +523,13 @@ class HyperliquidClient:
             logger.info(f"| 🗑️  Market close order created: {symbol} (auto-determined direction)")
             
         return {"close_order": close_order_result}
-        
-
-    # -------------------------- ORDER INFO --------------------------
-    def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get open orders."""
-        user_state = self.get_user_state()
-        open_orders = user_state.get("openOrders", [])
-        if symbol:
-            open_orders = [o for o in open_orders if o.get("coin") == symbol]
-        return open_orders
-
-    def get_order(self, order_id: str, symbol: str) -> Dict[str, Any]:
-        """Get order status."""
-        open_orders = self.get_open_orders(symbol)
-        for order in open_orders:
-            if str(order.get("oid")) == str(order_id):
-                return order
-        fills = self.get_user_fills()
-        for fill in fills:
-            if str(fill.get("oid")) == str(order_id):
-                return fill
-        raise Exception(f"Order {order_id} not found")
-
-    def get_user_fills(self) -> List[Dict[str, Any]]:
-        """Get user fill history."""
-        try:
-            fills = self.info.user_fills(self.wallet_address)
-            return fills
-        except Exception as e:
-            logger.error(f"| ❌ Failed to get user fills: {e}")
-            raise Exception(f"Failed to get user fills: {e}")
 
     # -------------------------- CANCEL ORDER --------------------------
-    def cancel_order(self, asset_index: int, order_id: int) -> Dict[str, Any]:
+    async def cancel_order(self, symbol: str, order_id: int) -> Dict[str, Any]:
         """Cancel an order.
 
         Args:
-            asset_index: Asset index
+            symbol (str): Symbol name
             order_id: Order ID
 
         Returns:
@@ -350,14 +539,14 @@ class HyperliquidClient:
             raise Exception("Private key required for order cancellation. Call set_private_key() first.")
 
         try:
-            result = self.exchange.cancel(coin_idx=asset_index, oid=order_id)
-            logger.info(f"| 🗑️  Cancelled order {order_id} for asset {asset_index}")
+            result = self.exchange.cancel(name=symbol, oid=order_id)
+            logger.info(f"| 🗑️  Cancelled order {order_id} for symbol {symbol}")
             return result
         except Exception as e:
             logger.error(f"| ❌ Failed to cancel order: {e}")
             raise Exception(f"Failed to cancel order: {e}")
 
-    def cancel_all_orders(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+    async def cancel_all_orders(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         """Cancel all open orders.
 
         Args:
@@ -369,7 +558,8 @@ class HyperliquidClient:
         if not self.exchange:
             raise Exception("Private key required for order cancellation. Call set_private_key() first.")
 
-        open_orders = self.get_open_orders(symbol)
+        all_orders = await self.get_orders()
+        open_orders = [o for o in all_orders if o.get("coin") == symbol] if symbol else all_orders
         if not open_orders:
             return {"status": "ok", "message": "No orders to cancel"}
 
@@ -377,10 +567,10 @@ class HyperliquidClient:
             # Cancel all orders
             cancels = []
             for order in open_orders:
-                asset_index = self._get_asset_index(order.get("coin", ""))
+                symbol = order.get("coin", "")
                 order_id = order.get("oid")
-                if asset_index is not None and order_id is not None:
-                    cancels.append({"a": asset_index, "o": order_id})
+                if symbol and order_id is not None:
+                    cancels.append({"a": symbol, "o": order_id})
 
             if not cancels:
                 return {"status": "ok", "message": "No valid orders to cancel"}
@@ -390,7 +580,7 @@ class HyperliquidClient:
             results = []
             for cancel in cancels:
                 try:
-                    result = self.exchange.cancel(coin_idx=cancel["a"], oid=cancel["o"])
+                    result = self.exchange.cancel(name=cancel["a"], oid=cancel["o"])
                     results.append(result)
                 except Exception as e:
                     logger.warning(f"| ⚠️  Failed to cancel order {cancel['o']}: {e}")
