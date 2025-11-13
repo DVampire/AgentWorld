@@ -1052,9 +1052,12 @@ class HyperliquidEnvironment(BaseEnvironment):
             positions_result = await self.get_positions()
             positions_result = positions_result.get("extra", {})
             positions_list = positions_result.get("positions", [])
+            positions_string = ""
+            for position in positions_list:
+                positions_string += f"Symbol: {position['symbol']}, Trade Type: {position['trade_type']}, Leverage: {position['leverage']}, Position Amount: {position['position_amt']}, Entry Price: {position['entry_price']}, Unrealized Profit: {position['unrealized_profit']}\n"
             positions_string = dedent(f"""
                 <positions>
-                Current Positions: {json.dumps(positions_list, indent=4)}
+                {positions_string}
                 </positions>
             """)
             logger.info(f"| 📝 Positions String: {positions_string}")
@@ -1063,9 +1066,12 @@ class HyperliquidEnvironment(BaseEnvironment):
             orders_result = await self.get_orders()
             orders_result = orders_result.get("extra", {})
             orders_list = orders_result.get("orders", [])
+            orders_string = ""
+            for order in orders_list:
+                orders_string += f"Order ID: {order['order_id']}, Symbol: {order['symbol']}, Trade Type: {order['trade_type']}, Order Type: {order['type']}, Order Side: {order['side']}, Quantity: {float(order['quantity']):.2f}, Price: {float(order['price']):.2f}, Status: {order['status']}\n"
             orders_string = dedent(f"""
                 <orders>
-                Current Orders: {json.dumps(orders_list, indent=4)}
+                {orders_string}
                 </orders>
             """)
             logger.info(f"| 📝 Orders String: {orders_string}")
