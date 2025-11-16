@@ -1024,6 +1024,18 @@ class HyperliquidEnvironment(BaseEnvironment):
         else:
             logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
     
+    def _safe_float_format(self, value: Any, default: float = 0.0) -> str:
+        """Safely convert a value to float and format it to 2 decimal places."""
+        try:
+            if isinstance(value, (int, float)):
+                return f"{float(value):.2f}"
+            elif isinstance(value, str):
+                return f"{float(value):.2f}"
+            else:
+                return f"{float(default):.2f}"
+        except (ValueError, TypeError):
+            return f"{float(default):.2f}"
+    
     async def get_state(self) -> Dict[str, Any]:
         """Get the current state of the Hyperliquid trading environment."""
         try:
@@ -1035,11 +1047,11 @@ class HyperliquidEnvironment(BaseEnvironment):
             account_string = ""
             account_string += dedent(f"""
                 Timestamp: {account_info.get("time", "N/A")}
-                Account Value: ${float(account_info.get("margin_summary", {}).get("accountValue", 0)):.2f},
-                Total Profit: ${float(metrics.get("total_profit", 0)):.2f} ({float(metrics.get("profit_percentage", 0)):.2f}%),
-                Current Drawdown: ${float(metrics.get("current_drawdown", 0)):.2f} ({float(metrics.get("current_drawdown_percentage", 0)):.2f}%),
-                Max Drawdown: ${float(metrics.get("max_drawdown", 0)):.2f} ({float(metrics.get("max_drawdown_percentage", 0)):.2f}%),
-                Period Return: ${float(metrics.get("period_return", 0)):.2f} ({float(metrics.get("period_return_percentage", 0)):.2f}%),
+                Account Value: ${self._safe_float_format(account_info.get("margin_summary", {}).get("accountValue", 0))},
+                Total Profit: ${self._safe_float_format(metrics.get("total_profit", 0))} ({self._safe_float_format(metrics.get("profit_percentage", 0))}%),
+                Current Drawdown: ${self._safe_float_format(metrics.get("current_drawdown", 0))} ({self._safe_float_format(metrics.get("current_drawdown_percentage", 0))}%),
+                Max Drawdown: ${self._safe_float_format(metrics.get("max_drawdown", 0))} ({self._safe_float_format(metrics.get("max_drawdown_percentage", 0))}%),
+                Period Return: ${self._safe_float_format(metrics.get("period_return", 0))} ({self._safe_float_format(metrics.get("period_return_percentage", 0))}%),
             """)
             account_string = dedent(f"""
                 <account>
@@ -1054,7 +1066,16 @@ class HyperliquidEnvironment(BaseEnvironment):
             positions_list = positions_result.get("positions", [])
             positions_string = ""
             for position in positions_list:
-                positions_string += f"Symbol: {position['symbol']}, Trade Type: {position['trade_type']}, Leverage: {position['leverage']}, Position Amount: {position['position_amt']}, Entry Price: {position['entry_price']}, Unrealized Profit: {position['unrealized_profit'] * 100:.2f}%\n"
+                return_on_equity = position.get('return_on_equity', 0)
+                try:
+                    return_on_equity_float = float(return_on_equity) * 100
+                except (ValueError, TypeError):
+                    return_on_equity_float = 0.0
+                return_on_equity_pct = self._safe_float_format(return_on_equity_float)
+                
+                position_side = "LONG" if float(position['position_amt']) > 0 else "SHORT"
+                
+                positions_string += f"Symbol: {position['symbol']}, Position Side: {position_side}, Trade Type: {position['trade_type']}, Leverage: {position['leverage']}, Position Amount: {position['position_amt']}, Entry Price: {position['entry_price']}, Current Price: {position['mark_price']}, Return on Equity: {return_on_equity_pct}%\n"
             positions_string = dedent(f"""
                 <positions>
                 {positions_string}
@@ -1068,7 +1089,9 @@ class HyperliquidEnvironment(BaseEnvironment):
             orders_list = orders_result.get("orders", [])
             orders_string = ""
             for order in orders_list:
-                orders_string += f"Order ID: {order['order_id']}, Symbol: {order['symbol']}, Trade Type: {order['trade_type']}, Order Type: {order['type']}, Order Side: {order['side']}, Quantity: {float(order['quantity']):.2f}, Price: {float(order['price']):.2f}, Status: {order['status']}\n"
+                quantity_str = self._safe_float_format(order.get('quantity', 0))
+                price_str = self._safe_float_format(order.get('price', 0))
+                orders_string += f"Order ID: {order['order_id']}, Symbol: {order['symbol']}, Trade Type: {order['trade_type']}, Order Type: {order['type']}, Order Side: {order['side']}, Quantity: {quantity_str}, Price: {price_str}, Status: {order['status']}\n"
             orders_string = dedent(f"""
                 <orders>
                 {orders_string}
@@ -1093,16 +1116,16 @@ class HyperliquidEnvironment(BaseEnvironment):
                     
                     symbol_string += dedent(f"""
                             Timestamp: {candle["timestamp"]}
-                            Open: {float(candle["open"]):.2f}
-                            High: {float(candle["high"]):.2f}
-                            Low: {float(candle["low"]):.2f}
-                            Close: {float(candle["close"]):.2f}
-                            Volume: {float(candle["volume"]):.2f}
+                            Open: {self._safe_float_format(candle.get("open", 0))}
+                            High: {self._safe_float_format(candle.get("high", 0))}
+                            Low: {self._safe_float_format(candle.get("low", 0))}
+                            Close: {self._safe_float_format(candle.get("close", 0))}
+                            Volume: {self._safe_float_format(candle.get("volume", 0))}
                     """)
                     
-                    indicators = candle["indicators"]
+                    indicators = candle.get("indicators", {})
                     if len(indicators) > 0:
-                        indicators_string = ", ".join([f"{indicator}: {float(value):.2f}" for indicator, value in indicators.items()])
+                        indicators_string = ", ".join([f"{indicator}: {self._safe_float_format(value)}" for indicator, value in indicators.items()])
                         symbol_string += dedent(f"""Indicators: {indicators_string}""")
                     else:
                         symbol_string += dedent(f"""Indicators: No indicators available now.""")

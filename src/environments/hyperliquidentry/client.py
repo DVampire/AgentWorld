@@ -2,6 +2,7 @@
 
 from typing import Dict, Optional, Any, List
 import logging
+import time
 
 # Hyperliquid Python SDK
 try:
@@ -215,6 +216,34 @@ class HyperliquidClient:
         }
         """
         return await self.get_user_state()
+    
+    async def get_symbol_data(self, symbol: str) -> Dict[str, Any]:
+        """Get symbol data for a symbol.
+        
+        Args:
+            symbol (str): Symbol to get data for (e.g., 'BTC', 'ETH')
+            
+        Returns:
+            [
+                {
+                    T: int,
+                    c: float string,
+                    h: float string,
+                    i: str,
+                    l: float string,
+                    n: int,
+                    o: float string,
+                    s: string,
+                    t: int,
+                    v: float string
+                },
+                ...
+            ]
+        """
+        start_time = int(time.time() * 1000) - 60 * 1000 # 1 minute ago
+        end_time = int(time.time() * 1000)
+        symbol_data = self.info.candles_snapshot(symbol, "1m", start_time, end_time)
+        return symbol_data
 
     async def get_positions(self) -> List[Dict[str, Any]]:
         """Get open positions.
@@ -480,9 +509,6 @@ class HyperliquidClient:
         if not self.exchange:
             raise Exception("Private key required for order closing. Call set_private_key() first.")
         
-        if size is None or size <= 0:
-            raise Exception("Size must be provided and greater than 0")
-        
         if order_type == "Limit" and price is None:
             raise Exception("Price must be provided for limit orders")
         
@@ -514,7 +540,7 @@ class HyperliquidClient:
             # So the side parameter is ignored for Market orders, but kept for consistency
             close_order_result = self.exchange.market_close(
                 coin=symbol,
-                sz=size,
+                sz=None, # close all positions
                 px=None,
                 slippage=0.05,
                 cloid=None,

@@ -110,10 +110,10 @@ class FirecrawlSearch(BaseTool):
                 "description": item.description or ""
             } for item in search_items], ensure_ascii=False, indent=2)
             
-            return ToolResponse(content=results_json, extra={"data": search_items})
+            return ToolResponse(success=True, message=results_json, extra={"data": search_items})
             
         except Exception as e:
-            return ToolResponse(content=f"Error in asynchronous execution: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in asynchronous execution: {str(e)}")
 
     def _run(self, query: str, num_results: Optional[int] = 5, country: Optional[str] = "us", lang: Optional[str] = "en", filter_year: Optional[int] = None) -> ToolResponse:
         """Convert a file to markdown synchronously (fallback)."""
@@ -126,7 +126,7 @@ class FirecrawlSearch(BaseTool):
             finally:
                 loop.close()
         except Exception as e:
-            return ToolResponse(content=f"Error in synchronous execution: {str(e)}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {str(e)}")
     
     def get_tool_config(self) -> Dict[str, Any]:
         """Get tool configuration."""

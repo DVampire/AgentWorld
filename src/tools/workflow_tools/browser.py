@@ -18,7 +18,6 @@ _BROWSER_TOOL_DESCRIPTION = """Use the browser to interact with the internet to 
 
 class BrowserToolArgs(BaseModel):
     task: str = Field(description="The task to complete.")
-    base_dir: str = Field(description="The directory to save the files.")
 
 @tcp.tool()
 class BrowserTool(BaseTool):
@@ -35,7 +34,7 @@ class BrowserTool(BaseTool):
         description="The model to use for the browser."
     )
     
-    def __init__(self, model_name: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, **kwargs):
         
         super().__init__(**kwargs)
         
@@ -45,21 +44,20 @@ class BrowserTool(BaseTool):
             if "browser_tool" in config:
                 self.model_name = config.browser_tool.get("model_name", "bs-gpt-4.1")
         
-        
-    async def _arun(self, task: str, base_dir: str) -> ToolResponse:
+        self.base_dir = assemble_project_path(base_dir)
+        os.makedirs(self.base_dir, exist_ok=True)
+                
+    async def _arun(self, task: str) -> ToolResponse:
         agent = None
         try:
-            base_dir = assemble_project_path(base_dir)
-            os.makedirs(base_dir, exist_ok=True)
-
             try:
                 agent = Agent(
                     task=task,
                     llm=model_manager.get(self.model_name),
                     page_extraction_llm=model_manager.get(self.model_name),
-                    file_system_path=base_dir,
-                    generate_gif=os.path.join(base_dir, "browser.gif"),
-                    save_conversation_path=os.path.join(base_dir, "logs"),
+                    file_system_path=self.base_dir,
+                    generate_gif=os.path.join(self.base_dir, "browser.gif"),
+                    save_conversation_path=os.path.join(self.base_dir, "logs"),
                     max_steps=50,
                     verbose=True,
                 )
@@ -95,14 +93,14 @@ class BrowserTool(BaseTool):
                 except Exception as e:
                     logger.warning(f"Error during browser cleanup: {e}")
         
-    def _run(self, task: str, base_dir: str) -> ToolResponse:
+    def _run(self, task: str) -> ToolResponse:
         """Execute deep analysis synchronously (fallback)."""
         try:
             # Run async version
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(self._arun(task, base_dir))
+                return loop.run_until_complete(self._arun(task))
             finally:
                 loop.close()
         except Exception as e:

@@ -263,7 +263,14 @@ class DeepResearcherTool(BaseTool):
             """Fetch content from a single page."""
             try:
                 response = await self.web_fetcher._arun(result.url)
-                return response.content
+                if isinstance(response, ToolResponse):
+                    if response.success:
+                        return response.message
+                    else:
+                        return f"Failed to fetch page content: {response.message}"
+                else:
+                    # Fallback for non-ToolResponse responses
+                    return str(response)
             except Exception as e:
                 logger.warning(f"Failed to fetch page content for {result.url}: {e}")
                 return f"Failed to fetch page content: {e}."

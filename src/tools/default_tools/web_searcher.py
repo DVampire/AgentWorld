@@ -277,10 +277,8 @@ class WebSearcherTool(BaseTool):
 
     def _get_tool_order(self) -> List[str]:
         """Determines the order in which to try search engines."""
-        preferred = (
-            self.tool if self.tool else "firecrawl"
-        )
-        fallbacks = [tool for tool in self.fallback_tools]
+        preferred = getattr(self, 'tool', None) or "firecrawl_search"
+        fallbacks = list(getattr(self, 'fallback_tools', []))
 
         # Start with preferred engine, then fallbacks, then remaining engines
         tool_order = [preferred] if preferred in self.search_tools else []
@@ -307,7 +305,7 @@ class WebSearcherTool(BaseTool):
     ) -> List[SearchItem]:
         """Execute search with the given tool and parameters."""
         
-        results = await tool.ainvoke(
+        result = await tool.ainvoke(
             input={
                 "query": query,
                 "num_results": num_results,
@@ -317,9 +315,17 @@ class WebSearcherTool(BaseTool):
             }
         )
         
-        results = results.extra["data"]
-        
-        return results
+        # Handle ToolResponse
+        if isinstance(result, ToolResponse):
+            if not result.success:
+                raise ValueError(f"Search tool failed: {result.message}")
+            if result.extra and "data" in result.extra:
+                return result.extra["data"]
+            else:
+                raise ValueError(f"Search tool returned invalid response: missing data in extra")
+        else:
+            # Fallback: assume result is directly the data
+            return result if isinstance(result, list) else []
     
     def _run(self, query: str, num_results: Optional[int] = 5, lang: Optional[str] = "en", country: Optional[str] = "us", filter_year: Optional[int] = None) -> ToolResponse:
         """Execute a Web search synchronously (fallback).

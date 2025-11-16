@@ -168,6 +168,22 @@ async def test_client():
             import traceback
             traceback.print_exc()
             results["orders"] = None
+            
+    
+    # Test 6: Get symbol data
+    print("\n" + "-" * 80)
+    print("🔍 Test 6: get_symbol_data()")
+    print("-" * 80)
+    try:
+        symbol_data = await client.get_symbol_data("BTC")
+        print(f"✅ Symbol data retrieved successfully")
+        print(f"| 📝 Symbol data: \n{json.dumps(symbol_data, indent=4)}")
+        results["symbol_data"] = symbol_data
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        results["symbol_data"] = None
     
     print("\n" + "=" * 80)
     print("✅ Client tests completed")
@@ -600,10 +616,10 @@ async def async_main():
     
     
     # Test client basic functionality
-    # await test_client()
+    await test_client()
     
     # Test order creation
-    await test_orders()
+    # await test_orders()
 
 
 async def main():

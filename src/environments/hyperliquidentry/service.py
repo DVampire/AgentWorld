@@ -390,6 +390,12 @@ class HyperliquidService:
                         position_amt = float(szi_str) if szi_str else 0.0
                     except (ValueError, TypeError):
                         position_amt = 0.0
+                        
+                    symbol_data = await client.get_symbol_data(pos_data.get('coin', ''))
+                    if symbol_data:
+                        last_price = symbol_data[-1].get('c', '0')
+                    else:
+                        last_price = '0'
                     
                     # Only include positions with non-zero size
                     if position_amt != 0:
@@ -397,7 +403,8 @@ class HyperliquidService:
                             "symbol": pos_data.get('coin', ''),
                             "position_amt": str(position_amt),
                             "entry_price": pos_data.get('entryPx', '0'),
-                            "mark_price": pos_data.get('markPx', '0'),
+                            "mark_price": last_price,
+                            "return_on_equity": pos_data.get('returnOnEquity', '0'),
                             "unrealized_profit": pos_data.get('unrealizedPnl', '0'),
                             "leverage": pos_data.get('leverage', {}).get('value', '1') if isinstance(pos_data.get('leverage'), dict) else '1',
                             "trade_type": "perpetual",

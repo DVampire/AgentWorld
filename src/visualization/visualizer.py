@@ -104,7 +104,7 @@ class TracerVisualizer:
                     args = action_item.get("args", {})
                     if isinstance(args, dict):
                         action_type = args.get("action", "").upper()
-                        if action_type in ["LONG", "SHORT"]:
+                        if action_type in ["LONG", "SHORT", "CLOSE_LONG", "CLOSE_SHORT"]:
                             actions.append({
                                 "type": action_type,
                                 "symbol": args.get("symbol", ""),
@@ -206,8 +206,8 @@ class TracerVisualizer:
                 # Extract actions
                 actions = self._extract_actions(record)
                 if actions:
-                    # Check if any action is LONG or SHORT (not all HOLD)
-                    has_trading_action = any(a["type"] in ["LONG", "SHORT"] for a in actions)
+                    # Check if any action is LONG, SHORT, CLOSE_LONG, or CLOSE_SHORT (not all HOLD)
+                    has_trading_action = any(a["type"] in ["LONG", "SHORT", "CLOSE_LONG", "CLOSE_SHORT"] for a in actions)
                     if has_trading_action:
                         # Get thinking from action_data
                         action_data = record.get("action", {})
@@ -255,15 +255,69 @@ class TracerVisualizer:
             fig.update_layout(title='Account Value Over Time - No Data')
             return json.dumps(fig, cls=PlotlyJSONEncoder)
         
-        # Main account value line
+        # Main account value line (left Y-axis)
         fig.add_trace(go.Scatter(
             x=data["timestamps"],
             y=data["account_values"],
             mode='lines',
             name='Account Value',
             line=dict(color='blue', width=2),
-            hovertemplate='<b>Time:</b> %{x}<br><b>Account Value:</b> $%{y:,.2f}<extra></extra>'
+            hovertemplate='<b>Time:</b> %{x}<br><b>Account Value:</b> $%{y:,.2f}<extra></extra>',
+            yaxis='y'
         ))
+        
+        # Add cryptocurrency price lines (right Y-axis) - normalized as percentage change
+        colors = ['#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22']
+        if data.get("crypto_prices") and data.get("crypto_symbols"):
+            for idx, symbol in enumerate(data["crypto_symbols"]):
+                prices = data["crypto_prices"].get(symbol, [])
+                if prices and any(p is not None for p in prices):
+                    # Find first valid price as baseline
+                    baseline_price = None
+                    for price in prices:
+                        if price is not None:
+                            baseline_price = price
+                            break
+                    
+                    if baseline_price and baseline_price > 0:
+                        # Convert to percentage change from baseline
+                        price_changes = []
+                        original_prices = []
+                        for price in prices:
+                            if price is not None:
+                                pct_change = ((price - baseline_price) / baseline_price) * 100
+                                price_changes.append(pct_change)
+                                original_prices.append(price)
+                            else:
+                                price_changes.append(None)
+                                original_prices.append(None)
+                        
+                        color = colors[idx % len(colors)]
+                        # Create custom hover data with both percentage and original price
+                        hover_texts = []
+                        for i, (pct, orig, ts) in enumerate(zip(price_changes, original_prices, data["timestamps"])):
+                            if pct is not None and orig is not None:
+                                hover_texts.append(
+                                    f"<b>Time:</b> {ts}<br>"
+                                    f"<b>{symbol} Price:</b> ${orig:,.2f}<br>"
+                                    f"<b>Change:</b> {pct:+.2f}%"
+                                )
+                            else:
+                                hover_texts.append(None)
+                        
+                        fig.add_trace(go.Scatter(
+                            x=data["timestamps"],
+                            y=price_changes,
+                            mode='lines',
+                            name=f'{symbol} Price',
+                            line=dict(color=color, width=1.5, dash='dot'),
+                            customdata=original_prices,  # Store original prices for hover
+                            hovertemplate='%{hovertext}<extra></extra>',
+                            hovertext=hover_texts,
+                            yaxis='y2',
+                            visible=True,  # Visible by default
+                            connectgaps=False  # Don't connect gaps where price is None
+                        ))
         
         # Add action markers
         long_x = []
@@ -272,6 +326,12 @@ class TracerVisualizer:
         short_x = []
         short_y = []
         short_data = []
+        close_long_x = []
+        close_long_y = []
+        close_long_data = []
+        close_short_x = []
+        close_short_y = []
+        close_short_data = []
         
         for point in data["action_points"]:
             timestamp = point["timestamp"]
@@ -283,11 +343,18 @@ class TracerVisualizer:
             hover_text += f"<b>Account Value:</b> ${account_value:,.2f}<br>"
             hover_text += "<b>Actions:</b><br>"
             for action in actions:
-                hover_text += f"  • {action['type']} {action['symbol']} (qty: {action['qty']}, leverage: {action['leverage']}x)<br>"
+                action_type = action['type']
+                symbol = action['symbol']
+                if action_type in ['LONG', 'SHORT']:
+                    hover_text += f"  • {action_type} {symbol} (qty: {action.get('qty', 0)}, leverage: {action.get('leverage', 1)}x)<br>"
+                else:
+                    hover_text += f"  • {action_type} {symbol}<br>"
             
-            # Separate LONG and SHORT actions
+            # Separate LONG, SHORT, CLOSE_LONG, and CLOSE_SHORT actions
             has_long = any(a["type"] == "LONG" for a in actions)
             has_short = any(a["type"] == "SHORT" for a in actions)
+            has_close_long = any(a["type"] == "CLOSE_LONG" for a in actions)
+            has_close_short = any(a["type"] == "CLOSE_SHORT" for a in actions)
             
             if has_long:
                 long_x.append(timestamp)
@@ -298,6 +365,16 @@ class TracerVisualizer:
                 short_x.append(timestamp)
                 short_y.append(account_value)
                 short_data.append(point)
+            
+            if has_close_long:
+                close_long_x.append(timestamp)
+                close_long_y.append(account_value)
+                close_long_data.append(point)
+            
+            if has_close_short:
+                close_short_x.append(timestamp)
+                close_short_y.append(account_value)
+                close_short_data.append(point)
         
         # Add LONG markers
         if long_x:
@@ -361,14 +438,99 @@ class TracerVisualizer:
                 showlegend=True
             ))
         
-        fig.update_layout(
-            title='Account Value Over Time',
+        # Add CLOSE_LONG markers
+        if close_long_x:
+            # Create hover text for each point
+            close_long_hover = []
+            for point in close_long_data:
+                hover_text = f"<b>Time:</b> {point['timestamp']}<br>"
+                hover_text += f"<b>Account Value:</b> ${point['account_value']:,.2f}<br>"
+                hover_text += "<b>Actions:</b><br>"
+                for action in point['actions']:
+                    if action['type'] == 'CLOSE_LONG':
+                        hover_text += f"  • {action['type']} {action['symbol']}<br>"
+                hover_text += "<b>Click for details</b>"
+                close_long_hover.append(hover_text)
+            
+            fig.add_trace(go.Scatter(
+                x=close_long_x,
+                y=close_long_y,
+                mode='markers',
+                name='CLOSE_LONG Action',
+                marker=dict(
+                    size=12,
+                    color='lightgreen',
+                    symbol='square',
+                    line=dict(width=2, color='white')
+                ),
+                customdata=close_long_data,
+                hovertemplate='%{hovertext}<extra></extra>',
+                hovertext=close_long_hover,
+                showlegend=True
+            ))
+        
+        # Add CLOSE_SHORT markers
+        if close_short_x:
+            # Create hover text for each point
+            close_short_hover = []
+            for point in close_short_data:
+                hover_text = f"<b>Time:</b> {point['timestamp']}<br>"
+                hover_text += f"<b>Account Value:</b> ${point['account_value']:,.2f}<br>"
+                hover_text += "<b>Actions:</b><br>"
+                for action in point['actions']:
+                    if action['type'] == 'CLOSE_SHORT':
+                        hover_text += f"  • {action['type']} {action['symbol']}<br>"
+                hover_text += "<b>Click for details</b>"
+                close_short_hover.append(hover_text)
+            
+            fig.add_trace(go.Scatter(
+                x=close_short_x,
+                y=close_short_y,
+                mode='markers',
+                name='CLOSE_SHORT Action',
+                marker=dict(
+                    size=12,
+                    color='lightcoral',
+                    symbol='square',
+                    line=dict(width=2, color='white')
+                ),
+                customdata=close_short_data,
+                hovertemplate='%{hovertext}<extra></extra>',
+                hovertext=close_short_hover,
+                showlegend=True
+            ))
+        
+        # Create layout with dual Y-axes
+        layout = dict(
+            title='Account Value & Cryptocurrency Prices Over Time',
             xaxis_title='Time',
-            yaxis_title='Account Value ($)',
+            yaxis=dict(
+                title=dict(text='Account Value ($)', font=dict(color='blue')),
+                tickfont=dict(color='blue'),
+                side='left'
+            ),
+            yaxis2=dict(
+                title=dict(text='Price Change (%)', font=dict(color='orange')),
+                tickfont=dict(color='orange'),
+                anchor='x',
+                overlaying='y',
+                side='right'
+            ),
             hovermode='closest',
             height=500,
-            template='plotly_white'
+            template='plotly_white',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.25,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=10)
+            ),
+            margin=dict(b=100)  # Add bottom margin for horizontal legend
         )
+        
+        fig.update_layout(**layout)
         
         return json.dumps(fig, cls=PlotlyJSONEncoder)
     

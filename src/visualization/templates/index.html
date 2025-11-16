@@ -59,6 +59,12 @@
         .action-item.short {
             border-left-color: #dc3545;
         }
+        .action-item.close-long {
+            border-left-color: #90ee90;
+        }
+        .action-item.close-short {
+            border-left-color: #f08080;
+        }
         .thinking-box {
             margin-top: 15px;
             padding: 15px;
@@ -173,8 +179,8 @@
                         const point = eventData.points[0];
                         const traceName = point.data.name;
                         
-                        // Check if it's an action marker (LONG or SHORT)
-                        if (traceName && (traceName === 'LONG Action' || traceName === 'SHORT Action')) {
+                        // Check if it's an action marker (LONG, SHORT, CLOSE_LONG, or CLOSE_SHORT)
+                        if (traceName && (traceName === 'LONG Action' || traceName === 'SHORT Action' || traceName === 'CLOSE_LONG Action' || traceName === 'CLOSE_SHORT Action')) {
                             // Get customdata - it's an array, get the element at pointNumber
                             const pointNumber = point.pointNumber;
                             const customData = point.data.customdata;
@@ -249,17 +255,24 @@
             
             if (point.actions && point.actions.length > 0) {
                 point.actions.forEach((action, index) => {
-                    const actionClass = action.type.toLowerCase();
+                    const actionClass = action.type.toLowerCase().replace('_', '-');
                     actionHtml += '<div class="action-item ' + actionClass + '">';
                     actionHtml += '<h4>' + action.type + ' ' + action.symbol + '</h4>';
                     actionHtml += '<div class="action-details">';
-                    actionHtml += '<p><strong>Quantity:</strong> ' + action.qty + '</p>';
-                    actionHtml += '<p><strong>Leverage:</strong> ' + action.leverage + 'x</p>';
-                    if (action.stop_loss_price) {
-                        actionHtml += '<p><strong>Stop Loss:</strong> $' + action.stop_loss_price + '</p>';
-                    }
-                    if (action.take_profit_price) {
-                        actionHtml += '<p><strong>Take Profit:</strong> $' + action.take_profit_price + '</p>';
+                    // Only show qty and leverage for LONG and SHORT actions
+                    if (action.type === 'LONG' || action.type === 'SHORT') {
+                        if (action.qty !== undefined && action.qty !== null) {
+                            actionHtml += '<p><strong>Quantity:</strong> ' + action.qty + '</p>';
+                        }
+                        if (action.leverage !== undefined && action.leverage !== null) {
+                            actionHtml += '<p><strong>Leverage:</strong> ' + action.leverage + 'x</p>';
+                        }
+                        if (action.stop_loss_price) {
+                            actionHtml += '<p><strong>Stop Loss:</strong> $' + action.stop_loss_price + '</p>';
+                        }
+                        if (action.take_profit_price) {
+                            actionHtml += '<p><strong>Take Profit:</strong> $' + action.take_profit_price + '</p>';
+                        }
                     }
                     actionHtml += '</div>';
                     actionHtml += '</div>';
