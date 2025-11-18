@@ -17,7 +17,7 @@ from src.tools import tcp
 from src.environments import ecp
 from src.agents import acp
 from src.transformation import transformation
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')

@@ -13,7 +13,7 @@ from src.tools.protocol.types import ToolInfo, ToolResponse
 from src.tools.protocol import tcp
 from src.logger import logger
 from src.config import config
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 
 
 class ToolDiscoveryResult(BaseModel):

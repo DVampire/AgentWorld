@@ -37,6 +37,7 @@ class InsertRequest(BaseModel):
     """Request for inserting data into a table."""
     table_name: str = Field(description="Name of the table")
     data: Union[Dict[str, Any], List[Dict[str, Any]]] = Field(description="Data to insert")
+    on_conflict: Optional[str] = Field(default=None, description="Conflict resolution: 'REPLACE' for INSERT OR REPLACE, 'IGNORE' for INSERT OR IGNORE")
 
 
 class UpdateRequest(BaseModel):

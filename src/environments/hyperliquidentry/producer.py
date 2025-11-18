@@ -1,13 +1,10 @@
 """Data producer: receives data from Hyperliquid WebSocket streams and writes to database."""
 from __future__ import annotations
-import threading
 import asyncio
 from typing import Optional, List, Dict, TYPE_CHECKING
 
 from src.logger import logger
 from src.environments.hyperliquidentry.candle import CandleHandler
-from src.environments.hyperliquidentry.trades import TradesHandler
-from src.environments.hyperliquidentry.l2book import L2BookHandler
 from src.environments.hyperliquidentry.types import DataStreamType
 from src.environments.hyperliquidentry.websocket import HyperliquidWebSocket
 
@@ -16,14 +13,15 @@ if TYPE_CHECKING:
 
 
 class DataProducer:
-    """Producer: receives data from Hyperliquid WebSocket streams and writes to database."""
+    """Producer: receives data from Hyperliquid WebSocket streams and writes to database.
+    
+    Runs as a background async task, not blocking the main event loop.
+    """
     
     def __init__(
         self,
         account: 'AccountInfo',
         candle_handler: CandleHandler,
-        trades_handler: TradesHandler,
-        l2book_handler: L2BookHandler,
         symbols: Dict[str, Dict],
         max_concurrent_writes: int = 10,
         testnet: bool = False,
@@ -33,8 +31,6 @@ class DataProducer:
         Args:
             account: Hyperliquid account information
             candle_handler: Candle data handler
-            trades_handler: Trades data handler
-            l2book_handler: L2Book data handler
             symbols: Symbol dictionary
             max_concurrent_writes: Maximum concurrent database writes
             testnet: Whether to use testnet
@@ -44,14 +40,11 @@ class DataProducer:
         self.testnet = testnet
         
         self._candle_handler = candle_handler
-        self._trades_handler = trades_handler
-        self._l2book_handler = l2book_handler
         
         self._data_queue: Optional[asyncio.Queue] = None
         self._data_semaphore: Optional[asyncio.Semaphore] = None
         self._data_stream_running: bool = False
-        self._data_stream_thread: Optional[threading.Thread] = None
-        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._stream_task: Optional[asyncio.Task] = None
         self._max_concurrent_writes = max_concurrent_writes
         self._ws_client: Optional[HyperliquidWebSocket] = None
         
@@ -81,18 +74,6 @@ class DataProducer:
                 if data_type == DataStreamType.CANDLE:
                     # Process candle data with minute-level aggregation
                     await self._process_candle_data(data, symbol)
-                elif data_type == DataStreamType.TRADES:
-                    result = await self._trades_handler.stream_insert(data, symbol)
-                    if result:
-                        logger.debug(f"| ✅ Trades data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert trades data for {symbol}")
-                elif data_type == DataStreamType.L2BOOK:
-                    result = await self._l2book_handler.stream_insert(data, symbol)
-                    if result:
-                        logger.debug(f"| ✅ L2Book data inserted for {symbol}")
-                    else:
-                        logger.warning(f"| ⚠️  Failed to insert l2Book data for {symbol}")
             except Exception as e:
                 logger.error(f"| ❌ Error handling {data_type.value} data for {symbol}: {e}", exc_info=True)
     
@@ -124,10 +105,7 @@ class DataProducer:
             symbol: Symbol name (uppercase)
         """
         try:
-            timestamp = data.get("timestamp")  # Minute timestamp (e.g., "10:00:00")
-            if not timestamp:
-                logger.warning(f"| ⚠️  Candle data missing timestamp for {symbol}")
-                return
+            timestamp = data.get("t", 0)  # Minute timestamp (e.g., "10:00:00")
             
             # Initialize tracking for this symbol
             if symbol not in self._waiting_for_new_minute:
@@ -135,6 +113,8 @@ class DataProducer:
                 logger.info(f"| ⏳ Waiting for first complete minute for {symbol}")
             
             current_minute = self._current_minute.get(symbol)
+            
+            logger.debug(f"| 📦 Current minute for {symbol}: {current_minute}, timestamp: {timestamp}")
             
             # Check if new minute started
             if current_minute is None:
@@ -204,7 +184,7 @@ class DataProducer:
             except Exception as e:
                 logger.error(f"| ❌ Error in data processor: {e}", exc_info=True)
     
-    def _create_message_handler(self):
+    async def _create_message_handler(self):
         """Create unified async message handler for WebSocket client."""
         async def on_message(ws, channel: str, data: Dict):
             """Handle incoming processed data from WebSocket (async).
@@ -218,20 +198,11 @@ class DataProducer:
                 if not self._data_stream_running:
                     return
                 
-                if not isinstance(data, dict) or "symbol" not in data:
-                    logger.warning(f"| 📊 Received unexpected data format: {data}")
-                    return
-                
-                symbol = data["symbol"].upper()  # Keep consistent with subscription (uppercase)
+                symbol = data.get("s", "").upper()  # Keep consistent with subscription (uppercase)
                 
                 # Only process minute-level candle data
                 if channel == "candle":
                     data_type = DataStreamType.CANDLE
-                    logger.debug(f"| 📡 Received candle data for {symbol} (timestamp: {data.get('timestamp')})")
-                else:
-                    # Ignore trades and l2Book - only minute-level candle is supported
-                    logger.debug(f"| 📊 Ignoring {channel} data (only minute-level candle is supported)")
-                    return
                 
                 # Process data directly (we're already in async context)
                 await self._data_handler_wrapper(data, symbol, data_type)
@@ -241,7 +212,7 @@ class DataProducer:
         
         return on_message
     
-    async def _data_handler_wrapper(self, processed_data: Dict, symbol: str, data_type: DataStreamType):
+    async def _data_handler_wrapper(self, data: Dict, symbol: str, data_type: DataStreamType):
         """Wrapper for data handler.
         
         Args:
@@ -255,7 +226,7 @@ class DataProducer:
                 try:
                     # Add with timeout to avoid blocking forever if queue is full
                     await asyncio.wait_for(
-                        self._data_queue.put((processed_data, symbol, data_type)),
+                        self._data_queue.put((data, symbol, data_type)),
                         timeout=5.0
                     )
                     logger.debug(f"| ✅ Added {symbol} ({data_type.value}) data to queue")
@@ -266,93 +237,82 @@ class DataProducer:
         except Exception as e:
             logger.error(f"| ❌ Error in data handler wrapper for {symbol}: {e}", exc_info=True)
     
-    def _data_stream_worker(
+    async def _data_stream_worker(
         self,
         symbols: List[str],
         data_types: Optional[List[DataStreamType]] = None
     ):
-        """Worker thread for running data streams.
+        """Worker for running data streams.
         
         Args:
             symbols: List of symbols to subscribe to
             data_types: Optional list of data types to subscribe to (default: all types)
         """
-        loop = None
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            self._event_loop = loop
+            self._data_stream_running = True
+            self._data_queue = asyncio.Queue(maxsize=1000)
+            self._data_semaphore = asyncio.Semaphore(self._max_concurrent_writes)
             
-            async def setup_and_run():
-                nonlocal data_types  # Allow modification of outer scope variable
-                
-                self._data_stream_running = True
-                self._data_queue = asyncio.Queue(maxsize=1000)
-                self._data_semaphore = asyncio.Semaphore(self._max_concurrent_writes)
-                
-                logger.info(f"| ✅ Data queue initialized")
-                
-                processor_task = asyncio.create_task(self._data_processor())
-                logger.info(f"| ✅ Data processor started")
-                
-                # Default to candle only (minute-level) if not specified
-                if data_types is None:
-                    data_types = [DataStreamType.CANDLE]
-                
-                # Only support minute-level candle subscriptions
-                if DataStreamType.TRADES in data_types or DataStreamType.L2BOOK in data_types:
-                    logger.warning(f"| ⚠️  Only CANDLE (minute-level) subscriptions are supported. Ignoring TRADES and L2BOOK.")
-                    data_types = [DataStreamType.CANDLE]
-                
-                # Ensure tables exist for all symbols (only candle)
-                for symbol in symbols:
-                    if DataStreamType.CANDLE in data_types:
-                        await self._candle_handler.ensure_table_exists(symbol)
-                        logger.info(f"| ✅ Candle table created/verified for {symbol}")
-                
-                # Create unified async message handler
-                on_message = self._create_message_handler()
-                
-                # Initialize WebSocket client
-                logger.info(f"| 🚀 Initializing Hyperliquid WebSocket for {len(symbols)} symbols...")
-                self._ws_client = HyperliquidWebSocket(
-                    on_message=on_message,
-                    on_error=lambda ws, err: logger.error(f"| ❌ WS error: {err}"),
-                    on_close=lambda ws: logger.info("| 🛑 WebSocket closed"),
-                    on_open=lambda ws: logger.info("| ✅ WebSocket opened"),
-                    testnet=self.testnet
-                )
-                
-                # Subscribe to data streams (only minute-level candle)
-                for symbol in symbols:
-                    if DataStreamType.CANDLE in data_types:
-                        self._ws_client.subscribe_candle(symbol, interval="1m")
-                        logger.info(f"| 📡 Subscribed to minute-level candle: {symbol} (interval: 1m)")
-                    # TRADES and L2BOOK subscriptions are disabled - only minute-level candle is supported
-                
-                # Start WebSocket (pass current event loop)
-                self._ws_client.start(loop=loop)
-                
-                logger.info(f"| ✅ All subscriptions completed for {len(symbols)} symbols")
-                
-                # Keep the stream running
-                while self._data_stream_running:
-                    await asyncio.sleep(1)
-                
-            loop.run_until_complete(setup_and_run())
+            logger.info(f"| ✅ Data queue initialized")
             
+            processor_task = asyncio.create_task(self._data_processor())
+            logger.info(f"| ✅ Data processor started")
+            
+            # Default to candle only (minute-level) if not specified
+            if data_types is None:
+                data_types = [DataStreamType.CANDLE]
+            
+            # Only support minute-level candle subscriptions
+            if DataStreamType.TRADES in data_types or DataStreamType.L2BOOK in data_types:
+                logger.warning(f"| ⚠️  Only CANDLE (minute-level) subscriptions are supported. Ignoring TRADES and L2BOOK.")
+                data_types = [DataStreamType.CANDLE]
+            
+            # Ensure tables exist for all symbols (only candle)
+            for symbol in symbols:
+                if DataStreamType.CANDLE in data_types:
+                    await self._candle_handler.ensure_table_exists(symbol)
+                    logger.info(f"| ✅ Candle table created/verified for {symbol}")
+            
+            # Create unified async message handler
+            on_message = await self._create_message_handler()
+            
+            # Initialize WebSocket client
+            logger.info(f"| 🚀 Initializing Hyperliquid WebSocket for {len(symbols)} symbols...")
+            self._ws_client = HyperliquidWebSocket(
+                on_message=on_message,
+                on_error=lambda ws, err: logger.error(f"| ❌ WS error: {err}"),
+                on_close=lambda ws: logger.info("| 🛑 WebSocket closed"),
+                on_open=lambda ws: logger.info("| ✅ WebSocket opened"),
+                testnet=self.testnet
+            )
+            
+            # Subscribe to data streams (only minute-level candle)
+            for symbol in symbols:
+                if DataStreamType.CANDLE in data_types:
+                    await self._ws_client.subscribe_candle(symbol, interval="1m")
+                    logger.info(f"| 📡 Subscribed to minute-level candle: {symbol} (interval: 1m)")
+            
+            # Start WebSocket (pass current event loop)
+            loop = asyncio.get_running_loop()
+            await self._ws_client.start(loop=loop)
+            
+            logger.info(f"| ✅ All subscriptions completed for {len(symbols)} symbols")
+            
+            # Keep the stream running
+            while self._data_stream_running:
+                await asyncio.sleep(1)
+            
+        except asyncio.CancelledError:
+            logger.info("| ℹ️  Data stream worker cancelled")
         except Exception as e:
             logger.error(f"| ❌ Error in data stream worker: {e}", exc_info=True)
-        finally:
-            if loop:
-                loop.close()
     
-    def start(
+    async def start(
         self,
         symbols: List[str],
         data_types: Optional[List[DataStreamType]] = None
     ) -> None:
-        """Start data stream for given symbols.
+        """Start data stream for given symbols as a background task.
         
         Args:
             symbols: List of symbols to subscribe to
@@ -367,16 +327,12 @@ class DataProducer:
         
         logger.info(f"| 📡 Starting data stream for {len(symbols)} symbols: {symbols}")
         
-        self._data_stream_thread = threading.Thread(
-            target=self._data_stream_worker,
-            args=(symbols, data_types),
-            daemon=True
-        )
-        self._data_stream_thread.start()
+        # Start as a background task (non-blocking)
+        self._stream_task = asyncio.create_task(self._data_stream_worker(symbols, data_types))
         
-        logger.info("| ✅ Data stream thread started")
+        logger.info("| ✅ Data stream task started (running in background)")
     
-    def stop(self) -> None:
+    async def stop(self) -> None:
         """Stop the data stream."""
         if not self._data_stream_running:
             logger.warning("| ⚠️  Data stream not running")
@@ -387,37 +343,26 @@ class DataProducer:
         
         # Flush buffered candles before stopping
         try:
-            if self._event_loop and self._candle_handler:
-                logger.info("| 🔄 Flushing buffered candle data...")
-                future = asyncio.run_coroutine_threadsafe(
-                    self._flush_candle_buffers(),
-                    self._event_loop
-                )
-                future.result(timeout=10.0)
+            logger.info("| 🔄 Flushing buffered candle data...")
+            await self._flush_candle_buffers()
         except Exception as e:
             logger.warning(f"| ⚠️  Error flushing candle buffers: {e}")
         
-        # Stop WebSocket client (async)
+        # Stop WebSocket client
         try:
-            if self._ws_client and self._event_loop:
+            if self._ws_client:
                 logger.info("| 🛑 Stopping WebSocket client...")
-                future = asyncio.run_coroutine_threadsafe(
-                    self._ws_client.stop(),
-                    self._event_loop
-                )
-                future.result(timeout=10.0)  # Increased timeout to 10 seconds
-        except asyncio.CancelledError:
-            # CancelledError is expected when stopping, not an error
-            logger.debug("| ℹ️  WebSocket stop task was cancelled (expected)")
-        except TimeoutError:
-            # Timeout is not critical, WebSocket will be stopped anyway
-            logger.warning("| ⚠️  WebSocket stop timed out, but continuing cleanup...")
+                await self._ws_client.stop()
         except Exception as e:
             logger.warning(f"| ⚠️  Error stopping WebSocket client: {e}")
         
-        # Wait for thread to finish
-        if self._data_stream_thread and self._data_stream_thread.is_alive():
-            self._data_stream_thread.join(timeout=5.0)
+        # Cancel the stream task
+        if self._stream_task and not self._stream_task.done():
+            self._stream_task.cancel()
+            try:
+                await self._stream_task
+            except asyncio.CancelledError:
+                pass  # Expected when cancelling
         
         logger.info("| ✅ Data stream stopped")
     

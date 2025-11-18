@@ -28,6 +28,8 @@ from src.config import config
 from src.utils import get_env
 from src.environments import ecp
 from src.utils import get_standard_timestamp
+from src.environments.database.service import DatabaseService
+from src.environments.database.types import QueryRequest, SelectRequest
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Online Trading Agent Example')
@@ -538,7 +540,7 @@ async def test_complete_data_flow(use_testnet: bool = False):
     print("=" * 80)
     
     # Configuration
-    base_dir = Path(root) / "workdir" / "test_data_flow"
+    base_dir = Path(root) / "workdir" / "online_trading_agent"
     base_dir.mkdir(parents=True, exist_ok=True)
     
     # Test account (read-only, no private key needed for data stream)
@@ -563,18 +565,13 @@ async def test_complete_data_flow(use_testnet: bool = False):
             base_dir=str(base_dir),
             accounts=accounts,
             live=not use_testnet,  # Use mainnet for more active trading
-            auto_start_data_stream=False,  # We'll start it manually
+            auto_start_data_stream=True,  # We'll start it manually
             symbol=test_symbols,
             data_type="candle"
         )
         
         await service.initialize()
         print("✅ Service initialized successfully")
-        
-        # Start data stream
-        print("\n📡 Step 2: Starting data stream...")
-        service.start_data_stream(test_symbols)
-        print("✅ Data stream started")
         
         # Wait for data collection (need at least 60+ seconds for complete candle)
         wait_time = 90
@@ -639,6 +636,88 @@ async def test_complete_data_flow(use_testnet: bool = False):
         traceback.print_exc()
         return None
 
+async def test_database():
+    """Print database contents from online_trading_agent database."""
+    print("\n" + "=" * 60)
+    print("Database Contents")
+    print("=" * 60)
+    
+    # Database path: workdir/online_trading_agent/database/database.db
+    database_dir = Path(root) / "workdir" / "online_trading_agent" / "database"
+    database_service = DatabaseService(database_dir)
+    
+    try:
+        # Connect to database
+        await database_service.connect()
+        print(f"✅ Connected to database: {database_dir / 'database.db'}")
+        print()
+        
+        # Get all tables
+        tables_result = await database_service.get_tables()
+        if not tables_result.success:
+            print(f"❌ Failed to get tables: {tables_result.message}")
+            return
+        
+        tables_info = tables_result.extra.get("tables", [])
+        total_tables = tables_result.extra.get("total_tables", 0)
+        
+        print(f"📊 Found {total_tables} table(s):")
+        print()
+        
+        # Print each table's contents
+        for table_info in tables_info:
+            table_name = table_info["name"]
+            row_count = table_info.get("row_count", 0)
+            columns = table_info.get("columns", [])
+            
+            print(f"{'=' * 60}")
+            print(f"Table: {table_name}")
+            print(f"Rows: {row_count}")
+            print(f"{'=' * 60}")
+            
+            if row_count == 0:
+                print("(No data)")
+                print()
+                continue
+            
+            # Query all data from table first to get column names
+            select_request = SelectRequest(
+                table_name=table_name,
+                order_by="timestamp DESC",
+                limit=100  # Limit to 100 rows for display
+            )
+            
+            result = await database_service.select_data(select_request)
+            
+            if result.success:
+                data = result.extra.get("data", [])
+                if data:
+                    # Print each row as JSON string
+                    for row in data:
+                        print(json.dumps(row, ensure_ascii=False, indent=4))
+                        exit()
+                    
+                    if row_count > 100:
+                        print(f"\n... (showing first 100 of {row_count} rows)")
+                else:
+                    print("(No data returned)")
+            else:
+                print(f"❌ Failed to query table: {result.message}")
+            
+            print()
+        
+        print("=" * 60)
+        print("✅ Database contents printed successfully")
+        
+    except Exception as e:
+        print(f"❌ Error accessing database: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Disconnect
+        await database_service.disconnect()
+        print("🔌 Disconnected from database")
+
 
 async def async_main():
     """Run async tests."""
@@ -650,10 +729,19 @@ async def async_main():
     
     
     # Test client basic functionality
-    await test_client()
+    # await test_client()
     
     # Test order creation
     # await test_orders()
+    
+    # Test websocket candles
+    # await test_websocket_candles()
+    
+    # Test complete data flow
+    # await test_complete_data_flow()
+    
+    # Test database
+    await test_database()
 
 
 async def main():

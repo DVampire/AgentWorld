@@ -359,7 +359,7 @@ class HyperliquidEnvironment(BaseEnvironment):
         self, 
         start_date: Optional[str] = None, 
         end_date: Optional[str] = None, 
-        limit: Optional[int] = None
+        limit: Optional[int] = 30 # 30 minutes = 0.5 hours
     ) -> Dict[str, Any]:
         """Get historical candle data from database.
         
@@ -1102,39 +1102,92 @@ class HyperliquidEnvironment(BaseEnvironment):
             # Wait until the next minute boundary for minute-level trading
             await self._wait_for_next_minute_boundary()
             
-            # Get data (placeholder for now)
-            data_result = await self.get_data()
+            # Get data
+            data_result = await self.get_data(limit=30) # 30 minutes = 0.5 hours
             data_result = data_result.get("extra", {})
+            
+            candles_string = json.dumps(data_result.get("data", {}), indent=4)
+            
             candles = {}
+            indicators = {}
             for symbol, data in data_result.get("data", {}).items():
-                candles[symbol] = data.get("candle", [])
+                candles[symbol] = data.get("candles", [])
+                indicators[symbol] = data.get("indicators", {})
+            
             candles_string = ""
             for symbol, candles_list in candles.items():
-                symbol_string = dedent(f"""Symbol: {symbol}""")
+                if not candles_list:
+                    continue
                 
+                # Create table header
+                symbol_string = f"Symbol: {symbol}. History {len(candles_list)} minutes candles data.\n"
+                symbol_string += "| Timestamp | Open | High | Low | Close | Volume | Trade Count |\n"
+                symbol_string += "|-----------|------|------|-----|-------|--------|-------------|\n"
+                
+                # Add table rows
                 for candle in candles_list:
-                    
-                    symbol_string += dedent(f"""
-                            Timestamp: {candle["timestamp"]}
-                            Open: {self._safe_float_format(candle.get("open", 0))}
-                            High: {self._safe_float_format(candle.get("high", 0))}
-                            Low: {self._safe_float_format(candle.get("low", 0))}
-                            Close: {self._safe_float_format(candle.get("close", 0))}
-                            Volume: {self._safe_float_format(candle.get("volume", 0))}
-                    """)
-                    
-                    indicators = candle.get("indicators", {})
-                    if len(indicators) > 0:
-                        indicators_string = ", ".join([f"{indicator}: {self._safe_float_format(value)}" for indicator, value in indicators.items()])
-                        symbol_string += dedent(f"""Indicators: {indicators_string}""")
-                    else:
-                        symbol_string += dedent(f"""Indicators: No indicators available now.""")
-                        
+                    timestamp = candle.get("timestamp_local", "")
+                    open_val = self._safe_float_format(candle.get("open"))
+                    high_val = self._safe_float_format(candle.get("high"))
+                    low_val = self._safe_float_format(candle.get("low"))
+                    close_val = self._safe_float_format(candle.get("close"))
+                    volume_val = self._safe_float_format(candle.get("volume"))
+                    trade_count_val = self._safe_float_format(candle.get("trade_count"))
+                    symbol_string += f"| {timestamp:>10} | {open_val:>10} | {high_val:>10} | {low_val:>10} | {close_val:>10} | {volume_val:>10} | {trade_count_val:>11} |\n"
+                
                 candles_string += symbol_string + "\n"
+                
+            indicators_string = ""
+            for symbol, indicators_list in indicators.items():
+                if not indicators_list:
+                    continue
+                
+                # Get indicator names
+                indicator_names = self.hyperliquid_service.indicators_name
+                if not indicator_names:
+                    continue
+                
+                # Create table header
+                symbol_string = f"Symbol: {symbol}. History {len(indicators_list)} minutes indicators data.\n"
+                # Build header row: Timestamp | Timestamp (Local) | indicator1 | indicator2 | ...
+                header_cols = ["Timestamp"] + [name.upper() for name in indicator_names]
+                symbol_string += "| " + " | ".join(header_cols) + " |\n"
+                
+                # Build separator row
+                separator_cols = ["-----------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
+                separator = "| " + " | ".join(separator_cols) + " |\n"
+                symbol_string += separator
+                
+                # Add table rows
+                for indicator in indicators_list:
+                    timestamp = indicator.get("timestamp_local", "")
+                    row_values = [str(timestamp)]
+                    
+                    # Add indicator values in the same order as header
+                    for indicator_name in indicator_names:
+                        indicator_value = indicator.get(indicator_name, None)
+                        if indicator_value is not None:
+                            row_values.append(self._safe_float_format(indicator_value))
+                        else:
+                            row_values.append("")
+                    
+                    # Format row with alignment
+                    formatted_row = f"| {row_values[0]:>10} |"
+                    for val in row_values[1:]:
+                        formatted_row += f" {val:>12} |"
+                    formatted_row += "\n"
+                    symbol_string += formatted_row
+                
+                indicators_string += symbol_string + "\n"
             
             data_string = dedent(f"""
                 <data>
+                <candles>
                 {candles_string}
+                </candles>
+                <indicators>
+                {indicators_string}
+                </indicators>
                 </data>
             """)
             logger.info(f"| 📝 Data: {data_string}")

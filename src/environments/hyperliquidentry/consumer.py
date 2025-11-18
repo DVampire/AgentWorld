@@ -4,8 +4,6 @@ from typing import Optional, List, Dict
 from src.logger import logger
 from src.environments.protocol.types import ActionResult
 from src.environments.hyperliquidentry.candle import CandleHandler
-from src.environments.hyperliquidentry.trades import TradesHandler
-from src.environments.hyperliquidentry.l2book import L2BookHandler
 from src.environments.hyperliquidentry.types import DataStreamType, GetDataRequest
 from src.environments.hyperliquidentry.exceptions import HyperliquidError
 
@@ -16,19 +14,13 @@ class DataConsumer:
     def __init__(
         self,
         candle_handler: CandleHandler,
-        trades_handler: TradesHandler,
-        l2book_handler: L2BookHandler,
     ):
         """Initialize data consumer.
         
         Args:
             candle_handler: Candle data handler
-            trades_handler: Trades data handler
-            l2book_handler: L2Book data handler
         """
         self._candle_handler = candle_handler
-        self._trades_handler = trades_handler
-        self._l2book_handler = l2book_handler
     
     async def _get_data_from_handler(
         self, 
@@ -37,16 +29,16 @@ class DataConsumer:
         start_date: Optional[str] = None, 
         end_date: Optional[str] = None, 
         limit: Optional[int] = None
-    ) -> List[Dict]:
-        """Helper method to get data from handler."""
+    ) -> Dict[str, List[Dict]]:
+        """Helper method to get data from handler.
+        
+        Returns:
+            For CANDLE: Dict with 'candles' and 'indicators' keys, each containing a list of records
+        """
         if data_type == DataStreamType.CANDLE:
             return await self._candle_handler.get_data(symbol, start_date, end_date, limit)
-        elif data_type == DataStreamType.TRADES:
-            return await self._trades_handler.get_data(symbol, start_date, end_date, limit)
-        elif data_type == DataStreamType.L2BOOK:
-            return await self._l2book_handler.get_data(symbol, start_date, end_date, limit)
         else:
-            raise ValueError(f"Invalid data type: {data_type}")
+            raise ValueError(f"Invalid data type: {data_type}. Only CANDLE is supported.")
     
     async def get_data(self, request: GetDataRequest) -> ActionResult:
         """Get historical data from database.
@@ -69,8 +61,6 @@ class DataConsumer:
             
             # Get data for each symbol
             for symbol in symbols:
-                result_data[symbol] = {}
-                
                 logger.info(f"| 🔍 Getting {data_type.value} data for {symbol}...")
                 data = await self._get_data_from_handler(
                     symbol=symbol,
@@ -79,8 +69,14 @@ class DataConsumer:
                     end_date=request.end_date,
                     limit=request.limit
                 )
-                result_data[symbol][data_type.value] = data
-                total_rows += len(data)
+                
+                # For CANDLE, data is a dict with 'candles' and 'indicators'
+                if data_type == DataStreamType.CANDLE:
+                    result_data[symbol] = data  # Already contains 'candles' and 'indicators'
+                    total_rows += len(data.get('candles', [])) + len(data.get('indicators', []))
+                else:
+                    result_data[symbol] = {data_type.value: data}
+                    total_rows += len(data) if isinstance(data, list) else 0
             
             # Build message
             symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"

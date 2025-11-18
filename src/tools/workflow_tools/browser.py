@@ -6,7 +6,7 @@ from typing import Type, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from browser_use import Agent
 
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.utils import assemble_project_path
 from src.tools.protocol import tcp
 from src.config import config

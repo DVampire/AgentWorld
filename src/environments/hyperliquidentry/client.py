@@ -227,16 +227,16 @@ class HyperliquidClient:
         Returns:
             [
                 {
-                    T: int,
-                    c: float string,
-                    h: float string,
-                    i: str,
-                    l: float string,
-                    n: int,
-                    o: float string,
-                    s: string,
-                    t: int,
-                    v: float string
+                    T: int, # close time (ms)
+                    c: float string, # close price
+                    h: float string, # high price
+                    i: str, # interval
+                    l: float string, # low price
+                    n: int, # trade count
+                    o: float string, # open price
+                    s: string, # symbol
+                    t: int, # open time (ms)
+                    v: float string, # volume
                 },
                 ...
             ]

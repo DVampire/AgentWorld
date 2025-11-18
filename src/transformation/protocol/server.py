@@ -5,7 +5,7 @@ This server handles transformations between ECP, TCP, and ACP protocols.
 
 import asyncio
 from typing import Any, List, Optional, Type, Dict
-from langchain.tools import StructuredTool
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.config import config
@@ -20,7 +20,7 @@ from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.agents.protocol.types import AgentInfo
 from src.agents.protocol.server import acp
 from src.agents import ToolCallingAgent
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.utils import dedent
 from src.transformation.protocol.types import (
     TransformationType,

@@ -66,7 +66,7 @@ root = str(Path(__file__).resolve().parents[0])
 sys.path.append(root)
 
 from src.tools import tcp
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.logger import logger
 
 async def generate_report():

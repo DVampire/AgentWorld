@@ -1,7 +1,9 @@
 from typing import Any, Dict, Type, Union
 from pydantic import BaseModel, Field, create_model, ConfigDict
 import inflection
-from langchain.tools import BaseTool as LangchainBaseTool, StructuredTool as LangchainStructuredTool
+
+from langchain.tools import BaseTool as LangchainBaseTool
+from langchain_core.tools import StructuredTool as LangchainStructuredTool
 
 class BaseTool(LangchainBaseTool):
     """Base tool for the Tool Context Protocol."""

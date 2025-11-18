@@ -7,7 +7,7 @@ import asyncio
 from pydantic import BaseModel
 
 from src.logger import logger
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.environments.faiss.service import FaissService
 from src.environments.faiss.types import FaissAddRequest, FaissSearchRequest
 from src.utils import assemble_project_path

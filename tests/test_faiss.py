@@ -15,7 +15,7 @@ from src.environments.faiss.types import (
     FaissAddRequest,
     FaissDeleteRequest
 )
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.config import config
 from src.logger import logger
 

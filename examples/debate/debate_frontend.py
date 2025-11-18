@@ -25,7 +25,7 @@ load_dotenv(verbose=True)
 
 # Import project modules
 from src.config import config
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.agents import acp
 from src.logger import logger
 

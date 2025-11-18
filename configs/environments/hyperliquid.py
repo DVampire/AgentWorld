@@ -1,5 +1,18 @@
 """Configuration for Hyperliquid Environment."""
 
+indicators = [
+    "ATR",
+    "BB",
+    "CCI",
+    "EMA",
+    "KDJ",
+    "MACD",
+    "MFI",
+    "OBV",
+    "RSI",
+    "SMA",
+]
+
 # Hyperliquid Environment Configuration
 environment = dict(
     base_dir="workdir/hyperliquid",

@@ -1,8 +1,9 @@
 """Hyperliquid trading service implementation using REST API clients."""
-import asyncio
+import time
 import json
 from typing import Optional, Union, List, Dict
 from pathlib import Path
+
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
@@ -38,8 +39,6 @@ from src.environments.hyperliquidentry.exceptions import (
 )
 from src.environments.database.service import DatabaseService
 from src.environments.hyperliquidentry.candle import CandleHandler
-from src.environments.hyperliquidentry.trades import TradesHandler
-from src.environments.hyperliquidentry.l2book import L2BookHandler
 from src.environments.hyperliquidentry.producer import DataProducer
 from src.environments.hyperliquidentry.consumer import DataConsumer
 from src.environments.hyperliquidentry.types import DataStreamType
@@ -112,15 +111,15 @@ class HyperliquidService:
         self.database_service: Optional[DatabaseService] = None
         
         # Initialize data handlers
-        self._candle_handler: Optional[CandleHandler] = None
-        self._trades_handler: Optional[TradesHandler] = None
-        self._l2book_handler: Optional[L2BookHandler] = None
+        self.candle_handler: Optional[CandleHandler] = None
+        self.indicators_name: List[str] = []
         
         # Producer and Consumer
         self.data_producer: Optional[DataProducer] = None
         self.data_consumer: Optional[DataConsumer] = None
         
         self._max_concurrent_writes: int = 10  # Max concurrent database writes
+        self._max_historical_data_points: int = 120 # 120 minutes = 2 hours
     
     def _get_client(self, account_name: str) -> HyperliquidClient:
         """Get or create client for an account (lazy initialization).
@@ -155,54 +154,20 @@ class HyperliquidService:
             self.base_dir = Path(assemble_project_path(self.base_dir))
             self.base_dir.mkdir(parents=True, exist_ok=True)
             
-            # Initialize default client
-            for account_name, account in self.accounts.items():
-                self._clients[account_name] = HyperliquidClient(
-                    wallet_address=account.address,  # Wallet address
-                    private_key=account.private_key if account.private_key else None,
-                    testnet=self.testnet
-                )
+            # Step 1: Initialize accounts
+            await self._initialize_account()
             
-            # Test connection by getting default account info
-            for account_name in self.accounts.keys():
-                try:
-                    account_info = await self._clients[account_name].get_account()
-                    logger.info(f"| 📝 Connected to Hyperliquid {'live' if self.live else 'testnet'} account: {account_name}")
-                except Exception as e:
-                    logger.warning(f"| ⚠️  Failed to connect to account {account_name}: {e}")
-            
-            # Get available trading symbols
+            # Step 2: Get available trading symbols
             await self._load_symbols()
             
-            logger.info(f"| 📝 Found {len(self.symbols)} symbols.")
-            if len(self.symbols) > 0:
-                logger.info(f"| 📝 Sample symbols: {', '.join(list(self.symbols.keys())[:10])}")
+            # Step 3: Initialize database
+            await self._initialize_database()
             
-            # Initialize database
-            self.database_service = DatabaseService(self.database_base_dir)
-            await self.database_service.connect()
+            # Step 4: Initialize data handlers
+            await self._initialize_data_handlers()
             
-            # Initialize data handlers
-            self._candle_handler = CandleHandler(self.database_service)
-            self._trades_handler = TradesHandler(self.database_service)
-            self._l2book_handler = L2BookHandler(self.database_service)
-            
-            # Initialize producer and consumer
-            self.data_producer = DataProducer(
-                account=self.default_account,
-                candle_handler=self._candle_handler,
-                trades_handler=self._trades_handler,
-                l2book_handler=self._l2book_handler,
-                symbols=self.symbols,
-                max_concurrent_writes=self._max_concurrent_writes,
-                testnet=self.testnet
-            )
-            
-            self.data_consumer = DataConsumer(
-                candle_handler=self._candle_handler,
-                trades_handler=self._trades_handler,
-                l2book_handler=self._l2book_handler
-            )
+            # Step 5: Initialize producer and consumer
+            await self._initialize_producer_consumer()
             
             # Auto-start data stream if requested
             if self.auto_start_data_stream and self.symbol:
@@ -214,13 +179,71 @@ class HyperliquidService:
                     else:
                         data_types = [DataStreamType(self.data_type)]
                 logger.info(f"| 📡 Auto-starting data stream for {len(symbols)} symbols: {symbols}, data_types: {[dt.value for dt in data_types] if data_types else 'all'}")
-                self.start_data_stream(symbols, data_types)
+                await self.start_data_stream(symbols, data_types)
                 logger.info(f"| ✅ Data stream started successfully")
             
         except Exception as e:
             if "401" in str(e) or "Invalid" in str(e):
                 raise AuthenticationError(f"Invalid Hyperliquid credentials: {e}")
             raise HyperliquidError(f"Failed to initialize Hyperliquid service: {e}")
+        
+    async def _initialize_account(self) -> None:
+        """Initialize accounts."""
+        for account_name, account in self.accounts.items():
+            self._clients[account_name] = HyperliquidClient(
+                wallet_address=account.address,  # Wallet address
+                private_key=account.private_key if account.private_key else None,
+                testnet=self.testnet
+            )
+        
+        # Test connection by getting default account info
+        for account_name in self.accounts.keys():
+            try:
+                account_info = await self._clients[account_name].get_account()
+                logger.info(f"| 📝 Connected to Hyperliquid {'live' if self.live else 'testnet'} account: {account_name}")
+            except Exception as e:
+                logger.warning(f"| ⚠️  Failed to connect to account {account_name}: {e}")
+                
+    async def _initialize_database(self) -> None:
+        """Initialize database."""
+        self.database_service = DatabaseService(self.database_base_dir)
+        await self.database_service.connect()
+        
+    async def _initialize_data_handlers(self) -> None:
+        """Initialize data handlers."""
+        self.candle_handler = CandleHandler(self.database_service)
+        self.indicators_name = await self.candle_handler.get_indicators_name()
+        
+        # Get symbol data from client
+        client = self._get_client(self.default_account.name)
+        symbols = self.symbol if isinstance(self.symbol, list) else [self.symbol]
+        
+        now_time = int(time.time() * 1000)
+        start_time = int(now_time - self._max_historical_data_points * 60 * 1000) # 120 minutes = 2 hours ago
+        end_time = int(now_time)
+        
+        for symbol in symbols:
+            symbol_data = await client.get_symbol_data(symbol, start_time=start_time, end_time=end_time)
+            
+            result = await self.candle_handler.full_insert(symbol_data, symbol)
+            if result["success"]:
+                logger.info(f"| ✅ Inserted {len(symbol_data)} candles for {symbol}")
+            else:
+                logger.warning(f"| ⚠️  Failed to insert candles for {symbol}: {result['message']}")
+                
+                
+    async def _initialize_producer_consumer(self) -> None:
+        """Initialize producer and consumer."""
+        self.data_producer = DataProducer(
+            account=self.default_account,
+            candle_handler=self.candle_handler,
+            symbols=self.symbols,
+            max_concurrent_writes=self._max_concurrent_writes,
+            testnet=self.testnet
+        )
+        self.data_consumer = DataConsumer(
+            candle_handler=self.candle_handler,
+        )
     
     async def _load_symbols(self) -> None:
         """Load available trading symbols."""
@@ -285,9 +308,9 @@ class HyperliquidService:
         self.symbols = {}
         
         # Clear handlers
-        self._candle_handler = None
-        self._trades_handler = None
-        self._l2book_handler = None
+        self.candle_handler = None
+        self.indicators_name = []
+        
         self.data_producer = None
         self.data_consumer = None
         
@@ -437,7 +460,7 @@ class HyperliquidService:
             raise HyperliquidError("Data consumer not initialized. Call initialize() first.")
         return await self.data_consumer.get_data(request)
     
-    def start_data_stream(
+    async def start_data_stream(
         self,
         symbols: List[str],
         data_types: Optional[List[DataStreamType]] = None
@@ -452,9 +475,9 @@ class HyperliquidService:
         """
         if not self.data_producer:
             raise HyperliquidError("Data producer not initialized. Call initialize() first.")
-        self.data_producer.start(symbols, data_types)
+        await self.data_producer.start(symbols, data_types)
     
-    def stop_data_stream(self) -> None:
+    async def stop_data_stream(self) -> None:
         """Stop the data stream.
         
         This method delegates to the DataProducer.
@@ -462,7 +485,7 @@ class HyperliquidService:
         if not self.data_producer:
             logger.warning("| ⚠️  Data producer not initialized")
             return
-        self.data_producer.stop()
+        await self.data_producer.stop()
     
     # Order methods
     async def create_order(self, request: CreateOrderRequest) -> ActionResult:

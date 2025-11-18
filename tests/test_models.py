@@ -10,13 +10,14 @@ import argparse
 from mmengine import DictAction
 import asyncio
 from PIL import Image
+from langchain_core.messages import HumanMessage
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.infrastructures.models import model_manager, HumanMessage
+from src.models import model_manager
 from src.utils import assemble_project_path
 from src.utils import make_image_url, encode_image_base64
 

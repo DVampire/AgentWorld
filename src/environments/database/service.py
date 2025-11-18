@@ -173,22 +173,24 @@ class DatabaseService:
     async def insert_data(self, request: InsertRequest) -> ActionResult:
         """Insert data into a table.
         
+        Supports both single row (dict) and multiple rows (list) insertion.
+        
         Args:
-            request: Insert request
+            request: Insert request with data as dict (single row) or list (multiple rows)
             
         Returns:
             Action result with insert information in extra
         """
+        # Check database connection
+        if not self._is_connected:
+            return ActionResult(
+                success=False,
+                message="Database not connected",
+                extra={"error": "Database not connected"}
+            )
+        
         if isinstance(request.data, dict):
             # Single row insert
-            columns = list(request.data.keys())
-            placeholders = [f":{col}" for col in columns]
-            
-            sql = f"INSERT INTO {request.table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
-            query_request = QueryRequest(query=sql, parameters=request.data)
-            
-        else:
-            # Multiple rows insert
             if not request.data:
                 return ActionResult(
                     success=False,
@@ -196,39 +198,102 @@ class DatabaseService:
                     extra={"error": "No data provided for insert"}
                 )
             
-            columns = list(request.data[0].keys())
+            columns = list(request.data.keys())
             placeholders = [f":{col}" for col in columns]
             
-            sql = f"INSERT INTO {request.table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+            # Handle conflict resolution
+            insert_keyword = "INSERT"
+            if request.on_conflict == "REPLACE":
+                insert_keyword = "INSERT OR REPLACE"
+            elif request.on_conflict == "IGNORE":
+                insert_keyword = "INSERT OR IGNORE"
             
-            # Execute multiple inserts
-            results = []
-            for row in request.data:
-                query_request = QueryRequest(query=sql, parameters=row)
-                result = await self.execute_query(query_request)
-                results.append(result)
+            sql = f"{insert_keyword} INTO {request.table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+            query_request = QueryRequest(query=sql, parameters=request.data)
             
-            # Return summary result
-            total_affected = sum(r.extra.get("row_count", 0) for r in results if r.success)
-            total_time = sum(r.extra.get("execution_time", 0) for r in results)
-            all_success = all(r.success for r in results)
+            result = await self.execute_query(query_request)
+            # Add table_name to extra
+            if result.extra:
+                result.extra["table_name"] = request.table_name
+            return result
             
-            return ActionResult(
-                success=all_success,
-                message=f"Inserted {total_affected} rows",
-                extra={
-                    "row_count": total_affected,
-                    "execution_time": total_time,
-                    "table_name": request.table_name,
-                    "num_rows_inserted": len(request.data)
-                }
-            )
-        
-        result = await self.execute_query(query_request)
-        # Add table_name to extra
-        if result.extra:
-            result.extra["table_name"] = request.table_name
-        return result
+        else:
+            # Multiple rows insert - use executemany for better performance
+            if not request.data:
+                return ActionResult(
+                    success=False,
+                    message="No data provided for insert",
+                    extra={"error": "No data provided for insert"}
+                )
+            
+            # Validate that all rows have the same columns
+            if not isinstance(request.data, list):
+                return ActionResult(
+                    success=False,
+                    message="Invalid data format: expected dict or list",
+                    extra={"error": f"Invalid data type: {type(request.data)}"}
+                )
+            
+            if len(request.data) == 0:
+                return ActionResult(
+                    success=False,
+                    message="Empty list provided for insert",
+                    extra={"error": "Empty list provided for insert"}
+                )
+            
+            # Get columns from first row
+            first_row = request.data[0]
+            if not isinstance(first_row, dict) or not first_row:
+                return ActionResult(
+                    success=False,
+                    message="Invalid data format: first row must be a non-empty dict",
+                    extra={"error": "Invalid first row format"}
+                )
+            
+            columns = list(first_row.keys())
+            placeholders = [f":{col}" for col in columns]
+            
+            # Handle conflict resolution
+            insert_keyword = "INSERT"
+            if request.on_conflict == "REPLACE":
+                insert_keyword = "INSERT OR REPLACE"
+            elif request.on_conflict == "IGNORE":
+                insert_keyword = "INSERT OR IGNORE"
+            
+            sql = f"{insert_keyword} INTO {request.table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+            
+            # Use executemany for batch insert (much faster than individual inserts)
+            start_time = time.time()
+            try:
+                cursor = await self._connection.executemany(sql, request.data)
+                await self._connection.commit()
+                rowcount = cursor.rowcount
+                await cursor.close()
+                
+                execution_time = time.time() - start_time
+                return ActionResult(
+                    success=True,
+                    message=f"Inserted {rowcount} rows",
+                    extra={
+                        "row_count": rowcount,
+                        "execution_time": execution_time,
+                        "table_name": request.table_name,
+                        "num_rows_inserted": len(request.data)
+                    }
+                )
+            except Exception as e:
+                await self._connection.rollback()
+                execution_time = time.time() - start_time
+                return ActionResult(
+                    success=False,
+                    message=f"Failed to insert data: {str(e)}",
+                    extra={
+                        "error": str(e),
+                        "execution_time": execution_time,
+                        "table_name": request.table_name,
+                        "num_rows_inserted": 0
+                    }
+                )
     
     async def update_data(self, request: UpdateRequest) -> ActionResult:
         """Update data in a table.

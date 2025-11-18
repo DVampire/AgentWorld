@@ -16,8 +16,9 @@ from markitdown._base_converter import DocumentConverterResult
 from markitdown._exceptions import MissingDependencyException, MISSING_DEPENDENCY_MESSAGE
 import pdfminer
 import pdfminer.high_level
+from langchain_core.messages import HumanMessage
 
-from src.infrastructures.models import model_manager, HumanMessage
+from src.models import model_manager
 from src.logger import logger
 
 

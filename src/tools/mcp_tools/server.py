@@ -13,7 +13,7 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.infrastructures import model_manager
+from src.models import model_manager
 
 mcp_server = FastMCP("mcp_server")
 

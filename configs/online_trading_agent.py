@@ -1,7 +1,7 @@
 from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
-    from .environments.hyperliquid import environment as hyperliquid_environment
+    from .environments.hyperliquid import environment as hyperliquid_environment, indicators as hyperliquid_indicators
     from .agents.online_trading import online_trading_agent
 
 tag = "online_trading_agent"

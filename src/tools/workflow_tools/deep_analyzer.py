@@ -15,7 +15,7 @@ from src.utils import get_file_info
 from src.logger import logger
 from src.tools.protocol import tcp
 from src.config import config
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.tools.default_tools.mdify import MdifyTool
 from src.tools.protocol.tool import BaseTool
 from src.tools.protocol.types import ToolResponse

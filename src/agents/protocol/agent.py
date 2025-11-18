@@ -7,12 +7,11 @@ from datetime import datetime
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 
 from src.logger import logger
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.prompts.prompt_manager import PromptManager
-from src.infrastructures.memory import MemoryManager
+from src.memory import MemoryManager, SessionInfo, EventType
 from src.agents.protocol.types import InputArgs
 from src.utils import get_file_info, dedent
-from src.infrastructures.memory import SessionInfo, EventType
 from src.tools.protocol import tcp
 from src.environments.protocol import ecp
 

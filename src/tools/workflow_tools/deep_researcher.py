@@ -11,7 +11,7 @@ from PIL import Image
 from src.tools.default_tools.web_searcher import WebSearcherTool
 from src.tools.default_tools.web_fetcher import WebFetcherTool
 from src.logger import logger
-from src.infrastructures.models import model_manager
+from src.models import model_manager
 from src.config import config
 from src.utils import make_image_url
 from src.utils import encode_image_base64

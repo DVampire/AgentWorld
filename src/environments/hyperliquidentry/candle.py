@@ -1,13 +1,16 @@
 """Candle data handler for Hyperliquid streaming data."""
-from typing import Optional, List, Dict
 import pandas as pd
-import talib
-from datetime import datetime, timezone
+import asyncio
+import time
+from typing import Optional, List, Dict, Union
 
 from src.logger import logger
+from src.config import config
 from src.environments.database.service import DatabaseService
-from src.environments.database.types import CreateTableRequest, InsertRequest, QueryRequest
+from src.environments.database.types import CreateTableRequest, InsertRequest, QueryRequest, SelectRequest
 from src.environments.hyperliquidentry.exceptions import HyperliquidError
+from src.supports.registry import INDICATOR
+from src.utils import get_standard_timestamp
 
 class CandleHandler:
     """Handler for candle (OHLCV) data with streaming, caching, and technical indicators."""
@@ -24,6 +27,16 @@ class CandleHandler:
         # Key: symbol, Value: DataFrame with recent candles (max 200 rows)
         self._cache: Dict[str, pd.DataFrame] = {}
         self._cache_limit: int = 200  # Maximum number of candles to cache per symbol
+        
+        self._indicators_functions = {}
+        self._indicators_name = []
+        for indicator in config.hyperliquid_indicators:
+            indicator_function = INDICATOR.build(cfg=dict(type=indicator))
+            self._indicators_functions[indicator] = indicator_function
+            self._indicators_name.extend(indicator_function.indicators_name)
+        
+        # number of concurrent coroutines
+        self._concurrent_coroutines = 8
     
     def _sanitize_table_name(self, symbol: str) -> str:
         """Sanitize symbol name to be used as table name."""
@@ -55,6 +68,8 @@ class CandleHandler:
             # Create candle table
             columns = [
                 {"name": "id", "type": "INTEGER", "constraints": "PRIMARY KEY AUTOINCREMENT"},
+                {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "interval", "type": "TEXT"},  # e.g., "1m", "5m", "1h", "1d"
                 {"name": "timestamp", "type": "INTEGER", "constraints": "NOT NULL"},
                 {"name": "timestamp_utc", "type": "TEXT", "constraints": "NOT NULL"},
                 {"name": "timestamp_local", "type": "TEXT", "constraints": "NOT NULL"},
@@ -64,17 +79,12 @@ class CandleHandler:
                 {"name": "close_time", "type": "INTEGER", "constraints": "NOT NULL"},
                 {"name": "close_time_utc", "type": "TEXT", "constraints": "NOT NULL"},
                 {"name": "close_time_local", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "interval", "type": "TEXT"},  # e.g., "1m", "5m", "1h", "1d"
                 {"name": "open", "type": "REAL"},
                 {"name": "high", "type": "REAL"},
                 {"name": "low", "type": "REAL"},
                 {"name": "close", "type": "REAL"},
                 {"name": "volume", "type": "REAL"},
-                {"name": "quote_volume", "type": "REAL"},  # Quote asset volume
-                {"name": "trade_count", "type": "INTEGER"},
-                {"name": "taker_buy_base_volume", "type": "REAL"},
-                {"name": "taker_buy_quote_volume", "type": "REAL"},
+                {"name": "trade_count", "type": "REAL"},
                 {"name": "is_closed", "type": "INTEGER"},  # 0 or 1 (boolean)
                 {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
             ]
@@ -89,21 +99,22 @@ class CandleHandler:
                 logger.error(f"Failed to create candle table {candle_table_name}: {result.message}")
                 raise HyperliquidError(f"Failed to create candle table {candle_table_name}: {result.message}")
             
-            # Create unique constraint to prevent duplicate entries for same minute
+            # Create unique constraint to prevent duplicate entries for same symbol and timestamp
             unique_constraint_name = f"{candle_table_name}_unique_time"
-            unique_query = f"CREATE UNIQUE INDEX IF NOT EXISTS {unique_constraint_name} ON {candle_table_name}(symbol, timestamp, open_time)"
+            unique_query = f"CREATE UNIQUE INDEX IF NOT EXISTS {unique_constraint_name} ON {candle_table_name}(symbol, timestamp)"
             unique_result = await self.database_service.execute_query(QueryRequest(query=unique_query))
             if not unique_result.success:
                 logger.warning(f"Failed to create unique constraint {unique_constraint_name}: {unique_result.message}")
             
-            # Create index for performance optimization
+            # Create index for performance optimization (only on timestamp)
+            # Using ASC to match common query patterns (historical data in chronological order)
             index_name = f"{candle_table_name}_timestamp_idx"
-            index_query = f"CREATE INDEX IF NOT EXISTS {index_name} ON {candle_table_name}(timestamp DESC, open_time DESC)"
+            index_query = f"CREATE INDEX IF NOT EXISTS {index_name} ON {candle_table_name}(timestamp ASC)"
             index_result = await self.database_service.execute_query(QueryRequest(query=index_query))
             if not index_result.success:
                 logger.warning(f"Failed to create index {index_name} for {candle_table_name}: {index_result.message}")
         
-        # Ensure indicators table exists (same as binance klines)
+        # Ensure indicators table exists
         check_indicators_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{indicators_table_name}'"
         check_indicators_result = await self.database_service.execute_query(
             QueryRequest(query=check_indicators_query)
@@ -114,30 +125,14 @@ class CandleHandler:
             columns = [
                 {"name": "id", "type": "INTEGER", "constraints": "PRIMARY KEY AUTOINCREMENT"},
                 {"name": "timestamp", "type": "INTEGER", "constraints": "NOT NULL"},
+                {"name": "timestamp_utc", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "timestamp_local", "type": "TEXT", "constraints": "NOT NULL"},
                 {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
-                # Trend indicators
-                {"name": "sma_20", "type": "REAL"},
-                {"name": "sma_50", "type": "REAL"},
-                {"name": "ema_20", "type": "REAL"},
-                {"name": "ema_50", "type": "REAL"},
-                {"name": "macd", "type": "REAL"},
-                {"name": "macd_signal", "type": "REAL"},
-                {"name": "macd_hist", "type": "REAL"},
-                # Momentum indicators
-                {"name": "rsi", "type": "REAL"},
-                {"name": "stoch_k", "type": "REAL"},
-                {"name": "stoch_d", "type": "REAL"},
-                {"name": "cci", "type": "REAL"},
-                # Volatility indicators
-                {"name": "bb_upper", "type": "REAL"},
-                {"name": "bb_middle", "type": "REAL"},
-                {"name": "bb_lower", "type": "REAL"},
-                {"name": "atr", "type": "REAL"},
-                # Volume indicators
-                {"name": "obv", "type": "REAL"},
-                {"name": "mfi", "type": "REAL"},
-                {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
             ]
+            # Add indicator columns dynamically from self._indicators_name
+            for indicator_name in self._indicators_name:
+                columns.append({"name": indicator_name, "type": "REAL"})
+            columns.append({"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"})
             
             create_request = CreateTableRequest(
                 table_name=indicators_table_name,
@@ -149,184 +144,209 @@ class CandleHandler:
                 logger.error(f"Failed to create indicators table {indicators_table_name}: {result.message}")
                 raise HyperliquidError(f"Failed to create indicators table {indicators_table_name}: {result.message}")
             
+            # Create unique constraint to prevent duplicate entries for same symbol and timestamp
+            unique_constraint_name = f"{indicators_table_name}_unique_time"
+            unique_query = f"CREATE UNIQUE INDEX IF NOT EXISTS {unique_constraint_name} ON {indicators_table_name}(symbol, timestamp)"
+            unique_result = await self.database_service.execute_query(QueryRequest(query=unique_query))
+            if not unique_result.success:
+                logger.warning(f"Failed to create unique constraint {unique_constraint_name}: {unique_result.message}")
+            
             # Create index for performance optimization
+            # Using ASC to match common query patterns (historical data in chronological order)
             index_name = f"{indicators_table_name}_timestamp_idx"
-            index_query = f"CREATE INDEX IF NOT EXISTS {index_name} ON {indicators_table_name}(timestamp DESC, open_time DESC)"
+            index_query = f"CREATE INDEX IF NOT EXISTS {index_name} ON {indicators_table_name}(timestamp ASC)"
             index_result = await self.database_service.execute_query(QueryRequest(query=index_query))
             if not index_result.success:
                 logger.warning(f"Failed to create index {index_name} for {indicators_table_name}: {index_result.message}")
     
-    async def stream_insert(self, data: Dict, symbol: str) -> Dict:
-        """Insert candle data from stream.
+    
+    async def get_indicators_name(self) -> List[str]:
+        """Get indicators name."""
+        return self._indicators_name
+    
+    async def _preprocess_data(self, data: Dict, symbol: str) -> Dict:
+        """Preprocess data for insertion.
         
         Args:
-            data: Candle data from Hyperliquid WebSocket stream (processed format)
-            symbol: Symbol name (can be lowercase or uppercase)
+            data: Data dictionary from Hyperliquid WebSocket stream
+            {
+                T: int, # close time (ms)
+                c: float string, # close price
+                h: float string, # high price
+                i: str, # interval
+                l: float string, # low price
+                n: int, # trade count
+                o: float string, # open price
+                s: string, # symbol
+                t: int, # open time (ms)
+                v: float string, # volume
+            }
+        """
+        
+        symbol = symbol.upper() if symbol else data.get("s", "").upper()
+        interval = data.get("i", "1m")
+        open_time = int(data.get("t", 0))
+        close_time = int(data.get("T", 0))
+        open_price = float(data.get("o", 0))
+        high_price = float(data.get("h", 0))
+        low_price = float(data.get("l", 0))
+        close_price = float(data.get("c", 0))
+        volume = float(data.get("v", 0))
+        trade_count = float(data.get("n", 0))
+        
+        timestamp_dict = get_standard_timestamp(open_time)
+        timestamp = timestamp_dict["timestamp"]
+        timestamp_utc = timestamp_dict["timestamp_utc"]
+        timestamp_local = timestamp_dict["timestamp_local"]
+        
+        open_time_dict = get_standard_timestamp(open_time)
+        open_time_utc = open_time_dict["timestamp_utc"]
+        open_time_local = open_time_dict["timestamp_local"]
+        
+        close_time_dict = get_standard_timestamp(close_time)
+        close_time_utc = close_time_dict["timestamp_utc"]
+        close_time_local = close_time_dict["timestamp_local"]
+        
+        current_time_stamp = int(time.time() * 1000)
+        is_closed = 1 if current_time_stamp > close_time else 0
+        
+        res = {
+            "symbol": symbol,
+            "interval": interval,
+            "timestamp": timestamp,
+            "timestamp_utc": timestamp_utc,
+            "timestamp_local": timestamp_local,
+            "open_time": open_time,
+            "open_time_utc": open_time_utc,
+            "open_time_local": open_time_local,
+            "close_time": close_time,
+            "close_time_utc": close_time_utc,
+            "close_time_local": close_time_local,
+            "open": open_price,
+            "high": high_price,
+            "low": low_price,
+            "close": close_price,
+            "volume": volume,
+            "trade_count": trade_count,
+            "is_closed": is_closed,
+        }
+        
+        return res
+    
+    async def _calculate_indicators(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+        """Calculate indicators for a given dataframe.
+        
+        Calculates indicators in batches to control concurrency.
+        
+        Args:
+            df: DataFrame with candle data
+            symbol: Symbol name
             
         Returns:
-            Insert result
+            DataFrame with calculated indicators
         """
-        # Normalize symbol to uppercase for consistency with database
-        symbol = symbol.upper() if symbol else data.get("symbol", "").upper()
+        all_indicators_df = pd.DataFrame(index=df.index)
         
-        await self.ensure_table_exists(symbol)
+        # Convert indicators dict to list of (name, obj) tuples for easier batching
+        indicators_list = [(indicator_obj.indicators_name, indicator_obj) 
+                          for _, indicator_obj in self._indicators_functions.items()]
         
-        base_name = self._sanitize_table_name(symbol)
-        candle_table_name = f"{base_name}_candle"
+        # Process indicators in batches
+        for i in range(0, len(indicators_list), self._concurrent_coroutines):
+            batch = indicators_list[i:i+self._concurrent_coroutines]
+            
+            indicator_tasks = []
+            indicator_names = []
+            for indicator_name, indicator_obj in batch:
+                indicator_tasks.append(indicator_obj(df.copy()))
+                indicator_names.append(indicator_name)
+            
+            # Wait for current batch to complete
+            indicator_results = await asyncio.gather(*indicator_tasks, return_exceptions=True)
+            
+            # Merge results from current batch
+            for indicator_name, result in zip(indicator_names, indicator_results):
+                if isinstance(result, Exception):
+                    logger.warning(f"| ⚠️  Error calculating indicator {indicator_name} for {symbol}: {result}")
+                    continue
+                if isinstance(result, pd.DataFrame) and not result.empty:
+                    # Merge indicator columns, aligning by index
+                    for col in result.columns:
+                        all_indicators_df[col] = result[col]
         
-        logger.info(f"| 🔍 stream_insert called for {symbol}, data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+        return all_indicators_df
+    
+    async def full_insert(self, data: List[Dict], symbol: str) -> Dict:
+        """Insert candle data from list of dictionaries (full update for initial 60 minutes).
         
-        if not isinstance(data, dict):
-            logger.error(f"| ❌ stream_insert: data is not a dict for {symbol}, type: {type(data)}")
-            return {"success": False, "message": f"Invalid data type: {type(data)}"}
+        This method:
+        1. Preprocesses all data
+        2. Inserts all data into the database
+        3. Updates cache
+        4. Calculates indicators in parallel using self._indicators_functions
+        5. Inserts indicators into indicators database
         
-        
-        symbol = data.get("symbol", "")
-        interval = data.get("interval", "1m")
-        timestamp = data.get("timestamp", "")
-        timestamp_utc = data.get("timestamp_utc", "")
-        timestamp_local = data.get("timestamp_local", "")
-        open_time = data.get("open_time", "")
-        open_time_utc = data.get("open_time_utc", "")
-        open_time_local = data.get("open_time_local", "")
-        close_time = data.get("close_time", "")
-        close_time_utc = data.get("close_time_utc", "")
-        close_time_local = data.get("close_time_local", "")
-        open_price = float(data.get("open", 0))
-        high_price = float(data.get("high", 0))
-        low_price = float(data.get("low", 0))
-        close_price = float(data.get("close", 0))
-        volume = float(data.get("volume", 0))
-        quote_volume = float(data.get("quote_volume", 0))
-        trade_count = int(data.get("trade_count", 0))
-        taker_buy_base_volume = float(data.get("taker_buy_base_volume", 0))
-        taker_buy_quote_volume = float(data.get("taker_buy_quote_volume", 0))
-        is_closed = data.get("is_closed", 1)  # Get is_closed from data, default to 1
-        
-        logger.info(f"| 📝 Inserting complete candle for {symbol}: timestamp={timestamp}, open={open_price}, close={close_price}")
-        
-        # Directly insert the complete candle data (aggregation is done in Producer)
+        Args:
+            data: List of candle data dictionaries
+            symbol: Symbol name (will be normalized to uppercase)
+            
+        Returns:
+            Dict with success status and message
+        """
         try:
-            # Symbol is already normalized to uppercase above
-            db_symbol = symbol
+            # Normalize symbol to uppercase
+            symbol = symbol.upper() if symbol else ""
             
-            candle_data = {
-                "symbol": db_symbol,
-                "interval": interval,
-                "timestamp": timestamp,
-                "timestamp_utc": timestamp_utc,
-                "timestamp_local": timestamp_local,
-                "open_time": open_time,
-                "open_time_utc": open_time_utc,
-                "open_time_local": open_time_local,
-                "close_time": close_time,
-                "close_time_utc": close_time_utc,
-                "close_time_local": close_time_local,
-                "open": open_price,
-                "high": high_price,
-                "low": low_price,
-                "close": close_price,
-                "volume": volume,
-                "quote_volume": quote_volume,
-                "trade_count": trade_count,
-                "taker_buy_base_volume": taker_buy_base_volume,
-                "taker_buy_quote_volume": taker_buy_quote_volume,
-                "is_closed": is_closed,
-            }
+            if not data:
+                logger.warning(f"| ⚠️  No data provided for full_insert for {symbol}")
+                return {"success": False, "message": "No data provided"}
             
-            # Check if candle already exists to prevent duplicates
-            check_query = f"SELECT id FROM {candle_table_name} WHERE symbol = ? AND timestamp = ? AND open_time = ?"
-            check_result = await self.database_service.execute_query(
-                QueryRequest(query=check_query, params=[db_symbol, timestamp, open_time])
+            # Ensure table exists
+            await self.ensure_table_exists(symbol)
+            
+            base_name = self._sanitize_table_name(symbol)
+            candle_table_name = f"{base_name}_candle"
+            indicators_table_name = f"{base_name}_indicators"
+            
+            # Step 1: Preprocess all data
+            logger.info(f"| 📝 Preprocessing {len(data)} records for {symbol}")
+            processed_data = []
+            for i in range(0, len(data), self._concurrent_coroutines):
+                batch = data[i:i+self._concurrent_coroutines]
+                tasks = [self._preprocess_data(d, symbol) for d in batch]
+                processed_data.extend(await asyncio.gather(*tasks))
+            
+            # Step 2: Insert all data into database using insert_data method
+            logger.info(f"| 💾 Inserting {len(processed_data)} records into {candle_table_name}")
+            
+            if not processed_data:
+                logger.warning(f"| ⚠️  No processed data to insert for {symbol}")
+                return {"success": False, "message": "No processed data to insert"}
+            
+            insert_request = InsertRequest(
+                table_name=candle_table_name,
+                data=processed_data,
+                on_conflict="REPLACE"  # Use INSERT OR REPLACE to handle duplicate (symbol, timestamp)
             )
+            result = await self.database_service.insert_data(insert_request)
             
-            if check_result.success and check_result.extra.get("data"):
-                # Candle already exists, update it (UPSERT behavior)
-                existing_id = check_result.extra["data"][0][0]
-                update_query = f"""
-                    UPDATE {candle_table_name} 
-                    SET close_time = ?, high = ?, low = ?, close = ?, volume = ?, 
-                        quote_volume = ?, trade_count = ?, taker_buy_base_volume = ?, 
-                        taker_buy_quote_volume = ?, is_closed = ?
-                    WHERE id = ?
-                """
-                update_result = await self.database_service.execute_query(
-                    QueryRequest(
-                        query=update_query, 
-                        params=[
-                            close_time, high_price, low_price, close_price, volume,
-                            quote_volume, trade_count, taker_buy_base_volume,
-                            taker_buy_quote_volume, is_closed, existing_id
-                        ]
-                    )
-                )
-                
-                if update_result.success:
-                    logger.info(f"| ✅ Updated existing candle for {db_symbol} (close_time: {close_time})")
-                    # Update cache and calculate indicators
-                    await self._update_cache(db_symbol, candle_data)
-                    await self._calculate_and_insert_indicators(db_symbol, candle_data["timestamp"], candle_data["open_time"])
-                    return {"success": True, "message": "Candle data updated"}
-                else:
-                    logger.error(f"| ❌ Failed to update candle for {db_symbol}: {update_result.message}")
-                    return {"success": False, "message": update_result.message}
-            else:
-                # Candle doesn't exist, insert new record
-                insert_request = InsertRequest(
-                    table_name=candle_table_name,
-                    data=candle_data
-                )
-                
-                result = await self.database_service.insert_data(insert_request)
-                
-                if result.success:
-                    logger.info(f"| ✅ Inserted new candle for {db_symbol} (close_time: {close_time})")
-                    # Update cache and calculate indicators
-                    await self._update_cache(db_symbol, candle_data)
-                    await self._calculate_and_insert_indicators(db_symbol, candle_data["timestamp"], candle_data["open_time"])
-                    return {"success": True, "message": "Candle data inserted"}
-                else:
-                    logger.error(f"| ❌ Failed to insert candle for {db_symbol}: {result.message}")
-                    return {"success": False, "message": result.message}
+            if not result.success:
+                logger.error(f"| ❌ Failed to insert candle data for {symbol}: {result.message}")
+                return {"success": False, "message": f"Failed to insert candle data: {result.message}"}
             
-        except Exception as e:
-            logger.error(f"| ❌ Exception in stream_insert for {symbol}: {e}", exc_info=True)
-            return {"success": False, "message": str(e)}
-    
-    async def _update_cache(self, symbol: str, candle_data: Dict) -> None:
-        """Update cache with new candle data.
-        
-        Args:
-            symbol: Symbol name
-            candle_data: Candle data dictionary
-        """
-        if symbol not in self._cache:
-            self._cache[symbol] = pd.DataFrame()
-        
-        df = self._cache[symbol]
-        new_row = pd.DataFrame([candle_data])
-        df = pd.concat([df, new_row], ignore_index=True)
-        
-        # Limit cache size
-        if len(df) > self._cache_limit:
-            df = df.tail(self._cache_limit)
-        
-        self._cache[symbol] = df
-    
-    async def _calculate_and_insert_indicators(self, symbol: str, timestamp: int) -> None:
-        """Calculate technical indicators and insert into database.
-        
-        Args:
-            symbol: Symbol name
-            timestamp: timestamp of the candle (ms)
-        """
-        if symbol not in self._cache or len(self._cache[symbol]) < 2:
-            logger.debug(f"| ⚠️  Not enough data for indicators for {symbol}: cache has {len(self._cache.get(symbol, []))} rows")
-            return  # Not enough data for indicators
-        
-        try:
+            rowcount = result.extra.get("row_count", len(processed_data)) if result.extra else len(processed_data)
+            logger.info(f"| ✅ Inserted {rowcount} candle records for {symbol}")
+            
+            # Step 3: Update cache
+            logger.info(f"| 📦 Updating cache for {symbol}")
+            await self._update_cache(symbol, processed_data)
+            logger.info(f"| ✅ Cache updated for {symbol} (now has {len(self._cache[symbol])} records)")
+            
+            # Step 4: Calculate indicators in parallel (with concurrency control)
+            logger.info(f"| 📊 Calculating indicators for {symbol} using {len(self._indicators_functions)} indicator(s)")
+            
+            # Prepare DataFrame for indicators
             df = self._cache[symbol].copy()
-            # Convert open_time to datetime for proper sorting
             if "timestamp" in df.columns:
                 df = df.sort_values("timestamp")
             
@@ -335,183 +355,230 @@ class CandleHandler:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
             
-            # Convert to numpy arrays
-            closes = df["close"].astype(float).values
-            highs = df["high"].astype(float).values
-            lows = df["low"].astype(float).values
-            opens = df["open"].astype(float).values
-            volumes = df["volume"].fillna(0.0).astype(float).values
+            # Calculate indicators using the dedicated method (with concurrency control)
+            all_indicators_df = await self._calculate_indicators(df, symbol)
             
-            if len(closes) == 0 or len(closes) != len(df):
-                return
+            if all_indicators_df.empty or len(all_indicators_df.columns) == 0:
+                logger.warning(f"| ⚠️  No indicators calculated for {symbol}")
+                return {"success": True, "message": f"Inserted {len(processed_data)} records, but no indicators calculated"}
             
-            indicators = {}
+            # Step 5: Insert indicators into database
+            # For each row in the cache, create an indicator record
+            logger.info(f"| 💾 Inserting indicators for {len(df)} records into {indicators_table_name}")
             
-            # Trend indicators
-            if len(closes) >= 20:
-                indicators["sma_20"] = float(talib.SMA(closes, timeperiod=20)[-1])
-                indicators["ema_20"] = float(talib.EMA(closes, timeperiod=20)[-1])
-            if len(closes) >= 50:
-                indicators["sma_50"] = float(talib.SMA(closes, timeperiod=50)[-1])
-                indicators["ema_50"] = float(talib.EMA(closes, timeperiod=50)[-1])
-            
-            # MACD (12, 26, 9)
-            if len(closes) >= 26:
-                macd, macd_signal, macd_hist = talib.MACD(closes, fastperiod=12, slowperiod=26, signalperiod=9)
-                indicators["macd"] = float(macd[-1]) if not pd.isna(macd[-1]) else None
-                indicators["macd_signal"] = float(macd_signal[-1]) if not pd.isna(macd_signal[-1]) else None
-                indicators["macd_hist"] = float(macd_hist[-1]) if not pd.isna(macd_hist[-1]) else None
-            
-            # ADX
-            if len(highs) >= 14:
-                adx = talib.ADX(highs, lows, closes, timeperiod=14)
-                indicators["adx"] = float(adx[-1]) if not pd.isna(adx[-1]) else None
-            
-            # SAR
-            if len(highs) >= 2:
-                sar = talib.SAR(highs, lows, acceleration=0.02, maximum=0.2)
-                indicators["sar"] = float(sar[-1]) if not pd.isna(sar[-1]) else None
-            
-            # Momentum indicators
-            # RSI
-            if len(closes) >= 14:
-                rsi = talib.RSI(closes, timeperiod=14)
-                indicators["rsi"] = float(rsi[-1]) if not pd.isna(rsi[-1]) else None
-            
-            # Stochastic (KDJ)
-            if len(highs) >= 14:
-                stoch_k, stoch_d = talib.STOCH(highs, lows, closes, 
-                                               fastk_period=14, 
-                                               slowk_period=3, 
-                                               slowd_period=3)
-                indicators["stoch_k"] = float(stoch_k[-1]) if not pd.isna(stoch_k[-1]) else None
-                indicators["stoch_d"] = float(stoch_d[-1]) if not pd.isna(stoch_d[-1]) else None
-            
-            # CCI
-            if len(highs) >= 14:
-                cci = talib.CCI(highs, lows, closes, timeperiod=14)
-                indicators["cci"] = float(cci[-1]) if not pd.isna(cci[-1]) else None
-            
-            # Volatility indicators
-            # Bollinger Bands
-            if len(closes) >= 20:
-                bb_upper, bb_middle, bb_lower = talib.BBANDS(closes, timeperiod=20, nbdevup=2, nbdevdn=2)
-                indicators["bb_upper"] = float(bb_upper[-1]) if not pd.isna(bb_upper[-1]) else None
-                indicators["bb_middle"] = float(bb_middle[-1]) if not pd.isna(bb_middle[-1]) else None
-                indicators["bb_lower"] = float(bb_lower[-1]) if not pd.isna(bb_lower[-1]) else None
-            
-            # ATR
-            if len(highs) >= 14:
-                atr = talib.ATR(highs, lows, closes, timeperiod=14)
-                indicators["atr"] = float(atr[-1]) if not pd.isna(atr[-1]) else None
-            
-            # Volume indicators
-            # OBV
-            if len(closes) >= 2 and len(volumes) >= 2:
-                obv = talib.OBV(closes, volumes)
-                indicators["obv"] = float(obv[-1]) if not pd.isna(obv[-1]) else None
-            
-            # MFI
-            if len(highs) >= 14:
-                mfi = talib.MFI(highs, lows, closes, volumes, timeperiod=14)
-                indicators["mfi"] = float(mfi[-1]) if not pd.isna(mfi[-1]) else None
-            
-            # Structure indicators
-            # Pivot Points
-            if len(df) >= 1:
-                current_bar = df.iloc[-1]
-                high = float(current_bar['high'])
-                low = float(current_bar['low'])
-                close = float(current_bar['close'])
-                if high > 0 and low > 0 and close > 0:
-                    pivot = (high + low + close) / 3
-                    indicators["pivot_point"] = float(pivot)
-                    indicators["pivot_resistance1"] = float(2 * pivot - low)
-                    indicators["pivot_resistance2"] = float(pivot + (high - low))
-                    indicators["pivot_support1"] = float(2 * pivot - high)
-                    indicators["pivot_support2"] = float(pivot - (high - low))
-            
-            # Ichimoku
-            if len(highs) >= 52:
-                tenkan_high = talib.MAX(highs, timeperiod=9)
-                tenkan_low = talib.MIN(lows, timeperiod=9)
-                tenkan = (tenkan_high + tenkan_low) / 2
+            indicators_to_insert = []
+            for idx, row in df.iterrows():
+                # Get corresponding indicator values
+                # Build indicator_data in the same order as table definition:
+                # timestamp, timestamp_utc, timestamp_local, symbol, then all indicators in self._indicators_name order
+                indicator_data = {
+                    "timestamp": int(row["timestamp"]),
+                    "timestamp_utc": row.get("timestamp_utc", ""),
+                    "timestamp_local": row.get("timestamp_local", ""),
+                    "symbol": symbol,
+                }
                 
-                kijun_high = talib.MAX(highs, timeperiod=26)
-                kijun_low = talib.MIN(lows, timeperiod=26)
-                kijun = (kijun_high + kijun_low) / 2
+                # Add indicator values from all_indicators_df in the order defined by self._indicators_name
+                if idx in all_indicators_df.index:
+                    indicator_row = all_indicators_df.loc[idx]
+                    # Use self._indicators_name order to ensure consistency with table definition
+                    for indicator_name in self._indicators_name:
+                        if indicator_name in indicator_row.index:
+                            value = indicator_row[indicator_name]
+                            if pd.notna(value):
+                                indicator_data[indicator_name] = float(value)
+                            else:
+                                indicator_data[indicator_name] = None
                 
-                senkou_a = (tenkan + kijun) / 2
-                
-                senkou_b_high = talib.MAX(highs, timeperiod=52)
-                senkou_b_low = talib.MIN(lows, timeperiod=52)
-                senkou_b = (senkou_b_high + senkou_b_low) / 2
-                
-                indicators["ichimoku_tenkan"] = float(tenkan[-1]) if not pd.isna(tenkan[-1]) else None
-                indicators["ichimoku_kijun"] = float(kijun[-1]) if not pd.isna(kijun[-1]) else None
-                indicators["ichimoku_senkou_a"] = float(senkou_a[-1]) if not pd.isna(senkou_a[-1]) else None
-                indicators["ichimoku_senkou_b"] = float(senkou_b[-1]) if not pd.isna(senkou_b[-1]) else None
-                if len(closes) >= 26:
-                    indicators["ichimoku_chikou"] = float(closes[-26]) if not pd.isna(closes[-26]) else None
+                indicators_to_insert.append(indicator_data)
             
-            # Check if we have any indicators to insert
-            if not indicators:
-                logger.debug(f"| ⚠️  No indicators calculated for {symbol} at {timestamp}")
-                return
-            
-            # Count non-None indicators
-            non_none_count = sum(1 for v in indicators.values() if v is not None)
-            logger.debug(f"| 📊 Calculated {non_none_count} non-None indicators for {symbol} at {timestamp} (total: {len(indicators)})")
-            
-            # Insert indicators
-            base_name = self._sanitize_table_name(symbol)
-            indicators_table_name = f"{base_name}_indicators"
-            
-            insert_data = {
-                "timestamp": timestamp,
-                "open_time": open_time,
-                "symbol": symbol,
-                **indicators
-            }
-            
-            # Check if indicator record already exists for this timestamp
-            check_query = f"SELECT id FROM {indicators_table_name} WHERE timestamp = ? AND symbol = ?"
-            check_result = await self.database_service.execute_query(
-                QueryRequest(query=check_query, parameters=(timestamp, symbol))
-            )
-            
-            if check_result.success and check_result.extra.get("data"):
-                # Update existing record
-                record_id = check_result.extra["data"][0]["id"]
-                update_fields = ", ".join([f"{k} = ?" for k in insert_data.keys() if k != "timestamp" and k != "symbol" and k != "open_time"])
-                update_values = [v for k, v in insert_data.items() if k != "timestamp" and k != "symbol" and k != "open_time"]
-                update_values.append(record_id)
-                
-                update_query = f"UPDATE {indicators_table_name} SET {update_fields} WHERE id = ?"
-                update_result = await self.database_service.execute_query(
-                    QueryRequest(query=update_query, parameters=tuple(update_values))
-                )
-                if update_result.success:
-                    logger.info(f"| ✅ Updated indicators for {symbol} at {timestamp} ({non_none_count} indicators)")
-                else:
-                    logger.error(f"| ❌ Failed to update indicators for {symbol} at {timestamp}: {update_result.message}")
-            else:
-                # Insert new record
+            # Batch insert indicators using insert_data method
+            if indicators_to_insert:
                 insert_request = InsertRequest(
                     table_name=indicators_table_name,
-                    data=insert_data
+                    data=indicators_to_insert,
+                    on_conflict="REPLACE"  # Use INSERT OR REPLACE to handle duplicate (symbol, timestamp)
                 )
                 result = await self.database_service.insert_data(insert_request)
+                
                 if result.success:
-                    logger.info(f"| ✅ Inserted indicators for {symbol} at {timestamp} ({non_none_count} indicators)")
+                    rowcount = result.extra.get("row_count", len(indicators_to_insert)) if result.extra else len(indicators_to_insert)
+                    logger.info(f"| ✅ Inserted {rowcount} indicator records for {symbol}")
                 else:
-                    logger.error(f"| ❌ Failed to insert indicators for {symbol} at {timestamp}: {result.message}")
+                    logger.warning(f"| ⚠️  Failed to insert indicators for {symbol}: {result.message}")
+            
+            return {
+                "success": True,
+                "message": f"Successfully inserted {len(processed_data)} candle records and {len(indicators_to_insert)} indicator records for {symbol}"
+            }
             
         except Exception as e:
-            logger.warning(f"| ⚠️  Failed to calculate indicators for {symbol} at {timestamp}: {e}", exc_info=True)
+            logger.error(f"| ❌ Error in full_insert for {symbol}: {e}", exc_info=True)
+            return {"success": False, "message": f"Error in full_insert: {str(e)}"}
+       
+    async def stream_insert(self, data: Dict, symbol: str) -> Dict:
+        """Insert candle data from stream (single row).
+        
+        This method:
+        1. Preprocesses the data
+        2. Inserts/Replaces the data into the database
+        3. Updates cache
+        4. Calculates indicators using the full cache DataFrame
+        5. Inserts only the latest indicator record into database
+        
+        Args:
+            data: Candle data from Hyperliquid WebSocket stream (processed format)
+            symbol: Symbol name (can be lowercase or uppercase)
+            
+        Returns:
+            Insert result
+        """
+        try:
+            # Normalize symbol to uppercase for consistency with database
+            symbol = symbol.upper() if symbol else data.get("symbol", "").upper()
+            
+            if not data:
+                logger.warning(f"| ⚠️  No data provided for stream_insert for {symbol}")
+                return {"success": False, "message": "No data provided"}
+            
+            # Ensure table exists
+            await self.ensure_table_exists(symbol)
+            
+            base_name = self._sanitize_table_name(symbol)
+            candle_table_name = f"{base_name}_candle"
+            indicators_table_name = f"{base_name}_indicators"
+            
+            # Step 1: Preprocess data
+            processed_data = await self._preprocess_data(data, symbol)
+            
+            # Step 2: Insert single row into database
+            logger.info(f"| 💾 Inserting candle for {symbol}: timestamp={processed_data.get('timestamp')}")
+            
+            insert_request = InsertRequest(
+                table_name=candle_table_name,
+                data=processed_data,
+                on_conflict="REPLACE"  # Use INSERT OR REPLACE to handle duplicate (symbol, timestamp)
+            )
+            result = await self.database_service.insert_data(insert_request)
+            
+            if not result.success:
+                logger.error(f"| ❌ Failed to insert candle for {symbol}: {result.message}")
+                return {"success": False, "message": f"Failed to insert candle data: {result.message}"}
+            
+            logger.info(f"| ✅ Inserted candle for {symbol} (timestamp: {processed_data.get('timestamp')})")
+            
+            # Step 3: Update cache
+            await self._update_cache(symbol, processed_data)
+            
+            # Step 4: Calculate indicators using full cache DataFrame
+            logger.info(f"| 📊 Calculating indicators for {symbol} using {len(self._indicators_functions)} indicator(s)")
+            
+            # Prepare DataFrame for indicators
+            df = self._cache[symbol].copy()
+            if "timestamp" in df.columns:
+                df = df.sort_values("timestamp")
+            
+            # Ensure we have numeric columns
+            for col in ["open", "high", "low", "close", "volume"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            
+            # Calculate indicators using the dedicated method (with concurrency control)
+            all_indicators_df = await self._calculate_indicators(df, symbol)
+            
+            if all_indicators_df.empty or len(all_indicators_df.columns) == 0:
+                logger.debug(f"| ⚠️  No indicators calculated for {symbol}")
+                return {"success": True, "message": "Candle data inserted, but no indicators calculated"}
+            
+            # Step 5: Insert only the latest indicator record
+            # Get the last row (most recent)
+            latest_row = df.iloc[-1]
+            latest_timestamp = int(latest_row["timestamp"])
+            
+            # Get corresponding indicator values for the latest row
+            latest_idx = df.index[-1]
+            # Build indicator_data in the same order as table definition:
+            # timestamp, timestamp_utc, timestamp_local, symbol, then all indicators in self._indicators_name order
+            indicator_data = {
+                "timestamp": latest_timestamp,
+                "timestamp_utc": latest_row.get("timestamp_utc", ""),
+                "timestamp_local": latest_row.get("timestamp_local", ""),
+                "symbol": symbol,
+            }
+            
+            if latest_idx in all_indicators_df.index:
+                indicator_row = all_indicators_df.loc[latest_idx]
+                # Use self._indicators_name order to ensure consistency with table definition
+                for indicator_name in self._indicators_name:
+                    if indicator_name in indicator_row.index:
+                        value = indicator_row[indicator_name]
+                        if pd.notna(value):
+                            indicator_data[indicator_name] = float(value)
+                        else:
+                            indicator_data[indicator_name] = None
+            
+            # Insert single indicator record using insert_data
+            if indicator_data:
+                insert_request = InsertRequest(
+                    table_name=indicators_table_name,
+                    data=indicator_data,
+                    on_conflict="REPLACE"  # Use INSERT OR REPLACE to handle duplicate (symbol, timestamp)
+                )
+                result = await self.database_service.insert_data(insert_request)
+                
+                if result.success:
+                    logger.info(f"| ✅ Inserted indicator for {symbol} at timestamp {latest_timestamp}")
+                else:
+                    logger.warning(f"| ⚠️  Failed to insert indicator for {symbol}: {result.message}")
+            
+            return {"success": True, "message": "Candle data and latest indicator inserted"}
+            
+        except Exception as e:
+            logger.error(f"| ❌ Exception in stream_insert for {symbol}: {e}", exc_info=True)
+            return {"success": False, "message": str(e)}
     
-    async def get_data(self, symbol: str, start_date: Optional[str] = None, end_date: Optional[str] = None, limit: Optional[int] = None) -> List[Dict]:
-        """Get candle data from database with corresponding technical indicators.
+    async def _update_cache(self, symbol: str, candle_data: Union[Dict, List[Dict]]) -> None:
+        """Update cache with new candle data.
+        
+        Supports both single row (Dict) and multiple rows (List[Dict]).
+        
+        Args:
+            symbol: Symbol name
+            candle_data: Candle data dictionary or list of dictionaries
+        """
+        if symbol not in self._cache:
+            self._cache[symbol] = pd.DataFrame()
+        
+        # Handle both single dict and list of dicts
+        if isinstance(candle_data, dict):
+            new_data = pd.DataFrame([candle_data])
+        else:
+            # List of dicts
+            new_data = pd.DataFrame(candle_data)
+        
+        df = self._cache[symbol]
+        
+        # Merge with existing cache, remove duplicates, and keep latest
+        if df.empty:
+            df = new_data.copy()
+        else:
+            df_combined = pd.concat([df, new_data], ignore_index=True)
+            # Remove duplicates based on timestamp, keeping the last occurrence
+            # Note: symbol is already filtered by the cache key, so we only need timestamp
+            df_combined = df_combined.drop_duplicates(subset=['timestamp'], keep='last')
+            # Sort by timestamp
+            if "timestamp" in df_combined.columns:
+                df_combined = df_combined.sort_values("timestamp")
+            df = df_combined
+        
+        # Limit cache size
+        if len(df) > self._cache_limit:
+            df = df.tail(self._cache_limit)
+        
+        self._cache[symbol] = df
+    
+    async def get_data(self, symbol: str, start_date: Optional[str] = None, end_date: Optional[str] = None, limit: Optional[int] = None) -> Dict[str, List[Dict]]:
+        """Get candle data and indicators from database.
         
         Args:
             symbol: Symbol name
@@ -520,7 +587,7 @@ class CandleHandler:
             limit: Optional limit
             
         Returns:
-            List of candle records, each with an 'indicators' field containing non-NULL indicator values
+            Dict with 'candles' and 'indicators' fields, each containing a list of records
         """
         # Normalize symbol to uppercase for consistency with database
         symbol = symbol.upper() if symbol else ""
@@ -528,175 +595,119 @@ class CandleHandler:
         candle_table_name = f"{base_name}_candle"
         indicators_table_name = f"{base_name}_indicators"
         
-        # Check if candle table exists
-        check_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{candle_table_name}'"
-        check_result = await self.database_service.execute_query(
-            QueryRequest(query=check_query)
-        )
-        
-        if not check_result.success or not check_result.extra.get("data"):
-            logger.warning(f"| ⚠️  Candle table {candle_table_name} does not exist for {symbol}")
-            return []
-        
-        # Check if indicators table exists
-        check_indicators_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{indicators_table_name}'"
-        check_indicators_result = await self.database_service.execute_query(
-            QueryRequest(query=check_indicators_query)
-        )
-        has_indicators_table = check_indicators_result.success and check_indicators_result.extra.get("data")
-        
-        # Build query for candles based on whether date range is provided
+        # Build select request for candles
         if start_date and end_date:
-            query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC, open_time ASC"
-            parameters = (symbol, start_date, end_date)
-            if limit:
-                query += f" LIMIT {limit}"
+            # Date range query
+            candle_request = SelectRequest(
+                table_name=candle_table_name,
+                where_clause="symbol = :symbol AND timestamp >= :start_date AND timestamp <= :end_date",
+                where_params={"symbol": symbol, "start_date": start_date, "end_date": end_date},
+                order_by="timestamp ASC",
+                limit=limit
+            )
         else:
             if limit:
-                query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? ORDER BY timestamp DESC, open_time DESC LIMIT {limit}"
-                parameters = (symbol,)
+                # Limit query - get latest N records
+                candle_request = SelectRequest(
+                    table_name=candle_table_name,
+                    where_clause="symbol = :symbol",
+                    where_params={"symbol": symbol},
+                    order_by="timestamp DESC",
+                    limit=limit
+                )
             else:
-                # Get latest timestamp
+                # Get latest timestamp first
                 max_timestamp_query = f"SELECT MAX(timestamp) as max_ts FROM {candle_table_name} WHERE symbol = ?"
                 max_ts_result = await self.database_service.execute_query(
                     QueryRequest(query=max_timestamp_query, parameters=(symbol,))
                 )
                 
                 if not max_ts_result.success or not max_ts_result.extra.get("data"):
-                    logger.warning(f"| ⚠️  Failed to get max timestamp for {symbol} from {candle_table_name}: {max_ts_result.message if hasattr(max_ts_result, 'message') else 'No data'}")
-                    return []
+                    logger.warning(f"| ⚠️  Failed to get max timestamp for {symbol}: {max_ts_result.message}")
+                    return {"candles": [], "indicators": []}
                 
                 max_ts_data = max_ts_result.extra.get("data", [])
                 if not max_ts_data or not max_ts_data[0].get("max_ts"):
-                    logger.warning(f"| ⚠️  No max timestamp found for {symbol} in {candle_table_name}. Table may be empty.")
-                    # Check if table has any data at all
-                    count_query = f"SELECT COUNT(*) as count FROM {candle_table_name} WHERE symbol = ?"
-                    count_result = await self.database_service.execute_query(
-                        QueryRequest(query=count_query, parameters=(symbol,))
-                    )
-                    if count_result.success and count_result.extra.get("data"):
-                        count = count_result.extra.get("data", [])[0].get("count", 0)
-                        logger.info(f"| 🔍 Table {candle_table_name} has {count} rows for {symbol}")
-                    return []
+                    logger.warning(f"| ⚠️  No data found for {symbol}")
+                    return {"candles": [], "indicators": []}
                 
                 latest_timestamp = max_ts_data[0]["max_ts"]
-                logger.debug(f"| 🔍 Latest timestamp for {symbol}: {latest_timestamp}")
-                query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? AND timestamp = ? ORDER BY timestamp ASC, open_time ASC"
-                parameters = (symbol, latest_timestamp)
-        
-        # Debug: Log the query being executed
-        logger.debug(f"| 🔍 Executing query for {symbol}: {query}")
-        if parameters:
-            logger.debug(f"| 🔍 Query parameters: {parameters}")
-        
-        result = await self.database_service.execute_query(
-            QueryRequest(query=query, parameters=parameters)
-        )
-        
-        if not result.success:
-            logger.warning(f"| ⚠️  Failed to query candles from {candle_table_name}: {result.message}")
-            return []
-        
-        candle_data = result.extra.get("data", [])
-        logger.info(f"| 🔍 Query returned {len(candle_data)} rows for {symbol} from table {candle_table_name}")
-        
-        if candle_data:
-            logger.debug(f"| 🔍 First row sample: {candle_data[0]}")
-        else:
-            logger.warning(f"| ⚠️  No candle data returned for {symbol} from table {candle_table_name}")
-            # Check if table has any data at all
-            count_query = f"SELECT COUNT(*) as count FROM {candle_table_name} WHERE symbol = ?"
-            count_result = await self.database_service.execute_query(
-                QueryRequest(query=count_query, parameters=(symbol,))
-            )
-            if count_result.success and count_result.extra.get("data"):
-                count = count_result.extra.get("data", [])[0].get("count", 0)
-                logger.warning(f"| ⚠️  Table {candle_table_name} has {count} total rows for {symbol}, but query returned 0 rows")
-                # Try to get all rows to see what's in the table
-                all_query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? ORDER BY timestamp DESC LIMIT 5"
-                all_result = await self.database_service.execute_query(
-                    QueryRequest(query=all_query, parameters=(symbol,))
+                candle_request = SelectRequest(
+                    table_name=candle_table_name,
+                    where_clause="symbol = :symbol AND timestamp = :timestamp",
+                    where_params={"symbol": symbol, "timestamp": latest_timestamp},
+                    order_by="timestamp ASC"
                 )
-                if all_result.success and all_result.extra.get("data"):
-                    all_data = all_result.extra.get("data", [])
-                    logger.info(f"| 🔍 Sample rows from {candle_table_name} for {symbol}: {len(all_data)} rows")
-                    if all_data:
-                        logger.info(f"| 🔍 Sample row: {all_data[0]}")
+        
+        # Query candles using select_data
+        candle_result = await self.database_service.select_data(candle_request)
+        
+        if not candle_result.success:
+            logger.warning(f"| ⚠️  Failed to query candles: {candle_result.message}")
+            return {"candles": [], "indicators": []}
+        
+        candle_data = candle_result.extra.get("data", [])
         
         # If limit was specified and we're not using date range, reverse to get chronological order
         if limit and not start_date and not end_date:
             candle_data.reverse()
         
-        if has_indicators_table and candle_data:
-            # Get all timestamps from candle data
-            timestamps = [candle.get("timestamp") for candle in candle_data if candle.get("timestamp")]
-            
-            indicators_dict = {}
-            if timestamps:
-                # Build query for indicators
-                if start_date and end_date:
-                    indicators_query = f"SELECT * FROM {indicators_table_name} WHERE symbol = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC"
-                    indicators_parameters = (symbol, start_date, end_date)
-                    if limit:
-                        indicators_query += f" LIMIT {limit}"
-                else:
-                    if limit:
-                        indicators_query = f"SELECT * FROM {indicators_table_name} WHERE symbol = ? ORDER BY timestamp DESC, id DESC LIMIT {limit}"
-                        indicators_parameters = (symbol,)
-                    else:
-                        latest_timestamp = timestamps[-1] if timestamps else None
-                        if latest_timestamp:
-                            indicators_query = f"SELECT * FROM {indicators_table_name} WHERE symbol = ? AND timestamp = ? ORDER BY timestamp ASC, id ASC"
-                            indicators_parameters = (symbol, latest_timestamp)
-                        else:
-                            indicators_parameters = None
-                            indicators_query = None
-                
-                # Fetch indicators
-                if indicators_query:
-                    indicators_result = await self.database_service.execute_query(
-                        QueryRequest(query=indicators_query, parameters=indicators_parameters)
-                    )
-                    
-                    if indicators_result.success:
-                        indicators_data = indicators_result.extra.get("data", [])
-                        
-                        # Process indicators: group by timestamp
-                        for indicator_record in indicators_data:
-                            timestamp = indicator_record.get("timestamp")
-                            if timestamp:
-                                if timestamp not in indicators_dict:
-                                    indicators_dict[timestamp] = {}
-                                
-                                # Add only non-NULL indicator values
-                                indicator_fields = [
-                                    "sma_20", "sma_50", "ema_20", "ema_50",
-                                    "macd", "macd_signal", "macd_hist",
-                                    "adx", "sar", "rsi", "stoch_k", "stoch_d", "cci",
-                                    "bb_upper", "bb_middle", "bb_lower", "atr",
-                                    "obv", "mfi",
-                                    "pivot_point", "pivot_resistance1", "pivot_resistance2",
-                                    "pivot_support1", "pivot_support2",
-                                    "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a",
-                                    "ichimoku_senkou_b", "ichimoku_chikou"
-                                ]
-                                
-                                for field in indicator_fields:
-                                    value = indicator_record.get(field)
-                                    if value is not None:
-                                        indicators_dict[timestamp][field] = value
-            
-            # Merge indicators into candle data
-            for candle in candle_data:
-                timestamp = candle.get("timestamp")
-                if timestamp and timestamp in indicators_dict:
-                    candle["indicators"] = indicators_dict[timestamp]
-                else:
-                    candle["indicators"] = {}
+        # Build select request for indicators (same conditions as candles)
+        if start_date and end_date:
+            indicators_request = SelectRequest(
+                table_name=indicators_table_name,
+                where_clause="symbol = :symbol AND timestamp >= :start_date AND timestamp <= :end_date",
+                where_params={"symbol": symbol, "start_date": start_date, "end_date": end_date},
+                order_by="timestamp ASC",
+                limit=limit
+            )
         else:
-            # No indicators table, add empty indicators dict
-            for candle in candle_data:
-                candle["indicators"] = {}
+            if limit:
+                indicators_request = SelectRequest(
+                    table_name=indicators_table_name,
+                    where_clause="symbol = :symbol",
+                    where_params={"symbol": symbol},
+                    order_by="timestamp DESC",
+                    limit=limit
+                )
+            else:
+                # Use same latest timestamp as candles
+                if candle_data:
+                    latest_timestamp = candle_data[-1].get("timestamp") if candle_data else None
+                    if latest_timestamp:
+                        indicators_request = SelectRequest(
+                            table_name=indicators_table_name,
+                            where_clause="symbol = :symbol AND timestamp = :timestamp",
+                            where_params={"symbol": symbol, "timestamp": latest_timestamp},
+                            order_by="timestamp ASC"
+                        )
+                    else:
+                        indicators_data = []
+                        return {
+                            "candles": candle_data,
+                            "indicators": indicators_data
+                        }
+                else:
+                    indicators_data = []
+                    return {
+                        "candles": candle_data,
+                        "indicators": indicators_data
+                    }
         
-        return candle_data
+        # Query indicators using select_data
+        indicators_result = await self.database_service.select_data(indicators_request)
+        
+        if indicators_result.success:
+            indicators_data = indicators_result.extra.get("data", [])
+            
+            # If limit was specified and we're not using date range, reverse to get chronological order
+            if limit and not start_date and not end_date:
+                indicators_data.reverse()
+        else:
+            indicators_data = []
+        
+        return {
+            "candles": candle_data,
+            "indicators": indicators_data
+        }
 
