@@ -12,7 +12,7 @@ from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 
-from src.infrastructures.models.transcribe.base import BaseTranscribeOpenAI, TranscriptionResult
+from src.models.transcribe.base import BaseTranscribeOpenAI, TranscriptionResult
 from src.logger import logger
 
 

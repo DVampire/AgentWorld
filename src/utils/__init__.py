@@ -8,7 +8,7 @@ from .utils import (_is_package_available,
                     truncate_content)
 from .record_utils import Record, TradingRecords, PortfolioRecords
 from .token_utils import get_token_count
-from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp, calculate_time_info
+from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp, calculate_time_info, get_standard_timestamp
 from .string_utils import extract_boxed_content, dedent
 from .misc import get_world_size, get_rank
 from .name_utils import get_tag_name, get_newspage_name, get_md5
@@ -35,6 +35,7 @@ __all__ = [
     "TimeLevelFormat",
     "get_start_end_timestamp",
     "calculate_time_info",
+    "get_standard_timestamp",
     "extract_boxed_content",
     "get_world_size",
     "get_rank",

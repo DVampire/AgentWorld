@@ -9,7 +9,7 @@ import json
 from src.agents.protocol.agent import BaseAgent
 from src.logger import logger
 from src.agents.protocol import acp
-from src.infrastructures.memory import SessionInfo, EventType
+from src.memory import SessionInfo, EventType
 
 class SimpleChatAgentInputArgs(BaseModel):
     message: str = Field(description="The message from the human user.")

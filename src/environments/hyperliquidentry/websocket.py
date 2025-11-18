@@ -4,7 +4,9 @@ import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Dict, Callable, Optional, List, Literal
+
 from src.logger import logger
+from src.utils import get_standard_timestamp
 
 try:
     import websockets
@@ -151,8 +153,12 @@ class HyperliquidWebSocket:
         for c in candles:
             try:
                 # Hyperliquid candle format:
-                # t/T: 开/收时间 (ms), s: symbol, i: interval,
-                # o/c/h/l: 价格, v: volume, n: trades 数量
+                # t/T: open time (ms), close time (ms),
+                # s: symbol, 
+                # i: interval,
+                # o/c/h/l: open price, close price, high price, low price,
+                # v: volume,
+                # n: trade count,
                 symbol = c.get("s", "").upper()
                 if not symbol:
                     logger.warning(f"| ⚠️  [CANDLE] Missing symbol in candle data: {c}")
@@ -162,13 +168,10 @@ class HyperliquidWebSocket:
                 open_time_ms = int(c.get("t", 0))
                 close_time_ms = int(c.get("T", 0))
                 
-                # For 1-minute candle, timestamp should be the minute start time
-                # Hyperliquid's 'T' is already the minute end time, so timestamp should match close_time + 1 second
-                timestamp_ms = close_time_ms + 1000  # Use close_time + 1 second as timestamp (minute start time)
-                
-                open_time = datetime.fromtimestamp(open_time_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-                close_time = datetime.fromtimestamp(close_time_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-                timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+                # get open standard timestamp
+                open_standard_timestamp_dict = get_standard_timestamp(open_time_ms)
+                close_standard_timestamp_dict = get_standard_timestamp(close_time_ms)
+                timestamp_dict = open_standard_timestamp_dict
                 
                 # Check if candle is closed (for informational purposes only)
                 current_time_ms = int(time.time() * 1000)
@@ -177,9 +180,15 @@ class HyperliquidWebSocket:
                 processed_data = {
                     "symbol": symbol,
                     "interval": c.get("i", "1m"),
-                    "timestamp": timestamp,  # Use timestamp (minute start time, e.g., 14:55:00)
-                    "open_time": open_time,  # Use minute start time (open_time)
-                    "close_time": close_time,  # Use minute end time (close_time)
+                    "timestamp": timestamp_dict['timestamp'],
+                    "timestamp_utc": timestamp_dict['timestamp_utc'],
+                    "timestamp_local": timestamp_dict['timestamp_local'],
+                    "open_time": open_standard_timestamp_dict['timestamp'],
+                    "open_time_utc": open_standard_timestamp_dict['timestamp_utc'],
+                    "open_time_local": open_standard_timestamp_dict['timestamp_local'],
+                    "close_time": close_standard_timestamp_dict['timestamp'],
+                    "close_time_utc": close_standard_timestamp_dict['timestamp_utc'],
+                    "close_time_local": close_standard_timestamp_dict['timestamp_local'],
                     "open": float(c.get("o", 0)),
                     "high": float(c.get("h", 0)),
                     "low": float(c.get("l", 0)),
@@ -192,7 +201,7 @@ class HyperliquidWebSocket:
                     "is_closed": is_closed,  # Whether candle is closed
                 }
                 
-                logger.debug(f"| 📊 Received 1m candle: {symbol} @ {timestamp} (close: {close_time}, is_closed: {is_closed})")
+                logger.debug(f"| 📊 Received 1m candle: {symbol} @ {timestamp_dict['timestamp_local']}")
                 
                 # Call callback with processed data (async)
                 if self.on_message_callback:
@@ -204,7 +213,7 @@ class HyperliquidWebSocket:
                         self.on_message_callback(ws=self.ws, channel="candle", data=processed_data)
                 else:
                     # No callback registered, just log the data summary
-                    logger.info(f"| ✅ [CANDLE DATA] {symbol} @ {timestamp} | O:{processed_data['open']} H:{processed_data['high']} L:{processed_data['low']} C:{processed_data['close']} V:{processed_data['volume']}")
+                    logger.info(f"| ✅ [CANDLE DATA] {symbol} @ {timestamp_dict['timestamp_local']} | O:{processed_data['open']} H:{processed_data['high']} L:{processed_data['low']} C:{processed_data['close']} V:{processed_data['volume']}")
                     
             except Exception as e:
                 logger.error(f"| ❌ Error processing candle data: {e}", exc_info=True)

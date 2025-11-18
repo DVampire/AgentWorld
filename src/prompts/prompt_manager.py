@@ -2,9 +2,9 @@
 from typing import Dict, Any, List
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from src.agents.prompts.system_prompt import SystemPrompt
-from src.agents.prompts.agent_message_prompt import AgentMessagePrompt
-from src.agents.prompts.templates import PROMPT_TEMPLATES
+from src.prompts.system_prompt import SystemPrompt
+from src.prompts.agent_message_prompt import AgentMessagePrompt
+from src.prompts.templates import PROMPT_TEMPLATES
 
 class PromptManager():
     """Manager for SystemPrompt and AgentMessagePrompt instances."""

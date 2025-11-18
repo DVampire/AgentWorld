@@ -1,8 +1,9 @@
 import pandas as pd
-from datetime import datetime
 from typing import Optional, Any
 import enum
 from collections import OrderedDict
+from typing import Dict, Any
+import time
 
 class TimeLevel(enum.Enum):
     """
@@ -154,3 +155,13 @@ def calculate_time_info(start_timestamp: str,
 
     return res_info
 
+
+def get_standard_timestamp(timestamp: int) -> Dict[str, Any]:
+    utc_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(timestamp / 1000))
+    local_timestamp = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp / 1000))
+    res_dict =  {
+        "timestamp": timestamp,
+        "timestamp_utc": utc_timestamp,
+        "timestamp_local": local_timestamp
+    }
+    return res_dict

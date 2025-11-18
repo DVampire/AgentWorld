@@ -4,7 +4,7 @@ from typing import Dict, Any
 from langchain_core.messages import SystemMessage
 
 from src.logger import logger
-from src.agents.prompts.templates import PROMPT_TEMPLATES
+from src.prompts.templates import PROMPT_TEMPLATES
 from src.optimizers.protocol.variable import Variable
 
 class SystemPrompt:

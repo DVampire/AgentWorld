@@ -1,5 +1,4 @@
 """Test script for Hyperliquid REST API client."""
-import time
 import sys
 import os
 from pathlib import Path
@@ -7,6 +6,7 @@ from datetime import datetime
 from typing import Dict
 from dotenv import load_dotenv
 import asyncio
+import time
 import json
 
 import argparse
@@ -27,6 +27,7 @@ from src.logger import logger
 from src.config import config
 from src.utils import get_env
 from src.environments import ecp
+from src.utils import get_standard_timestamp
 
 def parse_args():
         parser = argparse.ArgumentParser(description='Online Trading Agent Example')
@@ -175,9 +176,42 @@ async def test_client():
     print("🔍 Test 6: get_symbol_data()")
     print("-" * 80)
     try:
+        # now_time = int(time.time() * 1000)
+        # start_time = int(now_time - 60 * 60 * 1000) # 1 hour ago
+        # end_time = int(now_time)
+        # symbol_data = await client.get_symbol_data("BTC", start_time=start_time, end_time=end_time)
+        
         symbol_data = await client.get_symbol_data("BTC")
+        
         print(f"✅ Symbol data retrieved successfully")
-        print(f"| 📝 Symbol data: \n{json.dumps(symbol_data, indent=4)}")
+        for item in symbol_data:
+            
+            current_time = int(time.time()) * 1000
+            open_time = item['t']
+            close_time = item['T']
+            
+            current_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time / 1000))
+            current_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time / 1000))
+            open_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(open_time / 1000))
+            close_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(close_time / 1000))
+            open_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(open_time / 1000))
+            close_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(close_time / 1000))
+            
+            print(f"   Current Timestamp: {current_time}")
+            print(f"   Current Timestamp (UTC): {current_time_utc}")
+            print(f"   Current Timestamp (Local): {current_time_local}")
+            print(f"   Open Time (ms): {open_time}")
+            print(f"   Close Time (ms): {close_time}")
+            print(f"   Open Time (UTC): {open_time_utc}")
+            print(f"   Close Time (UTC): {close_time_utc}")
+            print(f"   Open Time (Local): {open_time_local}")
+            print(f"   Close Time (Local): {close_time_local}")
+            print(f"   Open: {item['o']}")
+            print(f"   High: {item['h']}")
+            print(f"   Low: {item['l']}")  
+            print(f"   Close: {item['c']}")
+            print(f"   Volume: {item['v']}")
+            print()
         results["symbol_data"] = symbol_data
     except Exception as e:
         print(f"❌ Error: {e}")

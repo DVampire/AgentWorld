@@ -8,7 +8,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 
 from src.logger import logger
 from src.infrastructures.models import model_manager
-from src.agents.prompts import PromptManager
+from src.prompts.prompt_manager import PromptManager
 from src.infrastructures.memory import MemoryManager
 from src.agents.protocol.types import InputArgs
 from src.utils import get_file_info, dedent

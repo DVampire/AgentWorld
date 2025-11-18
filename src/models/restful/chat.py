@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 
 from src.logger import logger
-from src.infrastructures.models.message_manager import MessageManager
+from src.models.message_manager import MessageManager
 
 
 class RestfulClient():

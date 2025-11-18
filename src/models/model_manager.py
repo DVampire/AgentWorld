@@ -8,8 +8,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from src.infrastructures.models.restful.chat import ChatRestfulSearch
-from src.infrastructures.models.transcribe import TranscribeOpenAI
+from src.models.restful.chat import ChatRestfulSearch
+from src.models.transcribe import TranscribeOpenAI
 from src.utils import Singleton
 from src.logger import logger
 from src.config import config

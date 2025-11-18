@@ -13,9 +13,9 @@ from src.utils import get_file_info, dedent
 from src.agents.protocol import acp
 from src.tools.protocol import tcp
 from src.environments.protocol import ecp
-from src.infrastructures.memory import SessionInfo, EventType
+from src.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
-from src.agents.prompts.prompt_manager import PromptManager
+from src.prompts.prompt_manager import PromptManager
 
 class AnthropicMobileAgentInputArgs(BaseModel):
     task: str = Field(description="The mobile device automation task to complete.")

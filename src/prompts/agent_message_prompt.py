@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 
 from src.logger import logger
-from src.agents.prompts.templates import PROMPT_TEMPLATES
+from src.prompts.templates import PROMPT_TEMPLATES
 from src.utils import encode_image_base64, make_image_url, assemble_project_path
 from src.optimizers.protocol.variable import Variable
 

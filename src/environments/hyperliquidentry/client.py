@@ -3,6 +3,7 @@
 from typing import Dict, Optional, Any, List
 import logging
 import time
+from datetime import datetime, timezone, timedelta
 
 # Hyperliquid Python SDK
 try:
@@ -217,7 +218,7 @@ class HyperliquidClient:
         """
         return await self.get_user_state()
     
-    async def get_symbol_data(self, symbol: str) -> Dict[str, Any]:
+    async def get_symbol_data(self, symbol: str, start_time: Optional[int] = None, end_time: Optional[int] = None) -> Dict[str, Any]:
         """Get symbol data for a symbol.
         
         Args:
@@ -240,8 +241,14 @@ class HyperliquidClient:
                 ...
             ]
         """
-        start_time = int(time.time() * 1000) - 60 * 1000 # 1 minute ago
-        end_time = int(time.time() * 1000)
+        if not start_time and not end_time:
+            now_time = int(time.time() * 1000)
+            start_time = int(now_time - 1 * 1000) # 1 second ago
+            end_time = int(now_time)
+        else:
+            start_time = int(start_time)
+            end_time = int(end_time)
+        
         symbol_data = self.info.candles_snapshot(symbol, "1m", start_time, end_time)
         return symbol_data
 

@@ -16,7 +16,7 @@ from src.environments.protocol import ecp
 from src.agents.protocol.types import InputArgs
 from src.tools.protocol.types import ToolResponse
 from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
-from src.infrastructures.memory import EventType
+from src.memory import EventType
 from src.tracer import Tracer, Record
 
 def format_actions(actions: List[BaseModel]) -> str:

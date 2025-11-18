@@ -18,7 +18,7 @@ from src.utils import dedent
 from src.agents.protocol import acp
 from src.tools.protocol import tcp
 from src.environments.protocol import ecp
-from src.infrastructures.memory import SessionInfo, EventType
+from src.memory import SessionInfo, EventType
 from src.tools.protocol.types import ToolResponse
 
 class DayAnalysisOutput(BaseModel):

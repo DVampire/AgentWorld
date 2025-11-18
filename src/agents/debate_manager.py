@@ -9,8 +9,6 @@ from pydantic import BaseModel, Field, ConfigDict
 from src.logger import logger
 from src.agents.protocol.agent import BaseAgent
 from src.agents.protocol import acp
-from src.infrastructures.models import model_manager
-from src.agents.prompts import prompt_manager
 
 
 class DebateManagerInputArgs(BaseModel):

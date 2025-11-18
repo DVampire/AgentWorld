@@ -9,7 +9,6 @@ from src.environments.database.service import DatabaseService
 from src.environments.database.types import CreateTableRequest, InsertRequest, QueryRequest
 from src.environments.hyperliquidentry.exceptions import HyperliquidError
 
-
 class CandleHandler:
     """Handler for candle (OHLCV) data with streaming, caching, and technical indicators."""
     
@@ -56,9 +55,15 @@ class CandleHandler:
             # Create candle table
             columns = [
                 {"name": "id", "type": "INTEGER", "constraints": "PRIMARY KEY AUTOINCREMENT"},
-                {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "open_time", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "close_time", "type": "TEXT"},
+                {"name": "timestamp", "type": "INTEGER", "constraints": "NOT NULL"},
+                {"name": "timestamp_utc", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "timestamp_local", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "open_time", "type": "INTEGER", "constraints": "NOT NULL"},
+                {"name": "open_time_utc", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "open_time_local", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "close_time", "type": "INTEGER", "constraints": "NOT NULL"},
+                {"name": "close_time_utc", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "close_time_local", "type": "TEXT", "constraints": "NOT NULL"},
                 {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
                 {"name": "interval", "type": "TEXT"},  # e.g., "1m", "5m", "1h", "1d"
                 {"name": "open", "type": "REAL"},
@@ -108,8 +113,7 @@ class CandleHandler:
             # Create indicators table with all technical indicators
             columns = [
                 {"name": "id", "type": "INTEGER", "constraints": "PRIMARY KEY AUTOINCREMENT"},
-                {"name": "timestamp", "type": "TEXT", "constraints": "NOT NULL"},
-                {"name": "open_time", "type": "TEXT", "constraints": "NOT NULL"},
+                {"name": "timestamp", "type": "INTEGER", "constraints": "NOT NULL"},
                 {"name": "symbol", "type": "TEXT", "constraints": "NOT NULL"},
                 # Trend indicators
                 {"name": "sma_20", "type": "REAL"},
@@ -119,8 +123,6 @@ class CandleHandler:
                 {"name": "macd", "type": "REAL"},
                 {"name": "macd_signal", "type": "REAL"},
                 {"name": "macd_hist", "type": "REAL"},
-                {"name": "adx", "type": "REAL"},
-                {"name": "sar", "type": "REAL"},
                 # Momentum indicators
                 {"name": "rsi", "type": "REAL"},
                 {"name": "stoch_k", "type": "REAL"},
@@ -134,17 +136,6 @@ class CandleHandler:
                 # Volume indicators
                 {"name": "obv", "type": "REAL"},
                 {"name": "mfi", "type": "REAL"},
-                # Structure indicators
-                {"name": "pivot_point", "type": "REAL"},
-                {"name": "pivot_resistance1", "type": "REAL"},
-                {"name": "pivot_resistance2", "type": "REAL"},
-                {"name": "pivot_support1", "type": "REAL"},
-                {"name": "pivot_support2", "type": "REAL"},
-                {"name": "ichimoku_tenkan", "type": "REAL"},
-                {"name": "ichimoku_kijun", "type": "REAL"},
-                {"name": "ichimoku_senkou_a", "type": "REAL"},
-                {"name": "ichimoku_senkou_b", "type": "REAL"},
-                {"name": "ichimoku_chikou", "type": "REAL"},
                 {"name": "created_at", "type": "TEXT", "constraints": "DEFAULT CURRENT_TIMESTAMP"}
             ]
             
@@ -164,47 +155,6 @@ class CandleHandler:
             index_result = await self.database_service.execute_query(QueryRequest(query=index_query))
             if not index_result.success:
                 logger.warning(f"Failed to create index {index_name} for {indicators_table_name}: {index_result.message}")
-    
-    def _normalize_timestamp(self, timestamp_value) -> str:
-        """Normalize timestamp to 'YYYY-MM-DD HH:MM:SS' format string in UTC.
-        
-        Args:
-            timestamp_value: Timestamp (can be int, float, or datetime)
-            
-        Returns:
-            'YYYY-MM-DD HH:MM:SS' format timestamp string in UTC
-        """
-        if isinstance(timestamp_value, (int, float)):
-            # Hyperliquid uses milliseconds
-            if timestamp_value > 1e10:
-                # Already in milliseconds
-                dt = datetime.fromtimestamp(timestamp_value / 1000, tz=timezone.utc)
-            else:
-                # In seconds
-                dt = datetime.fromtimestamp(timestamp_value, tz=timezone.utc)
-            return dt.strftime('%Y-%m-%d %H:%M:%S')
-        elif isinstance(timestamp_value, datetime):
-            if timestamp_value.tzinfo is None:
-                timestamp_value = timestamp_value.replace(tzinfo=timezone.utc)
-            else:
-                timestamp_value = timestamp_value.astimezone(timezone.utc)
-            return timestamp_value.strftime('%Y-%m-%d %H:%M:%S')
-        elif isinstance(timestamp_value, str):
-            # If already in 'YYYY-MM-DD HH:MM:SS' format, return as is
-            if len(timestamp_value) == 19 and timestamp_value[10] == ' ':
-                return timestamp_value
-            # Try to parse and convert to UTC
-            try:
-                dt = datetime.fromisoformat(timestamp_value.replace('Z', '+00:00'))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                else:
-                    dt = dt.astimezone(timezone.utc)
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                return timestamp_value
-        else:
-            return datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     
     async def stream_insert(self, data: Dict, symbol: str) -> Dict:
         """Insert candle data from stream.
@@ -226,27 +176,22 @@ class CandleHandler:
         
         logger.info(f"| 🔍 stream_insert called for {symbol}, data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
         
-        # Processed data format from WebSocket class:
-        # {
-        #   "symbol": "BTC",
-        #   "interval": "1m",
-        #   "timestamp": "YYYY-MM-DD HH:MM:SS" (minute start time, UTC),
-        #   "open_time": "YYYY-MM-DD HH:MM:SS" (minute start time, UTC),
-        #   "close_time": "YYYY-MM-DD HH:MM:SS" (minute end time, UTC),
-        #   "open": float, "high": float, "low": float, "close": float,
-        #   "volume": float, "quote_volume": float, "trade_count": int,
-        #   "taker_buy_base_volume": float, "taker_buy_quote_volume": float,
-        #   "is_closed": True
-        # }
-        
         if not isinstance(data, dict):
             logger.error(f"| ❌ stream_insert: data is not a dict for {symbol}, type: {type(data)}")
             return {"success": False, "message": f"Invalid data type: {type(data)}"}
         
-        open_time = data.get("open_time", "")
-        close_time = data.get("close_time", "")
-        timestamp = data.get("timestamp", open_time)
+        
+        symbol = data.get("symbol", "")
         interval = data.get("interval", "1m")
+        timestamp = data.get("timestamp", "")
+        timestamp_utc = data.get("timestamp_utc", "")
+        timestamp_local = data.get("timestamp_local", "")
+        open_time = data.get("open_time", "")
+        open_time_utc = data.get("open_time_utc", "")
+        open_time_local = data.get("open_time_local", "")
+        close_time = data.get("close_time", "")
+        close_time_utc = data.get("close_time_utc", "")
+        close_time_local = data.get("close_time_local", "")
         open_price = float(data.get("open", 0))
         high_price = float(data.get("high", 0))
         low_price = float(data.get("low", 0))
@@ -266,11 +211,17 @@ class CandleHandler:
             db_symbol = symbol
             
             candle_data = {
-                "timestamp": timestamp,
-                "open_time": open_time,
-                "close_time": close_time,
                 "symbol": db_symbol,
                 "interval": interval,
+                "timestamp": timestamp,
+                "timestamp_utc": timestamp_utc,
+                "timestamp_local": timestamp_local,
+                "open_time": open_time,
+                "open_time_utc": open_time_utc,
+                "open_time_local": open_time_local,
+                "close_time": close_time,
+                "close_time_utc": close_time_utc,
+                "close_time_local": close_time_local,
                 "open": open_price,
                 "high": high_price,
                 "low": low_price,
@@ -362,13 +313,12 @@ class CandleHandler:
         
         self._cache[symbol] = df
     
-    async def _calculate_and_insert_indicators(self, symbol: str, timestamp: str, open_time: str) -> None:
+    async def _calculate_and_insert_indicators(self, symbol: str, timestamp: int) -> None:
         """Calculate technical indicators and insert into database.
         
         Args:
             symbol: Symbol name
-            timestamp: Timestamp of the candle ('YYYY-MM-DD HH:MM:SS' format string)
-            open_time: Open time ('YYYY-MM-DD HH:MM:SS' format string)
+            timestamp: timestamp of the candle (ms)
         """
         if symbol not in self._cache or len(self._cache[symbol]) < 2:
             logger.debug(f"| ⚠️  Not enough data for indicators for {symbol}: cache has {len(self._cache.get(symbol, []))} rows")
@@ -377,12 +327,8 @@ class CandleHandler:
         try:
             df = self._cache[symbol].copy()
             # Convert open_time to datetime for proper sorting
-            if "open_time" in df.columns:
-                df["open_time_dt"] = pd.to_datetime(df["open_time"], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-                df = df.sort_values("open_time_dt")
-                df = df.drop(columns=["open_time_dt"])
-            else:
-                df = df.sort_values("open_time")
+            if "timestamp" in df.columns:
+                df = df.sort_values("timestamp")
             
             # Ensure we have numeric columns
             for col in ["open", "high", "low", "close", "volume"]:

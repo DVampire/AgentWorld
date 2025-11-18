@@ -159,7 +159,19 @@ class DataProducer:
                     # Insert the latest (most complete) data from previous minute
                     latest_data = self._candle_buffer[symbol]
                     logger.info(f"| 📤 Inserting latest data for {symbol} @ {current_minute}")
-                    await self._insert_candle(latest_data, symbol, current_minute)
+                    
+                    # Insert candle data into database
+                    try:
+                        result = await self._candle_handler.stream_insert(latest_data, symbol)
+                        success = result.success if hasattr(result, 'success') else result.get("success", False)
+                        message = result.message if hasattr(result, 'message') else result.get("message", "")
+                        
+                        if success:
+                            logger.info(f"| ✅ Candle inserted for {symbol} @ {current_minute}")
+                        else:
+                            logger.warning(f"| ⚠️  Failed to insert candle for {symbol} @ {current_minute}: {message}")
+                    except Exception as e:
+                        logger.error(f"| ❌ Error inserting candle for {symbol} @ {current_minute}: {e}", exc_info=True)
                 else:
                     logger.warning(f"| ⚠️  No buffered data for {symbol} @ {current_minute}")
                 
@@ -173,26 +185,6 @@ class DataProducer:
             
         except Exception as e:
             logger.error(f"| ❌ Error processing candle data for {symbol}: {e}", exc_info=True)
-    
-    async def _insert_candle(self, data: Dict, symbol: str, timestamp: str) -> None:
-        """Insert candle data into database.
-        
-        Args:
-            data: Candle data to insert
-            symbol: Symbol name
-            timestamp: Timestamp of the candle
-        """
-        try:
-            result = await self._candle_handler.stream_insert(data, symbol)
-            success = result.success if hasattr(result, 'success') else result.get("success", False)
-            message = result.message if hasattr(result, 'message') else result.get("message", "")
-            
-            if success:
-                logger.info(f"| ✅ Candle inserted for {symbol} @ {timestamp}")
-            else:
-                logger.warning(f"| ⚠️  Failed to insert candle for {symbol} @ {timestamp}: {message}")
-        except Exception as e:
-            logger.error(f"| ❌ Error inserting candle for {symbol} @ {timestamp}: {e}", exc_info=True)
     
     async def _data_processor(self) -> None:
         """Process data from queue."""
@@ -449,7 +441,14 @@ class DataProducer:
                 if current_minute:
                     logger.info(f"| 📤 Flushing latest data for {symbol} @ {current_minute}")
                     # Insert the latest buffered data
-                    await self._insert_candle(latest_data, symbol, current_minute)
+                    result = await self._candle_handler.stream_insert(latest_data, symbol)
+                    success = result.success if hasattr(result, 'success') else result.get("success", False)
+                    message = result.message if hasattr(result, 'message') else result.get("message", "")
+                    
+                    if success:
+                        logger.info(f"| ✅ Candle inserted for {symbol} @ {current_minute}")
+                    else:
+                        logger.warning(f"| ⚠️  Failed to insert candle for {symbol} @ {current_minute}: {message}")
             except Exception as e:
                 logger.error(f"| ❌ Error flushing buffer for {symbol}: {e}", exc_info=True)
         
