@@ -11,7 +11,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import json
 
-from langchain.schema import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from pydantic import BaseModel, Field
 

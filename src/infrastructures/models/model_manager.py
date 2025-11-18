@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
-from langchain.callbacks.base import BaseCallbackHandler
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -204,6 +204,25 @@ class ModelManager(metaclass=Singleton):
                 "model_id": model_id,
             }
             
+            # gpt-5.1
+            model_name = "gpt-5.1"
+            model_id = "gpt-5.1"
+            model = ChatOpenAI(
+                model=model_id,
+                api_key=api_key,
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
+                                                    remote_api_base_name="OPENAI_API_BASE"),
+                use_responses_api=True,
+                output_version="responses/v1",
+                callbacks=[TokenUsageCallbackHandler(model_name)],
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "openai",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+            
             # gpt-5-mini
             model_name = "gpt-5-mini"
             model_id = "gpt-5-mini"
@@ -212,6 +231,8 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                use_responses_api=True,
+                output_version="responses/v1",
                 callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
@@ -229,6 +250,8 @@ class ModelManager(metaclass=Singleton):
                 api_key=api_key,
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_AZURE_US_API_BASE", 
                                                     remote_api_base_name="OPENAI_API_BASE"),
+                use_responses_api=True,
+                output_version="responses/v1",
                 callbacks=[TokenUsageCallbackHandler(model_name)],
             )
             self.registed_models[model_name] = model
@@ -413,10 +436,6 @@ class ModelManager(metaclass=Singleton):
                     "model_id": "gpt-4.1",
                 },
                 {
-                    "model_name": "gpt-5",
-                    "model_id": "gpt-5",
-                },
-                {
                     "model_name": "o1",
                     "model_id": "o1",
                 },
@@ -438,6 +457,43 @@ class ModelManager(metaclass=Singleton):
                     api_key=api_key,
                     base_url=api_base,
                     max_tokens=self._max_tokens,
+                    callbacks=[TokenUsageCallbackHandler(model_name)],
+                )
+                self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "openai",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
+                
+            # gpt-5, gpt-5.1, gpt-5-mini, gpt-5-nano
+            models = [
+                {
+                    "model_name": "gpt-5",
+                    "model_id": "gpt-5",
+                },
+                {
+                    "model_name": "gpt-5.1",
+                    "model_id": "gpt-5.1",
+                },
+                {
+                    "model_name": "gpt-5-mini",
+                    "model_id": "gpt-5-mini",
+                },
+                {
+                    "model_name": "gpt-5-nano",
+                    "model_id": "gpt-5-nano",
+                },
+            ]
+            for model in models:
+                model_name = model["model_name"]
+                model_id = model["model_id"]
+                model = ChatOpenAI(
+                    model=model_id,
+                    api_key=api_key,
+                    base_url=api_base,
+                    use_responses_api=True,
+                    output_version="responses/v1",
                     callbacks=[TokenUsageCallbackHandler(model_name)],
                 )
                 self.registed_models[model_name] = model
