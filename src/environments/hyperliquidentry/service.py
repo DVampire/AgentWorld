@@ -660,6 +660,7 @@ class HyperliquidService:
                 order_type=request.order_type.value,
                 size=request.qty,
                 price=request.price,
+                leverage=request.leverage,
                 stop_loss_price=request.stop_loss_price,
                 take_profit_price=request.take_profit_price
             )

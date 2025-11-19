@@ -326,6 +326,7 @@ class HyperliquidClient:
         order_type: str = "Market",
         size: float = None,
         price: Optional[float] = None, # only for limit orders
+        leverage: Optional[int] = None,
         stop_loss_price: Optional[float] = None,
         take_profit_price: Optional[float] = None,
         **kwargs
@@ -341,6 +342,7 @@ class HyperliquidClient:
             order_type: Order type ('Market' or 'Limit'). Default: 'Market'
             size: Order size (in base units, e.g., 0.1 BTC)
             price: Order price (ignored for Market orders)
+            leverage: Order leverage
             stop_loss_price: Optional stop loss trigger price
             take_profit_price: Optional take profit trigger price
 
@@ -358,6 +360,14 @@ class HyperliquidClient:
 
         # Convert side to boolean
         is_buy = side.upper() in ["B", "BUY"]
+        
+        if leverage:
+            self.exchange.update_leverage(
+                leverage=leverage,
+                name=symbol,
+                is_cross=False # always use cross margin for orders
+            )
+            logger.info(f"| 📝 Leverage updated to {leverage} for {symbol}")
         
         if order_type == "Limit":
             if price is None:
