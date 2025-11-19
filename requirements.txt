@@ -91,4 +91,6 @@ hyperliquid-python-sdk
 flask>=3.0.0
 plotly>=5.18.0
 
+TA-lib>=0.6.8
+diskcache>=5.6.3
 

@@ -91,7 +91,7 @@ async def main():
     logger.info(f"| ✅ Transformation completed: {tcp.list()}")
     
     # Example task
-    task = "Start trading on BTC,ETH simultaneously and maximize the profit until the environment is done."
+    task = "Start trading on BTC and maximize the profit until the environment is done."
     files = []
     
     logger.info(f"| 📋 Task: {task}")
