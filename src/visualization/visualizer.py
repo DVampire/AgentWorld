@@ -67,16 +67,22 @@ class TracerVisualizer:
             observation = record.get("observation", {})
             hyperliquid = observation.get("hyperliquid", {})
             account = hyperliquid.get("account", {})
-            # Account structure: account.account.margin_summary.accountValue
-            if isinstance(account, dict):
-                account_inner = account.get("account", {})
-                if isinstance(account_inner, dict):
-                    margin_summary = account_inner.get("margin_summary", {})
-                    account_value = margin_summary.get("accountValue")
-                    if account_value:
-                        return float(account_value)
-        except (KeyError, ValueError, TypeError) as e:
-            # Debug: print error for troubleshooting
+            if not isinstance(account, dict):
+                return None
+            
+            # New tracer format exposes account_value directly
+            direct_value = account.get("account_value")
+            if direct_value is not None:
+                return float(direct_value)
+            
+            # Fallback to nested margin summary
+            account_inner = account.get("account", {})
+            if isinstance(account_inner, dict):
+                margin_summary = account_inner.get("margin_summary", {})
+                account_value = margin_summary.get("accountValue")
+                if account_value is not None:
+                    return float(account_value)
+        except (KeyError, ValueError, TypeError):
             pass
         return None
     
@@ -136,32 +142,40 @@ class TracerVisualizer:
         return returns
     
     def _extract_crypto_prices(self, record: Dict[str, Any]) -> Dict[str, Optional[float]]:
-        """Extract cryptocurrency prices from a record.
-        
-        Returns:
-            Dictionary mapping symbol to close price (latest candle)
-        """
-        prices = {}
+        """Extract cryptocurrency prices from a record (latest candle close per symbol)."""
+        prices: Dict[str, Optional[float]] = {}
         try:
             observation = record.get("observation", {})
             hyperliquid = observation.get("hyperliquid", {})
             input_data = hyperliquid.get("input", {})
             data = input_data.get("data", {})
             
-            if isinstance(data, dict):
-                for symbol, symbol_data in data.items():
-                    if isinstance(symbol_data, dict):
-                        candles = symbol_data.get("candle", [])
-                        if candles and isinstance(candles, list) and len(candles) > 0:
-                            # Get the latest candle (first one in the list)
-                            latest_candle = candles[0]
-                            if isinstance(latest_candle, dict):
-                                close_price = latest_candle.get("close")
-                                if close_price is not None:
-                                    try:
-                                        prices[symbol] = float(close_price)
-                                    except (ValueError, TypeError):
-                                        prices[symbol] = None
+            if not isinstance(data, dict):
+                return prices
+            
+            for symbol, symbol_data in data.items():
+                if not isinstance(symbol_data, dict):
+                    continue
+                
+                candles = symbol_data.get("candles")
+                if candles is None:
+                    candles = symbol_data.get("candle")
+                if not isinstance(candles, list) or not candles:
+                    continue
+                
+                # tracer stores candles in chronological order; take the last (latest) closed candle
+                latest_candle = candles[-1] if isinstance(candles[-1], dict) else None
+                if not isinstance(latest_candle, dict):
+                    continue
+                
+                close_price = latest_candle.get("close")
+                if close_price is None:
+                    continue
+                
+                try:
+                    prices[symbol] = float(close_price)
+                except (ValueError, TypeError):
+                    prices[symbol] = None
         except (KeyError, ValueError, TypeError):
             pass
         

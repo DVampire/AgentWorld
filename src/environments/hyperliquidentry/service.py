@@ -1,10 +1,10 @@
 """Hyperliquid trading service implementation using REST API clients."""
+import asyncio
 import time
 import json
 from typing import Optional, Union, List, Dict
 from pathlib import Path
 
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
@@ -39,8 +39,6 @@ from src.environments.hyperliquidentry.exceptions import (
 )
 from src.environments.database.service import DatabaseService
 from src.environments.hyperliquidentry.candle import CandleHandler
-from src.environments.hyperliquidentry.producer import DataProducer
-from src.environments.hyperliquidentry.consumer import DataConsumer
 from src.environments.hyperliquidentry.types import DataStreamType
 from src.utils import assemble_project_path
 from src.config import config
@@ -114,9 +112,11 @@ class HyperliquidService:
         self.candle_handler: Optional[CandleHandler] = None
         self.indicators_name: List[str] = []
         
-        # Producer and Consumer
-        self.data_producer: Optional[DataProducer] = None
-        self.data_consumer: Optional[DataConsumer] = None
+        # Background candle polling task
+        self._candle_stream_task: Optional[asyncio.Task] = None
+        self._candle_stream_running: bool = False
+        self._candle_stream_symbols: List[str] = []
+        self._candle_stream_lock = asyncio.Lock()
         
         self._max_concurrent_writes: int = 10  # Max concurrent database writes
         self._max_historical_data_points: int = 120 # 120 minutes = 2 hours
@@ -166,21 +166,12 @@ class HyperliquidService:
             # Step 4: Initialize data handlers
             await self._initialize_data_handlers()
             
-            # Step 5: Initialize producer and consumer
-            await self._initialize_producer_consumer()
-            
             # Auto-start data stream if requested
             if self.auto_start_data_stream and self.symbol:
                 symbols = self.symbol if isinstance(self.symbol, list) else [self.symbol]
-                data_types = None
-                if self.data_type:
-                    if isinstance(self.data_type, list):
-                        data_types = [DataStreamType(dt) for dt in self.data_type]
-                    else:
-                        data_types = [DataStreamType(self.data_type)]
-                logger.info(f"| 📡 Auto-starting data stream for {len(symbols)} symbols: {symbols}, data_types: {[dt.value for dt in data_types] if data_types else 'all'}")
-                await self.start_data_stream(symbols, data_types)
-                logger.info(f"| ✅ Data stream started successfully")
+                logger.info(f"| 📡 Auto-starting candle polling for {len(symbols)} symbols: {symbols}")
+                await self.start_data_stream(symbols)
+                logger.info(f"| ✅ Candle polling started successfully")
             
         except Exception as e:
             if "401" in str(e) or "Invalid" in str(e):
@@ -224,7 +215,6 @@ class HyperliquidService:
         
         for symbol in symbols:
             symbol_data = await client.get_symbol_data(symbol, start_time=start_time, end_time=end_time)
-            
             result = await self.candle_handler.full_insert(symbol_data, symbol)
             if result["success"]:
                 logger.info(f"| ✅ Inserted {len(symbol_data)} candles for {symbol}")
@@ -232,19 +222,6 @@ class HyperliquidService:
                 logger.warning(f"| ⚠️  Failed to insert candles for {symbol}: {result['message']}")
                 
                 
-    async def _initialize_producer_consumer(self) -> None:
-        """Initialize producer and consumer."""
-        self.data_producer = DataProducer(
-            account=self.default_account,
-            candle_handler=self.candle_handler,
-            symbols=self.symbols,
-            max_concurrent_writes=self._max_concurrent_writes,
-            testnet=self.testnet
-        )
-        self.data_consumer = DataConsumer(
-            candle_handler=self.candle_handler,
-        )
-    
     async def _load_symbols(self) -> None:
         """Load available trading symbols."""
         try:
@@ -296,9 +273,9 @@ class HyperliquidService:
     
     async def cleanup(self) -> None:
         """Cleanup the Hyperliquid service."""
-        # Stop data stream if running
-        if self.data_producer:
-            self.data_producer.stop()
+        # Stop candle polling if running
+        if self._candle_stream_task:
+            await self.stop_data_stream()
         
         self._clients = {}
         
@@ -311,8 +288,9 @@ class HyperliquidService:
         self.candle_handler = None
         self.indicators_name = []
         
-        self.data_producer = None
-        self.data_consumer = None
+        self._candle_stream_task = None
+        self._candle_stream_running = False
+        self._candle_stream_symbols = []
         
     # Get Exchange Info
     async def get_exchange_info(self, request: GetExchangeInfoRequest) -> ActionResult:
@@ -354,7 +332,7 @@ class HyperliquidService:
                 "cross_maintenance_margin_used": account_info.get('crossMarginSummary', {}).get('totalMarginUsed', 0),
                 "withdrawable": account_info.get('withdrawable', 0),
                 "asset_positions": account_info.get('assetPositions', []),
-                "time": datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+                "time": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
                 "trade_type": "perpetual",
             }
             
@@ -447,7 +425,7 @@ class HyperliquidService:
     async def get_data(self, request: GetDataRequest) -> ActionResult:
         """Get historical data from database.
         
-        This method delegates to the DataConsumer.
+        This method delegates to the CandleHandler directly.
         
         Args:
             request: GetDataRequest with symbol (str or list), data_type,
@@ -456,36 +434,198 @@ class HyperliquidService:
         Returns:
             ActionResult with data organized by symbol in extra field
         """
-        if not self.data_consumer:
-            raise HyperliquidError("Data consumer not initialized. Call initialize() first.")
-        return await self.data_consumer.get_data(request)
+        if not self.candle_handler:
+            raise HyperliquidError("Candle handler not initialized. Call initialize() first.")
+        
+        if not request.symbol:
+            raise HyperliquidError("Symbol must be provided to get data.")
+        
+        try:
+            symbols = request.symbol if isinstance(request.symbol, list) else [request.symbol]
+            data_type = DataStreamType(request.data_type)
+            
+            if data_type != DataStreamType.CANDLE:
+                raise HyperliquidError(f"Unsupported data type {data_type.value}. Only candle data is available.")
+            
+            result_data: Dict[str, Dict[str, List[Dict]]] = {}
+            total_rows = 0
+            
+            for symbol in symbols:
+                logger.info(f"| 🔍 Getting {data_type.value} data for {symbol}...")
+                data = await self.candle_handler.get_data(
+                    symbol=symbol,
+                    start_date=request.start_date,
+                    end_date=request.end_date,
+                    limit=request.limit
+                )
+                
+                result_data[symbol] = data
+                total_rows += len(data.get("candles", [])) + len(data.get("indicators", []))
+            
+            symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"
+            if request.start_date and request.end_date:
+                message = f"Retrieved {total_rows} records ({data_type.value}) for {symbol_str} from {request.start_date} to {request.end_date}."
+            else:
+                message = f"Retrieved {total_rows} latest records ({data_type.value}) for {symbol_str}."
+            
+            return ActionResult(
+                success=True,
+                message=message,
+                extra={
+                    "data": result_data,
+                    "symbols": symbols,
+                    "data_type": data_type.value,
+                    "start_date": request.start_date,
+                    "end_date": request.end_date,
+                    "row_count": total_rows
+                }
+            )
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get data: {e}")
+    
+    async def _sleep_until_start(self) -> None:
+        """Wait until the next minute boundary for minute-level trading.
+        
+        This ensures we get complete minute kline data by waiting until the start
+        of the next minute before fetching data.
+        """
+        current_ts = time.time()
+        seconds_since_minute = current_ts % 60
+        timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_ts))
+        
+        if seconds_since_minute <= 1e-3:
+            logger.debug(f"| ✅ Already at minute boundary (current: {timestamp_str})")
+            return
+        
+        wait_time = 60 - seconds_since_minute
+        logger.debug(f"| ⏳ Waiting {wait_time:.2f} seconds until next minute boundary (current: {timestamp_str})...")
+        await asyncio.sleep(wait_time)
+        
+        final_ts = time.time()
+        final_timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(final_ts))
+        logger.debug(f"| ✅ Reached minute boundary (current: {final_timestamp_str})")
+    
+    async def _ingest_latest_candles(self) -> None:
+        """Fetch the latest closed 1m candle for all tracked symbols and store it."""
+        async with self._candle_stream_lock:
+            symbols_snapshot = list(self._candle_stream_symbols)
+        
+        if not symbols_snapshot:
+            logger.debug("| ⚠️  Candle polling has no symbols to process.")
+            return
+        
+        if not self.candle_handler:
+            logger.warning("| ⚠️  Candle handler missing while polling; skipping this cycle.")
+            return
+        
+        client = self._get_client(self.default_account.name)
+        now_ms = int(time.time() * 1000)
+        start_time = now_ms - 60 * 1000
+        end_time = now_ms
+        
+        for symbol in symbols_snapshot:
+            try:
+                symbol_data = await client.get_symbol_data(symbol, start_time=start_time, end_time=end_time)
+            except Exception as e:
+                logger.warning(f"| ⚠️  Failed to fetch candles for {symbol}: {e}")
+                continue
+            
+            if not symbol_data:
+                logger.debug(f"| ⚠️  No candle data returned for {symbol} in the last minute.")
+                continue
+            
+            latest_candle = symbol_data[-1] if len(symbol_data) == 1 else symbol_data[-2]
+            
+            try:
+                result = await self.candle_handler.stream_insert(latest_candle, symbol)
+            except Exception as insert_error:
+                logger.error(f"| ❌ Failed to insert candle for {symbol}: {insert_error}", exc_info=True)
+                continue
+            
+            success = result.get("success") if isinstance(result, dict) else getattr(result, "success", False)
+            if success:
+                logger.info(f"| ✅ Inserted candle for {symbol} at timestamp {latest_candle.get('t')}")
+            else:
+                message = result.get("message") if isinstance(result, dict) else getattr(result, "message", "")
+                logger.warning(f"| ⚠️  Candle insert reported failure for {symbol}: {message}")
+    
+    async def _run_candle_stream(self) -> None:
+        """Background task that aligns to minute boundaries and ingests candles."""
+        logger.info("| 🔄 Candle polling task started.")
+        try:
+            await self._sleep_until_start()
+            while self._candle_stream_running:
+                await self._ingest_latest_candles()
+                await self._sleep_until_start()
+        except asyncio.CancelledError:
+            logger.info("| ⏹️  Candle polling task cancelled.")
+        except Exception as e:
+            logger.error(f"| ❌ Candle polling encountered an error: {e}", exc_info=True)
+        finally:
+            self._candle_stream_running = False
+            async with self._candle_stream_lock:
+                self._candle_stream_task = None
+            logger.info("| ✅ Candle polling task stopped.")
     
     async def start_data_stream(
         self,
         symbols: List[str],
         data_types: Optional[List[DataStreamType]] = None
     ) -> None:
-        """Start real-time data stream collection for given symbols.
+        """Start the coroutine-based candle polling loop for given symbols."""
+        if not self.candle_handler:
+            raise HyperliquidError("Candle handler not initialized. Call initialize() first.")
         
-        This method delegates to the DataProducer.
+        if not symbols:
+            raise HyperliquidError("At least one symbol is required to start the data stream.")
         
-        Args:
-            symbols: List of symbols to subscribe to (e.g., ["BTC", "ETH"])
-            data_types: Optional list of data types to subscribe to (default: all types)
-        """
-        if not self.data_producer:
-            raise HyperliquidError("Data producer not initialized. Call initialize() first.")
-        await self.data_producer.start(symbols, data_types)
+        normalized_symbols = []
+        for symbol in symbols:
+            if symbol:
+                normalized_symbols.append(symbol.upper())
+        # Remove duplicates while preserving order
+        normalized_symbols = list(dict.fromkeys(normalized_symbols))
+        
+        if not normalized_symbols:
+            raise HyperliquidError("No valid symbols provided to start the data stream.")
+        
+        if data_types:
+            unsupported = [dt for dt in data_types if dt != DataStreamType.CANDLE]
+            if unsupported:
+                raise HyperliquidError(f"Unsupported data types requested: {[dt.value for dt in unsupported]}. Only candle data is available.")
+        
+        async with self._candle_stream_lock:
+            self._candle_stream_symbols = normalized_symbols
+            if self._candle_stream_task and not self._candle_stream_task.done():
+                logger.info(f"| 🔁 Candle polling already running. Updated symbols: {normalized_symbols}")
+                return
+            
+            self._candle_stream_running = True
+            self._candle_stream_task = asyncio.create_task(self._run_candle_stream())
+            logger.info(f"| 🚀 Candle polling scheduled for symbols: {normalized_symbols}")
     
     async def stop_data_stream(self) -> None:
         """Stop the data stream.
         
-        This method delegates to the DataProducer.
         """
-        if not self.data_producer:
-            logger.warning("| ⚠️  Data producer not initialized")
-            return
-        await self.data_producer.stop()
+        async with self._candle_stream_lock:
+            task = self._candle_stream_task
+            if not task:
+                logger.warning("| ⚠️  Candle polling task is not running.")
+                return
+            
+            self._candle_stream_running = False
+            task.cancel()
+        
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.debug("| ⏹️  Candle polling task cancelled.")
+        finally:
+            async with self._candle_stream_lock:
+                if self._candle_stream_task is task:
+                    self._candle_stream_task = None
+                    self._candle_stream_symbols = []
     
     # Order methods
     async def create_order(self, request: CreateOrderRequest) -> ActionResult:

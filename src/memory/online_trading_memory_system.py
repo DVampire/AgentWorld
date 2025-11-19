@@ -1,9 +1,9 @@
 """
-Trading-specific memory system for tracking trading history, performance patterns, and extracting trading insights.
+Online trading memory system for tracking perpetual futures decisions, performance patterns, and extracting actionable insights.
 
 Architecture:
-- TradingMemorySystem: Specialized memory for trading agents
-- Focuses on: trade history, win/loss patterns, strategy effectiveness, market conditions
+- OnlineTradingMemorySystem: Specialized memory for online trading agents
+- Focuses on: decision rationale, win/loss patterns, strategy effectiveness, market conditions
 """
 
 from typing import Dict, List, Any, Optional, Union
@@ -22,24 +22,24 @@ from src.logger import logger
 from src.utils import dedent
 
 
-class TradingSummary(BaseModel):
-    """Trading-specific summary focusing on trade records and market conditions"""
+class OnlineTradingSummary(BaseModel):
+    """Summary of online perpetual futures decisions, highlighting the reasoning, execution, and outcomes"""
     id: str = Field(description="Unique identifier")
     importance: Importance = Field(description="Importance level")
-    content: str = Field(description="Summary of trading actions and outcomes")
-    trade_count: int = Field(default=0, description="Number of trades in this summary period")
-    profit_loss: float = Field(default=0.0, description="Cumulative profit/loss in this period")
+    content: str = Field(description="Narrative of the decisions taken, rationale, and observed results")
+    trade_count: int = Field(default=0, description="Number of online trades captured in this period")
+    profit_loss: float = Field(default=0.0, description="Cumulative profit/loss percentage driven by those decisions")
     timestamp: datetime = Field(default_factory=datetime.now)
     
     def __str__(self):
         return f"[{self.importance.value}] {self.content} (Trades: {self.trade_count}, P/L: {self.profit_loss:.2f}%)"
 
 
-class TradingInsight(BaseModel):
-    """Trading-specific insight focusing on strategy patterns and lessons learned"""
+class OnlineTradingInsight(BaseModel):
+    """Insight capturing how online trading decisions impacted P/L, highlighting lessons from wins and losses"""
     id: str = Field(description="Unique identifier")
     importance: Importance = Field(description="Importance level")
-    content: str = Field(description="Trading insight or lesson learned")
+    content: str = Field(description="Lesson learned about decision quality, execution, or market response")
     insight_type: str = Field(description="Type: winning_pattern, losing_pattern, risk_lesson, market_condition")
     related_trades: List[str] = Field(default_factory=list, description="Related trade IDs or periods")
     tags: List[str] = Field(default_factory=list, description="Tags for categorization")
@@ -49,10 +49,10 @@ class TradingInsight(BaseModel):
         return f"[{self.importance.value}|{self.insight_type}] {self.content} (Tags: {', '.join(self.tags)})"
 
 
-class TradingMemoryOutput(BaseModel):
-    """Structured output for trading memory generation"""
-    summaries: List[TradingSummary] = Field(description="List of trading summaries")
-    insights: List[TradingInsight] = Field(description="List of trading insights")
+class OnlineTradingMemoryOutput(BaseModel):
+    """Structured output for online trading memory generation"""
+    summaries: List[OnlineTradingSummary] = Field(description="List of online trading decision summaries")
+    insights: List[OnlineTradingInsight] = Field(description="List of insights derived from decision outcomes")
 
 
 class ProcessDecision(BaseModel):
@@ -60,8 +60,8 @@ class ProcessDecision(BaseModel):
     reason: str = Field(description="Reason for the decision")
 
 
-class TradingCombinedMemory:
-    """Trading-specific combined memory that handles trade summaries and trading insights"""
+class OnlineTradingCombinedMemory:
+    """Online trading combined memory that tracks perpetual futures decisions and resulting insights"""
     
     def __init__(self, 
                  model_name: str = "gpt-4.1", 
@@ -75,8 +75,8 @@ class TradingCombinedMemory:
         self.llm = None
         self.events: List[ChatEvent] = []
         self.candidate_chat_history = ChatMessageHistory()
-        self.summaries: List[TradingSummary] = []
-        self.insights: List[TradingInsight] = []
+        self.summaries: List[OnlineTradingSummary] = []
+        self.insights: List[OnlineTradingInsight] = []
         self._init_llm()
     
     def _init_llm(self):
@@ -143,14 +143,14 @@ class TradingCombinedMemory:
         new_lines = await self._get_new_lines_text()
         current_memory = await self._get_current_memory_text()
         
-        decision_prompt = dedent(f"""You are analyzing trading events to decide whether to process them into trading summaries and insights.
+        decision_prompt = dedent(f"""You are analyzing online trading (perpetual futures) events to decide whether to process them into decision summaries and insights.
 
         Current trading session has {self.size()} events.
 
-        Decision criteria for TRADING memory:
+        Decision criteria for ONLINE TRADING memory:
         1. If there are fewer than 2 trading events, do not process
         2. If the trading actions are repetitive without new outcomes, do not process
-        3. If there are completed trades (BUY→SELL or SELL→BUY cycles) with results, PROCESS
+        3. If there are completed decision cycles (e.g., LONG→CLOSE_LONG or SHORT→CLOSE_SHORT) with results, PROCESS
         4. If there are significant profit/loss events (>2% change), PROCESS
         5. If there are clear trading patterns or lessons emerging, PROCESS
         6. If conversation exceeds 4 trading events, PROCESS
@@ -166,7 +166,7 @@ class TradingCombinedMemory:
         try:
             structured_llm = self.llm.with_structured_output(ProcessDecision)
             decision_response = await structured_llm.ainvoke(decision_prompt)
-            logger.info(f"| Trading memory processing decision: {decision_response.should_process} - {decision_response.reason}")
+            logger.info(f"| Online trading memory processing decision: {decision_response.should_process} - {decision_response.reason}")
             return decision_response.should_process
                 
         except Exception as e:
@@ -181,20 +181,20 @@ class TradingCombinedMemory:
         new_lines = await self._get_new_lines_text()
         current_memory = await self._get_current_memory_text()
         
-        prompt = dedent(f"""Analyze the trading events and extract trading summaries and insights.
+        prompt = dedent(f"""Analyze the online trading (perpetual futures) events and extract decision summaries and outcome-driven insights.
 
         <intro>
-        For TRADING SUMMARIES, focus on:
-        1. Trading actions taken (BUY/SELL/HOLD) and their timing
-        2. Market conditions during trades (price trends, volume, news)
-        3. Trade outcomes: profit/loss, win rate, holding periods
-        4. Overall trading performance in this period
+        For ONLINE TRADING SUMMARIES, focus on:
+        1. Decisions executed (LONG/SHORT/HOLD/CLOSE) and the reasoning behind them
+        2. Market context (trend, volatility, liquidity) during those decisions
+        3. Execution results: profit/loss impact, holding durations, notable slippage
+        4. Overall effectiveness of the decision-making during this window
         
-        For TRADING INSIGHTS, extract:
-        1. WINNING PATTERNS: What strategies worked well? (e.g., "Buying on dips with volume confirmation yields +3% average")
-        2. LOSING PATTERNS: What mistakes were made? (e.g., "Panic selling in volatile markets led to -5% losses")
-        3. RISK LESSONS: What risk management lessons emerged? (e.g., "Holding losing positions too long amplifies losses")
-        4. MARKET CONDITIONS: What market patterns were observed? (e.g., "Strong downtrends require patience, not catching falling knives")
+        For ONLINE TRADING INSIGHTS, extract:
+        1. WINNING PATTERNS: Decision approaches that consistently produced gains.
+        2. LOSING PATTERNS: Decision mistakes that led to losses or missed opportunities.
+        3. RISK LESSONS: How stop placement, position sizing, or capital usage impacted outcomes.
+        4. MARKET CONDITIONS: Observations about the market regime affecting these decisions.
         
         Insight types: "winning_pattern", "losing_pattern", "risk_lesson", "market_condition"
         
@@ -204,13 +204,13 @@ class TradingCombinedMemory:
 
         <output_format>
         Respond with JSON containing:
-        - "summaries": array of trading summaries with:
+        - "summaries": array of online trading summaries with:
             - "id": unique identifier
             - "importance": "high", "medium", or "low"
             - "content": summary of trading actions and outcomes
             - "trade_count": number of trades
             - "profit_loss": cumulative profit/loss percentage
-        - "insights": array of trading insights with:
+        - "insights": array of online trading insights with:
             - "id": unique identifier
             - "importance": "high", "medium", or "low"
             - "content": the trading insight
@@ -228,7 +228,7 @@ class TradingCombinedMemory:
         Generate new trading summaries and insights based on the events.""")
         
         try:
-            structured_llm = self.llm.with_structured_output(TradingMemoryOutput)
+            structured_llm = self.llm.with_structured_output(OnlineTradingMemoryOutput)
             response = await structured_llm.ainvoke(prompt)
             
             new_summaries = response.summaries
@@ -282,20 +282,20 @@ class TradingCombinedMemory:
             return self.events
         return self.events[-n:] if len(self.events) > n else self.events
     
-    async def get_summary(self, n: Optional[int] = None) -> List[TradingSummary]:
+    async def get_summary(self, n: Optional[int] = None) -> List[OnlineTradingSummary]:
         if n is None:
             return self.summaries
         return self.summaries[-n:] if len(self.summaries) > n else self.summaries
     
-    async def get_insight(self, n: Optional[int] = None) -> List[TradingInsight]:
+    async def get_insight(self, n: Optional[int] = None) -> List[OnlineTradingInsight]:
         if n is None:
             return self.insights
         return self.insights[-n:] if len(self.insights) > n else self.insights
 
 
-@MEMORY_SYSTEM.register_module(name="trading_memory_system", force=True)
-class TradingMemorySystem:
-    """Trading-specific memory system for comprehensive trading performance tracking and learning"""
+@MEMORY_SYSTEM.register_module(name="online_trading_memory_system", force=True)
+class OnlineTradingMemorySystem:
+    """Online trading memory system focused on perpetual futures decision tracking and learning"""
     
     def __init__(self, 
                  model_name: str = "gpt-4.1",
@@ -306,7 +306,7 @@ class TradingMemorySystem:
         self.max_summaries = max_summaries
         self.max_insights = max_insights
     
-        self.session_memory: Dict[str, TradingCombinedMemory] = {}
+        self.session_memory: Dict[str, OnlineTradingCombinedMemory] = {}
         self.session_info: Dict[str, SessionInfo] = {}
         self.current_session_id: Optional[str] = None
         
@@ -330,8 +330,8 @@ class TradingMemorySystem:
         self.session_info[session_id] = session_info
         self.current_session_id = session_id
         
-        # Initialize TradingCombinedMemory for this session
-        self.session_memory[session_id] = TradingCombinedMemory(
+        # Initialize OnlineTradingCombinedMemory for this session
+        self.session_memory[session_id] = OnlineTradingCombinedMemory(
             model_name=self.model_name, 
             max_summaries=self.max_summaries,
             max_insights=self.max_insights
@@ -403,13 +403,13 @@ class TradingMemorySystem:
             return await self.session_memory[session_id].get_event(n=n)
         return []
     
-    async def get_summary(self, n: Optional[int] = None) -> List[TradingSummary]:
+    async def get_summary(self, n: Optional[int] = None) -> List[OnlineTradingSummary]:
         session_id = self.current_session_id
         if session_id and session_id in self.session_memory:
             return await self.session_memory[session_id].get_summary(n=n)
         return []
     
-    async def get_insight(self, n: Optional[int] = None) -> List[TradingInsight]:
+    async def get_insight(self, n: Optional[int] = None) -> List[OnlineTradingInsight]:
         session_id = self.current_session_id
         if session_id and session_id in self.session_memory:
             return await self.session_memory[session_id].get_insight(n=n)

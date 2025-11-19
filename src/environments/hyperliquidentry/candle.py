@@ -194,7 +194,7 @@ class CandleHandler:
         volume = float(data.get("v", 0))
         trade_count = float(data.get("n", 0))
         
-        timestamp_dict = get_standard_timestamp(open_time)
+        timestamp_dict = get_standard_timestamp(close_time + 1000) # add 1 second to close_time to get the next minute start
         timestamp = timestamp_dict["timestamp"]
         timestamp_utc = timestamp_dict["timestamp_utc"]
         timestamp_local = timestamp_dict["timestamp_local"]
@@ -207,8 +207,8 @@ class CandleHandler:
         close_time_utc = close_time_dict["timestamp_utc"]
         close_time_local = close_time_dict["timestamp_local"]
         
-        current_time_stamp = int(time.time() * 1000)
-        is_closed = 1 if current_time_stamp > close_time else 0
+        current_timestamp = int(time.time()) * 1000
+        is_closed = 1 if current_timestamp > close_time else 0
         
         res = {
             "symbol": symbol,

@@ -9,6 +9,8 @@ import asyncio
 import time
 import json
 
+from hyperliquid.info import Info
+
 import argparse
 from mmengine import DictAction
 
@@ -19,7 +21,6 @@ sys.path.append(root)
 load_dotenv()
 
 from src.environments.hyperliquidentry.client import HyperliquidClient
-from src.environments.hyperliquidentry.websocket import HyperliquidWebSocket
 from src.environments.hyperliquidentry.service import HyperliquidService
 from src.environments.hyperliquidentry.types import GetDataRequest, CreateOrderRequest, OrderType
 from src.environments.hyperliquid_environment import HyperliquidEnvironment
@@ -178,43 +179,48 @@ async def test_client():
     print("🔍 Test 6: get_symbol_data()")
     print("-" * 80)
     try:
-        # now_time = int(time.time() * 1000)
-        # start_time = int(now_time - 60 * 60 * 1000) # 1 hour ago
-        # end_time = int(now_time)
-        # symbol_data = await client.get_symbol_data("BTC", start_time=start_time, end_time=end_time)
-        
-        symbol_data = await client.get_symbol_data("BTC")
-        
-        print(f"✅ Symbol data retrieved successfully")
-        for item in symbol_data:
+        while True:
+            # Wait until the next minute boundary to ensure fresh candle data
+            now = time.time()
+            seconds_until_next_minute = 60 - (now % 60)
+            if seconds_until_next_minute > 0 and seconds_until_next_minute < 60:
+                await asyncio.sleep(seconds_until_next_minute)
             
-            current_time = int(time.time()) * 1000
-            open_time = item['t']
-            close_time = item['T']
+            now_time = int(time.time() * 1000)
+            start_time = int(now_time - 120 * 60 * 1000) # 2 hours ago
+            end_time = int(now_time)
+            symbol_data = await client.get_symbol_data("BTC", start_time=start_time, end_time=end_time)
             
-            current_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time / 1000))
-            current_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time / 1000))
-            open_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(open_time / 1000))
-            close_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(close_time / 1000))
-            open_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(open_time / 1000))
-            close_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(close_time / 1000))
-            
-            print(f"   Current Timestamp: {current_time}")
-            print(f"   Current Timestamp (UTC): {current_time_utc}")
-            print(f"   Current Timestamp (Local): {current_time_local}")
-            print(f"   Open Time (ms): {open_time}")
-            print(f"   Close Time (ms): {close_time}")
-            print(f"   Open Time (UTC): {open_time_utc}")
-            print(f"   Close Time (UTC): {close_time_utc}")
-            print(f"   Open Time (Local): {open_time_local}")
-            print(f"   Close Time (Local): {close_time_local}")
-            print(f"   Open: {item['o']}")
-            print(f"   High: {item['h']}")
-            print(f"   Low: {item['l']}")  
-            print(f"   Close: {item['c']}")
-            print(f"   Volume: {item['v']}")
-            print()
-        results["symbol_data"] = symbol_data
+            print(f"✅ Symbol data retrieved successfully")
+            for item in symbol_data:
+                
+                current_time = int(time.time()) * 1000
+                open_time = item['t']
+                close_time = item['T']
+                
+                current_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_time / 1000))
+                current_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time / 1000))
+                open_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(open_time / 1000))
+                close_time_utc = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(close_time / 1000))
+                open_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(open_time / 1000))
+                close_time_local = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(close_time / 1000))
+                
+                print(f"   Current Timestamp: {current_time}")
+                print(f"   Current Timestamp (UTC): {current_time_utc}")
+                print(f"   Current Timestamp (Local): {current_time_local}")
+                print(f"   Open Time (ms): {open_time}")
+                print(f"   Close Time (ms): {close_time}")
+                print(f"   Open Time (UTC): {open_time_utc}")
+                print(f"   Close Time (UTC): {close_time_utc}")
+                print(f"   Open Time (Local): {open_time_local}")
+                print(f"   Close Time (Local): {close_time_local}")
+                print(f"   Open: {item['o']}")
+                print(f"   High: {item['h']}")
+                print(f"   Low: {item['l']}")  
+                print(f"   Close: {item['c']}")
+                print(f"   Volume: {item['v']}")
+                print()
+            results["symbol_data"] = symbol_data
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
@@ -447,87 +453,6 @@ async def test_orders():
         return None
 
 
-async def test_websocket_candles(use_testnet: bool = False):
-    """Test WebSocket candle data streaming (async version).
-    
-    Args:
-        use_testnet: If True, use testnet. If False, use mainnet (more active).
-    """
-    network = "Testnet" if use_testnet else "Mainnet"
-    print("\n" + "=" * 60)
-    print(f"Testing Hyperliquid WebSocket Candle Stream ({network})")
-    print("=" * 60)
-    
-    try:
-        
-        async def on_message(ws, channel: str, data: Dict):
-            logger.info(f"📡 Received message: {channel} - {data}")
-            
-        async def on_error(ws, error: str):
-            logger.error(f"❌ WebSocket error: {error}")
-            
-        async def on_close(ws):
-            logger.info("🛑 WebSocket closed")
-            
-        async def on_open(ws):
-            logger.info(f"✅ WebSocket opened ({network})")
-        
-        # Create WebSocket client without custom callbacks
-        # The websocket.py already has built-in message handling
-        ws_client = HyperliquidWebSocket(
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close,
-            on_open=on_open,
-            testnet=use_testnet
-        )
-        
-        print("📋 WebSocket client created")
-        
-        # Subscribe to BTC and ETH candles
-        print("📡 Subscribing to BTC and ETH 1-minute candles...")
-        ws_client.subscribe_candle("BTC", interval="1m")
-        ws_client.subscribe_candle("ETH", interval="1m")
-        
-        # Start WebSocket (in current async event loop)
-        print("🚀 Starting WebSocket connection...")
-        loop = asyncio.get_running_loop()
-        ws_client.start(loop=loop)
-        
-        # Wait for data
-        wait_seconds = 90  # Wait 90 seconds (at least 1 full minute)
-        print(f"⏳ Waiting {wait_seconds} seconds for candle data...")
-        print("   Note: Hyperliquid only sends candle data when a minute closes (every 60 seconds)")
-        print(f"   {network} should have {'more' if not use_testnet else 'less'} activity")
-        
-        intervals = wait_seconds // 10
-        for i in range(intervals):
-            await asyncio.sleep(10)
-            print(f"   ... {(i+1)*10}s elapsed (waiting for complete minute candle...)")
-            
-            # Check if task is still running
-            if ws_client._task and ws_client._task.done():
-                print(f"   ⚠️ WARNING: WebSocket task has stopped!")
-                try:
-                    exception = ws_client._task.exception()
-                    print(f"   Task exception: {exception}")
-                except:
-                    pass
-        
-        # Stop WebSocket
-        print("\n🛑 Stopping WebSocket...")
-        await ws_client.stop()
-        
-        print(f"\n✅ Test completed. Check the logs above to see if candle data was received.")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
 async def test_complete_data_flow(use_testnet: bool = False):
     """Test complete data flow from WebSocket to database.
     
@@ -551,7 +476,7 @@ async def test_complete_data_flow(use_testnet: bool = False):
         raise ValueError("HYPERLIQUID_ACCOUNTS not found")
     
     # Symbols to test
-    test_symbols = ["BTC", "ETH"]
+    test_symbols = ["BTC"]
     
     print(f"\n📋 Configuration:")
     print(f"   Base Directory: {base_dir}")
@@ -574,7 +499,7 @@ async def test_complete_data_flow(use_testnet: bool = False):
         print("✅ Service initialized successfully")
         
         # Wait for data collection (need at least 60+ seconds for complete candle)
-        wait_time = 90
+        wait_time = 70
         print(f"\n⏳ Step 3: Waiting {wait_time} seconds for data collection...")
         print("   (Hyperliquid pushes complete 1-minute candles every 60 seconds)")
         
@@ -595,20 +520,31 @@ async def test_complete_data_flow(use_testnet: bool = False):
             
             if result.success:
                 data = result.extra.get("data", {})
-                if symbol in data and "candle" in data[symbol]:
-                    candles = data[symbol]["candle"]
+                if symbol in data and "candles" in data[symbol]:
+                    candles = data[symbol]["candles"]
                     print(f"\n✅ {symbol}: Found {len(candles)} candle(s)")
                     
                     # Show latest candle
                     if len(candles) > 0:
-                        latest = candles[-1]
-                        print(f"   Latest candle:")
-                        print(f"      Timestamp: {latest.get('timestamp')}")
-                        print(f"      Open: {latest.get('open')}")
-                        print(f"      High: {latest.get('high')}")
-                        print(f"      Low: {latest.get('low')}")
-                        print(f"      Close: {latest.get('close')}")
-                        print(f"      Volume: {latest.get('volume')}")
+                        
+                        for candle in candles:
+                            latest = candle
+                            print(f"   Latest candle:")
+                            print(f"      Timestamp (ms): {latest.get('timestamp')}")
+                            print(f"      Timestamp (UTC): {latest.get('timestamp_utc')}")
+                            print(f"      Timestamp (Local): {latest.get('timestamp_local')}")
+                            print(f"      Open Time (ms): {latest.get('open_time')}")
+                            print(f"      Open Time (UTC): {latest.get('open_time_utc')}")
+                            print(f"      Open Time (Local): {latest.get('open_time_local')}")
+                            print(f"      Close Time (ms): {latest.get('close_time')}")
+                            print(f"      Close Time (UTC): {latest.get('close_time_utc')}")
+                            print(f"      Close Time (Local): {latest.get('close_time_local')}")
+                            print(f"      Open: {latest.get('open')}")
+                            print(f"      High: {latest.get('high')}")
+                            print(f"      Low: {latest.get('low')}")
+                            print(f"      Close: {latest.get('close')}")
+                            print(f"      Volume: {latest.get('volume')}")
+                            print(f"      Trade Count: {latest.get('trade_count')}")
                 else:
                     print(f"\n⚠️  {symbol}: No data found in database yet")
             else:
@@ -717,6 +653,30 @@ async def test_database():
         # Disconnect
         await database_service.disconnect()
         print("🔌 Disconnected from database")
+        
+
+async def test_snapshot():
+    """Test snapshot data from Hyperliquid."""
+    print("\n" + "=" * 60)
+    print("Snapshot Data")
+    print("=" * 60)
+
+    # 初始化（默认会自动开启 websocket）
+    info = Info()
+
+    # 回调函数：当有新 K 线时自动触发
+    def on_candle(data):
+        print("收到 K 线数据：", data)
+
+    # 订阅 BTC 的 1 分钟 K 线
+    subscription = {
+        "type": "candle",
+        "coin": "BTC",   # 键为名字，内部会自动转换成 coinId
+        "interval": "1m"
+    }
+
+    sub_id = info.subscribe(subscription, on_candle)
+    print("订阅成功，subscription_id:", sub_id)
 
 
 async def async_main():
@@ -729,19 +689,19 @@ async def async_main():
     
     
     # Test client basic functionality
-    # await test_client()
+    await test_client()
     
     # Test order creation
     # await test_orders()
-    
-    # Test websocket candles
-    # await test_websocket_candles()
     
     # Test complete data flow
     # await test_complete_data_flow()
     
     # Test database
-    await test_database()
+    # await test_database()
+    
+    # Test snapshot
+    # await test_snapshot()
 
 
 async def main():

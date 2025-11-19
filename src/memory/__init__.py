@@ -3,12 +3,12 @@
 from .memory_manager import MemoryManager
 from .types import ChatEvent, EventType, SessionInfo
 from .general_memory_system import GeneralMemorySystem
-from .trading_memory_system import TradingMemorySystem
+from .online_trading_memory_system import OnlineTradingMemorySystem
 
 __all__ = [
     "MemoryManager",
     "GeneralMemorySystem",
-    "TradingMemorySystem",
+    "OnlineTradingMemorySystem",
     "ChatEvent",
     "EventType",
     "SessionInfo",

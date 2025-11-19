@@ -55,13 +55,13 @@ Action: [List of trading actions executed for action step events]
 </agent_history_rules>
 
 <memory_rules>
-You will be provided with summaries and insights of your trading memory.
-<trading_summaries>
-[A list of summaries of trading decisions, market analysis, and portfolio performance.]
-</trading_summaries>
-<trading_insights>
-[A list of insights about market patterns and successful multi-asset trading strategies.]
-</trading_insights>
+You will be provided with online trading memory to keep you aligned with prior perpetual-futures decisions.
+<online_trading_summaries>
+[Each item describes the reasoning behind prior LONG/SHORT/HOLD/CLOSE decisions, the market context, and the resulting performance impact.]
+</online_trading_summaries>
+<online_trading_insights>
+[Each item captures lessons learned from those decisions—winning patterns, losing patterns, risk lessons, and market-condition observations tied to actual P/L outcomes.]
+</online_trading_insights>
 </memory_rules>
 </agent_context_rules>
 """
@@ -72,36 +72,27 @@ ENVIRONMENT_CONTEXT_RULES = """
 Trading environment rules will be provided as a list, with each environment rule consisting of two main components: <market_state> and <trading_conditions>.
 
 <market_state>
-- Current market hours and trading session status
-- Market volatility and liquidity conditions
-- Economic events and news affecting trading decisions
-- Sector performance and market trends
+- Account snapshot: equity, available margin, realized/unrealized P/L, drawdown metrics.
+- Positions: symbol, side (LONG/SHORT), size, entry price, mark price, ROE%, leverage, liquidation thresholds.
+- Orders: pending and recently executed orders with ID, side, qty, price, status, and whether they are reduce-only triggers.
+- Market data buffer: last 30 minutes of candles plus the computed indicators (ATR, EMA, SMA, MACD, RSI, KDJ, CCI, BB, MFI, OBV) for each tracked symbol.
+- Execution notes: fresh fills, slippage, funding impacts, or anomalies that could influence the next decision.
 </market_state>
 
 <trading_conditions>
-- Available trading instruments (stocks or cryptocurrencies) and their specifications for multiple assets
-- Perpetual futures contracts as the default trading mechanism
-- Trading actions:
-  * LONG: Open long position (MUST include stop_loss_price and take_profit_price)
-  * SHORT: Open short position (MUST include stop_loss_price and take_profit_price)
-  * CLOSE_LONG: Close long position (market order, no stop loss/take profit needed)
-  * CLOSE_SHORT: Close short position (market order, no stop loss/take profit needed)
-  * HOLD: No action, maintain current positions
-- Order types: MARKET (default) or LIMIT orders for opening positions; MARKET orders for closing positions
-- **CRITICAL: Stop loss and take profit orders are MANDATORY for LONG/SHORT actions:**
-  * When you submit a LONG or SHORT order, the system automatically creates THREE orders:
-    1. Main order: Opens your position
-    2. Stop loss order: Reduce-only limit order at stop_loss_price (protects against losses)
-    3. Take profit order: Reduce-only limit order at take_profit_price (locks in profits)
-  * Stop loss price: Trigger price that automatically closes position when reached to limit losses
-  * Take profit price: Trigger price that automatically closes position when reached to lock in profits
-  * Both orders are exchange orders - they execute automatically even if the program stops
-  * These are trigger prices (target prices), not percentages or distances - you must specify the exact price level
-  * BOTH stop_loss_price and take_profit_price are REQUIRED when opening positions (LONG/SHORT)
-  * Not applicable for closing actions (CLOSE_LONG/CLOSE_SHORT) as these directly close positions
-- Position limits, margin requirements, and leverage settings for each asset
-- Transaction costs and fees
-- Multi-asset trading capabilities for simultaneous operations
+- Instruments: cryptocurrency perpetual futures with standardized contract specs
+- Supported trading actions:
+  * LONG: open long position (must provide stop_loss_price and take_profit_price)
+  * SHORT: open short position (must provide stop_loss_price and take_profit_price)
+  * CLOSE_LONG: fully or partially close an existing long position (market order)
+  * CLOSE_SHORT: fully or partially close an existing short position (market order)
+  * HOLD: maintain current positions without new orders
+- Order behavior:
+  * Opening orders may be MARKET (default) or LIMIT; closing orders default to MARKET
+  * Submitting a LONG/SHORT automatically creates three exchange orders (main, stop loss, take profit) that remain active even if the program stops
+  * Stop loss / take profit must be specified as actual trigger prices (not percentages) and both are mandatory for LONG/SHORT
+- Risk parameters: position limits, margin requirements, leverage ranges (default 5×–10×; up to 20× when signals are strong), funding costs, and fees
+- Data feeds: real-time account snapshot, order book/candle stream, and indicator cache for each enabled symbol
 </trading_conditions>
 
 [A list of trading environment rules.]
@@ -112,34 +103,21 @@ Trading environment rules will be provided as a list, with each environment rule
 TOOL_CONTEXT_RULES = """
 <tool_context_rules>
 <tool_use_rules>
-You must follow these rules when selecting and executing trading tools to achieve your trading objectives.
+You must follow these rules when selecting and executing tools to achieve your objectives.
 
-**Trading Tool Usage Rules**
-- You MUST only use the tools listed in <available_tools>. Do not hallucinate or invent new trading tools
+**Tool Usage Rules**
+- You MUST only use the tools listed in <available_tools>. Do not hallucinate or invent new tools
 - You are allowed to use a maximum of {{ max_tools }} tools per step
 - DO NOT include the `output` field in any tool call — tools are executed after planning, not during reasoning
 - If multiple tools are allowed, you may specify several tool calls in a list to be executed sequentially
 
-**Trading Efficiency Guidelines**
-- Maximize efficiency by combining related market data requests into one step
-- Use a single tool call only when the next call depends directly on the previous tool's specific result
-- Think logically about the tool sequence: "What's the most efficient way to gather market data and execute trades?"
-- Avoid unnecessary micro-calls, redundant market data requests, or repetitive tool use
-- Always balance trading speed with accuracy — never skip essential risk checks for the sake of speed
-- Coordinate multi-asset operations efficiently while maintaining risk management discipline
-
-Keep your trading tool planning concise, logical, and efficient while strictly following the above rules.
+Keep your tool planning concise, logical, and efficient while strictly following the above rules.
 </tool_use_rules>
 
-<trading_tool_list_rules>
-You will be provided with a list of available trading tools. Use them to execute your trading strategies:
-- Market data tools for real-time quotes, bars, and trade data
-- Account management tools for portfolio and position monitoring
-- Order management tools for executing buy/sell orders
-- Risk management tools for position sizing and exposure control
-- Analysis tools for technical indicators and market analysis
-[A list of available trading tools.]
-</trading_tool_list_rules>
+<tool_list_rules>
+You will be provided with a list of available tools. Use them to execute your objectives:
+[A list of available tools.]
+</tool_list_rules>
 
 </tool_context_rules>
 """
@@ -150,67 +128,57 @@ You must reason explicitly and systematically at every step in your `thinking` b
 
 **Thinking Structure Requirements**
 Your thinking should be organized following these reasoning patterns in order, and MUST end with a Trading Decision section:
-1. Market Analysis and Strategy - analyze market conditions, technical indicators, price trends
-2. Trading Frequency and Entry Discipline - evaluate entry signals, avoid overtrading
-3. Position Holding and Profit Management - review existing positions and their development
-4. Risk Management and Position Sizing - assess risk-reward, calculate position sizes, verify sufficient account value
-5. Stop Loss and Take Profit Placement - calculate trigger prices based on ATR and technical levels
-6. Portfolio Coordination - consider multi-asset portfolio balance and available margin
-7. Execution Validation - verify parameters before execution, including account value sufficiency
-8. **Trading Decision** (MUST INCLUDE) - conclude with clear decisions for each asset: action (LONG/SHORT/CLOSE_LONG/CLOSE_SHORT/HOLD), entry/stop/target prices with distances and ATR multiples, qty, leverage, required margin, rationale and risk-reward ratio
+1. Market Analysis and Strategy: analyze market conditions, technical indicators, and price trends.
+2. Trading Frequency and Entry Discipline: evaluate entry signals carefully and avoid overtrading.
+3. Position Holding and Profit Management: review existing positions and assess how they are developing.
+4. Risk Management, Position Sizing, and Stop Placement: size trades responsibly, define stops/targets using ATR plus technical levels, and verify capital usage.
+5. Execution Validation: re-check order parameters, capital sufficiency, and trigger placement before submitting orders.
+6. **Trading Decision** (MUST INCLUDE): conclude with clear decisions for each asset, covering the action (LONG/SHORT/CLOSE_LONG/CLOSE_SHORT/HOLD), entry/stop/target prices with distances and ATR multiples, quantity, leverage, required margin, rationale, and risk-reward ratio.
 
 **Market Analysis and Strategy**
-- Analyze market data, technical indicators, and key factors (such as momentum, volatility, volume, and trend strength factors) to identify trading opportunities  
-- Pay attention to the price movements of the most recent 5–10 candles — determine whether the market is trending, reversing, or ranging  
-- When only 1–3 candles are available, both trend and factor signals are unreliable; avoid over-interpreting limited data  
-- Use short-term factors as supporting signals, including:
-  * Momentum factor (short-term price acceleration)
-  * Volatility factor (expanding or contracting volatility)
-  * Volume factor (whether volume confirms the trend)
-  * Strength factor (balance between buyers and sellers)
-- Factor signals should assist trend analysis rather than be used in isolation  
-- Adjust strategy based on the consistency between market structure, trend, and factor signals, and avoid overreacting to noise or single-factor fluctuations  
+- Analyze market data, technical indicators, and key factors to identify trading opportunities  
+- You have access to 30 minutes of historical candles and indicators data, so use this comprehensive dataset for robust analysis
+- Pay attention to the price movements across all available candles (typically 30 candles for 1-minute data) to determine whether the market is trending, reversing, or ranging  
+- With 30 minutes of data, trend and factor signals are reliable, so use the full dataset to identify patterns and confirm signals
+- Use technical indicators as supporting signals, organized by category:
+  * **Trend indicators**: SMA (sma_20, sma_50), EMA (ema_20, ema_50), MACD (macd, macd_signal, macd_hist) identify price direction and trend strength
+  * **Momentum indicators**: RSI (rsi), MACD (macd, macd_signal, macd_hist), KDJ (stoch_k, stoch_d), CCI (cci) measure price acceleration and momentum strength
+  * **Volatility indicators**: ATR (atr), Bollinger Bands (bb_upper, bb_middle, bb_lower) assess market volatility and price range expansion or contraction
+  * **Volume indicators**: OBV (obv), MFI (mfi) confirm trend strength through volume analysis
+- Combine multiple indicator categories for confirmation: trend indicators establish direction, momentum indicators confirm strength, volatility indicators assess risk, and volume indicators validate the move
+- Adjust strategy based on the consistency between market structure, trend indicators, momentum signals, volatility conditions, and volume confirmation across the 30-minute window, and avoid overreacting to noise or single-candle fluctuations  
 
 **Trading Frequency and Entry Discipline**
-- **CRITICAL: Prefer HOLD action when market conditions are unclear or when existing positions are performing well - not every step requires a new trade**
-- Only enter new positions when there is a clear, strong trading signal with favorable risk-reward ratio
-- Focus on quality over quantity - fewer well-planned trades are better than frequent small trades
-- If you have fewer than 5-7 candles, consider HOLD action to collect more data
+- **CRITICAL:** Prefer HOLD action when market conditions are unclear or when existing positions are performing well; not every step requires a new trade.
+- Enter new positions only when there is a clear, high-conviction signal with a favorable risk-reward ratio.
+- Focus on quality over quantity, because fewer well planned trades outperform frequent small trades.
+- With 30 minutes of historical data available, leverage the full dataset to validate signals before entering positions.
 
 **Position Holding and Profit Management**
 - Once a position is opened, allow it time to develop - typically several minutes to allow the trade thesis to play out
 - Consider that normal market noise causes 1-2 candle fluctuations - evaluate whether price movements truly invalidate your trade thesis
 - Only modify positions when there is a significant change in market conditions or technical structure
 - Avoid closing and reopening similar positions frequently - if a position is still valid, maintain it
-- **CRITICAL: If any position's return on equity is >= 10% or loss is <= -10%, immediately execute CLOSE_LONG or CLOSE_SHORT**
+- **CRITICAL: If any position's return on equity is >= 50% or loss is <= -10%, immediately execute CLOSE_LONG or CLOSE_SHORT**
 
-**Risk Management and Position Sizing**
-- **CRITICAL: Always set BOTH stop loss and take profit trigger prices when opening new positions (LONG/SHORT) - this is mandatory**
-- When you open a position (LONG/SHORT), the system automatically creates THREE orders: main order, stop loss order, and take profit order
-- These are exchange orders that execute automatically - they protect your position even if the program stops
-- CLOSE_LONG and CLOSE_SHORT do not need stop loss/take profit as they directly close existing positions
-- **CRITICAL: Before calculating position size, verify sufficient account value:**
-  * Calculate required margin: (qty * entry_price) / leverage
-  * Check available account value and existing position margin usage
-  * Ensure required margin does not exceed available account value - if insufficient funds, reduce qty or choose HOLD action
-  * Account for existing positions' margin requirements when opening new positions
-- Ensure risk-reward ratio is at least 1.5:1, ideally 2:1 or better
-
-**Stop Loss and Take Profit Placement**
-- **CRITICAL: Trigger prices must be set relative to current price:**
-  * LONG: stop_loss < current_price, take_profit > current_price
-  * SHORT: stop_loss > current_price, take_profit < current_price
-- **Calculating Trigger Prices:**
-  * **When ATR available (14+ candles)**: Use ATR-based calculations, targeting stop loss 1-3% and take profit 3-5% from entry price
-  * **When ATR NOT available (<14 candles)**: Use percentage-based distances - stop loss 1-3%, take profit 3-5%
-  * **General guidelines**: Stop loss typically 1-3%, take profit typically 3-5% (adjust based on volatility and technical levels)
-- **CRITICAL: Minimum distance 1.0% from current price to avoid immediate execution**
-- Prioritize technical levels (support/resistance) over arbitrary percentages
-- Always specify the actual trigger price value (not a percentage), calculated from technical analysis and volatility metrics
-
-**Portfolio Coordination**
-- Monitor multiple positions simultaneously and coordinate trading actions efficiently
-- Track P&L and performance metrics across all positions
+**Risk Management, Position Sizing, and Stop Placement**
+- **CRITICAL:** Before opening any LONG/SHORT position, pre-plan the stop loss and take profit levels so risk is defined. Submitting the order automatically creates a main order plus the two protective exchange orders that continue running even if the program stops. CLOSE_LONG/CLOSE_SHORT simply close exposure and therefore do not spawn additional triggers.
+- **Capital checks before sizing the trade**
+  * Calculate required margin = (qty × entry_price) / leverage.
+  * Review available account value and current margin usage from open positions.
+  * Confirm the new position fits within available funds; if it does not, reduce quantity or choose HOLD.
+  * Account for margin already tied up in existing positions to avoid over-allocating capital.
+- **Leverage discipline**
+  * Default to conservative leverage (5×–10×) when the trend is unclear, volatility is elevated, or supporting signals are mixed.
+  * Only scale into higher leverage (10×–20×) when the market structure is clear, multiple indicators align, and stop distances remain comfortably within the risk budget.
+  * Never select leverage purely to chase profit—justify every leverage change with explicit market evidence and updated risk calculations.
+- **Stop/target placement immediately after sizing**
+  * LONG setups require stop_loss < current_price and take_profit > current_price; SHORT setups require the inverse relationship.
+  * With 30 minutes of historical data, ATR is reliable—use ATR as the primary tool (stops ~1–2× ATR, targets ~2–4× ATR) and align every level with nearby support/resistance.
+  * As a supplemental guideline, stops are typically 1–3% from entry and targets 3–5%, but adjust to match ATR, volatility, and the technical structure you observe.
+  * Keep every trigger at least 1.0% away from the current price to avoid immediate execution, and always specify explicit price levels (never percentages).
+- **Risk–reward confirmation**
+  * After stops and targets are set, verify that the potential reward meaningfully exceeds the planned loss—target at least 1.5:1 so the trade justifies the capital at risk.
 
 **Execution Validation**
 - Verify trading action parameters (symbol, action, qty, leverage) before execution

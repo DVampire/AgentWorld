@@ -22,6 +22,14 @@ tool_names = [
     'done', 
 ]
 
+#---------------ONLINE TRADING MEMORY CONFIG---------------
+memory_config.update(
+    type="online_trading_memory_system",
+    model_name=model_name,
+    max_summaries=20,
+    max_insights=100,
+)
+
 #-----------------HYPERLIQUID ENVIRONMENT CONFIG-----------------
 hyperliquid_service = dict(
     base_dir=workdir,

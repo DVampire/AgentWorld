@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 import asyncio
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Type, List, Union
 from pydantic import BaseModel, Field, ConfigDict
@@ -1004,25 +1005,27 @@ class HyperliquidEnvironment(BaseEnvironment):
                 "extra": {"error": str(e)}
             }
             
-    async def _wait_for_next_minute_boundary(self) -> None:
+    async def _sleep_until_start(self) -> None:
         """Wait until the next minute boundary for minute-level trading.
         
         This ensures we get complete minute kline data by waiting until the start
         of the next minute before fetching data.
         """
-        now = datetime.now(timezone.utc)
-        # Calculate seconds until next minute boundary
-        if now.second > 0:
-            # Calculate milliseconds to account for microsecond precision
-            microseconds_until_next_minute = (60 - now.second) * 1000000 - now.microsecond
-            wait_time = microseconds_until_next_minute / 1000000.0  # Convert to seconds
-            if wait_time > 0:
-                logger.info(f"| ⏳ Waiting {wait_time:.2f} seconds until next minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})...")
-                await asyncio.sleep(wait_time)
-            else:
-                logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
-        else:
-            logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
+        current_ts = time.time()
+        seconds_since_minute = current_ts % 60
+        timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_ts))
+        
+        if seconds_since_minute <= 1e-3:
+            logger.info(f"| ✅ Already at minute boundary (current: {timestamp_str})")
+            return
+        
+        wait_time = 60 - seconds_since_minute
+        logger.info(f"| ⏳ Waiting {wait_time:.2f} seconds until next minute boundary (current: {timestamp_str})...")
+        await asyncio.sleep(wait_time)
+        
+        final_ts = time.time()
+        final_timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(final_ts))
+        logger.info(f"| ✅ Reached minute boundary (current: {final_timestamp_str})")
     
     def _safe_float_format(self, value: Any, default: float = 0.0) -> str:
         """Safely convert a value to float and format it to 2 decimal places."""
@@ -1100,7 +1103,7 @@ class HyperliquidEnvironment(BaseEnvironment):
             logger.info(f"| 📝 Orders String: {orders_string}")
             
             # Wait until the next minute boundary for minute-level trading
-            await self._wait_for_next_minute_boundary()
+            await self._sleep_until_start()
             
             # Get data
             data_result = await self.get_data(limit=30) # 30 minutes = 0.5 hours
@@ -1121,8 +1124,8 @@ class HyperliquidEnvironment(BaseEnvironment):
                 
                 # Create table header
                 symbol_string = f"Symbol: {symbol}. History {len(candles_list)} minutes candles data.\n"
-                symbol_string += "| Timestamp | Open | High | Low | Close | Volume | Trade Count |\n"
-                symbol_string += "|-----------|------|------|-----|-------|--------|-------------|\n"
+                symbol_string += "| Timestamp           | Open | High | Low | Close | Volume | Trade Count |\n"
+                symbol_string += "|---------------------|------|------|-----|-------|--------|-------------|\n"
                 
                 # Add table rows
                 for candle in candles_list:
@@ -1133,7 +1136,7 @@ class HyperliquidEnvironment(BaseEnvironment):
                     close_val = self._safe_float_format(candle.get("close"))
                     volume_val = self._safe_float_format(candle.get("volume"))
                     trade_count_val = self._safe_float_format(candle.get("trade_count"))
-                    symbol_string += f"| {timestamp:>10} | {open_val:>10} | {high_val:>10} | {low_val:>10} | {close_val:>10} | {volume_val:>10} | {trade_count_val:>11} |\n"
+                    symbol_string += f"| {timestamp:<19} | {open_val:>10} | {high_val:>10} | {low_val:>10} | {close_val:>10} | {volume_val:>10} | {trade_count_val:>11} |\n"
                 
                 candles_string += symbol_string + "\n"
                 
@@ -1150,11 +1153,11 @@ class HyperliquidEnvironment(BaseEnvironment):
                 # Create table header
                 symbol_string = f"Symbol: {symbol}. History {len(indicators_list)} minutes indicators data.\n"
                 # Build header row: Timestamp | Timestamp (Local) | indicator1 | indicator2 | ...
-                header_cols = ["Timestamp"] + [name.upper() for name in indicator_names]
+                header_cols = ["Timestamp           "] + [name.upper() for name in indicator_names]
                 symbol_string += "| " + " | ".join(header_cols) + " |\n"
                 
                 # Build separator row
-                separator_cols = ["-----------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
+                separator_cols = ["---------------------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
                 separator = "| " + " | ".join(separator_cols) + " |\n"
                 symbol_string += separator
                 
@@ -1172,7 +1175,7 @@ class HyperliquidEnvironment(BaseEnvironment):
                             row_values.append("")
                     
                     # Format row with alignment
-                    formatted_row = f"| {row_values[0]:>10} |"
+                    formatted_row = f"| {row_values[0]:<19} |"
                     for val in row_values[1:]:
                         formatted_row += f" {val:>12} |"
                     formatted_row += "\n"
