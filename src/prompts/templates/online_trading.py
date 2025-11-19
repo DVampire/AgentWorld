@@ -166,7 +166,15 @@ Your thinking should be organized following these reasoning patterns in order, a
 - **Capital checks before sizing the trade**
   * Calculate required margin = (qty × entry_price) / leverage.
   * Review available account value and current margin usage from open positions.
-  * Confirm the new position fits within available funds; if it does not, reduce quantity or choose HOLD.
+  * **CRITICAL: Position sizing limits (as percentage of account value):**
+    - Single position margin should not exceed 20-30% of total account value (conservative: 20%, aggressive: 30%).
+    - Total margin across all open positions should not exceed 50-80% of total account value (conservative: 50%, aggressive: 80%).
+    - Leave 20-50% of account value as free margin buffer to handle market volatility and margin calls.
+  * **CRITICAL: Calculate position size (qty) based on risk percentage:**
+    - Risk per trade should be 1-3% of account value (conservative: 1%, moderate: 2%, aggressive: 3%).
+    - Calculate qty from risk: qty = (account_value × risk_percentage) / (entry_price × stop_distance_percentage).
+    - Example: If account_value = $1000, risk_percentage = 2%, entry_price = $50000, stop_distance = 1%, then qty = ($1000 × 0.02) / ($50000 × 0.01) = $20 / $500 = 0.04.
+  * Confirm the new position fits within available funds and position sizing limits; if it does not, reduce quantity or choose HOLD.
   * Account for margin already tied up in existing positions to avoid over-allocating capital.
 - **Leverage discipline**
   * Default to conservative leverage (5×–10×) when the trend is unclear, volatility is elevated, or supporting signals are mixed.
@@ -183,10 +191,19 @@ Your thinking should be organized following these reasoning patterns in order, a
 **Execution Validation**
 - Verify trading action parameters (symbol, action, qty, leverage) before execution
 - **CRITICAL: Before submitting LONG or SHORT orders, verify that BOTH stop_loss_price and take_profit_price are provided and valid**
-- **CRITICAL: Verify sufficient account value for the order:**
+- **CRITICAL: Verify sufficient account value and position sizing limits for the order:**
   * Calculate required margin: (qty * entry_price) / leverage
+  * Calculate total margin usage: sum of all existing positions' margin + new position margin
+  * **CRITICAL: Verify position sizing limits:**
+    - Single position margin <= 30% of total account value (preferably 20%)
+    - Total margin usage <= 80% of total account value (preferably 50%)
+    - Free margin buffer >= 20% of total account value
+  * **CRITICAL: Verify risk per trade:**
+    - Calculate risk amount: qty * entry_price * stop_distance_percentage
+    - Risk amount should be 1-3% of account value (preferably 2%)
+    - If risk exceeds 3%, reduce qty or choose HOLD action
   * Verify that required margin <= available account value (account for existing positions' margin usage)
-  * If insufficient funds, DO NOT execute the order - either reduce qty or choose HOLD action
+  * If insufficient funds or limits exceeded, DO NOT execute the order - either reduce qty or choose HOLD action
   * Check that qty * entry_price does not exceed available account value considering leverage
 - Verify trigger prices are set correctly relative to entry price and have minimum 1.0% distance from current price
 - Verify risk-reward ratio is at least 1.5:1
@@ -195,7 +212,11 @@ Your thinking should be organized following these reasoning patterns in order, a
 - **CRITICAL: Always conclude your thinking with a clear Trading Decision section**
 - For each asset, explicitly state: symbol, action (LONG/SHORT/CLOSE_LONG/CLOSE_SHORT/HOLD), entry price, qty, leverage, stop loss price with distance (REQUIRED for LONG/SHORT), take profit price with distance (REQUIRED for LONG/SHORT), required margin calculation, rationale, and risk-reward ratio
 - **CRITICAL: For LONG or SHORT actions, BOTH stop_loss_price and take_profit_price are MANDATORY**
-- **CRITICAL: For LONG or SHORT actions, verify that required margin (qty * entry_price / leverage) does not exceed available account value - if insufficient funds, choose HOLD or reduce qty**
+- **CRITICAL: For LONG or SHORT actions, verify position sizing limits:**
+  * Required margin (qty * entry_price / leverage) should not exceed 30% of account value (preferably 20%)
+  * Total margin usage (including existing positions) should not exceed 80% of account value (preferably 50%)
+  * Risk per trade (qty * entry_price * stop_distance_percentage) should be 1-3% of account value (preferably 2%)
+  * If any limit is exceeded or insufficient funds, choose HOLD or reduce qty
 - If action is HOLD, clearly state the reason (e.g., insufficient funds, unclear trend, waiting for confirmation, existing position performing well)
 </reasoning_rules>
 """
