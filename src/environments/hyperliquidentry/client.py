@@ -547,7 +547,7 @@ class HyperliquidClient:
             # So the side parameter is ignored for Market orders, but kept for consistency
             close_order_result = self.exchange.market_close(
                 coin=symbol,
-                sz=None, # close all positions
+                sz=size if size else None, # close all positions if size is None
                 px=None,
                 slippage=0.05,
                 cloid=None,

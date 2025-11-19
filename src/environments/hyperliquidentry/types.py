@@ -124,7 +124,7 @@ class CloseOrderRequest(BaseModel):
     account_name: str = Field(description="Account name to use for closing the position")
     symbol: str = Field(description="Symbol to close position for (e.g., 'BTC', 'ETH')")
     side: Literal["buy", "sell"] = Field(description="Order side to close position: 'buy' to close SHORT, 'sell' to close LONG")
-    size: float = Field(description="Position size to close (in base units, e.g., 0.1 BTC)")
+    size: Optional[float] = Field(None, description="Position size to close (in base units, e.g., 0.1 BTC)")
     order_type: OrderType = Field(default=OrderType.MARKET, description="Order type: 'Market' for market order, 'Limit' for limit order")
     price: Optional[float] = Field(None, description="Price for limit order (required for LIMIT order type)")
     trade_type: TradeType = Field(default=TradeType.PERPETUAL, description="Trade type: 'perpetual' for perpetual futures")

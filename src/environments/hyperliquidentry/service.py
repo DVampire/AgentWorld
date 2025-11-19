@@ -868,12 +868,6 @@ class HyperliquidService:
             ActionResult with close order information
         """
         try:
-            if request.size is None or request.size <= 0:
-                raise HyperliquidError("'size' must be provided and greater than 0")
-            
-            if request.order_type == OrderType.LIMIT and request.price is None:
-                raise HyperliquidError("'price' must be provided for LIMIT orders")
-            
             # Validate symbol
             if request.symbol not in self.symbols:
                 raise InvalidSymbolError(f"Symbol {request.symbol} not found or not tradable")
@@ -887,7 +881,7 @@ class HyperliquidService:
             close_result = await client.close_order(
                 symbol=request.symbol,
                 side=side,
-                size=request.size,
+                size=request.size if request.size else None,
                 order_type=request.order_type.value,
                 price=request.price
             )
