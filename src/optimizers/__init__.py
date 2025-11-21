@@ -3,7 +3,6 @@ Optimizer package.
 """
 
 from src.optimizers.base_optimizer import BaseOptimizer
-from src.optimizers.optimization_logger import OptimizationLogger
 from src.optimizers.textgrad_optimizer import (
     TextGradOptimizer,
     optimize_agent_with_textgrad,
@@ -17,7 +16,6 @@ __all__ = [
     "BaseOptimizer",
     "TextGradOptimizer",
     "optimize_agent_with_textgrad",
-    "OptimizationLogger",
     "ReflectionOptimizer",
     "optimize_agent_with_reflection",
 ]
