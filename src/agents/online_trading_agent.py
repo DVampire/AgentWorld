@@ -140,8 +140,14 @@ class OnlineTradingAgent(BaseAgent):
             log_max_length=log_max_length,
             **kwargs)
         
+        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
+        
         self.tracer = Tracer()
         self.record = Record()
+        
+        if os.path.exists(self.tracer_save_path):
+            self.tracer.load_from_json(self.tracer_save_path)
+            self.record = self.tracer.get_record(len(self.tracer.records) - 1)
         
         self.think_output_builder = ThinkOutputBuilder()
         self.think_output_builder.register(tcp.args_schemas())
@@ -455,10 +461,13 @@ class OnlineTradingAgent(BaseAgent):
             done, final_result = await self._think_and_action(messages, task_id)
             self.step_number += 1
             
-            # Update tracer
+            # Update tracer and save to json
             self.tracer.add_record(observation=self.record.observation, 
                                    action=self.record.action)
-            self.tracer.save_to_json(os.path.join(self.workdir, "tracer.json"))
+            self.tracer.save_to_json(self.tracer_save_path)
+            
+            # Save memory to json
+            await self.memory_manager.save_to_json(self.memory_save_path)
             
             messages = await self._get_messages(enhanced_task)
             
@@ -481,6 +490,12 @@ class OnlineTradingAgent(BaseAgent):
         
         # End session
         await self.memory_manager.end_session(session_id=session_id)
+        
+        # Save tracer to json
+        self.tracer.save_to_json(self.tracer_save_path)
+        
+        # Save memory to json
+        await self.memory_manager.save_to_json(self.memory_save_path)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

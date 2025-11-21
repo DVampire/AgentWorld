@@ -4,6 +4,7 @@ from typing import List, Optional, Type, Dict, Any, Union
 from pydantic import BaseModel, Field, ConfigDict
 from langchain_core.prompts import ChatPromptTemplate
 from datetime import datetime
+import os
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 
 from src.logger import logger
@@ -14,6 +15,7 @@ from src.agents.protocol.types import InputArgs
 from src.utils import get_file_info, dedent
 from src.tools.protocol import tcp
 from src.environments.protocol import ecp
+
 
 def format_actions(actions: List[BaseModel]) -> str:
     """Format actions as a Markdown table using pandas."""
@@ -126,15 +128,20 @@ class BaseAgent(BaseModel):
         self.args_schema = args_schema or self.args_schema
         self.metadata = metadata or self.metadata
         
+        # Set working directory
         self.workdir = workdir
         logger.info(f"| 📁 Agent working directory: {self.workdir}")
         
-        self.prompt_manager = PromptManager(prompt_name=prompt_name)
+        # Set prompt name and modules
+        self.prompt_name = prompt_name
         self.prompt_modules = prompt_modules or {}
-        self.memory_manager = MemoryManager(memory_config=memory_config)
         
-        # Setup model
-        self.model = self._setup_model(model_name)
+        # Set memory configuration
+        self.memory_config = memory_config
+        self.memory_save_path = os.path.join(self.workdir, "memory.json")
+        
+        # Set model name
+        self.model_name = model_name
         
         # Setup steps
         self.max_steps = max_steps if max_steps>0 else int(1e8)
@@ -144,7 +151,23 @@ class BaseAgent(BaseModel):
         self.review_steps = review_steps
         self.step_number = 0
         self.log_max_length = log_max_length
-
+        
+    async def initialize(self):
+        """Initialize the agent."""
+        # Setup prompt manager
+        self.prompt_manager = PromptManager(prompt_name=self.prompt_name)
+        
+        # Setup memory manager
+        self.memory_manager = MemoryManager(memory_config=self.memory_config)
+        if os.path.exists(self.memory_save_path):
+            await self.memory_manager.load_from_json(self.memory_save_path)
+        else:
+            await self.memory_manager.save_to_json(self.memory_save_path)
+        
+        # Setup model
+        self.model = self._setup_model(self.model_name)
+        
+        
     def _setup_model(self, model_name: Optional[str]):
         """Setup the language model."""
         if model_name:

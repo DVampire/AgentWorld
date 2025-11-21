@@ -56,3 +56,31 @@ class MemoryManager:
         logger.info(f"| Get memory state successfully.")
         
         return state
+    
+    async def save_to_json(self, file_path: str) -> str:
+        """Save memory system state to JSON file.
+        
+        Args:
+            file_path: File path to save to
+            
+        Returns:
+            Path to the saved file
+        """
+        if hasattr(self.memory_system, "save_to_json"):
+            return await self.memory_system.save_to_json(file_path)
+        else:
+            raise NotImplementedError(f"save_to_json not implemented for {type(self.memory_system).__name__}")
+    
+    async def load_from_json(self, file_path: str) -> bool:
+        """Load memory system state from JSON file.
+        
+        Args:
+            file_path: File path to load from
+            
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        if hasattr(self.memory_system, "load_from_json"):
+            return await self.memory_system.load_from_json(file_path)
+        else:
+            raise NotImplementedError(f"load_from_json not implemented for {type(self.memory_system).__name__}")

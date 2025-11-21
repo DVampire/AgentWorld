@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
 import json
-from datetime import datetime
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -387,12 +387,138 @@ class GeneralMemorySystem:
             
     async def get_event(self, n: Optional[int] = None) -> List[ChatEvent]:
         session_id = self.current_session_id
-        return await self.session_memory[session_id].get_event(n=n)
+        if session_id and session_id in self.session_memory:
+            return await self.session_memory[session_id].get_event(n=n)
+        return []
     
     async def get_summary(self, n: Optional[int] = None) -> List[Summary]:
         session_id = self.current_session_id
-        return await self.session_memory[session_id].get_summary(n=n)
+        if session_id and session_id in self.session_memory:
+            return await self.session_memory[session_id].get_summary(n=n)
+        return []
     
     async def get_insight(self, n: Optional[int] = None) -> List[Insight]:
         session_id = self.current_session_id
-        return await self.session_memory[session_id].get_insight(n=n)
+        if session_id and session_id in self.session_memory:
+            return await self.session_memory[session_id].get_insight(n=n)
+        return []
+    
+    async def save_to_json(self, file_path: str) -> str:
+        """Save memory system state to JSON file.
+        
+        Args:
+            file_path: File path to save to
+            
+        Returns:
+            Path to the saved file
+        """
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        save_data = {
+            "memory_system_type": "general_memory_system",
+            "current_session_id": self.current_session_id,
+            "session_info": {},
+            "session_memory": {},
+        }
+        
+        # Save session info
+        for session_id, session_info in self.session_info.items():
+            save_data["session_info"][session_id] = session_info.model_dump(mode="json")
+        
+        # Save session memory
+        for session_id, session_memory in self.session_memory.items():
+            session_data = {
+                "events": [event.model_dump(mode="json") for event in session_memory.events],
+                "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+            }
+            save_data["session_memory"][session_id] = session_data
+        
+        # Save to file
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(save_data, f, indent=2, ensure_ascii=False, default=str)
+        
+        logger.info(f"| 💾 Memory saved to {file_path}")
+        return str(file_path)
+    
+    async def load_from_json(self, file_path: str) -> bool:
+        """Load memory system state from JSON file.
+        
+        Args:
+            file_path: File path to load from
+            
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        file_path = Path(file_path)
+        
+        if not file_path.exists():
+            logger.warning(f"| ⚠️  Memory file not found: {file_path}")
+            return False
+        
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                load_data = json.load(f)
+            
+            # Restore current session ID
+            self.current_session_id = load_data.get("current_session_id")
+            
+            # Restore session info
+            for session_id, session_info_data in load_data.get("session_info", {}).items():
+                # Parse datetime strings
+                if session_info_data.get("start_time"):
+                    session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
+                if session_info_data.get("end_time"):
+                    session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                
+                self.session_info[session_id] = SessionInfo(**session_info_data)
+            
+            # Restore session memory
+            for session_id, session_memory_data in load_data.get("session_memory", {}).items():
+                # Ensure session memory exists
+                if session_id not in self.session_memory:
+                    await self.start_session(
+                        session_id=session_id,
+                        agent_name=self.session_info.get(session_id).agent_name if session_id in self.session_info else None,
+                        task_id=self.session_info.get(session_id).task_id if session_id in self.session_info else None,
+                        description=self.session_info.get(session_id).description if session_id in self.session_info else None,
+                    )
+                
+                session_memory = self.session_memory[session_id]
+                
+                # Restore events
+                if "events" in session_memory_data:
+                    events = []
+                    for event_data in session_memory_data["events"]:
+                        if event_data.get("timestamp"):
+                            event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
+                        if event_data.get("event_type"):
+                            event_data["event_type"] = EventType(event_data["event_type"])
+                        events.append(ChatEvent(**event_data))
+                    session_memory.events = events
+                
+                # Restore summaries
+                if "summaries" in session_memory_data:
+                    summaries = []
+                    for summary_data in session_memory_data["summaries"]:
+                        if summary_data.get("importance"):
+                            summary_data["importance"] = Importance(summary_data["importance"])
+                        summaries.append(Summary(**summary_data))
+                    session_memory.summaries = summaries
+                
+                # Restore insights
+                if "insights" in session_memory_data:
+                    insights = []
+                    for insight_data in session_memory_data["insights"]:
+                        if insight_data.get("importance"):
+                            insight_data["importance"] = Importance(insight_data["importance"])
+                        insights.append(Insight(**insight_data))
+                    session_memory.insights = insights
+            
+            logger.info(f"| 📂 Memory loaded from {file_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"| ❌ Failed to load memory from {file_path}: {e}", exc_info=True)
+            return False
