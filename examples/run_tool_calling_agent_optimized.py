@@ -95,7 +95,6 @@ async def main():
         files=files,
         optimization_steps=3,  # 优化迭代次数
         optimizer_model="gpt-4o",  # 用于优化的模型
-        log_dir=config.workdir  # 日志目录
     )
     
     # 最后用优化后的提示词再运行一次

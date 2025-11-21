@@ -15,14 +15,7 @@ class TextGradOptimizer(BaseOptimizer):
     """Optimizer that leverages TextGrad to improve agent prompts."""
     
     def __init__(self, agent):
-        """
-        Initialize the optimizer.
-
-        Args:
-            agent: Agent instance.
-            log_dir: Path to the log directory.
-        """
-        super().__init__(agent, log_dir)
+        super().__init__(agent)
         self.optimizable_tg_vars = []  # List of textgrad.Variable instances.
         self.tg_var_mapping = {}  # Mapping from TextGrad variable to original variable (TextGrad specific).
     
@@ -170,13 +163,8 @@ class TextGradOptimizer(BaseOptimizer):
             optimizer_model: Model identifier or engine used for optimization.
         """
         # Initialize the log file.
-        self.logger.write("="*70)
-        self.logger.write("TextGrad 优化日志")
-        self.logger.write(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        self.logger.write(f"任务: {task}")
-        self.logger.write(f"优化步数: {optimization_steps}")
-        self.logger.write("="*70)
-        self.logger.write("")
+        logger.info(f"| 📋 Task: {task}")
+        logger.info(f"| 📂 Files: {files}")
         
         try:
             # 1. Configure the TextGrad backward engine.
@@ -214,10 +202,6 @@ class TextGradOptimizer(BaseOptimizer):
                 logger.info(f"\n| {'='*60}")
                 logger.info(f"| Optimization Step {opt_step + 1}/{optimization_steps}")
                 logger.info(f"| {'='*60}\n")
-                
-                self.logger.write(f"\n{'='*60}")
-                self.logger.write(f"优化步骤 {opt_step + 1}/{optimization_steps}")
-                self.logger.write(f"{'='*60}\n")
                 
                 # 4.1 Synchronize TextGrad variables back to the original variables (after the first step).
                 if opt_step > 0:
@@ -290,16 +274,14 @@ class TextGradOptimizer(BaseOptimizer):
             
             # 5. Output a summary of the final optimized variables.
             logger.info(f"| 📊 Final optimized variables (summary):")
-            self.logger.write("\n📊 最终优化变量摘要:")
             for tg_var in self.optimizable_tg_vars:
                 logger.info(f"|   - {tg_var.role_description[:60]}: {tg_var.value[:150]}...")
         
         finally:
             # Close the optimization log file.
-            self.logger.write(f"\n{'='*70}")
-            self.logger.write(f"结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            self.logger.write(f"{'='*70}")
-            self.logger.close()
+            logger.info(f"\n{'='*70}")
+            logger.info(f"结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"{'='*70}")
             logger.info(f"| 📝 Optimization log saved and closed")
     
     def get_optimized_variables(self) -> List[tg.Variable]:
@@ -329,16 +311,8 @@ async def optimize_agent_with_textgrad(
         files: Optional list of attachments.
         optimization_steps: Number of optimization steps.
         optimizer_model: Model identifier or engine name for optimization.
-        log_dir: Log directory path (defaults to the agent's workdir if None).
     """
-    if log_dir is None:
-        # Attempt to derive the workdir from the agent.
-        if hasattr(agent, 'workdir'):
-            log_dir = agent.workdir
-        else:
-            log_dir = "workdir/optimization"
-    
-    optimizer = TextGradOptimizer(agent, log_dir)
+    optimizer = TextGradOptimizer(agent)
     await optimizer.optimize(task, files, optimization_steps, optimizer_model)
     return optimizer
 

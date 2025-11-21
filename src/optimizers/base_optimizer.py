@@ -7,24 +7,13 @@ from typing import List, Dict, Tuple, Optional, Any
 from abc import ABC, abstractmethod
 
 from src.logger import logger
-from src.optimizers.optimization_logger import OptimizationLogger
 
 
 class BaseOptimizer(ABC):
     """Base optimizer that provides shared functionality such as variable extraction and cache management."""
     
-    def __init__(self, agent, log_dir: str):
-        """
-        Initialize the optimizer.
-
-        Args:
-            agent: Agent instance.
-            log_dir: Path to the log directory.
-        """
+    def __init__(self, agent):
         self.agent = agent
-        # Automatically determine the optimizer class name used for log file names.
-        optimizer_name = self.__class__.__name__
-        self.logger = OptimizationLogger(log_dir, optimizer_name=optimizer_name)
         self.optimizable_vars = []
         self.var_mapping = {}  # Mapping from variable to prompt object.
         self.prompt_mapping = {}  # Mapping from variable to prompt object (used by certain optimizers).
@@ -218,6 +207,5 @@ class BaseOptimizer(ABC):
     
     def close(self):
         """Close the optimizer and release resources."""
-        if self.logger:
-            self.logger.close()
+        pass
 
