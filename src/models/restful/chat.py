@@ -78,6 +78,7 @@ class RestfulClient():
                 json=data,
                 headers=headers,
             )
+            print(response)
             return response.json()
         except Exception as e:
             logger.error(f"Error calling {self.api_type} API: {e}")
