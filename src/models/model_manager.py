@@ -783,11 +783,10 @@ class ModelManager(metaclass=Singleton):
             # deepseek-chat
             model_name = "deepseek-chat"
             model_id = "deepseek-chat"
-            model = ChatRestful(
+            model = ChatOpenAI(
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_DEEPSEEK_API_BASE", 
                                                     remote_api_base_name="DEEPSEEK_API_BASE"),
                 api_key=api_key,
-                api_type="responses",
                 model=model_id,
             )
             self.registed_models[model_name] = model
@@ -800,11 +799,10 @@ class ModelManager(metaclass=Singleton):
             # deepseek-reasoner
             model_name = "deepseek-reasoner"
             model_id = "deepseek-reasoner"
-            model = ChatRestful(
+            model = ChatOpenAI(
                 base_url=self._check_local_api_base(local_api_base_name="SKYWORK_DEEPSEEK_API_BASE", 
                                                     remote_api_base_name="DEEPSEEK_API_BASE"),
                 api_key=api_key,
-                api_type="responses",
                 model=model_id,
             )
             self.registed_models[model_name] = model
@@ -835,10 +833,9 @@ class ModelManager(metaclass=Singleton):
             for model in models:
                 model_name = model["model_name"]
                 model_id = model["model_id"]
-                model = ChatRestful(
+                model = ChatOpenAI(
                     base_url=api_base,
                     api_key=api_key,
-                    api_type="responses",
                     model=model_id,
                 )
                 self.registed_models[model_name] = model

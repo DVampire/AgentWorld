@@ -269,11 +269,15 @@ class ChatRestful():
             messages=messages,
             **kwargs,
         )
-
+        
         # Async call to the LiteLLM client for completion
         response = self.client.completion(**completion_kwargs)
 
-        content = response['output']
+        if self.model in ['deepseek-chat', 'deepseek-reasoner']:
+            content = response['choices'][-1]['message']['content']
+        else:
+            content = response['output']
+            
         return AIMessage(content=content)
 
     async def __call__(self, *args, **kwargs) -> AIMessage:
