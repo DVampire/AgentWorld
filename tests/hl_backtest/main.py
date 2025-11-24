@@ -26,7 +26,7 @@ def main():
         data_dir="data",
         use_testnet=USE_TESTNET,
         price_col=PRICE_COL,
-        local=True
+        local=False
     )
     print(f"[DATA] {len(df)} candles | {df['t'].iloc[0]} -> {df['t'].iloc[-1]}")
 
