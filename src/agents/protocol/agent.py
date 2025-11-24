@@ -153,25 +153,23 @@ class BaseAgent(BaseModel):
         self.step_number = 0
         self.log_max_length = log_max_length
         
-        self.initialize()
-        
-    def initialize(self):
+    async def initialize(self):
         """Initialize the agent."""
         # Setup prompt manager
         self.prompt_manager = PromptManager(prompt_name=self.prompt_name)
         
         # Setup memory manager
         self.memory_manager = MemoryManager(memory_config=self.memory_config)
-        # if os.path.exists(self.memory_save_path):
-        #     await self.memory_manager.load_from_json(self.memory_save_path)
-        # else:
-        #     await self.memory_manager.save_to_json(self.memory_save_path)
+        if os.path.exists(self.memory_save_path):
+            await self.memory_manager.load_from_json(self.memory_save_path)
+        else:
+            await self.memory_manager.save_to_json(self.memory_save_path)
         
         # Setup model
-        self.model = self._setup_model(self.model_name)
+        self.model = await self._setup_model(self.model_name)
         
         
-    def _setup_model(self, model_name: Optional[str]):
+    async def _setup_model(self, model_name: Optional[str]):
         """Setup the language model."""
         if model_name:
             # Get model from ModelManager

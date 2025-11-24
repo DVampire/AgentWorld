@@ -77,6 +77,10 @@ class AgentContextManager:
             # Create agent instance
             instance = agent_factory()
             
+            # Initialize agent
+            if hasattr(instance, "initialize"):
+                await instance.initialize()
+            
             # Store instance
             agent_info.instance = instance
             agent_info.name = instance.name
