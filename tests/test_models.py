@@ -55,16 +55,32 @@ async def test_general_models():
     ]
     
     for model_name in [
-        # "gpt-4o", 
+        "gpt-4o", 
         # "gpt-4.1", 
-        "gpt-5", 
-        "gpt-5.1",
+        # "gpt-5", 
+        # "gpt-5.1",
         # "o1", 
         # "o3",
         # "claude-3.7-sonnet",
         # "claude-4-sonnet",
         # "claude-4.5-sonnet",
         # "gemini-2.5-pro",  
+    ]:
+        model = model_manager.get(model_name)
+        response = await model.ainvoke(messages)
+        logger.info(f"| {model_name} Response: {response}")
+        
+    messages = [
+        HumanMessage(content=[
+            {
+                "type": "text",
+                "text": "What is the capital of France?"
+            },
+        ]),
+    ]
+    
+    for model_name in [
+        "deepseek-reasoner",
     ]:
         model = model_manager.get(model_name)
         response = await model.ainvoke(messages)
@@ -190,7 +206,7 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.initialize(use_local_proxy=False)
+    await model_manager.initialize(use_local_proxy=True)
     logger.info(f"| Models: {model_manager.list()}")
     
     await test_general_models()

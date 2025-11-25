@@ -78,6 +78,7 @@ class RestfulClient():
                 json=data,
                 headers=headers,
             )
+            print(response)
             return response.json()
         except Exception as e:
             logger.error(f"Error calling {self.api_type} API: {e}")
@@ -268,11 +269,15 @@ class ChatRestful():
             messages=messages,
             **kwargs,
         )
-
+        
         # Async call to the LiteLLM client for completion
         response = self.client.completion(**completion_kwargs)
 
-        content = response['output']
+        if self.model in ['deepseek-chat', 'deepseek-reasoner']:
+            content = response['choices'][-1]['message']['content']
+        else:
+            content = response['output']
+            
         return AIMessage(content=content)
 
     async def __call__(self, *args, **kwargs) -> AIMessage:

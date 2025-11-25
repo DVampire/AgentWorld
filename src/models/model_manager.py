@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from src.models.restful.chat import ChatRestfulSearch
+from src.models.restful.chat import ChatRestfulSearch, ChatRestful
 from src.models.transcribe import TranscribeOpenAI
 from src.utils import Singleton
 from src.logger import logger
@@ -119,6 +119,7 @@ class ModelManager(metaclass=Singleton):
         self._register_anthropic_models(use_local_proxy=use_local_proxy)
         self._register_google_models(use_local_proxy=use_local_proxy)
         self._register_browser_models(use_local_proxy=use_local_proxy)
+        self._register_deepseek_models(use_local_proxy=use_local_proxy)
         
     def get(self, model_name: str) -> Any:
         return self.registed_models[model_name]
@@ -768,6 +769,78 @@ class ModelManager(metaclass=Singleton):
                 self.registed_models[model_name] = model
                 self.registed_models_info[model_name] = {
                     "type": "google",
+                    "model_name": model_name,
+                    "model_id": model_id,
+                }
+                
+    def _register_deepseek_models(self, use_local_proxy: bool = False):
+        # deepseek-chat
+        if use_local_proxy:
+            logger.info("| Using local proxy for DeepSeek models")
+            api_key = self._check_local_api_key(local_api_key_name="SKYWORK_API_KEY", 
+                                                remote_api_key_name="DEEPSEEK_API_KEY")
+            
+            # deepseek-chat
+            model_name = "deepseek-chat"
+            model_id = "deepseek-chat"
+            model = ChatOpenAI(
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_DEEPSEEK_API_BASE", 
+                                                    remote_api_base_name="DEEPSEEK_API_BASE"),
+                api_key=api_key,
+                model=model_id,
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "deepseek",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+                
+            # deepseek-reasoner
+            model_name = "deepseek-reasoner"
+            model_id = "deepseek-reasoner"
+            model = ChatOpenAI(
+                base_url=self._check_local_api_base(local_api_base_name="SKYWORK_DEEPSEEK_API_BASE", 
+                                                    remote_api_base_name="DEEPSEEK_API_BASE"),
+                api_key=api_key,
+                model=model_id,
+            )
+            self.registed_models[model_name] = model
+            self.registed_models_info[model_name] = {
+                "type": "deepseek",
+                "model_name": model_name,
+                "model_id": model_id,
+            }
+                
+        else:
+            logger.info("| Using remote API for DeepSeek models")
+            api_key = self._check_local_api_key(local_api_key_name="DEEPSEEK_API_KEY", 
+                                                remote_api_key_name="DEEPSEEK_API_KEY")
+            api_base = self._check_local_api_base(local_api_base_name="DEEPSEEK_API_BASE", 
+                                                    remote_api_base_name="DEEPSEEK_API_BASE")
+            
+            models = [
+                {
+                    "model_name": "deepseek-chat",
+                    "model_id": "deepseek-chat",
+                },
+                {
+                    "model_name": "deepseek-reasoner",
+                    "model_id": "deepseek-reasoner",
+                },
+            ]
+            
+            for model in models:
+                model_name = model["model_name"]
+                model_id = model["model_id"]
+                model = ChatOpenAI(
+                    base_url=api_base,
+                    api_key=api_key,
+                    model=model_id,
+                )
+                self.registed_models[model_name] = model
+                self.registed_models_info[model_name] = {
+                    "type": "deepseek",
                     "model_name": model_name,
                     "model_id": model_id,
                 }

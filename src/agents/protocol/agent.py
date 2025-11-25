@@ -142,6 +142,7 @@ class BaseAgent(BaseModel):
         
         # Set model name
         self.model_name = model_name
+        self.model = model_manager.get(model_name)
         
         # Setup steps
         self.max_steps = max_steps if max_steps>0 else int(1e8)
@@ -165,10 +166,10 @@ class BaseAgent(BaseModel):
             await self.memory_manager.save_to_json(self.memory_save_path)
         
         # Setup model
-        self.model = self._setup_model(self.model_name)
+        self.model = await self._setup_model(self.model_name)
         
         
-    def _setup_model(self, model_name: Optional[str]):
+    async def _setup_model(self, model_name: Optional[str]):
         """Setup the language model."""
         if model_name:
             # Get model from ModelManager
