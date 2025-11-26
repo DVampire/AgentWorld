@@ -9,6 +9,7 @@ from .operator_browser_agent import OperatorBrowserAgent
 from .mobile_agent import MobileAgent
 from .anthropic_mobile_agent import AnthropicMobileAgent
 from .online_trading_agent import OnlineTradingAgent
+from .offline_trading_agent import OfflineTradingAgent
 from .protocol import acp
 
 
@@ -22,5 +23,6 @@ __all__ = [
     "MobileAgent",
     "AnthropicMobileAgent",
     "OnlineTradingAgent",
+    "OfflineTradingAgent",
     "acp",
 ]
