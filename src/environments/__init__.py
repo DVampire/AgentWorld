@@ -10,7 +10,7 @@ from .anthropic_mobile_environment import AnthropicMobileEnvironment
 from .alpaca_environment import AlpacaEnvironment
 from .binance_environment import BinanceEnvironment
 from .hyperliquid_environment import HyperliquidEnvironment
-from .backtest_hyperliquid_environment import BacktestHyperliquidEnvironment
+from .hyperliquid_environment import HyperliquidBacktestEnvironment
 from .protocol import ecp
 
 __all__ = [
@@ -26,6 +26,6 @@ __all__ = [
     "AlpacaEnvironment",
     "BinanceEnvironment",
     "HyperliquidEnvironment",
-    "BacktestHyperliquidEnvironment",
+    "HyperliquidBacktestEnvironment",
     "ecp",
 ]

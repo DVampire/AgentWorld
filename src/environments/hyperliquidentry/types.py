@@ -4,6 +4,29 @@ from typing import Optional, List, Dict, Any, Literal, Union
 from enum import Enum
 from pydantic import BaseModel, Field
 
+class BacktestPosition(BaseModel):
+    """回测持仓信息"""
+    symbol: str
+    side: str  # "long" or "short"
+    size: float  # 持仓数量（张数）
+    entry_price: float  # 开仓价格
+    leverage: int = 1
+    unrealized_pnl: float = 0.0
+
+
+class BacktestOrder(BaseModel):
+    """回测订单信息"""
+    order_id: str
+    symbol: str
+    side: str  # "buy" or "sell"
+    qty: float
+    price: float
+    order_type: str  # "Market" or "Limit"
+    status: str  # "filled", "pending", "cancelled"
+    filled_qty: float = 0.0
+    filled_price: float = 0.0
+    timestamp: int
+    fee: float = 0.0
 
 class DataStreamType(str, Enum):
     """Data type."""

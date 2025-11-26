@@ -1,10 +1,10 @@
 from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
-    from .environments.hyperliquid import online_hyperliquid_environment as online_hyperliquid_environment, indicators as hyperliquid_indicators
-    from .agents.online_trading import online_trading_agent
+    from .environments.hyperliquid import offline_hyperliquid_environment as offline_hyperliquid_environment, indicators as hyperliquid_indicators
+    from .agents.offline_trading import offline_trading_agent
 
-tag = "online_trading_agent"
+tag = "offline_trading_agent"
 workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
@@ -15,23 +15,23 @@ symbols = ["BTC"]
 data_type = ["candle"]
 
 env_names = [
-    "online_hyperliquid",
+    "offline_hyperliquid",
 ]
-agent_names = ["online_trading"]
+agent_names = ["offline_trading"]
 tool_names = [
     'done', 
 ]
 
 #---------------ONLINE TRADING MEMORY CONFIG---------------
 memory_config.update(
-    type="online_trading_memory_system",
+    type="offline_trading_memory_system",
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
 )
 
 #-----------------HYPERLIQUID ENVIRONMENT CONFIG-----------------
-online_hyperliquid_service = dict(
+hyperliquid_service = dict(
     base_dir=workdir,
     accounts=None,
     live=True,
@@ -39,14 +39,14 @@ online_hyperliquid_service = dict(
     symbol=symbols,
     data_type=data_type,
 )
-online_hyperliquid_environment.update(dict(
+offline_hyperliquid_environment.update(dict(
     base_dir=workdir,
     symbol=symbols,
     data_type=data_type,
 ))
 
 #-----------------ONLINE TRADING AGENT CONFIG-----------------
-online_trading_agent.update(
+offline_trading_agent.update(
     workdir=workdir,
     model_name=model_name,
     memory_config=memory_config,

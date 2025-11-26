@@ -38,13 +38,12 @@ from src.environments.hyperliquidentry.exceptions import (
     InvalidSymbolError,
 )
 from src.environments.database.service import DatabaseService
+from src.environments.database.types import QueryRequest
 from src.environments.hyperliquidentry.candle import CandleHandler
 from src.environments.hyperliquidentry.types import DataStreamType
 from src.utils import assemble_project_path
-from src.config import config
 
-
-class HyperliquidService:
+class OnlineHyperliquidService:
     """Hyperliquid trading service using REST API clients.
     
     This service handles perpetual futures trading on Hyperliquid:
@@ -942,3 +941,1100 @@ class HyperliquidService:
                 raise InsufficientFundsError(f"Insufficient funds: {e}")
             raise OrderError(f"Failed to close order: {e}")
 
+
+class OfflineHyperliquidService:
+    """Offline Hyperliquid trading service using cached database data.
+    
+    This service simulates trading using historical data from the database:
+    - No real API connections
+    - All account, position, and order data is maintained locally
+    - Order execution is simulated based on historical prices from database
+    - Supports perpetual futures trading simulation
+    """
+    
+    def __init__(
+        self,
+        base_dir: Union[str, Path],
+        accounts: List[Dict[str, Union[str, float]]],
+        symbol: Optional[Union[str, List[str]]] = None,
+        initial_balance: float = 10000.0,
+    ):
+        """Initialize offline Hyperliquid trading service.
+        
+        Args:
+            base_dir: Base directory for Hyperliquid operations (should contain database)
+            accounts: List of account dictionaries, each containing name and optional initial_balance
+            symbol: Optional symbol(s) to work with
+            initial_balance: Default initial balance for accounts (if not specified per account)
+            
+            accounts = [
+                {
+                    "name": "Account 1",
+                    "initial_balance": 10000.0,  # Optional, defaults to initial_balance parameter
+                },
+                {
+                    "name": "Account 2",
+                    "initial_balance": 5000.0,
+                }
+            ]
+        """
+        self.base_dir = Path(assemble_project_path(base_dir))
+        
+        # Initialize accounts with balances
+        self.accounts: Dict[str, Dict[str, Union[str, float]]] = {}
+        self.account_balances: Dict[str, float] = {}
+        self.default_account_name = accounts[0]["name"] if accounts else "default"
+        
+        for account in accounts:
+            account_name = account["name"]
+            self.accounts[account_name] = account
+            self.account_balances[account_name] = account.get("initial_balance", initial_balance)
+        
+        self.symbol = symbol
+        self.symbols: Dict[str, Dict] = {}
+        
+        # Initialize database
+        self.database_base_dir = self.base_dir / "database"
+        self.database_base_dir.mkdir(parents=True, exist_ok=True)
+        self.database_service: Optional[DatabaseService] = None
+        
+        # Initialize data handlers
+        self.candle_handler: Optional[CandleHandler] = None
+        self.indicators_name: List[str] = []
+        
+        # Local state: positions and orders
+        # positions: Dict[account_name][symbol] -> position info
+        self.positions: Dict[str, Dict[str, Dict]] = {account_name: {} for account_name in self.accounts.keys()}
+        
+        # orders: Dict[account_name] -> List[order_info]
+        self.orders: Dict[str, List[Dict]] = {account_name: [] for account_name in self.accounts.keys()}
+        
+        # Order ID counter
+        self._order_id_counter: int = 1
+        
+        # Time index management for backtest simulation
+        # current_index: Dict[symbol] -> current index in historical data
+        self._current_index: Dict[str, int] = {}
+        
+        # total_data_count: Dict[symbol] -> total number of data points available
+        self._total_data_count: Dict[str, int] = {}
+        
+        # timestamps: Dict[symbol] -> List of timestamps ordered by index
+        self._timestamps: Dict[str, List[int]] = {}
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.initialize()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.cleanup()
+    
+    async def initialize(self) -> None:
+        """Initialize the offline Hyperliquid trading service."""
+        try:
+            self.base_dir = Path(assemble_project_path(self.base_dir))
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Step 1: Initialize database
+            await self._initialize_database()
+            
+            # Step 2: Load available symbols from database
+            await self._load_symbols()
+            
+            # Step 3: Initialize data handlers
+            await self._initialize_data_handlers()
+            
+            # Step 4: Initialize time indices for symbols
+            await self._initialize_time_indices()
+            
+            logger.info(f"| ✅ Offline Hyperliquid service initialized with {len(self.accounts)} account(s)")
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to initialize offline Hyperliquid service: {e}")
+    
+    async def _initialize_database(self) -> None:
+        """Initialize database."""
+        self.database_service = DatabaseService(self.database_base_dir)
+        await self.database_service.connect()
+    
+    async def _initialize_data_handlers(self) -> None:
+        """Initialize data handlers."""
+        self.candle_handler = CandleHandler(self.database_service)
+        self.indicators_name = await self.candle_handler.get_indicators_name()
+    
+    async def _initialize_time_indices(self) -> None:
+        """Initialize time indices for all symbols from database.
+        
+        This loads all timestamps from the database and initializes the current index to 0.
+        """
+        if not self.candle_handler:
+            return
+        
+        symbols_to_init = []
+        if self.symbol:
+            symbols_to_init = self.symbol if isinstance(self.symbol, list) else [self.symbol]
+        else:
+            symbols_to_init = list(self.symbols.keys())
+        
+        for symbol in symbols_to_init:
+            try:
+                # Get all timestamps from database, ordered by timestamp
+                symbol_upper = symbol.upper()
+                base_name = self.candle_handler._sanitize_table_name(symbol_upper)
+                candle_table_name = f"{base_name}_candle"
+                
+                query = f"SELECT timestamp FROM {candle_table_name} WHERE symbol = ? ORDER BY timestamp ASC"
+                result = await self.database_service.execute_query(
+                    QueryRequest(query=query, parameters=(symbol_upper,))
+                )
+                
+                if result.success and result.extra.get("data"):
+                    timestamps = [row["timestamp"] for row in result.extra["data"]]
+                    self._timestamps[symbol] = timestamps
+                    self._current_index[symbol] = 0
+                    self._total_data_count[symbol] = len(timestamps)
+                    logger.info(f"| 📅 Initialized time index for {symbol}: {len(timestamps)} data points")
+                else:
+                    logger.warning(f"| ⚠️  No data found for {symbol} in database")
+                    self._timestamps[symbol] = []
+                    self._current_index[symbol] = 0
+                    self._total_data_count[symbol] = 0
+            except Exception as e:
+                logger.warning(f"| ⚠️  Failed to initialize time index for {symbol}: {e}")
+                self._timestamps[symbol] = []
+                self._current_index[symbol] = 0
+                self._total_data_count[symbol] = 0
+    
+    async def _load_symbols(self) -> None:
+        """Load available trading symbols from database."""
+        try:
+            # Query database to find all symbol tables
+            query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'data_%_candle'"
+            result = await self.database_service.execute_query(
+                QueryRequest(query=query)
+            )
+            
+            if result.success and result.extra.get("data"):
+                tables = result.extra["data"]
+                for table_row in tables:
+                    table_name = table_row.get("name", "")
+                    # Extract symbol from table name: data_{SYMBOL}_candle
+                    if table_name.startswith("data_") and table_name.endswith("_candle"):
+                        symbol = table_name[5:-7]  # Remove "data_" prefix and "_candle" suffix
+                        symbol = symbol.replace("_", "/")  # Restore original symbol format if needed
+                        
+                        self.symbols[symbol] = {
+                            'symbol': symbol,
+                            'baseAsset': symbol,
+                            'quoteAsset': 'USD',
+                            'status': 'TRADING',
+                            'tradable': True,
+                            'type': 'perpetual'
+                        }
+            
+            logger.info(f"| 📊 Loaded {len(self.symbols)} symbols from database")
+            
+        except Exception as e:
+            logger.warning(f"| ⚠️  Failed to load symbols: {e}")
+            self.symbols = {}
+    
+    async def cleanup(self) -> None:
+        """Cleanup the offline Hyperliquid service."""
+        if hasattr(self, 'database_service') and self.database_service:
+            await self.database_service.disconnect()
+        
+        self.symbols = {}
+        self.candle_handler = None
+        self.indicators_name = []
+        
+        # Cleanup time indices
+        self._current_index = {}
+        self._total_data_count = {}
+        self._timestamps = {}
+    
+    async def _get_latest_price(self, symbol: str) -> float:
+        """Get current price for a symbol based on current time index.
+        
+        In offline backtest mode, this returns the price at the current index,
+        not the latest price in the database.
+        
+        Args:
+            symbol: Symbol name
+            
+        Returns:
+            Current close price at current index
+            
+        Raises:
+            HyperliquidError: If price cannot be retrieved
+        """
+        if not self.candle_handler:
+            raise HyperliquidError("Candle handler not initialized")
+        
+        # Initialize index if not exists
+        if symbol not in self._current_index:
+            await self._initialize_symbol_index(symbol)
+        
+        current_idx = self._current_index.get(symbol, 0)
+        total_count = self._total_data_count.get(symbol, 0)
+        
+        if current_idx >= total_count:
+            raise HyperliquidError(f"No more price data available for {symbol} (index {current_idx}/{total_count})")
+        
+        # Get timestamp at current index
+        timestamps = self._timestamps.get(symbol, [])
+        if not timestamps or current_idx >= len(timestamps):
+            raise HyperliquidError(f"No timestamp data available for {symbol} at index {current_idx}")
+        
+        target_timestamp = timestamps[current_idx]
+        
+        # Query database for candle at this timestamp
+        symbol_upper = symbol.upper()
+        base_name = self.candle_handler._sanitize_table_name(symbol_upper)
+        candle_table_name = f"{base_name}_candle"
+        
+        query = f"SELECT close FROM {candle_table_name} WHERE symbol = ? AND timestamp = ?"
+        result = await self.database_service.execute_query(
+            QueryRequest(query=query, parameters=(symbol_upper, target_timestamp))
+        )
+        
+        if not result.success or not result.extra.get("data"):
+            raise HyperliquidError(f"No price data available for {symbol} at timestamp {target_timestamp}")
+        
+        candle_data = result.extra["data"]
+        if not candle_data:
+            raise HyperliquidError(f"No price data available for {symbol} at timestamp {target_timestamp}")
+        
+        close_price = candle_data[0].get("close")
+        
+        if close_price is None:
+            raise HyperliquidError(f"Invalid price data for {symbol}")
+        
+        return float(close_price)
+    
+    async def _update_position_pnl(self, account_name: str, symbol: str) -> None:
+        """Update unrealized PnL for a position based on current market price.
+        
+        Args:
+            account_name: Account name
+            symbol: Symbol name
+        """
+        if account_name not in self.positions or symbol not in self.positions[account_name]:
+            return
+        
+        try:
+            current_price = await self._get_latest_price(symbol)
+            position = self.positions[account_name][symbol]
+            
+            entry_price = float(position.get("entry_price", 0))
+            position_amt = float(position.get("position_amt", 0))
+            
+            if position_amt != 0:
+                # Calculate unrealized PnL
+                if position_amt > 0:  # Long position
+                    unrealized_pnl = (current_price - entry_price) * position_amt
+                else:  # Short position
+                    unrealized_pnl = (entry_price - current_price) * abs(position_amt)
+                
+                position["unrealized_profit"] = str(unrealized_pnl)
+                position["mark_price"] = str(current_price)
+                
+                # Calculate return on equity
+                leverage = float(position.get("leverage", 1))
+                margin_used = abs(position_amt) * entry_price / leverage
+                if margin_used > 0:
+                    roe = (unrealized_pnl / margin_used) * 100
+                    position["return_on_equity"] = str(roe)
+        except Exception as e:
+            logger.warning(f"| ⚠️  Failed to update PnL for {account_name}/{symbol}: {e}")
+    
+    # Get Exchange Info
+    async def get_exchange_info(self, request: GetExchangeInfoRequest) -> ActionResult:
+        """Get exchange information including available symbols.
+        
+        Args:
+            request: GetExchangeInfoRequest
+            
+        Returns:
+            ActionResult with exchange information
+        """
+        try:
+            exchange_info = {
+                "universe": [
+                    {"name": symbol, **info} for symbol, info in self.symbols.items()
+                ]
+            }
+            
+            return ActionResult(
+                success=True,
+                message=f"Exchange information retrieved successfully.",
+                extra={"exchange_info": exchange_info}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get exchange info: {e}")
+    
+    # Account methods
+    async def get_account(self, request: GetAccountRequest) -> ActionResult:
+        """Get account information.
+        
+        Args:
+            request: GetAccountRequest with account_name
+        """
+        try:
+            if request.account_name not in self.account_balances:
+                raise HyperliquidError(f"Account {request.account_name} not found")
+            
+            balance = self.account_balances[request.account_name]
+            
+            # Calculate total margin used and positions value
+            total_margin_used = 0.0
+            total_unrealized_pnl = 0.0
+            
+            if request.account_name in self.positions:
+                for symbol, position in self.positions[request.account_name].items():
+                    await self._update_position_pnl(request.account_name, symbol)
+                    position_amt = float(position.get("position_amt", 0))
+                    entry_price = float(position.get("entry_price", 0))
+                    leverage = float(position.get("leverage", 1))
+                    
+                    if position_amt != 0:
+                        margin_used = abs(position_amt) * entry_price / leverage
+                        total_margin_used += margin_used
+                        total_unrealized_pnl += float(position.get("unrealized_profit", 0))
+            
+            account_equity = balance + total_unrealized_pnl
+            withdrawable = account_equity - total_margin_used
+            
+            account_data = {
+                "margin_summary": {
+                    "accountValue": str(account_equity),
+                    "totalMarginUsed": str(total_margin_used),
+                    "totalNtlPos": str(total_unrealized_pnl),
+                },
+                "cross_margin_summary": {
+                    "totalMarginUsed": str(total_margin_used),
+                },
+                "cross_maintenance_margin_used": str(total_margin_used),
+                "withdrawable": str(max(0, withdrawable)),
+                "asset_positions": [
+                    {
+                        "position": {
+                            "coin": symbol,
+                            "szi": str(position.get("position_amt", "0")),
+                            "entryPx": position.get("entry_price", "0"),
+                            "unrealizedPnl": position.get("unrealized_profit", "0"),
+                            "returnOnEquity": position.get("return_on_equity", "0"),
+                            "leverage": {"value": position.get("leverage", "1")},
+                        }
+                    }
+                    for symbol, position in self.positions.get(request.account_name, {}).items()
+                    if float(position.get("position_amt", 0)) != 0
+                ],
+                "time": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
+                "trade_type": "perpetual",
+                "balance": str(balance),
+                "equity": str(account_equity),
+            }
+            
+            return ActionResult(
+                success=True,
+                message=f"Account information retrieved successfully.",
+                extra={"account": account_data}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get account: {e}")
+    
+    # Get Symbol Info
+    async def get_symbol_info(self, request: GetSymbolInfoRequest) -> ActionResult:
+        """Get symbol information for a specific symbol.
+        
+        Args:
+            request: GetSymbolInfoRequest with symbol name
+            
+        Returns:
+            ActionResult with symbol information
+        """
+        try:
+            if request.symbol not in self.symbols:
+                raise InvalidSymbolError(f"Symbol {request.symbol} not found")
+            
+            # Get latest price
+            latest_price = await self._get_latest_price(request.symbol)
+            
+            symbol_info = {
+                **self.symbols[request.symbol],
+                "latest_price": latest_price,
+            }
+            
+            return ActionResult(
+                success=True,
+                message=f"Symbol information retrieved successfully for {request.symbol}.",
+                extra={"symbol_info": symbol_info}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get symbol info: {e}")
+    
+    async def get_positions(self, request: GetPositionsRequest) -> ActionResult:
+        """Get all positions.
+        
+        Args:
+            request: GetPositionsRequest with account_name
+        """
+        try:
+            if request.account_name not in self.positions:
+                return ActionResult(
+                    success=True,
+                    message="Retrieved 0 positions.",
+                    extra={"positions": []}
+                )
+            
+            all_positions = []
+            for symbol, position in self.positions[request.account_name].items():
+                await self._update_position_pnl(request.account_name, symbol)
+                
+                position_amt = float(position.get("position_amt", 0))
+                if position_amt != 0:
+                    all_positions.append({
+                        "symbol": symbol,
+                        "position_amt": str(position_amt),
+                        "entry_price": position.get("entry_price", "0"),
+                        "mark_price": position.get("mark_price", "0"),
+                        "return_on_equity": position.get("return_on_equity", "0"),
+                        "unrealized_profit": position.get("unrealized_profit", "0"),
+                        "leverage": position.get("leverage", "1"),
+                        "trade_type": "perpetual",
+                    })
+            
+            return ActionResult(
+                success=True,
+                message=f"Retrieved {len(all_positions)} positions.",
+                extra={"positions": all_positions}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get positions: {e}")
+    
+    async def get_data(self, request: GetDataRequest) -> ActionResult:
+        """Get historical data from database based on current time index.
+        
+        In offline backtest mode, this method retrieves data sequentially from the database
+        starting from the current index, advancing through historical data chronologically.
+        
+        Args:
+            request: GetDataRequest with symbol (str or list), data_type,
+                    optional limit (number of records to retrieve from current index)
+                    Note: start_date and end_date are ignored in offline mode
+            
+        Returns:
+            ActionResult with data organized by symbol in extra field
+        """
+        if not self.candle_handler:
+            raise HyperliquidError("Candle handler not initialized. Call initialize() first.")
+        
+        if not request.symbol:
+            raise HyperliquidError("Symbol must be provided to get data.")
+        
+        try:
+            symbols = request.symbol if isinstance(request.symbol, list) else [request.symbol]
+            data_type = DataStreamType(request.data_type)
+            
+            if data_type != DataStreamType.CANDLE:
+                raise HyperliquidError(f"Unsupported data type {data_type.value}. Only candle data is available.")
+            
+            result_data: Dict[str, Dict[str, List[Dict]]] = {}
+            total_rows = 0
+            
+            for symbol in symbols:
+                # Initialize index if not exists
+                if symbol not in self._current_index:
+                    await self._initialize_symbol_index(symbol)
+                
+                current_idx = self._current_index.get(symbol, 0)
+                total_count = self._total_data_count.get(symbol, 0)
+                
+                if current_idx >= total_count:
+                    logger.warning(f"| ⚠️  No more data available for {symbol} (index {current_idx}/{total_count})")
+                    result_data[symbol] = {"candles": [], "indicators": []}
+                    continue
+                
+                # Determine how many records to retrieve
+                limit = request.limit if request.limit else (total_count - current_idx)
+                end_idx = min(current_idx + limit, total_count)
+                
+                # Get timestamps for the range
+                timestamps = self._timestamps.get(symbol, [])
+                if not timestamps or current_idx >= len(timestamps):
+                    result_data[symbol] = {"candles": [], "indicators": []}
+                    continue
+                
+                target_timestamps = timestamps[current_idx:end_idx]
+                
+                if not target_timestamps:
+                    result_data[symbol] = {"candles": [], "indicators": []}
+                    continue
+                
+                logger.info(f"| 🔍 Getting {data_type.value} data for {symbol} from index {current_idx} to {end_idx-1} ({len(target_timestamps)} records)...")
+                
+                # Query database for candles with these timestamps
+                symbol_upper = symbol.upper()
+                base_name = self.candle_handler._sanitize_table_name(symbol_upper)
+                candle_table_name = f"{base_name}_candle"
+                indicators_table_name = f"{base_name}_indicators"
+                
+                # Build query for candles
+                placeholders = ','.join(['?' for _ in target_timestamps])
+                candle_query = f"SELECT * FROM {candle_table_name} WHERE symbol = ? AND timestamp IN ({placeholders}) ORDER BY timestamp ASC"
+                candle_result = await self.database_service.execute_query(
+                    QueryRequest(query=candle_query, parameters=(symbol_upper, *target_timestamps))
+                )
+                
+                candles = []
+                if candle_result.success and candle_result.extra.get("data"):
+                    candles = candle_result.extra["data"]
+                
+                # Query database for indicators with these timestamps
+                indicators = []
+                try:
+                    indicator_query = f"SELECT * FROM {indicators_table_name} WHERE symbol = ? AND timestamp IN ({placeholders}) ORDER BY timestamp ASC"
+                    indicator_result = await self.database_service.execute_query(
+                        QueryRequest(query=indicator_query, parameters=(symbol_upper, *target_timestamps))
+                    )
+                    if indicator_result.success and indicator_result.extra.get("data"):
+                        indicators = indicator_result.extra["data"]
+                except Exception as e:
+                    logger.debug(f"| ⚠️  No indicators table or data for {symbol}: {e}")
+                
+                result_data[symbol] = {
+                    "candles": candles,
+                    "indicators": indicators
+                }
+                total_rows += len(candles) + len(indicators)
+                
+                # Update current index (advance by number of records retrieved)
+                self._current_index[symbol] = end_idx
+                logger.debug(f"| 📍 Updated index for {symbol}: {current_idx} -> {end_idx}")
+            
+            symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"
+            message = f"Retrieved {total_rows} records ({data_type.value}) for {symbol_str} from current index."
+            
+            return ActionResult(
+                success=True,
+                message=message,
+                extra={
+                    "data": result_data,
+                    "symbols": symbols,
+                    "data_type": data_type.value,
+                    "row_count": total_rows
+                }
+            )
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get data: {e}")
+    
+    async def _initialize_symbol_index(self, symbol: str) -> None:
+        """Initialize time index for a specific symbol.
+        
+        Args:
+            symbol: Symbol name
+        """
+        try:
+            symbol_upper = symbol.upper()
+            base_name = self.candle_handler._sanitize_table_name(symbol_upper)
+            candle_table_name = f"{base_name}_candle"
+            
+            query = f"SELECT timestamp FROM {candle_table_name} WHERE symbol = ? ORDER BY timestamp ASC"
+            result = await self.database_service.execute_query(
+                QueryRequest(query=query, parameters=(symbol_upper,))
+            )
+            
+            if result.success and result.extra.get("data"):
+                timestamps = [row["timestamp"] for row in result.extra["data"]]
+                self._timestamps[symbol] = timestamps
+                self._current_index[symbol] = 0
+                self._total_data_count[symbol] = len(timestamps)
+                logger.info(f"| 📅 Initialized time index for {symbol}: {len(timestamps)} data points")
+            else:
+                logger.warning(f"| ⚠️  No data found for {symbol} in database")
+                self._timestamps[symbol] = []
+                self._current_index[symbol] = 0
+                self._total_data_count[symbol] = 0
+        except Exception as e:
+            logger.warning(f"| ⚠️  Failed to initialize time index for {symbol}: {e}")
+            self._timestamps[symbol] = []
+            self._current_index[symbol] = 0
+            self._total_data_count[symbol] = 0
+    
+    async def reset_time_index(self, symbol: Optional[str] = None) -> None:
+        """Reset time index to beginning for symbol(s).
+        
+        Args:
+            symbol: Symbol name to reset. If None, resets all symbols.
+        """
+        if symbol:
+            if symbol in self._current_index:
+                self._current_index[symbol] = 0
+                logger.info(f"| 🔄 Reset time index for {symbol} to 0")
+        else:
+            for sym in self._current_index.keys():
+                self._current_index[sym] = 0
+            logger.info(f"| 🔄 Reset time indices for all symbols to 0")
+    
+    def get_current_index(self, symbol: str) -> int:
+        """Get current time index for a symbol.
+        
+        Args:
+            symbol: Symbol name
+            
+        Returns:
+            Current index (0-based)
+        """
+        return self._current_index.get(symbol, 0)
+    
+    def get_total_data_count(self, symbol: str) -> int:
+        """Get total number of data points available for a symbol.
+        
+        Args:
+            symbol: Symbol name
+            
+        Returns:
+            Total number of data points
+        """
+        return self._total_data_count.get(symbol, 0)
+    
+    def is_data_available(self, symbol: str) -> bool:
+        """Check if more data is available for a symbol.
+        
+        Args:
+            symbol: Symbol name
+            
+        Returns:
+            True if more data is available, False otherwise
+        """
+        current_idx = self._current_index.get(symbol, 0)
+        total_count = self._total_data_count.get(symbol, 0)
+        return current_idx < total_count
+    
+    async def _execute_order(self, account_name: str, order_info: Dict) -> Dict:
+        """Execute an order based on current market price.
+        
+        Args:
+            account_name: Account name
+            order_info: Order information dictionary
+            
+        Returns:
+            Execution result dictionary
+        """
+        symbol = order_info["symbol"]
+        side = order_info["side"]
+        qty = float(order_info["quantity"])
+        order_type = order_info["order_type"]
+        price = float(order_info.get("price", 0)) if order_info.get("price") else None
+        
+        # Get execution price
+        if order_type == OrderType.MARKET.value:
+            execution_price = await self._get_latest_price(symbol)
+        else:  # LIMIT order
+            if price is None:
+                raise OrderError("Price must be provided for LIMIT orders")
+            execution_price = price
+        
+        # Calculate cost (for perpetual futures, cost = qty * price)
+        cost = qty * execution_price
+        
+        # Check if account has sufficient balance
+        # For perpetual futures, we need margin = cost / leverage
+        leverage = float(order_info.get("leverage", 1))
+        required_margin = cost / leverage
+        
+        # Calculate current margin used
+        current_margin_used = 0.0
+        if account_name in self.positions:
+            for pos_symbol, position in self.positions[account_name].items():
+                pos_amt = float(position.get("position_amt", 0))
+                pos_entry = float(position.get("entry_price", 0))
+                pos_leverage = float(position.get("leverage", 1))
+                if pos_amt != 0:
+                    current_margin_used += abs(pos_amt) * pos_entry / pos_leverage
+        
+        available_balance = self.account_balances[account_name] - current_margin_used
+        
+        if required_margin > available_balance:
+            raise InsufficientFundsError(f"Insufficient funds. Required margin: {required_margin}, Available: {available_balance}")
+        
+        # Update position
+        if account_name not in self.positions:
+            self.positions[account_name] = {}
+        
+        if symbol not in self.positions[account_name]:
+            self.positions[account_name][symbol] = {
+                "position_amt": "0",
+                "entry_price": "0",
+                "mark_price": str(execution_price),
+                "unrealized_profit": "0",
+                "return_on_equity": "0",
+                "leverage": str(int(leverage)),
+            }
+        
+        position = self.positions[account_name][symbol]
+        current_position_amt = float(position["position_amt"])
+        
+        # Update position based on side
+        if side.lower() == "buy":
+            # Opening long or closing short
+            if current_position_amt < 0:
+                # Closing short position
+                close_qty = min(abs(current_position_amt), qty)
+                # Calculate realized PnL
+                entry_price = float(position["entry_price"])
+                realized_pnl = (entry_price - execution_price) * close_qty
+                self.account_balances[account_name] += realized_pnl
+                
+                # Update position
+                new_position_amt = current_position_amt + close_qty
+                if abs(new_position_amt) < 1e-8:  # Position closed
+                    position["position_amt"] = "0"
+                    position["entry_price"] = "0"
+                else:
+                    position["position_amt"] = str(new_position_amt)
+                    # Average entry price for remaining position
+                    remaining_qty = abs(new_position_amt)
+                    position["entry_price"] = str(entry_price)
+            else:
+                # Opening or increasing long position
+                if current_position_amt == 0:
+                    position["entry_price"] = str(execution_price)
+                    position["position_amt"] = str(qty)
+                else:
+                    # Average entry price
+                    total_cost = current_position_amt * float(position["entry_price"]) + qty * execution_price
+                    total_qty = current_position_amt + qty
+                    position["entry_price"] = str(total_cost / total_qty)
+                    position["position_amt"] = str(total_qty)
+        else:  # sell
+            # Opening short or closing long
+            if current_position_amt > 0:
+                # Closing long position
+                close_qty = min(current_position_amt, qty)
+                # Calculate realized PnL
+                entry_price = float(position["entry_price"])
+                realized_pnl = (execution_price - entry_price) * close_qty
+                self.account_balances[account_name] += realized_pnl
+                
+                # Update position
+                new_position_amt = current_position_amt - close_qty
+                if abs(new_position_amt) < 1e-8:  # Position closed
+                    position["position_amt"] = "0"
+                    position["entry_price"] = "0"
+                else:
+                    position["position_amt"] = str(new_position_amt)
+                    position["entry_price"] = str(entry_price)
+            else:
+                # Opening or increasing short position
+                if current_position_amt == 0:
+                    position["entry_price"] = str(execution_price)
+                    position["position_amt"] = str(-qty)
+                else:
+                    # Average entry price
+                    total_cost = abs(current_position_amt) * float(position["entry_price"]) + qty * execution_price
+                    total_qty = abs(current_position_amt) + qty
+                    position["entry_price"] = str(total_cost / total_qty)
+                    position["position_amt"] = str(-total_qty)
+        
+        # Update mark price
+        position["mark_price"] = str(execution_price)
+        position["leverage"] = str(int(leverage))
+        
+        return {
+            "execution_price": execution_price,
+            "filled_qty": qty,
+            "status": "filled"
+        }
+    
+    # Order methods
+    async def create_order(self, request: CreateOrderRequest) -> ActionResult:
+        """Create an order (simulated execution based on database prices).
+        
+        Args:
+            request: CreateOrderRequest with account_name, symbol, side, order_type, qty, etc.
+            
+        Returns:
+            ActionResult with order information
+        """
+        try:
+            if request.qty is None:
+                raise HyperliquidError("'qty' must be provided")
+            
+            if request.order_type == OrderType.LIMIT and request.price is None:
+                raise HyperliquidError("'price' must be provided for LIMIT orders")
+            
+            # Validate symbol
+            if request.symbol not in self.symbols:
+                raise InvalidSymbolError(f"Symbol {request.symbol} not found or not tradable")
+            
+            # Create order record
+            order_id = str(self._order_id_counter)
+            self._order_id_counter += 1
+            
+            order_info = {
+                "order_id": order_id,
+                "symbol": request.symbol,
+                "side": request.side,
+                "order_type": request.order_type.value,
+                "quantity": str(request.qty),
+                "price": str(request.price) if request.price else None,
+                "leverage": str(request.leverage) if request.leverage else "1",
+                "status": "pending",
+                "timestamp": int(time.time() * 1000),
+            }
+            
+            # Execute order immediately (simulated)
+            try:
+                execution_result = await self._execute_order(request.account_name, order_info)
+                order_info["status"] = "filled"
+                order_info["execution_price"] = str(execution_result["execution_price"])
+                order_info["filled_qty"] = str(execution_result["filled_qty"])
+            except InsufficientFundsError:
+                order_info["status"] = "rejected"
+                raise
+            except Exception as e:
+                order_info["status"] = "failed"
+                order_info["error"] = str(e)
+                raise OrderError(f"Order execution failed: {e}")
+            
+            # Add to orders list
+            if request.account_name not in self.orders:
+                self.orders[request.account_name] = []
+            self.orders[request.account_name].append(order_info)
+            
+            message = f"Order {order_id} filled for {request.symbol} ({request.side} {request.qty})"
+            
+            return ActionResult(
+                success=True,
+                message=message,
+                extra={"order_info": order_info}
+            )
+            
+        except Exception as e:
+            if isinstance(e, (InsufficientFundsError, InvalidSymbolError, OrderError)):
+                raise
+            raise OrderError(f"Failed to create order: {e}")
+    
+    async def get_orders(self, request: GetOrdersRequest) -> ActionResult:
+        """Get orders for an account.
+        
+        Args:
+            request: GetOrdersRequest with account_name and optional symbol
+        """
+        try:
+            if request.account_name not in self.orders:
+                return ActionResult(
+                    success=True,
+                    message="Retrieved 0 orders.",
+                    extra={"orders": []}
+                )
+            
+            all_orders = []
+            for order in self.orders[request.account_name]:
+                if request.symbol and order.get("symbol") != request.symbol:
+                    continue
+                if request.order_id and str(order.get("order_id")) != str(request.order_id):
+                    continue
+                
+                order_info = {
+                    "order_id": str(order.get("order_id", "N/A")),
+                    "symbol": order.get("symbol", "N/A"),
+                    "side": order.get("side", "N/A"),
+                    "type": order.get("order_type", "N/A"),
+                    "status": order.get("status", "N/A"),
+                    "quantity": str(order.get("quantity", "0")),
+                    "price": order.get("price"),
+                    "trade_type": "perpetual",
+                }
+                all_orders.append(order_info)
+            
+            if request.limit:
+                all_orders = all_orders[:request.limit]
+            
+            return ActionResult(
+                success=True,
+                message=f"Retrieved {len(all_orders)} orders.",
+                extra={"orders": all_orders}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to get orders: {e}")
+    
+    async def get_order(self, request: GetOrderRequest) -> ActionResult:
+        """Get a specific order by ID.
+        
+        Args:
+            request: GetOrderRequest with account_name, order_id, symbol
+        """
+        try:
+            if request.account_name not in self.orders:
+                raise NotFoundError(f"Order {request.order_id} not found")
+            
+            order = None
+            for o in self.orders[request.account_name]:
+                if str(o.get("order_id")) == str(request.order_id) and o.get("symbol") == request.symbol:
+                    order = o
+                    break
+            
+            if not order:
+                raise NotFoundError(f"Order {request.order_id} not found for symbol {request.symbol}")
+            
+            order_info = {
+                "order_id": str(order.get("order_id", "N/A")),
+                "symbol": order.get("symbol", "N/A"),
+                "side": order.get("side", "N/A"),
+                "type": order.get("order_type", "N/A"),
+                "status": order.get("status", "N/A"),
+                "quantity": str(order.get("quantity", "0")),
+                "price": order.get("price"),
+                "trade_type": "perpetual",
+            }
+            
+            return ActionResult(
+                success=True,
+                message=f"Order {request.order_id} retrieved successfully.",
+                extra={"order": order_info}
+            )
+            
+        except Exception as e:
+            if isinstance(e, NotFoundError):
+                raise
+            raise HyperliquidError(f"Failed to get order: {e}")
+    
+    async def cancel_order(self, request: CancelOrderRequest) -> ActionResult:
+        """Cancel an order (only if pending).
+        
+        Args:
+            request: CancelOrderRequest with account_name, order_id, symbol
+        """
+        try:
+            if request.account_name not in self.orders:
+                raise NotFoundError(f"Order {request.order_id} not found")
+            
+            order = None
+            for o in self.orders[request.account_name]:
+                if str(o.get("order_id")) == str(request.order_id) and o.get("symbol") == request.symbol:
+                    order = o
+                    break
+            
+            if not order:
+                raise NotFoundError(f"Order {request.order_id} not found for symbol {request.symbol}")
+            
+            if order.get("status") != "pending":
+                raise OrderError(f"Cannot cancel order {request.order_id}: order is already {order.get('status')}")
+            
+            order["status"] = "cancelled"
+            
+            return ActionResult(
+                success=True,
+                message=f"Order {request.order_id} canceled successfully.",
+                extra={"order_id": request.order_id}
+            )
+            
+        except Exception as e:
+            if isinstance(e, (NotFoundError, OrderError)):
+                raise
+            raise HyperliquidError(f"Failed to cancel order: {e}")
+    
+    async def cancel_all_orders(self, request: CancelAllOrdersRequest) -> ActionResult:
+        """Cancel all pending orders for an account.
+        
+        Args:
+            request: CancelAllOrdersRequest with account_name, optional symbol
+        """
+        try:
+            if request.account_name not in self.orders:
+                return ActionResult(
+                    success=True,
+                    message="No orders to cancel.",
+                    extra={"account_name": request.account_name, "cancelled_count": 0}
+                )
+            
+            cancelled_count = 0
+            for order in self.orders[request.account_name]:
+                if request.symbol and order.get("symbol") != request.symbol:
+                    continue
+                if order.get("status") == "pending":
+                    order["status"] = "cancelled"
+                    cancelled_count += 1
+            
+            return ActionResult(
+                success=True,
+                message=f"All orders canceled successfully.",
+                extra={"account_name": request.account_name, "cancelled_count": cancelled_count}
+            )
+            
+        except Exception as e:
+            raise HyperliquidError(f"Failed to cancel all orders: {e}")
+    
+    async def close_order(self, request: CloseOrderRequest) -> ActionResult:
+        """Close a position (reduce-only order).
+        
+        Args:
+            request: CloseOrderRequest with account_name, symbol, side, size, order_type, optional price
+            
+        Returns:
+            ActionResult with close order information
+        """
+        try:
+            # Validate symbol
+            if request.symbol not in self.symbols:
+                raise InvalidSymbolError(f"Symbol {request.symbol} not found or not tradable")
+            
+            if request.account_name not in self.positions:
+                raise OrderError(f"No position found for {request.symbol}")
+            
+            if request.symbol not in self.positions[request.account_name]:
+                raise OrderError(f"No position found for {request.symbol}")
+            
+            position = self.positions[request.account_name][request.symbol]
+            current_position_amt = float(position.get("position_amt", 0))
+            
+            if current_position_amt == 0:
+                raise OrderError(f"No position to close for {request.symbol}")
+            
+            # Determine close side and size
+            if current_position_amt > 0:  # Long position
+                close_side = "sell"
+                max_close_size = current_position_amt
+            else:  # Short position
+                close_side = "buy"
+                max_close_size = abs(current_position_amt)
+            
+            if request.side.lower() != close_side:
+                raise OrderError(f"Cannot close {request.symbol} position: expected {close_side}, got {request.side}")
+            
+            close_size = request.size if request.size else max_close_size
+            if close_size > max_close_size:
+                close_size = max_close_size
+            
+            # Create close order
+            close_order_request = CreateOrderRequest(
+                account_name=request.account_name,
+                symbol=request.symbol,
+                side=request.side,
+                order_type=request.order_type,
+                qty=close_size,
+                price=request.price,
+                leverage=1,  # Not used for closing
+            )
+            
+            result = await self.create_order(close_order_request)
+            
+            return ActionResult(
+                success=True,
+                message=f"Close order submitted successfully for {request.symbol} ({request.side} {close_size}).",
+                extra={"close_order": result.extra.get("order_info", {})}
+            )
+            
+        except Exception as e:
+            if isinstance(e, (InvalidSymbolError, OrderError)):
+                raise
+            raise OrderError(f"Failed to close order: {e}")
