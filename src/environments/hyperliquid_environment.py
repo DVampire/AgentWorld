@@ -31,9 +31,7 @@ from src.environments.hyperliquidentry.types import (
     CancelOrderRequest,
     CancelAllOrdersRequest,
     CloseOrderRequest,
-    TradeType,
-    BacktestPosition,
-    BacktestOrder,
+    TradeType
 )
 from src.utils import dedent, assemble_project_path
 
@@ -42,7 +40,7 @@ class OnlineHyperliquidEnvironment(BaseEnvironment):
     """Hyperliquid Trading Environment that provides Hyperliquid trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="hyperliquid", description="The name of the Hyperliquid trading environment.")
+    name: str = Field(default="online_hyperliquid", description="The name of the Hyperliquid trading environment.")
     type: str = Field(default="Hyperliquid Trading", description="The type of the Hyperliquid trading environment.")
     description: str = Field(default="Hyperliquid trading environment for real-time data and trading operations", description="The description of the Hyperliquid trading environment.")
     args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Hyperliquid trading environment.")
@@ -1246,7 +1244,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
     """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="hyperliquid", description="Backtest environment name (consistent with online trading)")
+    name: str = Field(default="offline_hyperliquid", description="Backtest environment name (consistent with online trading)")
     type: str = Field(default="Hyperliquid Trading", description="Backtest trading environment (consistent with online trading)")
     description: str = Field(default="Hyperliquid trading environment for backtest with historical data", description="Backtest environment description")
     args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the backtest environment.")
@@ -1264,7 +1262,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
         symbol: Optional[Union[str, List[str]]] = None,
         initial_balance: float = 10000.0,
         accounts: Optional[List[Dict[str, Union[str, float]]]] = None,
-        offline_hyperliquid_service: OfflineHyperliquidService = None,
+        hyperliquid_service: OfflineHyperliquidService = None,
         **kwargs
     ):
         """
@@ -1276,7 +1274,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
             symbol: Symbol(s) to trade (e.g., 'BTC', ['BTC', 'ETH'])
             initial_balance: Default initial balance for accounts
             accounts: List of account dictionaries with name and optional initial_balance
-            offline_hyperliquid_service: OfflineHyperliquidService instance (if None, will be created)
+            hyperliquid_service: OfflineHyperliquidService instance (if None, will be created)
         """
         super().__init__(**kwargs)
         
@@ -1285,17 +1283,17 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
         self.symbol = symbol
         
         # Create service if not provided
-        if offline_hyperliquid_service is None:
+        if hyperliquid_service is None:
             if accounts is None:
                 accounts = [{"name": account_name, "initial_balance": initial_balance}]
-            offline_hyperliquid_service = OfflineHyperliquidService(
+            hyperliquid_service = OfflineHyperliquidService(
                 base_dir=self.base_dir,
                 accounts=accounts,
                 symbol=symbol,
                 initial_balance=initial_balance
             )
         
-        self.offline_hyperliquid_service = offline_hyperliquid_service
+        self.hyperliquid_service = hyperliquid_service
         
         # Performance tracking (same as OnlineHyperliquidEnvironment)
         self.account_value = None
@@ -1309,14 +1307,14 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
         logger.info(f"| 🚀 Offline Hyperliquid Trading Environment initialized at: {self.base_dir}")
         
         # Initialize the service
-        if self.offline_hyperliquid_service:
-            await self.offline_hyperliquid_service.initialize()
+        if self.hyperliquid_service:
+            await self.hyperliquid_service.initialize()
             logger.info(f"| ✅ Offline Hyperliquid service initialized")
     
     async def cleanup(self) -> None:
         """Cleanup offline backtest environment."""
-        if self.offline_hyperliquid_service:
-            await self.offline_hyperliquid_service.cleanup()
+        if self.hyperliquid_service:
+            await self.hyperliquid_service.cleanup()
         logger.info("| 🧹 Offline Hyperliquid Trading Environment cleanup completed")
     
     def _safe_float_format(self, value: Any, default: float = 0.0) -> str:
@@ -1434,55 +1432,48 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 
                 candles_string += symbol_string + "\n"
             
-            # Format indicator data (consistent with online environment)
             indicators_string = ""
             for symbol, indicators_list in indicators.items():
                 if not indicators_list:
                     continue
                 
-                # Get indicator names from service
-                indicator_names = self.offline_hyperliquid_service.indicators_name if self.offline_hyperliquid_service else []
+                # Get indicator names
+                indicator_names = self.hyperliquid_service.indicators_name
                 if not indicator_names:
-                    # Fallback: extract from first indicator record
-                    if indicators_list and isinstance(indicators_list, list) and len(indicators_list) > 0:
-                        first_indicator = indicators_list[0]
-                        indicator_names = [k for k in first_indicator.keys() 
-                                         if k not in ['timestamp', 'timestamp_utc', 'timestamp_local', 'symbol', 'id', 'created_at']]
+                    continue
+                
+                # Create table header
+                symbol_string = f"Symbol: {symbol}. History {len(indicators_list)} minutes indicators data.\n"
+                # Build header row: Timestamp | Timestamp (Local) | indicator1 | indicator2 | ...
+                header_cols = ["Timestamp           "] + [name.upper() for name in indicator_names]
+                symbol_string += "| " + " | ".join(header_cols) + " |\n"
+                
+                # Build separator row
+                separator_cols = ["---------------------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
+                separator = "| " + " | ".join(separator_cols) + " |\n"
+                symbol_string += separator
+                
+                # Add table rows
+                for indicator in indicators_list:
+                    timestamp = indicator.get("timestamp_local", "")
+                    row_values = [str(timestamp)]
                     
-                    if not indicator_names:
-                        continue
+                    # Add indicator values in the same order as header
+                    for indicator_name in indicator_names:
+                        indicator_value = indicator.get(indicator_name, None)
+                        if indicator_value is not None:
+                            row_values.append(self._safe_float_format(indicator_value))
+                        else:
+                            row_values.append("")
                     
-                    # Create table header
-                    symbol_string = f"Symbol: {symbol}. History {len(indicators_list)} minutes indicators data.\n"
-                    header_cols = ["Timestamp           "] + [name.upper() for name in indicator_names]
-                    symbol_string += "| " + " | ".join(header_cols) + " |\n"
-                    
-                    # Create separator row
-                    separator_cols = ["---------------------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
-                    separator = "| " + " | ".join(separator_cols) + " |\n"
-                    symbol_string += separator
-                    
-                    # Add data rows
-                    for indicator in indicators_list:
-                        timestamp = indicator.get("timestamp_local", indicator.get("timestamp_utc", ""))
-                        row_values = [str(timestamp)]
-                        
-                        # Add indicator values in order
-                        for indicator_name in indicator_names:
-                            indicator_value = indicator.get(indicator_name, None)
-                            if indicator_value is not None:
-                                row_values.append(self._safe_float_format(indicator_value))
-                            else:
-                                row_values.append("")
-                        
-                        # Format row
-                        formatted_row = f"| {row_values[0]:<19} |"
-                        for val in row_values[1:]:
-                            formatted_row += f" {val:>12} |"
-                        formatted_row += "\n"
-                        symbol_string += formatted_row
-                    
-                    indicators_string += symbol_string + "\n"
+                    # Format row with alignment
+                    formatted_row = f"| {row_values[0]:<19} |"
+                    for val in row_values[1:]:
+                        formatted_row += f" {val:>12} |"
+                    formatted_row += "\n"
+                    symbol_string += formatted_row
+                
+                indicators_string += symbol_string + "\n"
             
             data_string = dedent(f"""
                 <data>
@@ -1538,7 +1529,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 end_date=end_date,
                 limit=limit
             )
-            result = await self.offline_hyperliquid_service.get_data(request)
+            result = await self.hyperliquid_service.get_data(request)
             
             if not result.success:
                 return {
@@ -1594,7 +1585,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
         """Get account information (delegates to service)."""
         try:
             request = GetAccountRequest(account_name=self.account_name)
-            result = await self.offline_hyperliquid_service.get_account(request)
+            result = await self.hyperliquid_service.get_account(request)
             
             if not result.success:
                 return {
@@ -1734,7 +1725,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
         """Get all open positions (delegates to service)."""
         try:
             request = GetPositionsRequest(account_name=self.account_name, trade_type=trade_type)
-            result = await self.offline_hyperliquid_service.get_positions(request)
+            result = await self.hyperliquid_service.get_positions(request)
             
             if not result.success:
                 return {
@@ -1818,7 +1809,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price
             )
-            result = await self.offline_hyperliquid_service.create_order(request)
+            result = await self.hyperliquid_service.create_order(request)
             
             if not result.success:
                 return {
@@ -1873,7 +1864,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 price=price,
                 trade_type=TradeType.PERPETUAL
             )
-            result = await self.offline_hyperliquid_service.close_order(request)
+            result = await self.hyperliquid_service.close_order(request)
             
             if not result.success:
                 return {
@@ -1927,7 +1918,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 limit=limit,
                 order_id=order_id
             )
-            result = await self.offline_hyperliquid_service.get_orders(request)
+            result = await self.hyperliquid_service.get_orders(request)
             
             if not result.success:
                 return {
@@ -1976,7 +1967,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 symbol=symbol,
                 trade_type=trade_type
             )
-            result = await self.offline_hyperliquid_service.get_order(request)
+            result = await self.hyperliquid_service.get_order(request)
             
             if not result.success:
                 return {
@@ -2020,7 +2011,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 symbol=symbol,
                 trade_type=trade_type
             )
-            result = await self.offline_hyperliquid_service.cancel_order(request)
+            result = await self.hyperliquid_service.cancel_order(request)
             
             if not result.success:
                 return {
@@ -2049,7 +2040,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 symbol=symbol,
                 trade_type=trade_type
             )
-            result = await self.offline_hyperliquid_service.cancel_all_orders(request)
+            result = await self.hyperliquid_service.cancel_all_orders(request)
             
             if not result.success:
                 return {
@@ -2075,7 +2066,7 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
         try:
             from src.environments.hyperliquidentry.types import GetExchangeInfoRequest
             request = GetExchangeInfoRequest()
-            result = await self.offline_hyperliquid_service.get_exchange_info(request)
+            result = await self.hyperliquid_service.get_exchange_info(request)
             
             if not result.success:
                 return {

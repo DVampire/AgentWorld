@@ -38,7 +38,7 @@ from src.environments.hyperliquidentry.exceptions import (
     InvalidSymbolError,
 )
 from src.environments.database.service import DatabaseService
-from src.environments.database.types import QueryRequest
+from src.environments.database.types import QueryRequest, SelectRequest
 from src.environments.hyperliquidentry.candle import CandleHandler
 from src.environments.hyperliquidentry.types import DataStreamType
 from src.utils import assemble_project_path
@@ -956,8 +956,10 @@ class OfflineHyperliquidService:
         self,
         base_dir: Union[str, Path],
         accounts: List[Dict[str, Union[str, float]]],
+        live: bool = False,
         symbol: Optional[Union[str, List[str]]] = None,
-        initial_balance: float = 10000.0,
+        data_type: Optional[Union[str, List[str]]] = None,
+        initial_balance: float = 500.0,
     ):
         """Initialize offline Hyperliquid trading service.
         
@@ -979,6 +981,8 @@ class OfflineHyperliquidService:
             ]
         """
         self.base_dir = Path(assemble_project_path(base_dir))
+        self.live = live
+        self.data_type = data_type
         
         # Initialize accounts with balances
         self.accounts: Dict[str, Dict[str, Union[str, float]]] = {}
@@ -1021,6 +1025,10 @@ class OfflineHyperliquidService:
         
         # timestamps: Dict[symbol] -> List of timestamps ordered by index
         self._timestamps: Dict[str, List[int]] = {}
+        
+        # Max historical data points (same as online service: 120 minutes = 2 hours)
+        # Initial index should start from this point to match online service behavior
+        self._max_historical_data_points: int = 120
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -1067,7 +1075,9 @@ class OfflineHyperliquidService:
     async def _initialize_time_indices(self) -> None:
         """Initialize time indices for all symbols from database.
         
-        This loads all timestamps from the database and initializes the current index to 0.
+        This loads all timestamps from the database and initializes the current index
+        to start from _max_historical_data_points (120 minutes = 2 hours) to match
+        online service behavior, which pre-caches 2 hours of historical data.
         """
         if not self.candle_handler:
             return
@@ -1093,9 +1103,15 @@ class OfflineHyperliquidService:
                 if result.success and result.extra.get("data"):
                     timestamps = [row["timestamp"] for row in result.extra["data"]]
                     self._timestamps[symbol] = timestamps
-                    self._current_index[symbol] = 0
-                    self._total_data_count[symbol] = len(timestamps)
-                    logger.info(f"| 📅 Initialized time index for {symbol}: {len(timestamps)} data points")
+                    total_count = len(timestamps)
+                    self._total_data_count[symbol] = total_count
+                    
+                    # Initialize index to start from _max_historical_data_points (2 hours)
+                    # This matches online service behavior which pre-caches 2 hours of data
+                    initial_index = min(self._max_historical_data_points, total_count)
+                    self._current_index[symbol] = initial_index
+                    
+                    logger.info(f"| 📅 Initialized time index for {symbol}: {total_count} data points, starting from index {initial_index} (2 hours)")
                 else:
                     logger.warning(f"| ⚠️  No data found for {symbol} in database")
                     self._timestamps[symbol] = []
@@ -1421,12 +1437,19 @@ class OfflineHyperliquidService:
     async def get_data(self, request: GetDataRequest) -> ActionResult:
         """Get historical data from database based on current time index.
         
-        In offline backtest mode, this method retrieves data sequentially from the database
-        starting from the current index, advancing through historical data chronologically.
+        In offline backtest mode, this method retrieves data sequentially from the database:
+        - Current index points to the current time point (e.g., index 1 = 10:02:00)
+        - Retrieves historical data from (current_index - limit + 1) to current_index (inclusive)
+        - After retrieval, advances index by 1 for next call
+        
+        Example:
+            Timestamps: [10:01:00 (idx 0), 10:02:00 (idx 1), 10:03:00 (idx 2)]
+            - First call (index=0, limit=30): Get data from max(0, 0-30+1)=0 to 0+1=1, then advance index to 1
+            - Second call (index=1, limit=30): Get data from max(0, 1-30+1)=0 to 1+1=2, then advance index to 2
         
         Args:
             request: GetDataRequest with symbol (str or list), data_type,
-                    optional limit (number of records to retrieve from current index)
+                    optional limit (number of historical records to retrieve, default: all available)
                     Note: start_date and end_date are ignored in offline mode
             
         Returns:
@@ -1461,23 +1484,31 @@ class OfflineHyperliquidService:
                     result_data[symbol] = {"candles": [], "indicators": []}
                     continue
                 
-                # Determine how many records to retrieve
-                limit = request.limit if request.limit else (total_count - current_idx)
-                end_idx = min(current_idx + limit, total_count)
+                # Determine how many historical records to retrieve
+                # If limit is specified, get data from (current_idx - limit + 1) to (current_idx + 1)
+                # If limit is not specified, get all data from 0 to (current_idx + 1)
+                if request.limit:
+                    # Get historical data: from max(0, current_idx - limit + 1) to current_idx + 1
+                    start_idx = max(0, current_idx - request.limit + 1)
+                    end_idx = min(current_idx + 1, total_count)
+                else:
+                    # Get all data from beginning to current_idx + 1
+                    start_idx = 0
+                    end_idx = min(current_idx + 1, total_count)
                 
                 # Get timestamps for the range
                 timestamps = self._timestamps.get(symbol, [])
-                if not timestamps or current_idx >= len(timestamps):
+                if not timestamps or start_idx >= len(timestamps):
                     result_data[symbol] = {"candles": [], "indicators": []}
                     continue
                 
-                target_timestamps = timestamps[current_idx:end_idx]
+                target_timestamps = timestamps[start_idx:end_idx]
                 
                 if not target_timestamps:
                     result_data[symbol] = {"candles": [], "indicators": []}
                     continue
                 
-                logger.info(f"| 🔍 Getting {data_type.value} data for {symbol} from index {current_idx} to {end_idx-1} ({len(target_timestamps)} records)...")
+                logger.info(f"| 🔍 Getting {data_type.value} data for {symbol} from index {start_idx} to {end_idx-1} (current_idx={current_idx}, {len(target_timestamps)} records)...")
                 
                 # Query database for candles with these timestamps
                 symbol_upper = symbol.upper()
@@ -1497,16 +1528,27 @@ class OfflineHyperliquidService:
                     candles = candle_result.extra["data"]
                 
                 # Query database for indicators with these timestamps
+                # Use the same approach as candles: use IN clause with exact timestamps
                 indicators = []
                 try:
-                    indicator_query = f"SELECT * FROM {indicators_table_name} WHERE symbol = ? AND timestamp IN ({placeholders}) ORDER BY timestamp ASC"
-                    indicator_result = await self.database_service.execute_query(
-                        QueryRequest(query=indicator_query, parameters=(symbol_upper, *target_timestamps))
-                    )
-                    if indicator_result.success and indicator_result.extra.get("data"):
-                        indicators = indicator_result.extra["data"]
+                    if target_timestamps:
+                        # Use IN clause with exact timestamps (same as candles query)
+                        indicator_query = f"SELECT * FROM {indicators_table_name} WHERE symbol = ? AND timestamp IN ({placeholders}) ORDER BY timestamp ASC"
+                        indicator_result = await self.database_service.execute_query(
+                            QueryRequest(query=indicator_query, parameters=(symbol_upper, *target_timestamps))
+                        )
+                        
+                        if indicator_result.success and indicator_result.extra.get("data"):
+                            indicators = indicator_result.extra["data"]
+                            logger.info(f"| ✅ Retrieved {len(indicators)} indicators for {symbol} (out of {len(target_timestamps)} requested timestamps)")
+                        else:
+                            logger.warning(f"| ⚠️  No indicators data found for {symbol} at specified timestamps. Query success: {indicator_result.success}")
+                            if hasattr(indicator_result, 'message'):
+                                logger.warning(f"| ⚠️  Query message: {indicator_result.message}")
+                    else:
+                        logger.debug(f"| ⚠️  No timestamps to query indicators for {symbol}")
                 except Exception as e:
-                    logger.debug(f"| ⚠️  No indicators table or data for {symbol}: {e}")
+                    logger.warning(f"| ⚠️  Failed to query indicators for {symbol}: {e}", exc_info=True)
                 
                 result_data[symbol] = {
                     "candles": candles,
@@ -1514,9 +1556,9 @@ class OfflineHyperliquidService:
                 }
                 total_rows += len(candles) + len(indicators)
                 
-                # Update current index (advance by number of records retrieved)
-                self._current_index[symbol] = end_idx
-                logger.debug(f"| 📍 Updated index for {symbol}: {current_idx} -> {end_idx}")
+                # Advance index by 1 for next call
+                self._current_index[symbol] = current_idx + 1
+                logger.debug(f"| 📍 Updated index for {symbol}: {current_idx} -> {current_idx + 1}")
             
             symbol_str = ", ".join(symbols) if len(symbols) <= 10 else f"{len(symbols)} symbols"
             message = f"Retrieved {total_rows} records ({data_type.value}) for {symbol_str} from current index."
@@ -1537,6 +1579,9 @@ class OfflineHyperliquidService:
     async def _initialize_symbol_index(self, symbol: str) -> None:
         """Initialize time index for a specific symbol.
         
+        Initializes the current index to start from _max_historical_data_points (120 minutes = 2 hours)
+        to match online service behavior, which pre-caches 2 hours of historical data.
+        
         Args:
             symbol: Symbol name
         """
@@ -1553,9 +1598,15 @@ class OfflineHyperliquidService:
             if result.success and result.extra.get("data"):
                 timestamps = [row["timestamp"] for row in result.extra["data"]]
                 self._timestamps[symbol] = timestamps
-                self._current_index[symbol] = 0
-                self._total_data_count[symbol] = len(timestamps)
-                logger.info(f"| 📅 Initialized time index for {symbol}: {len(timestamps)} data points")
+                total_count = len(timestamps)
+                self._total_data_count[symbol] = total_count
+                
+                # Initialize index to start from _max_historical_data_points (2 hours)
+                # This matches online service behavior which pre-caches 2 hours of data
+                initial_index = min(self._max_historical_data_points, total_count)
+                self._current_index[symbol] = initial_index
+                
+                logger.info(f"| 📅 Initialized time index for {symbol}: {total_count} data points, starting from index {initial_index} (2 hours)")
             else:
                 logger.warning(f"| ⚠️  No data found for {symbol} in database")
                 self._timestamps[symbol] = []
@@ -1757,11 +1808,16 @@ class OfflineHyperliquidService:
     async def create_order(self, request: CreateOrderRequest) -> ActionResult:
         """Create an order (simulated execution based on database prices).
         
+        In offline mode:
+        - Main order is executed immediately (filled)
+        - Stop loss and take profit orders are created as guard orders (open/pending)
+        - Only guard orders are stored in self.orders (main order is not stored as it's filled)
+        
         Args:
             request: CreateOrderRequest with account_name, symbol, side, order_type, qty, etc.
             
         Returns:
-            ActionResult with order information
+            ActionResult with order information including main order and guard orders
         """
         try:
             if request.qty is None:
@@ -1774,12 +1830,12 @@ class OfflineHyperliquidService:
             if request.symbol not in self.symbols:
                 raise InvalidSymbolError(f"Symbol {request.symbol} not found or not tradable")
             
-            # Create order record
-            order_id = str(self._order_id_counter)
+            # Create main order record (will be filled immediately)
+            main_order_id = f"MAIN-{self._order_id_counter}"
             self._order_id_counter += 1
             
-            order_info = {
-                "order_id": order_id,
+            main_order_info = {
+                "order_id": main_order_id,
                 "symbol": request.symbol,
                 "side": request.side,
                 "order_type": request.order_type.value,
@@ -1790,26 +1846,129 @@ class OfflineHyperliquidService:
                 "timestamp": int(time.time() * 1000),
             }
             
-            # Execute order immediately (simulated)
+            # Execute main order immediately (simulated)
             try:
-                execution_result = await self._execute_order(request.account_name, order_info)
-                order_info["status"] = "filled"
-                order_info["execution_price"] = str(execution_result["execution_price"])
-                order_info["filled_qty"] = str(execution_result["filled_qty"])
+                execution_result = await self._execute_order(request.account_name, main_order_info)
+                main_order_info["status"] = "filled"
+                main_order_info["execution_price"] = str(execution_result["execution_price"])
+                main_order_info["filled_qty"] = str(execution_result["filled_qty"])
             except InsufficientFundsError:
-                order_info["status"] = "rejected"
+                main_order_info["status"] = "rejected"
                 raise
             except Exception as e:
-                order_info["status"] = "failed"
-                order_info["error"] = str(e)
+                main_order_info["status"] = "failed"
+                main_order_info["error"] = str(e)
                 raise OrderError(f"Order execution failed: {e}")
             
-            # Add to orders list
-            if request.account_name not in self.orders:
-                self.orders[request.account_name] = []
-            self.orders[request.account_name].append(order_info)
+            # Build response with main order info
+            order_info = {
+                "order_id": main_order_id,
+                "order_status": "filled",
+                "symbol": request.symbol,
+                "side": request.side,
+                "order_type": request.order_type.value,
+                "quantity": request.qty,
+                "price": request.price,
+                "main_order": main_order_info,
+            }
             
-            message = f"Order {order_id} filled for {request.symbol} ({request.side} {request.qty})"
+            # Create guard orders (stop loss and take profit) - these are open/pending orders
+            stop_loss_order = None
+            take_profit_order = None
+            stop_loss_error = None
+            take_profit_error = None
+            
+            # Create stop loss order if specified
+            if request.stop_loss_price:
+                try:
+                    # Determine stop loss side (opposite of main order side)
+                    sl_side = "sell" if request.side.lower() == "buy" else "buy"
+                    
+                    sl_order_id = f"SL-{self._order_id_counter}"
+                    self._order_id_counter += 1
+                    
+                    sl_order = {
+                        "order_id": sl_order_id,
+                        "symbol": request.symbol,
+                        "side": sl_side,
+                        "order_type": OrderType.LIMIT.value,  # Stop loss is typically a limit order
+                        "quantity": str(request.qty),
+                        "price": str(request.stop_loss_price),
+                        "leverage": str(request.leverage) if request.leverage else "1",
+                        "status": "open",  # Guard order is open/pending
+                        "timestamp": int(time.time() * 1000),
+                        "guard_type": "stop_loss",
+                        "main_order_id": main_order_id,
+                    }
+                    
+                    # Add guard order to orders list (only open orders are stored)
+                    if request.account_name not in self.orders:
+                        self.orders[request.account_name] = []
+                    self.orders[request.account_name].append(sl_order)
+                    
+                    stop_loss_order = {
+                        "order_id": sl_order_id,
+                        "status": "open",
+                        "symbol": request.symbol,
+                        "side": sl_side,
+                        "price": str(request.stop_loss_price),
+                        "quantity": str(request.qty),
+                    }
+                except Exception as e:
+                    stop_loss_error = str(e)
+                    logger.warning(f"| ⚠️  Failed to create stop loss order: {e}")
+            
+            # Create take profit order if specified
+            if request.take_profit_price:
+                try:
+                    # Determine take profit side (opposite of main order side)
+                    tp_side = "sell" if request.side.lower() == "buy" else "buy"
+                    
+                    tp_order_id = f"TP-{self._order_id_counter}"
+                    self._order_id_counter += 1
+                    
+                    tp_order = {
+                        "order_id": tp_order_id,
+                        "symbol": request.symbol,
+                        "side": tp_side,
+                        "order_type": OrderType.LIMIT.value,  # Take profit is typically a limit order
+                        "quantity": str(request.qty),
+                        "price": str(request.take_profit_price),
+                        "leverage": str(request.leverage) if request.leverage else "1",
+                        "status": "open",  # Guard order is open/pending
+                        "timestamp": int(time.time() * 1000),
+                        "guard_type": "take_profit",
+                        "main_order_id": main_order_id,
+                    }
+                    
+                    # Add guard order to orders list (only open orders are stored)
+                    if request.account_name not in self.orders:
+                        self.orders[request.account_name] = []
+                    self.orders[request.account_name].append(tp_order)
+                    
+                    take_profit_order = {
+                        "order_id": tp_order_id,
+                        "status": "open",
+                        "symbol": request.symbol,
+                        "side": tp_side,
+                        "price": str(request.take_profit_price),
+                        "quantity": str(request.qty),
+                    }
+                except Exception as e:
+                    take_profit_error = str(e)
+                    logger.warning(f"| ⚠️  Failed to create take profit order: {e}")
+            
+            # Add guard order info to response
+            if stop_loss_order:
+                order_info["stop_loss_order"] = stop_loss_order
+            if take_profit_order:
+                order_info["take_profit_order"] = take_profit_order
+            if stop_loss_error:
+                order_info["stop_loss_error"] = stop_loss_error
+            if take_profit_error:
+                order_info["take_profit_error"] = take_profit_error
+            
+            message = f"Order {main_order_id} filled for {request.symbol} ({request.side} {request.qty})"
             
             return ActionResult(
                 success=True,
@@ -1823,7 +1982,10 @@ class OfflineHyperliquidService:
             raise OrderError(f"Failed to create order: {e}")
     
     async def get_orders(self, request: GetOrdersRequest) -> ActionResult:
-        """Get orders for an account.
+        """Get open/pending orders for an account.
+        
+        In offline mode, this returns only guard orders (stop loss and take profit orders)
+        that are still open/pending. Main orders are not returned as they are immediately filled.
         
         Args:
             request: GetOrdersRequest with account_name and optional symbol
@@ -1838,6 +2000,12 @@ class OfflineHyperliquidService:
             
             all_orders = []
             for order in self.orders[request.account_name]:
+                # Only return open/pending orders (guard orders)
+                # Main orders are filled immediately and not stored in self.orders
+                order_status = order.get("status", "").lower()
+                if order_status not in ["open", "pending"]:
+                    continue
+                
                 if request.symbol and order.get("symbol") != request.symbol:
                     continue
                 if request.order_id and str(order.get("order_id")) != str(request.order_id):
@@ -1848,7 +2016,7 @@ class OfflineHyperliquidService:
                     "symbol": order.get("symbol", "N/A"),
                     "side": order.get("side", "N/A"),
                     "type": order.get("order_type", "N/A"),
-                    "status": order.get("status", "N/A"),
+                    "status": "open",  # Guard orders are always open
                     "quantity": str(order.get("quantity", "0")),
                     "price": order.get("price"),
                     "trade_type": "perpetual",
@@ -1868,7 +2036,10 @@ class OfflineHyperliquidService:
             raise HyperliquidError(f"Failed to get orders: {e}")
     
     async def get_order(self, request: GetOrderRequest) -> ActionResult:
-        """Get a specific order by ID.
+        """Get a specific guard order by ID.
+        
+        In offline mode, this can only retrieve guard orders (stop loss/take profit)
+        as main orders are filled immediately and not stored.
         
         Args:
             request: GetOrderRequest with account_name, order_id, symbol
@@ -1891,7 +2062,7 @@ class OfflineHyperliquidService:
                 "symbol": order.get("symbol", "N/A"),
                 "side": order.get("side", "N/A"),
                 "type": order.get("order_type", "N/A"),
-                "status": order.get("status", "N/A"),
+                "status": "open",  # Guard orders are always open
                 "quantity": str(order.get("quantity", "0")),
                 "price": order.get("price"),
                 "trade_type": "perpetual",
@@ -1909,7 +2080,10 @@ class OfflineHyperliquidService:
             raise HyperliquidError(f"Failed to get order: {e}")
     
     async def cancel_order(self, request: CancelOrderRequest) -> ActionResult:
-        """Cancel an order (only if pending).
+        """Cancel a guard order (stop loss or take profit order).
+        
+        In offline mode, this cancels guard orders that are still open/pending.
+        Main orders cannot be cancelled as they are filled immediately.
         
         Args:
             request: CancelOrderRequest with account_name, order_id, symbol
@@ -1927,7 +2101,8 @@ class OfflineHyperliquidService:
             if not order:
                 raise NotFoundError(f"Order {request.order_id} not found for symbol {request.symbol}")
             
-            if order.get("status") != "pending":
+            order_status = order.get("status", "").lower()
+            if order_status not in ["open", "pending"]:
                 raise OrderError(f"Cannot cancel order {request.order_id}: order is already {order.get('status')}")
             
             order["status"] = "cancelled"
@@ -1944,7 +2119,10 @@ class OfflineHyperliquidService:
             raise HyperliquidError(f"Failed to cancel order: {e}")
     
     async def cancel_all_orders(self, request: CancelAllOrdersRequest) -> ActionResult:
-        """Cancel all pending orders for an account.
+        """Cancel all open/pending guard orders for an account.
+        
+        In offline mode, this cancels all guard orders (stop loss/take profit) that are still open.
+        Main orders cannot be cancelled as they are filled immediately.
         
         Args:
             request: CancelAllOrdersRequest with account_name, optional symbol
@@ -1961,7 +2139,8 @@ class OfflineHyperliquidService:
             for order in self.orders[request.account_name]:
                 if request.symbol and order.get("symbol") != request.symbol:
                     continue
-                if order.get("status") == "pending":
+                order_status = order.get("status", "").lower()
+                if order_status in ["open", "pending"]:
                     order["status"] = "cancelled"
                     cancelled_count += 1
             
@@ -2027,6 +2206,33 @@ class OfflineHyperliquidService:
             )
             
             result = await self.create_order(close_order_request)
+            
+            # Check if position is fully closed after the close order
+            # If so, cancel all guard orders (stop loss/take profit) for this symbol
+            position_fully_closed = False
+            if request.account_name in self.positions:
+                position = self.positions[request.account_name].get(request.symbol)
+                if position:
+                    remaining_position_amt = float(position.get("position_amt", 0))
+                    # If position is fully closed (or almost closed)
+                    if abs(remaining_position_amt) < 1e-8:
+                        position_fully_closed = True
+                elif request.symbol not in self.positions[request.account_name]:
+                    # Position was deleted (fully closed)
+                    position_fully_closed = True
+            
+            # Cancel all open guard orders for this symbol if position is fully closed
+            if position_fully_closed:
+                cancelled_guard_orders = 0
+                if request.account_name in self.orders:
+                    for order in self.orders[request.account_name]:
+                        if (order.get("symbol") == request.symbol and 
+                            order.get("status", "").lower() in ["open", "pending"]):
+                            order["status"] = "cancelled"
+                            cancelled_guard_orders += 1
+                
+                if cancelled_guard_orders > 0:
+                    logger.info(f"| ✅ Cancelled {cancelled_guard_orders} guard orders for {request.symbol} after position closed")
             
             return ActionResult(
                 success=True,

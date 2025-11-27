@@ -9,8 +9,8 @@ from .mobile_environment import MobileEnvironment
 from .anthropic_mobile_environment import AnthropicMobileEnvironment
 from .alpaca_environment import AlpacaEnvironment
 from .binance_environment import BinanceEnvironment
-from .hyperliquid_environment import HyperliquidEnvironment
-from .hyperliquid_environment import HyperliquidBacktestEnvironment
+from .hyperliquid_environment import OnlineHyperliquidEnvironment
+from .hyperliquid_environment import OfflineHyperliquidEnvironment
 from .protocol import ecp
 
 __all__ = [
@@ -25,7 +25,7 @@ __all__ = [
     "AnthropicMobileEnvironment",
     "AlpacaEnvironment",
     "BinanceEnvironment",
-    "HyperliquidEnvironment",
-    "HyperliquidBacktestEnvironment",
+    "OnlineHyperliquidEnvironment",
+    "OfflineHyperliquidEnvironment",
     "ecp",
 ]

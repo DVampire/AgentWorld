@@ -34,8 +34,7 @@ memory_config.update(
 hyperliquid_service = dict(
     base_dir=workdir,
     accounts=None,
-    live=True,
-    auto_start_data_stream=True,
+    live=False,
     symbol=symbols,
     data_type=data_type,
 )

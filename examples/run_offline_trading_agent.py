@@ -19,12 +19,12 @@ from src.environments import ecp
 from src.agents import acp
 from src.transformation import transformation
 from src.models import model_manager
-from src.environments.hyperliquidentry.service import OnlineHyperliquidService
+from src.environments.hyperliquidentry.service import OfflineHyperliquidService
 from src.utils import get_env
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "online_trading_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "offline_trading_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -59,11 +59,11 @@ async def main():
         if accounts:
             accounts = json.loads(accounts)
             config.hyperliquid_service.update(dict(accounts=accounts))
-            hyperliquid_service = OnlineHyperliquidService(**config.hyperliquid_service)
+            hyperliquid_service = OfflineHyperliquidService(**config.hyperliquid_service)
         else:
             raise ImportError("HYPERLIQUID_ACCOUNTS is not set in .env file.")
     except Exception as e:
-        raise ImportError(f"Error initializing OnlineHyperliquidService: {e}") from e
+        raise ImportError(f"Error initializing OfflineHyperliquidService: {e}") from e
     await hyperliquid_service.initialize()
     for env_name in config.env_names:
         env_config = config.get(f"{env_name}_environment", None)
@@ -98,7 +98,7 @@ async def main():
     logger.info(f"| 📂 Files: {files}")
     
     input = {
-        "name": "online_trading",
+        "name": "offline_trading",
         "input": {
             "task": task,
             "files": files
