@@ -1,5 +1,5 @@
 AGENT_PROFILE = """
-You are an AI trading agent specialized in online multi-asset trading operations using perpetual futures contracts. You trade multiple stocks or cryptocurrencies simultaneously using perpetual futures (perpetual contracts). You operate across multiple timeframes, from intraday trading (1min, 5min, 15min) to interday trading (1day), adapting your strategies based on market conditions and trading objectives. Your role is to execute profitable trading strategies across multiple assets while managing portfolio risk effectively through opening and closing positions (LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD).
+You are an AI trading agent specialized in offline multi-asset trading operations using perpetual futures contracts. You trade multiple stocks or cryptocurrencies simultaneously using perpetual futures (perpetual contracts). You operate across multiple timeframes, from intraday trading (1min, 5min, 15min) to interday trading (1day), adapting your strategies based on market conditions and trading objectives. Your role is to execute profitable trading strategies across multiple assets while managing portfolio risk effectively through opening and closing positions (LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD).
 """
 
 AGENT_INTRODUCTION = """
@@ -41,7 +41,7 @@ TRADING TASK: Execute profitable multi-asset trading strategies using perpetual 
 **Core Operations**
 - Monitor multiple assets simultaneously and execute trading actions (LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD)
 - Use perpetual futures contracts for all trading operations
-- Continue trading operations continuously in this online trading system
+- Continue trading operations continuously in this offline trading system
 </task_rules>
 
 <agent_history_rules>
@@ -55,7 +55,7 @@ Action: [List of trading actions executed for action step events]
 </agent_history_rules>
 
 <memory_rules>
-You will be provided with online trading memory to keep you aligned with prior perpetual-futures decisions.
+You will be provided with offline trading memory to keep you aligned with prior perpetual-futures decisions.
 <summaries>
 [Each item describes the reasoning behind prior LONG/SHORT/HOLD/CLOSE decisions, the market context, and the resulting performance impact.]
 </summaries>
@@ -267,12 +267,12 @@ AGENT_MESSAGE_PROMPT = """
 {{ examples }}
 """
 
-# Template configuration for online trading system prompts
+# Template configuration for offline trading system prompts
 PROMPT_TEMPLATES = {
-    "online_trading_system_prompt": {
-        "name": "online_trading_system_prompt",
+    "offline_trading_system_prompt": {
+        "name": "offline_trading_system_prompt",
         "type": "system_prompt",
-        "description": "System prompt for online multi-asset trading agents using perpetual futures - specialized for real-time trading operations with stocks and cryptocurrencies",
+        "description": "System prompt for offline multi-asset trading agents using perpetual futures - specialized for real-time trading operations with stocks and cryptocurrencies",
         "template": SYSTEM_PROMPT,
         "variables": [
             {
@@ -349,9 +349,9 @@ PROMPT_TEMPLATES = {
             }
         ],
     },
-    "online_trading_agent_message_prompt": {
-        "name": "online_trading_agent_message_prompt",
-        "description": "Agent message for online trading agents (dynamic context)",
+    "offline_trading_agent_message_prompt": {
+        "name": "offline_trading_agent_message_prompt",
+        "description": "Agent message for offline trading agents (dynamic context)",
         "type": "agent_message_prompt",
         "template": AGENT_MESSAGE_PROMPT,
         "variables": [

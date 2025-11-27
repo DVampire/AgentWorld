@@ -1029,6 +1029,9 @@ class OfflineHyperliquidService:
         # Max historical data points (same as online service: 120 minutes = 2 hours)
         # Initial index should start from this point to match online service behavior
         self._max_historical_data_points: int = 120
+        
+        # Trading fee rate: 0.045% = 0.00045
+        self._trading_fee_rate: float = 0.00045
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -1323,19 +1326,26 @@ class OfflineHyperliquidService:
             account_equity = balance + total_unrealized_pnl
             withdrawable = account_equity - total_margin_used
             
+            # Format account data to match online service format exactly
+            # Online service uses the raw API response structure
             account_data = {
                 "margin_summary": {
                     "accountValue": str(account_equity),
                     "totalMarginUsed": str(total_margin_used),
                     "totalNtlPos": str(total_unrealized_pnl),
+                    "totalRawUsd": str(balance),  # Add totalRawUsd to match online format
                 },
                 "cross_margin_summary": {
+                    "accountValue": str(account_equity),
+                    "totalNtlPos": str(total_unrealized_pnl),
+                    "totalRawUsd": str(balance),
                     "totalMarginUsed": str(total_margin_used),
                 },
                 "cross_maintenance_margin_used": str(total_margin_used),
                 "withdrawable": str(max(0, withdrawable)),
                 "asset_positions": [
                     {
+                        "type": "oneWay",  # Match online format
                         "position": {
                             "coin": symbol,
                             "szi": str(position.get("position_amt", "0")),
@@ -1350,8 +1360,6 @@ class OfflineHyperliquidService:
                 ],
                 "time": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
                 "trade_type": "perpetual",
-                "balance": str(balance),
-                "equity": str(account_equity),
             }
             
             return ActionResult(
@@ -1695,6 +1703,9 @@ class OfflineHyperliquidService:
         # Calculate cost (for perpetual futures, cost = qty * price)
         cost = qty * execution_price
         
+        # Calculate trading fee: fee = qty * execution_price * fee_rate
+        trading_fee = cost * self._trading_fee_rate
+        
         # Check if account has sufficient balance
         # For perpetual futures, we need margin = cost / leverage
         leverage = float(order_info.get("leverage", 1))
@@ -1712,8 +1723,14 @@ class OfflineHyperliquidService:
         
         available_balance = self.account_balances[account_name] - current_margin_used
         
-        if required_margin > available_balance:
-            raise InsufficientFundsError(f"Insufficient funds. Required margin: {required_margin}, Available: {available_balance}")
+        # Check if account has sufficient balance for margin + trading fee
+        total_required = required_margin + trading_fee
+        if total_required > available_balance:
+            raise InsufficientFundsError(f"Insufficient funds. Required margin: {required_margin}, Trading fee: {trading_fee}, Available: {available_balance}")
+        
+        # Deduct trading fee from account balance
+        self.account_balances[account_name] -= trading_fee
+        logger.debug(f"| 💰 Deducted trading fee {trading_fee:.6f} for {account_name} ({qty} {symbol} @ {execution_price})")
         
         # Update position
         if account_name not in self.positions:
@@ -1801,7 +1818,8 @@ class OfflineHyperliquidService:
         return {
             "execution_price": execution_price,
             "filled_qty": qty,
-            "status": "filled"
+            "status": "filled",
+            "trading_fee": trading_fee
         }
     
     # Order methods

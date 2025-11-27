@@ -62,26 +62,49 @@ class TracerVisualizer:
                 self._load_data()
     
     def _extract_account_value(self, record: Dict[str, Any]) -> Optional[float]:
-        """Extract account value from a record."""
+        """Extract account value from a record.
+        """
         try:
             observation = record.get("observation", {})
-            hyperliquid = observation.get("hyperliquid", {})
+            if "online_hyperliquid" in observation:
+                hyperliquid = observation.get("online_hyperliquid", {})
+            elif "offline_hyperliquid" in observation:
+                hyperliquid = observation.get("offline_hyperliquid", {})
+            else:
+                return None
+            
             account = hyperliquid.get("account", {})
             if not isinstance(account, dict):
                 return None
             
-            # New tracer format exposes account_value directly
-            direct_value = account.get("account_value")
-            if direct_value is not None:
-                return float(direct_value)
-            
-            # Fallback to nested margin summary
-            account_inner = account.get("account", {})
-            if isinstance(account_inner, dict):
-                margin_summary = account_inner.get("margin_summary", {})
-                account_value = margin_summary.get("accountValue")
-                if account_value is not None:
-                    return float(account_value)
+            # Check if account has "extra" field (offline format)
+            if "extra" in account:
+                extra = account.get("extra", {})
+                # Try direct account_value in extra
+                direct_value = extra.get("account_value")
+                if direct_value is not None:
+                    return float(direct_value)
+                
+                # Try nested account.margin_summary.accountValue in extra
+                account_inner = extra.get("account", {})
+                if isinstance(account_inner, dict):
+                    margin_summary = account_inner.get("margin_summary", {})
+                    account_value = margin_summary.get("accountValue")
+                    if account_value is not None:
+                        return float(account_value)
+            else:
+                # Online format: account_value directly in account
+                direct_value = account.get("account_value")
+                if direct_value is not None:
+                    return float(direct_value)
+                
+                # Fallback to nested margin summary
+                account_inner = account.get("account", {})
+                if isinstance(account_inner, dict):
+                    margin_summary = account_inner.get("margin_summary", {})
+                    account_value = margin_summary.get("accountValue")
+                    if account_value is not None:
+                        return float(account_value)
         except (KeyError, ValueError, TypeError):
             pass
         return None
@@ -146,12 +169,16 @@ class TracerVisualizer:
         prices: Dict[str, Optional[float]] = {}
         try:
             observation = record.get("observation", {})
-            hyperliquid = observation.get("hyperliquid", {})
-            input_data = hyperliquid.get("input", {})
-            data = input_data.get("data", {})
             
-            if not isinstance(data, dict):
+            # Try offline_hyperliquid first, then online_hyperliquid
+            if "offline_hyperliquid" in observation:
+                hyperliquid = observation.get("offline_hyperliquid", {})
+            elif "online_hyperliquid" in observation:
+                hyperliquid = observation.get("online_hyperliquid", {})
+            else:
                 return prices
+            
+            data = hyperliquid.get("input", {}).get("data", {})
             
             for symbol, symbol_data in data.items():
                 if not isinstance(symbol_data, dict):

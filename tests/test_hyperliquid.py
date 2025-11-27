@@ -21,7 +21,6 @@ sys.path.append(root)
 
 load_dotenv()
 
-from src.environments.hyperliquidentry.client import HyperliquidClient
 from src.environments.hyperliquidentry.service import OnlineHyperliquidService
 from src.environments.hyperliquidentry.service import OfflineHyperliquidService
 from src.environments.hyperliquidentry.types import (

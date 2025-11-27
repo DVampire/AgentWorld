@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, ConfigDict
 import pandas as pd
 import sqlite3
 
+
 from src.logger import logger
 from src.environments.protocol.environment import BaseEnvironment
 from src.environments.protocol import ecp
@@ -1065,7 +1066,6 @@ class OnlineHyperliquidEnvironment(BaseEnvironment):
                 {account_string}
                 </account>
             """)
-            logger.info(f"| 📝 Account String: {account_string}")
             
             # Get positions
             positions_result = await self.get_positions()
@@ -1088,7 +1088,6 @@ class OnlineHyperliquidEnvironment(BaseEnvironment):
                 {positions_string}
                 </positions>
             """)
-            logger.info(f"| 📝 Positions String: {positions_string}")
             
             # Get orders
             orders_result = await self.get_orders()
@@ -1104,7 +1103,6 @@ class OnlineHyperliquidEnvironment(BaseEnvironment):
                 {orders_string}
                 </orders>
             """)
-            logger.info(f"| 📝 Orders String: {orders_string}")
             
             # Wait until the next minute boundary for minute-level trading
             await self._sleep_until_start()
@@ -1197,15 +1195,16 @@ class OnlineHyperliquidEnvironment(BaseEnvironment):
                 </indicators>
                 </data>
             """)
-            logger.info(f"| 📝 Data: {data_string}")
             
             state = dedent(f"""
                 <state>
                 {account_info}
+                {positions_string}
                 {orders_string}
                 {data_string}
                 </state>
             """)
+            logger.info(f"| 📝 State: {state}")
             
             return {
                 "state": state,
@@ -1330,189 +1329,6 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
                 return f"{float(default):.2f}"
         except (ValueError, TypeError):
             return f"{float(default):.2f}"
-    
-    async def get_state(self) -> Dict[str, Any]:
-        """Get environment state (fully simulates HyperliquidEnvironment format)."""
-        from src.utils import dedent
-        import json
-        
-        try:
-            # Get account information (fully simulates HyperliquidEnvironment)
-            account_result = await self.get_account()
-            account_result_extra = account_result.get("extra", {})
-            account_info = account_result_extra.get("account", {})
-            metrics = account_result_extra.get("metrics", {})
-            
-            account_string = dedent(f"""
-                Timestamp: {account_info.get("time", "N/A")}
-                Account Value: ${self._safe_float_format(account_info.get("margin_summary", {}).get("accountValue", 0))},
-                Total Profit: ${self._safe_float_format(metrics.get("total_profit", 0))} ({self._safe_float_format(metrics.get("profit_percentage", 0))}%),
-                Current Drawdown: ${self._safe_float_format(metrics.get("current_drawdown", 0))} ({self._safe_float_format(metrics.get("current_drawdown_percentage", 0))}%),
-                Max Drawdown: ${self._safe_float_format(metrics.get("max_drawdown", 0))} ({self._safe_float_format(metrics.get("max_drawdown_percentage", 0))}%),
-                Period Return: ${self._safe_float_format(metrics.get("period_return", 0))} ({self._safe_float_format(metrics.get("period_return_percentage", 0))}%),
-            """)
-            account_string = dedent(f"""
-                <account>
-                {account_string}
-                </account>
-            """)
-            
-            # Get positions information (fully simulates HyperliquidEnvironment)
-            positions_result = await self.get_positions()
-            positions_result_extra = positions_result.get("extra", {})
-            positions_list = positions_result_extra.get("positions", [])
-            positions_string = ""
-            for position in positions_list:
-                return_on_equity = position.get('return_on_equity', 0)
-                try:
-                    return_on_equity_float = float(return_on_equity)
-                except (ValueError, TypeError):
-                    return_on_equity_float = 0.0
-                return_on_equity_pct = self._safe_float_format(return_on_equity_float)
-                
-                position_side = "LONG" if float(position.get('position_amt', 0)) > 0 else "SHORT"
-                
-                positions_string += f"Symbol: {position.get('symbol', 'N/A')}, Position Side: {position_side}, Trade Type: {position.get('trade_type', 'perpetual')}, Leverage: {position.get('leverage', '1')}, Position Amount: {position.get('position_amt', '0')}, Entry Price: {position.get('entry_price', '0')}, Current Price: {position.get('mark_price', '0')}, Return on Equity: {return_on_equity_pct}%\n"
-            
-            positions_string = dedent(f"""
-                <positions>
-                {positions_string}
-                </positions>
-            """)
-            
-            # Get orders information (from locally maintained orders list)
-            orders_result = await self.get_orders()
-            orders_result_extra = orders_result.get("extra", {})
-            orders_list = orders_result_extra.get("orders", [])
-            orders_string = ""
-            for order in orders_list:
-                quantity_str = self._safe_float_format(order.get('quantity', 0))
-                price_str = self._safe_float_format(order.get('price', 0)) if order.get('price') else "N/A"
-                orders_string += f"Order ID: {order.get('order_id', 'N/A')}, Symbol: {order.get('symbol', 'N/A')}, Trade Type: {order.get('trade_type', 'perpetual')}, Order Type: {order.get('type', 'N/A')}, Order Side: {order.get('side', 'N/A')}, Quantity: {quantity_str}, Price: {price_str}, Status: {order.get('status', 'N/A')}\n"
-            
-            if not orders_string:
-                orders_string = "No orders found."
-            
-            orders_string = dedent(f"""
-                <orders>
-                {orders_string}
-                </orders>
-            """)
-            
-            # Get market data (fully simulates HyperliquidEnvironment format)
-            data_result = await self.get_data(limit=30)
-            data_result_extra = data_result.get("extra", {})
-            
-            candles = {}
-            indicators = {}
-            for symbol, data in data_result_extra.get("data", {}).items():
-                candles[symbol] = data.get("candles", data.get("candle", []))  # Support both formats
-                indicators[symbol] = data.get("indicators", [])  # Indicator data read from database
-            
-            candles_string = ""
-            for symbol, candles_list in candles.items():
-                if not candles_list:
-                    continue
-                
-                # Create table (fully simulates HyperliquidEnvironment format)
-                symbol_string = f"Symbol: {symbol}. History {len(candles_list)} minutes candles data.\n"
-                symbol_string += "| Timestamp           | Open | High | Low | Close | Volume | Trade Count |\n"
-                symbol_string += "|---------------------|------|------|-----|-------|--------|-------------|\n"
-                
-                # Add table rows
-                for candle in candles_list:
-                    timestamp = candle.get("timestamp_local", candle.get("timestamp_utc", ""))
-                    open_val = self._safe_float_format(candle.get("open"))
-                    high_val = self._safe_float_format(candle.get("high"))
-                    low_val = self._safe_float_format(candle.get("low"))
-                    close_val = self._safe_float_format(candle.get("close"))
-                    volume_val = self._safe_float_format(candle.get("volume"))
-                    trade_count_val = self._safe_float_format(candle.get("trade_count", 0))
-                    symbol_string += f"| {timestamp:<19} | {open_val:>10} | {high_val:>10} | {low_val:>10} | {close_val:>10} | {volume_val:>10} | {trade_count_val:>11} |\n"
-                
-                candles_string += symbol_string + "\n"
-            
-            indicators_string = ""
-            for symbol, indicators_list in indicators.items():
-                if not indicators_list:
-                    continue
-                
-                # Get indicator names
-                indicator_names = self.hyperliquid_service.indicators_name
-                if not indicator_names:
-                    continue
-                
-                # Create table header
-                symbol_string = f"Symbol: {symbol}. History {len(indicators_list)} minutes indicators data.\n"
-                # Build header row: Timestamp | Timestamp (Local) | indicator1 | indicator2 | ...
-                header_cols = ["Timestamp           "] + [name.upper() for name in indicator_names]
-                symbol_string += "| " + " | ".join(header_cols) + " |\n"
-                
-                # Build separator row
-                separator_cols = ["---------------------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
-                separator = "| " + " | ".join(separator_cols) + " |\n"
-                symbol_string += separator
-                
-                # Add table rows
-                for indicator in indicators_list:
-                    timestamp = indicator.get("timestamp_local", "")
-                    row_values = [str(timestamp)]
-                    
-                    # Add indicator values in the same order as header
-                    for indicator_name in indicator_names:
-                        indicator_value = indicator.get(indicator_name, None)
-                        if indicator_value is not None:
-                            row_values.append(self._safe_float_format(indicator_value))
-                        else:
-                            row_values.append("")
-                    
-                    # Format row with alignment
-                    formatted_row = f"| {row_values[0]:<19} |"
-                    for val in row_values[1:]:
-                        formatted_row += f" {val:>12} |"
-                    formatted_row += "\n"
-                    symbol_string += formatted_row
-                
-                indicators_string += symbol_string + "\n"
-            
-            data_string = dedent(f"""
-                <data>
-                <candles>
-                {candles_string}
-                </candles>
-                <indicators>
-                {indicators_string}
-                </indicators>
-                </data>
-            """)
-            
-            # Combine complete state string (fully simulates HyperliquidEnvironment)
-            # Note: Online environment uses account_info (dict), but here we need to use account_string (string) to match format
-            state = dedent(f"""
-                <state>
-                {account_string}
-                {orders_string}
-                {data_string}
-                </state>
-            """)
-            
-            return {
-                "state": state,
-                "extra": {
-                    "account": account_result,
-                    "positions": positions_result,
-                    "orders": orders_result,  # Use actual orders_result, not hardcoded
-                    "input": data_result,  # Use complete data_result, including extra
-                }
-            }
-        except Exception as e:
-            logger.error(f"Failed to get backtest state: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "state": f"Failed to get backtest state: {str(e)}",
-                "extra": {"error": str(e)}
-            }
     
     async def get_data(
         self, 
@@ -2216,6 +2032,189 @@ class OfflineHyperliquidEnvironment(BaseEnvironment):
             return {
                 "success": False,
                 "message": f"Failed to step the trading environment: {str(e)}",
+                "extra": {"error": str(e)}
+            }
+            
+    async def get_state(self) -> Dict[str, Any]:
+        """Get environment state (fully simulates HyperliquidEnvironment format)."""
+        
+        try:
+            # Get account information (fully simulates HyperliquidEnvironment)
+            account_result = await self.get_account()
+            account_result = account_result.get("extra", {})
+            account_info = account_result.get("account", {})
+            metrics = account_result.get("metrics", {})
+            
+            account_string = dedent(f"""
+                Timestamp: {account_info.get("time", "N/A")}
+                Account Value: ${self._safe_float_format(account_info.get("margin_summary", {}).get("accountValue", 0))},
+                Total Profit: ${self._safe_float_format(metrics.get("total_profit", 0))} ({self._safe_float_format(metrics.get("profit_percentage", 0))}%),
+                Current Drawdown: ${self._safe_float_format(metrics.get("current_drawdown", 0))} ({self._safe_float_format(metrics.get("current_drawdown_percentage", 0))}%),
+                Max Drawdown: ${self._safe_float_format(metrics.get("max_drawdown", 0))} ({self._safe_float_format(metrics.get("max_drawdown_percentage", 0))}%),
+                Period Return: ${self._safe_float_format(metrics.get("period_return", 0))} ({self._safe_float_format(metrics.get("period_return_percentage", 0))}%),
+            """)
+            account_string = dedent(f"""
+                <account>
+                {account_string}
+                </account>
+            """)
+            
+            # Get positions information (fully simulates HyperliquidEnvironment)
+            positions_result = await self.get_positions()
+            positions_result_extra = positions_result.get("extra", {})
+            positions_list = positions_result_extra.get("positions", [])
+            positions_string = ""
+            for position in positions_list:
+                return_on_equity = position.get('return_on_equity', 0)
+                try:
+                    return_on_equity_float = float(return_on_equity)
+                except (ValueError, TypeError):
+                    return_on_equity_float = 0.0
+                return_on_equity_pct = self._safe_float_format(return_on_equity_float)
+                
+                position_side = "LONG" if float(position.get('position_amt', 0)) > 0 else "SHORT"
+                
+                positions_string += f"Symbol: {position.get('symbol', 'N/A')}, Position Side: {position_side}, Trade Type: {position.get('trade_type', 'perpetual')}, Leverage: {position.get('leverage', '1')}, Position Amount: {position.get('position_amt', '0')}, Entry Price: {position.get('entry_price', '0')}, Current Price: {position.get('mark_price', '0')}, Return on Equity: {return_on_equity_pct}%\n"
+            
+            positions_string = dedent(f"""
+                <positions>
+                {positions_string}
+                </positions>
+            """)
+            
+            # Get orders information (from locally maintained orders list)
+            orders_result = await self.get_orders()
+            orders_result_extra = orders_result.get("extra", {})
+            orders_list = orders_result_extra.get("orders", [])
+            orders_string = ""
+            for order in orders_list:
+                quantity_str = self._safe_float_format(order.get('quantity', 0))
+                price_str = self._safe_float_format(order.get('price', 0)) if order.get('price') else "N/A"
+                orders_string += f"Order ID: {order.get('order_id', 'N/A')}, Symbol: {order.get('symbol', 'N/A')}, Trade Type: {order.get('trade_type', 'perpetual')}, Order Type: {order.get('type', 'N/A')}, Order Side: {order.get('side', 'N/A')}, Quantity: {quantity_str}, Price: {price_str}, Status: {order.get('status', 'N/A')}\n"
+            
+            if not orders_string:
+                orders_string = "No orders found."
+            
+            orders_string = dedent(f"""
+                <orders>
+                {orders_string}
+                </orders>
+            """)
+            
+            # Get market data (fully simulates HyperliquidEnvironment format)
+            data_result = await self.get_data(limit=30)
+            data_result = data_result.get("extra", {})
+            
+            candles = {}
+            indicators = {}
+            for symbol, data in data_result.get("data", {}).items():
+                candles[symbol] = data.get("candles", data.get("candle", []))  # Support both formats
+                indicators[symbol] = data.get("indicators", [])  # Indicator data read from database
+            
+            candles_string = ""
+            for symbol, candles_list in candles.items():
+                if not candles_list:
+                    continue
+                
+                # Create table (fully simulates HyperliquidEnvironment format)
+                symbol_string = f"Symbol: {symbol}. History {len(candles_list)} minutes candles data.\n"
+                symbol_string += "| Timestamp           | Open | High | Low | Close | Volume | Trade Count |\n"
+                symbol_string += "|---------------------|------|------|-----|-------|--------|-------------|\n"
+                
+                # Add table rows
+                for candle in candles_list:
+                    timestamp = candle.get("timestamp_local", candle.get("timestamp_utc", ""))
+                    open_val = self._safe_float_format(candle.get("open"))
+                    high_val = self._safe_float_format(candle.get("high"))
+                    low_val = self._safe_float_format(candle.get("low"))
+                    close_val = self._safe_float_format(candle.get("close"))
+                    volume_val = self._safe_float_format(candle.get("volume"))
+                    trade_count_val = self._safe_float_format(candle.get("trade_count", 0))
+                    symbol_string += f"| {timestamp:<19} | {open_val:>10} | {high_val:>10} | {low_val:>10} | {close_val:>10} | {volume_val:>10} | {trade_count_val:>11} |\n"
+                
+                candles_string += symbol_string + "\n"
+            
+            indicators_string = ""
+            for symbol, indicators_list in indicators.items():
+                if not indicators_list:
+                    continue
+                
+                # Get indicator names
+                indicator_names = self.hyperliquid_service.indicators_name
+                if not indicator_names:
+                    continue
+                
+                # Create table header
+                symbol_string = f"Symbol: {symbol}. History {len(indicators_list)} minutes indicators data.\n"
+                # Build header row: Timestamp | Timestamp (Local) | indicator1 | indicator2 | ...
+                header_cols = ["Timestamp           "] + [name.upper() for name in indicator_names]
+                symbol_string += "| " + " | ".join(header_cols) + " |\n"
+                
+                # Build separator row
+                separator_cols = ["---------------------"] + ["-" * max(12, len(name.upper())) for name in indicator_names]
+                separator = "| " + " | ".join(separator_cols) + " |\n"
+                symbol_string += separator
+                
+                # Add table rows
+                for indicator in indicators_list:
+                    timestamp = indicator.get("timestamp_local", "")
+                    row_values = [str(timestamp)]
+                    
+                    # Add indicator values in the same order as header
+                    for indicator_name in indicator_names:
+                        indicator_value = indicator.get(indicator_name, None)
+                        if indicator_value is not None:
+                            row_values.append(self._safe_float_format(indicator_value))
+                        else:
+                            row_values.append("")
+                    
+                    # Format row with alignment
+                    formatted_row = f"| {row_values[0]:<19} |"
+                    for val in row_values[1:]:
+                        formatted_row += f" {val:>12} |"
+                    formatted_row += "\n"
+                    symbol_string += formatted_row
+                
+                indicators_string += symbol_string + "\n"
+            
+            data_string = dedent(f"""
+                <data>
+                <candles>
+                {candles_string}
+                </candles>
+                <indicators>
+                {indicators_string}
+                </indicators>
+                </data>
+            """)
+            
+            # Combine complete state string (fully simulates HyperliquidEnvironment)
+            # Note: Online environment uses account_info (dict), but here we need to use account_string (string) to match format
+            state = dedent(f"""
+                <state>
+                {account_string}
+                {positions_string}
+                {orders_string}
+                {data_string}
+                </state>
+            """)
+            logger.info(f"| 📝 State: {state}")
+            
+            return {
+                "state": state,
+                "extra": {
+                    "account": account_result,
+                    "positions": positions_result,
+                    "orders": orders_result,  # Use actual orders_result, not hardcoded
+                    "input": data_result,  # Use complete data_result, including extra
+                }
+            }
+        except Exception as e:
+            logger.error(f"Failed to get backtest state: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "state": f"Failed to get backtest state: {str(e)}",
                 "extra": {"error": str(e)}
             }
     

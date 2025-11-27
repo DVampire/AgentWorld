@@ -10,7 +10,7 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "gpt-5"
+model_name = "gpt-4.1"
 symbols = ["BTC"]
 data_type = ["candle"]
 
