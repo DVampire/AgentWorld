@@ -2212,18 +2212,74 @@ class OfflineHyperliquidService:
             if close_size > max_close_size:
                 close_size = max_close_size
             
-            # Create close order
-            close_order_request = CreateOrderRequest(
-                account_name=request.account_name,
-                symbol=request.symbol,
-                side=request.side,
-                order_type=request.order_type,
-                qty=close_size,
-                price=request.price,
-                leverage=1,  # Not used for closing
-            )
+            # Execute close order directly (reduce-only, no margin required)
+            # Similar to online service, close orders don't require margin checking
+            execution_price = None
+            if request.order_type == OrderType.MARKET:
+                execution_price = await self._get_latest_price(request.symbol)
+            else:  # LIMIT order
+                if request.price is None:
+                    raise OrderError("Price must be provided for LIMIT orders")
+                execution_price = request.price
             
-            result = await self.create_order(close_order_request)
+            # Calculate trading fee only (no margin required for closing)
+            cost = close_size * execution_price
+            trading_fee = cost * self._trading_fee_rate
+            
+            # Check if account has sufficient balance for trading fee only
+            available_balance = self.account_balances[request.account_name]
+            if trading_fee > available_balance:
+                raise InsufficientFundsError(f"Insufficient funds for closing order. Trading fee: {trading_fee}, Available: {available_balance}")
+            
+            # Deduct trading fee
+            self.account_balances[request.account_name] -= trading_fee
+            logger.debug(f"| 💰 Deducted trading fee {trading_fee:.6f} for closing {close_size} {request.symbol} @ {execution_price}")
+            
+            # Calculate realized PnL and update position
+            entry_price = float(position.get("entry_price", 0))
+            if current_position_amt > 0:  # Closing long
+                realized_pnl = (execution_price - entry_price) * close_size
+            else:  # Closing short
+                realized_pnl = (entry_price - execution_price) * close_size
+            
+            # Add realized PnL to account balance
+            self.account_balances[request.account_name] += realized_pnl
+            
+            # Update position
+            new_position_amt = current_position_amt - (close_size if current_position_amt > 0 else -close_size)
+            if abs(new_position_amt) < 1e-8:  # Position fully closed
+                position["position_amt"] = "0"
+                position["entry_price"] = "0"
+            else:
+                position["position_amt"] = str(new_position_amt)
+                # Keep entry price for remaining position
+            
+            # Update mark price
+            position["mark_price"] = str(execution_price)
+            
+            # Build result (similar to create_order response)
+            close_order_id = f"CLOSE-{self._order_id_counter}"
+            self._order_id_counter += 1
+            
+            order_info = {
+                "order_id": close_order_id,
+                "order_status": "filled",
+                "symbol": request.symbol,
+                "side": request.side,
+                "order_type": request.order_type.value,
+                "quantity": close_size,
+                "price": request.price,
+                "execution_price": execution_price,
+                "filled_qty": close_size,
+                "realized_pnl": realized_pnl,
+                "trading_fee": trading_fee,
+            }
+            
+            result = ActionResult(
+                success=True,
+                message=f"Close order executed successfully for {request.symbol} ({request.side} {close_size}).",
+                extra={"order_info": order_info}
+            )
             
             # Check if position is fully closed after the close order
             # If so, cancel all guard orders (stop loss/take profit) for this symbol
