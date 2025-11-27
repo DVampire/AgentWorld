@@ -960,6 +960,7 @@ class OfflineHyperliquidService:
         symbol: Optional[Union[str, List[str]]] = None,
         data_type: Optional[Union[str, List[str]]] = None,
         initial_balance: float = 500.0,
+        slippage_rate: float = 0.001,
     ):
         """Initialize offline Hyperliquid trading service.
         
@@ -968,6 +969,8 @@ class OfflineHyperliquidService:
             accounts: List of account dictionaries, each containing name and optional initial_balance
             symbol: Optional symbol(s) to work with
             initial_balance: Default initial balance for accounts (if not specified per account)
+            slippage_rate: Slippage rate for market orders (default: 0.001 = 0.1%)
+                          Typical values: 0.0005 (0.05%) to 0.005 (0.5%)
             
             accounts = [
                 {
@@ -1032,6 +1035,13 @@ class OfflineHyperliquidService:
         
         # Trading fee rate: 0.045% = 0.00045
         self._trading_fee_rate: float = 0.00045
+        
+        # Slippage rate for market orders: default 0.001 = 0.1%
+        # This simulates the slippage that occurs in real trading
+        # Typical values: 0.0005 (0.05%) to 0.005 (0.5%) for crypto perpetuals
+        # Note: Online service uses slippage=0.05 in SDK, but this is likely a tolerance parameter,
+        # not the actual slippage percentage. Actual slippage is typically much smaller.
+        self._slippage_rate: float = slippage_rate
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -1323,6 +1333,11 @@ class OfflineHyperliquidService:
                         total_margin_used += margin_used
                         total_unrealized_pnl += float(position.get("unrealized_profit", 0))
             
+            # For perpetual futures with leverage:
+            # - account_equity = balance + total_unrealized_pnl
+            #   where balance = initial_balance - trading_fees (margin is locked, not deducted)
+            # - totalRawUsd = balance (cash balance excluding margin, matching online format)
+            # - accountValue = account_equity (total account value including unrealized PnL)
             account_equity = balance + total_unrealized_pnl
             withdrawable = account_equity - total_margin_used
             
@@ -1333,12 +1348,12 @@ class OfflineHyperliquidService:
                     "accountValue": str(account_equity),
                     "totalMarginUsed": str(total_margin_used),
                     "totalNtlPos": str(total_unrealized_pnl),
-                    "totalRawUsd": str(balance),  # Add totalRawUsd to match online format
+                    "totalRawUsd": str(balance),  # Cash balance (excluding locked margin)
                 },
                 "cross_margin_summary": {
                     "accountValue": str(account_equity),
                     "totalNtlPos": str(total_unrealized_pnl),
-                    "totalRawUsd": str(balance),
+                    "totalRawUsd": str(balance),  # Cash balance (excluding locked margin)
                     "totalMarginUsed": str(total_margin_used),
                 },
                 "cross_maintenance_margin_used": str(total_margin_used),
@@ -1694,7 +1709,15 @@ class OfflineHyperliquidService:
         
         # Get execution price
         if order_type == OrderType.MARKET.value:
-            execution_price = await self._get_latest_price(symbol)
+            base_price = await self._get_latest_price(symbol)
+            # Apply slippage for market orders (same as online service)
+            # Buy orders: execution price = base_price * (1 + slippage) - higher price
+            # Sell orders: execution price = base_price * (1 - slippage) - lower price
+            if side.lower() == "buy":
+                execution_price = base_price * (1 + self._slippage_rate)
+            else:  # sell
+                execution_price = base_price * (1 - self._slippage_rate)
+            logger.debug(f"| 📊 Market order slippage applied: base_price={base_price}, execution_price={execution_price}, slippage={self._slippage_rate*100}%")
         else:  # LIMIT order
             if price is None:
                 raise OrderError("Price must be provided for LIMIT orders")
@@ -2216,7 +2239,15 @@ class OfflineHyperliquidService:
             # Similar to online service, close orders don't require margin checking
             execution_price = None
             if request.order_type == OrderType.MARKET:
-                execution_price = await self._get_latest_price(request.symbol)
+                base_price = await self._get_latest_price(request.symbol)
+                # Apply slippage for market close orders (same as online service)
+                # Closing long (sell): execution price = base_price * (1 - slippage) - lower price
+                # Closing short (buy): execution price = base_price * (1 + slippage) - higher price
+                if request.side.lower() == "sell":  # Closing long position
+                    execution_price = base_price * (1 - self._slippage_rate)
+                else:  # buy - closing short position
+                    execution_price = base_price * (1 + self._slippage_rate)
+                logger.debug(f"| 📊 Market close order slippage applied: base_price={base_price}, execution_price={execution_price}, slippage={self._slippage_rate*100}%")
             else:  # LIMIT order
                 if request.price is None:
                     raise OrderError("Price must be provided for LIMIT orders")
