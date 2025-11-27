@@ -1707,27 +1707,30 @@ class OfflineHyperliquidService:
         order_type = order_info["order_type"]
         price = float(order_info.get("price", 0)) if order_info.get("price") else None
         
-        # Get execution price
+        # Get execution price and market price
         if order_type == OrderType.MARKET.value:
-            base_price = await self._get_latest_price(symbol)
+            market_price = await self._get_latest_price(symbol)
             # Apply slippage for market orders (same as online service)
-            # Buy orders: execution price = base_price * (1 + slippage) - higher price
-            # Sell orders: execution price = base_price * (1 - slippage) - lower price
+            # Buy orders: execution price = market_price * (1 + slippage) - higher price
+            # Sell orders: execution price = market_price * (1 - slippage) - lower price
             if side.lower() == "buy":
-                execution_price = base_price * (1 + self._slippage_rate)
+                execution_price = market_price * (1 + self._slippage_rate)
             else:  # sell
-                execution_price = base_price * (1 - self._slippage_rate)
-            logger.debug(f"| 📊 Market order slippage applied: base_price={base_price}, execution_price={execution_price}, slippage={self._slippage_rate*100}%")
+                execution_price = market_price * (1 - self._slippage_rate)
+            logger.debug(f"| 📊 Market order slippage applied: market_price={market_price}, execution_price={execution_price}, slippage={self._slippage_rate*100}%")
         else:  # LIMIT order
             if price is None:
                 raise OrderError("Price must be provided for LIMIT orders")
             execution_price = price
+            market_price = price  # For limit orders, market price = execution price
         
-        # Calculate cost (for perpetual futures, cost = qty * price)
+        # Calculate cost (for perpetual futures, cost = qty * execution_price)
+        # This is used for margin calculation and position updates
         cost = qty * execution_price
         
         # Calculate trading fee: fee = qty * execution_price * fee_rate
-        trading_fee = cost * self._trading_fee_rate
+        # Trading fee is based on execution price (with slippage) - this is the actual traded price
+        trading_fee = qty * execution_price * self._trading_fee_rate
         
         # Check if account has sufficient balance
         # For perpetual futures, we need margin = cost / leverage
@@ -2238,24 +2241,29 @@ class OfflineHyperliquidService:
             # Execute close order directly (reduce-only, no margin required)
             # Similar to online service, close orders don't require margin checking
             execution_price = None
+            market_price = None
             if request.order_type == OrderType.MARKET:
-                base_price = await self._get_latest_price(request.symbol)
+                market_price = await self._get_latest_price(request.symbol)
                 # Apply slippage for market close orders (same as online service)
-                # Closing long (sell): execution price = base_price * (1 - slippage) - lower price
-                # Closing short (buy): execution price = base_price * (1 + slippage) - higher price
+                # Closing long (sell): execution price = market_price * (1 - slippage) - lower price
+                # Closing short (buy): execution price = market_price * (1 + slippage) - higher price
                 if request.side.lower() == "sell":  # Closing long position
-                    execution_price = base_price * (1 - self._slippage_rate)
+                    execution_price = market_price * (1 - self._slippage_rate)
                 else:  # buy - closing short position
-                    execution_price = base_price * (1 + self._slippage_rate)
-                logger.debug(f"| 📊 Market close order slippage applied: base_price={base_price}, execution_price={execution_price}, slippage={self._slippage_rate*100}%")
+                    execution_price = market_price * (1 + self._slippage_rate)
+                logger.debug(f"| 📊 Market close order slippage applied: market_price={market_price}, execution_price={execution_price}, slippage={self._slippage_rate*100}%")
             else:  # LIMIT order
                 if request.price is None:
                     raise OrderError("Price must be provided for LIMIT orders")
                 execution_price = request.price
+                market_price = request.price  # For limit orders, market price = execution price
             
-            # Calculate trading fee only (no margin required for closing)
+            # Calculate cost (for position updates)
             cost = close_size * execution_price
-            trading_fee = cost * self._trading_fee_rate
+            
+            # Calculate trading fee: fee = qty * execution_price * fee_rate
+            # Trading fee is based on execution price (with slippage) - this is the actual traded price
+            trading_fee = close_size * execution_price * self._trading_fee_rate
             
             # Check if account has sufficient balance for trading fee only
             available_balance = self.account_balances[request.account_name]
