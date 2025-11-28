@@ -1,11 +1,11 @@
 """Hyperliquid trading environment package."""
 
-from .service import HyperliquidService
+from .service import OnlineHyperliquidService
 from .client import HyperliquidClient
 from .candle import CandleHandler
 
 __all__ = [
-    "HyperliquidService",
+    "OnlineHyperliquidService",
     "HyperliquidClient",
     "CandleHandler",
 ]

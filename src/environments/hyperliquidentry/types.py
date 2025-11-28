@@ -4,7 +4,6 @@ from typing import Optional, List, Dict, Any, Literal, Union
 from enum import Enum
 from pydantic import BaseModel, Field
 
-
 class DataStreamType(str, Enum):
     """Data type."""
     CANDLE = "candle"  # OHLCV candlestick data (renamed from KLINES)

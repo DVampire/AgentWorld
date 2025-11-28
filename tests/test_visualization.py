@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description='Run tracer visualization server')
     parser.add_argument(
         '--tracer_json',
-        default=os.path.join(root, 'workdir', 'online_trading_agent', 'tracer.json'),
+        default=os.path.join(root, 'workdir', 'offline_trading_agent', 'tracer.json'),
         type=str,
         help='Path to tracer.json file'
     )
