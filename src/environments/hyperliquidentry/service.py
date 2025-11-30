@@ -1,7 +1,6 @@
 """Hyperliquid trading service implementation using REST API clients."""
 import asyncio
 import time
-import json
 from typing import Optional, Union, List, Dict
 from pathlib import Path
 
