@@ -5,7 +5,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from io import BytesIO
 from typing import Dict, Callable
 
-from data_store import ensure_history_csv
+from data_store import ensure_history_csv,load_klines_from_sqlite
 from backtest import run_backtest
 from regime_based import (
     PRICE_COL,
@@ -48,7 +48,7 @@ taker_fee = st.sidebar.number_input("Taker 手续费", value=0.00045, format="%.
 slippage_bps = st.sidebar.number_input("滑点 (bps)", value=1.0, step=0.5)
 
 use_testnet = st.sidebar.checkbox("使用 Testnet 数据", value=False)
-local_only = st.sidebar.checkbox("仅使用本地缓存数据 (local)", value=False)
+local_only = st.sidebar.checkbox("仅使用本地缓存数据 (local)", value=True)
 
 st.sidebar.markdown("---")
 st.sidebar.header("最小持仓周期 (bars)")
@@ -64,15 +64,19 @@ run_button = st.sidebar.button("🚀 运行回测")
 # ========= 工具函数 =========
 @st.cache_data(show_spinner="加载 K 线数据中...")
 def load_data(coin: str, interval: str, lookback: int, use_testnet: bool, local: bool) -> pd.DataFrame:
-    df = ensure_history_csv(
-        coin,
-        interval,
-        lookback_candles=lookback,
-        data_dir="data",
-        use_testnet=use_testnet,
-        price_col=PRICE_COL,
-        local=local,
-    )
+    # df = ensure_history_csv(
+    #     coin,
+    #     interval,
+    #     lookback_candles=lookback,
+    #     data_dir="data",
+    #     use_testnet=use_testnet,
+    #     price_col=PRICE_COL,
+    #     local=local,
+    # )
+    df = load_klines_from_sqlite(
+    db_path="database.db",
+    table_name="data_BTC_candle"
+) 
     return df
 
 

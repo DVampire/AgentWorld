@@ -6,6 +6,7 @@ from typing import Literal
 import pandas as pd
 import requests
 from hyperliquid.utils import constants
+import sqlite3  # NEW: for reading local SQLite .db
 
 
 def ms_now() -> int:
@@ -81,7 +82,7 @@ def ensure_history_csv(
     data_dir: str = "data",
     use_testnet: bool = False,
     price_col: str = "c",
-    local:bool = True
+    local: bool = True,
 ) -> pd.DataFrame:
     """
     可增量存储的历史数据管理：
@@ -111,12 +112,9 @@ def ensure_history_csv(
         df.to_csv(path, index=False)
         return df
 
-
     # 已有本地 CSV：先读出来
     df_old = pd.read_csv(path, parse_dates=["t", "T"])
     df_old = df_old.sort_values("t").reset_index(drop=True)
-        
-
 
     if df_old.empty:
         # 意外空文件，当成第一次
@@ -130,6 +128,7 @@ def ensure_history_csv(
 
     if local:
         return df_old
+
     # 以 CSV 里最后一根 K 线的 close time 为起点向后拉
     last_T = df_old["T"].iloc[-1]
     start_ms = int(last_T.timestamp() * 1000) + step_ms
@@ -154,5 +153,60 @@ def ensure_history_csv(
     # 只保留最后 lookback_candles 根，避免 CSV 无限变大
     df = df_all.tail(lookback_candles).reset_index(drop=True)
     df.to_csv(path, index=False)
+
+    return df
+
+
+def load_klines_from_sqlite(
+    db_path: str = "database.db",
+    table_name: str = "data_BTC_candle",
+) -> pd.DataFrame:
+    """
+    从本地 SQLite K 线表中读取数据，并转换为统一格式：
+
+    列: t, T, s, i, o, c, h, l, v
+    - t: timestamp_utc -> pandas datetime
+    - T: timestamp_utc -> 字符串格式 'YYYY-MM-DD HH:MM:SS.sss'
+    - s: symbol
+    - i: interval
+    - o: open
+    - c: close
+    - h: high
+    - l: low
+    - v: volume
+    """
+    conn = sqlite3.connect(db_path)
+
+    # 基础 SQL
+    base_sql =f"""
+SELECT
+    timestamp_utc,     
+    timestamp_utc,     
+    symbol,            
+    interval,          
+    open,              
+    close,             
+    high,           
+    low,            
+    volume            
+FROM {table_name};
+"""
+
+    df = pd.read_sql_query(base_sql, conn)
+    conn.close()
+
+    # 重命名列
+    df.columns = ["t", "T", "s", "i", "o", "c", "h", "l", "v"]
+
+    # t: datetime
+    df["t"] = pd.to_datetime(df["t"])
+
+    # T: 转为毫秒精度字符串
+    df["T"] = pd.to_datetime(df["T"], utc=False)
+    df["T"] = df["T"].dt.strftime("%Y-%m-%d %H:%M:%S.%f").str[:-3]
+
+    # 类型转换（价格/量转 float）
+    for col in ["o", "c", "h", "l", "v"]:
+        df[col] = df[col].astype(float)
 
     return df
