@@ -12,8 +12,10 @@ from src.tools.protocol import tcp
 from src.tools.default_tools.markdown.mdconvert import MarkitdownConverter
 from src.logger import logger
 
-_MDIFY_TOOL_DESCRIPTION = """Convert various file formats to markdown text using markitdown.
-This tool can convert files to markdown format for easy text processing and analysis.
+_MDIFY_TOOL_DESCRIPTION = """Convert various file formats to markdown text using markitdown and save to base_dir folder.
+
+This tool converts files to markdown format and saves the converted markdown text to the base_dir folder for easy text processing and analysis.
+
 The input should be a file path (absolute path recommended) to the file you want to convert.
 
 Supported file formats:
@@ -26,7 +28,7 @@ Supported file formats:
 - Web: Wikipedia pages, YouTube videos (metadata and transcripts)
 - Plain text files
 
-The tool will extract text content, tables, metadata, and other structured information from these files and convert them into readable markdown format.
+The tool will extract text content, tables, metadata, and other structured information from these files, convert them into readable markdown format, and save the result as a .md file in the base_dir folder.
 """
 
 class MdifyToolArgs(BaseModel):
@@ -47,11 +49,20 @@ class MdifyTool(BaseTool):
     
     timeout: int = Field(description="Timeout in seconds for file conversion", default=60)
     converter: MarkitdownConverter = Field(description="The converter to use for file conversion", default=None)
+    base_dir: Optional[str] = Field(default=None, description="The base directory to use for the mdify tool.")
     
-    def __init__(self,  **kwargs):
+    def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """A tool for converting various file formats to markdown text asynchronously"""
         super().__init__(**kwargs)
-        self.converter = MarkitdownConverter(timeout=self.timeout)
+        if base_dir is not None:
+            self.base_dir = base_dir
+        
+        if self.base_dir:
+            os.makedirs(self.base_dir, exist_ok=True)
+            logger.info(f"| Mdify tool base directory: {self.base_dir}")
+        
+        if self.converter is None:
+            self.converter = MarkitdownConverter(timeout=self.timeout)
         
     async def _arun(self, file_path: str, output_format: str = "markdown") -> ToolResponse:
         """Convert a file to markdown asynchronously."""
@@ -93,15 +104,34 @@ class MdifyTool(BaseTool):
             if result is None:
                 return ToolResponse(success=False, message="Error: Conversion failed - unable to process the file")
             
+            # Save to base_dir if specified
+            saved_path = None
+            if self.base_dir:
+                # Create base_dir if it doesn't exist
+                os.makedirs(self.base_dir, exist_ok=True)
+                
+                # Generate output filename (replace original extension with .md)
+                base_name = os.path.splitext(file_name)[0]
+                output_filename = f"{base_name}.md"
+                saved_path = os.path.join(self.base_dir, output_filename)
+                
+                # Save markdown content to file
+                with open(saved_path, 'w', encoding='utf-8') as f:
+                    f.write(result)
+                
+                logger.info(f"| Saved converted markdown to: {saved_path}")
+            
             # Format the response
             response_content = f"Successfully converted file: {file_name}\n"
             response_content += f"File size: {file_size / 1024:.1f} KB\n"
             response_content += f"File extension: {file_ext}\n"
-            response_content += f"Output format: {output_format}\n\n"
-            response_content += "--- Converted Content ---\n"
+            response_content += f"Output format: {output_format}\n"
+            if saved_path:
+                response_content += f"Saved to: {saved_path}\n"
+            response_content += "\n--- Converted Content ---\n"
             response_content += result
             
-            return ToolResponse(success=True, message=response_content)
+            return ToolResponse(success=True, message=response_content, extra={"saved_path": saved_path})
             
         except asyncio.TimeoutError:
             return ToolResponse(success=False, message=f"Error: Conversion timed out after {self.timeout} seconds")

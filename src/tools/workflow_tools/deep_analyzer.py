@@ -3,7 +3,7 @@
 import asyncio
 import os
 from typing import List, Dict, Any, Optional, Type
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from PIL import Image
 
@@ -19,6 +19,28 @@ from src.models import model_manager
 from src.tools.default_tools.mdify import MdifyTool
 from src.tools.protocol.tool import BaseTool
 from src.tools.protocol.types import ToolResponse
+
+class FileTypeInfo(BaseModel):
+    """File type information for a single file."""
+    file_path: str = Field(description="The file path")
+    file_type: str = Field(description="File type: 'text', 'image', 'audio', or 'video'")
+
+class FileTypeClassification(BaseModel):
+    """Classification of multiple files by type."""
+    files: List[FileTypeInfo] = Field(description="List of files with their types")
+
+class Summary(BaseModel):
+    """Result of analyzing a chunk of text."""
+    id: int = Field(description="Unique identifier for this summary")
+    summary: str = Field(description="Summary of findings from this chunk (2-3 sentences)")
+    found_answer: bool = Field(description="Whether the answer to the task has been found in this chunk")
+    answer: Optional[str] = Field(default=None, description="The answer if found_answer is True, otherwise None")
+
+class SummaryResponse(BaseModel):
+    """Response from the deep analyzer tool."""
+    summary: str = Field(description="Summary of findings from this chunk (2-3 sentences)")
+    found_answer: bool = Field(description="Whether the answer to the task has been found in this chunk")
+    answer: Optional[str] = Field(default=None, description="The answer if found_answer is True, otherwise None")
 
 _DEEP_ANALYZER_DESCRIPTION = """Deep analysis tool that performs multi-step analysis of complex reasoning tasks with attached files.
 
@@ -40,6 +62,7 @@ Supports comprehensive file formats:
 • Text & Markup: TXT, MD, JSON, CSV, XML, YAML
 • Programming: PY, JS, HTML, CSS, Java, C/C++
 • Documents: PDF, DOCX, XLSX, PPTX
+• Compressed: ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ
 • Images: JPG, PNG, GIF, BMP, WebP, TIFF, SVG (multimodal analysis)
 • Audio: MP3, WAV, OGG, FLAC, AAC, M4A
 • Video: MP4, AVI, MOV, WMV, WebM
@@ -62,15 +85,6 @@ class DeepAnalyzerArgs(BaseModel):
         description="Optional list of file paths to analyze along with the task"
     )
 
-class AnalysisStep(BaseModel):
-    """Represents a single analysis step."""
-    step_number: int
-    analysis_type: str  # e.g., "file_analysis", "task_analysis", "synthesis"
-    input_data: str
-    insights: List[str]
-    conclusion: str
-    confidence: float  # 0.0 to 1.0
-
 @tcp.tool()
 class DeepAnalyzerTool(BaseTool):
     """A deep analysis tool that performs multi-step analysis of tasks with files."""
@@ -81,34 +95,12 @@ class DeepAnalyzerTool(BaseTool):
     args_schema: Type[DeepAnalyzerArgs] = DeepAnalyzerArgs
     metadata: Dict[str, Any] = {}
     
-    # Configuration parameters as class attributes
-    max_steps: int = Field(default=3, description="Maximum analysis steps")
+    # Configuration parameters
+    max_rounds: int = Field(default=3, description="Maximum analysis rounds in __call__ main loop")
     max_file_size: int = Field(default=10 * 1024 * 1024, description="Max file size in bytes (10MB)")
-    supported_file_types: List[str] = Field(
-        default=[
-            # Text and Markup Files
-            ".txt", ".md", ".json", ".csv", ".xml", ".yaml", ".yml",
-            # Programming Files
-            ".py", ".js", ".html", ".css", ".java", ".cpp", ".c", ".h",
-            # Document Files
-            ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
-            # Image Files (for multimodal analysis)
-            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg",
-            # Audio Files
-            ".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".m4b", ".m4p",
-            # Video Files
-            ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"
-        ],
-        description="Supported file types organized by category"
-    )
-    analysis_prompt: str = Field(
-        default="Analyze the provided content and extract key insights relevant to the task. Focus on factual information, patterns, and actionable findings.",
-        description="Prompt for analyzing content"
-    )
-    synthesis_prompt: str = Field(
-        default="Based on all the analysis steps completed so far, synthesize the findings and determine if we have sufficient information to answer the task. If not, suggest the next analysis approach.",
-        description="Prompt for synthesizing analysis results"
-    )
+    chunk_size: int = Field(default=400, description="Number of lines per chunk for text analysis")
+    max_steps: int = Field(default=3, description="Maximum steps for image analysis without finding answer")
+    
     model_name: str = Field(
         default="o3",
         description="The model to use for the deep analyzer."
@@ -121,21 +113,9 @@ class DeepAnalyzerTool(BaseTool):
         default=None,
         description="The mdify tool to use for the deep analyzer."
     )
-    analysis_history: List[AnalysisStep] = Field(
-        default=[],
-        description="The analysis history."
-    )
-    all_insights: List[str] = Field(
-        default=[],
-        description="All insights collected during analysis."
-    )
-    file_contents: Dict[str, str] = Field(
-        default={},
-        description="Cached file contents."
-    )
-    image_files: List[str] = Field(
-        default=[],
-        description="List of image file paths for multimodal analysis."
+    next_summary_id: int = Field(
+        default=1,
+        description="Next summary ID for auto-increment"
     )
 
     def __init__(self, model_name: Optional[str] = None, **kwargs):
@@ -155,310 +135,577 @@ class DeepAnalyzerTool(BaseTool):
         # Initialize tools
         self.mdify_tool = MdifyTool()
         
-        # Store analysis history
-        self.analysis_history: List[AnalysisStep] = []
-        self.all_insights: List[str] = []
-        self.file_contents: Dict[str, str] = {}
-        self.image_files: List[str] = []
+        # Initialize summary ID counter
+        if not hasattr(self, 'next_summary_id'):
+            self.next_summary_id = 1
+    
+    def _get_next_summary_id(self) -> int:
+        """Get next summary ID and increment counter."""
+        current_id = self.next_summary_id
+        self.next_summary_id += 1
+        return current_id
+    
+    async def _classify_files(self, files: List[str]) -> List[FileTypeInfo]:
+        """Use LLM to classify file types."""
+        try:
+            # Build file list for LLM
+            file_list = "\n".join([f"- {file_path}" for file_path in files])
+            
+            prompt = dedent(f"""Classify the following files by type. For each file, determine if it is:
+            - 'text': Text files, markup files, programming files, documents (PDF, DOCX, XLSX, PPTX), or compressed files (ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ)
+            - 'image': Image files (JPG, PNG, GIF, BMP, WebP, TIFF, SVG)
+            - 'audio': Audio files (MP3, WAV, OGG, FLAC, AAC, M4A)
+            - 'video': Video files (MP4, AVI, MOV, WMV, WebM)
+            
+            Files to classify:
+            {file_list}
+            
+            Classify each file based on its content type, not just the extension.
+            """)
+            
+            messages = [
+                SystemMessage(content="You are an expert at classifying file types based on their content and purpose."),
+                HumanMessage(content=prompt)
+            ]
+            
+            structured_llm = self.model.with_structured_output(FileTypeClassification)
+            response = await structured_llm.ainvoke(messages)
+            
+            return response.files
+                
+        except Exception as e:
+            logger.warning(f"Error classifying files with LLM: {e}, using extension fallback")
+            return self._classify_by_extension(files)
+    
+    def _classify_by_extension(self, files: List[str]) -> List[FileTypeInfo]:
+        """Fallback: classify files by extension."""
+        result = []
+        for file_path in files:
+            _, ext = os.path.splitext(file_path.lower())
+            
+            # Text, markup, programming, documents, compressed
+            text_exts = [".txt", ".md", ".json", ".csv", ".xml", ".yaml", ".yml",
+                        ".py", ".js", ".html", ".css", ".java", ".cpp", ".c", ".h",
+                        ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt",
+                        ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz"]
+            image_exts = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg"]
+            audio_exts = [".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".m4b", ".m4p"]
+            video_exts = [".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]
+            
+            if ext in text_exts:
+                file_type = "text"
+            elif ext in image_exts:
+                file_type = "image"
+            elif ext in audio_exts:
+                file_type = "audio"
+            elif ext in video_exts:
+                file_type = "video"
+            else:
+                file_type = "text"  # Default to text
+            
+            result.append(FileTypeInfo(file_path=file_path, file_type=file_type))
+        
+        return result
 
     async def _arun(self, task: str, files: Optional[List[str]] = None) -> ToolResponse:
         """Execute deep analysis workflow.
-        
+
         Args:
             task: The analysis task or question to investigate
-            files: Optional list of file paths to analyze along with the task
+            files: Optional list of absolute file paths to analyze along with the task
         """
         try:
             logger.info(f"| 🚀 Starting DeepAnalyzerTool: {task}")
             if files:
                 logger.info(f"| 📂 Attached files: {files}")
             
-            # Reset analysis history
-            self.analysis_history = []
-            self.all_insights = []
-            self.file_contents = {}
-            self.image_files = []
+            # Maintain summaries list in __call__
+            summaries: List[Summary] = []
             
-            # Step 1: Load and organize files into enhanced task
-            enhanced_task = await self._prepare_enhanced_task(task, files)
-            logger.info(f"| ✅ Enhanced task prepared")
+            # Validate files
+            valid_files = []
+            if files:
+                for file_path in files:
+                    if await self._validate_file(file_path):
+                        valid_files.append(file_path)
+                    else:
+                        logger.warning(f"Skipping invalid file: {file_path}")
             
-            # Execute multiple analysis rounds
-            for round_num in range(1, self.max_steps + 1):
-                logger.info(f"| 🔄 Starting analysis round {round_num}/{self.max_steps}")
+            # If no files or no valid files, analyze task directly
+            if not valid_files:
+                logger.info(f"| 📝 No files or no valid files, analyzing task directly")
+                await self._analyze_task_only(task, summaries)
                 
-                # Step 2: Analyze enhanced task and images
-                insights = await self._analyze_enhanced_task(enhanced_task, round_num)
-                logger.info(f"| ✅ Analysis completed for round {round_num}: {len(insights)} insights")
-                self.all_insights.extend(insights)
-                
-                # Step 3: Summarize current round
-                round_summary = await self._summarize_round(insights, enhanced_task, round_num)
-                logger.info(f"| ✅ Summarized round {round_num}: {round_summary}")
-                
-                # Record round information
-                analysis_step = AnalysisStep(
-                    step_number=round_num,
-                    analysis_type="enhanced_analysis",
-                    input_data=enhanced_task[:200] + "..." if len(enhanced_task) > 200 else enhanced_task,
-                    insights=insights,
-                    conclusion=round_summary,
-                    confidence=0.0  # Will be calculated in evaluation
-                )
-                self.analysis_history.append(analysis_step)
-                
-                # Step 4: Check if analysis is complete
-                final_summary = await self._evaluate_completeness(task)
-                if "ANALYSIS_COMPLETE" in final_summary:
-                    logger.info(f"| ✅ Analysis completed in round {round_num}")
-                    result = await self._format_final_result(final_summary, round_num)
-                    return ToolResponse(success=True, message=result)
-                
-                logger.info(f"| ✅ Round {round_num} completed, continuing to next round")
+                # Check if answer found
+                summary = await self._summarize_summaries(task, summaries)
+                if summary.found_answer:
+                    return ToolResponse(success=True, message=f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}")
+                else:
+                    summaries.append(summary)
+                    result = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries])
+                    return ToolResponse(success=False, message=result)
             
-            # If all rounds completed without finding answer
-            logger.warning("| ❌ Maximum rounds reached without completing analysis")
-            result = await self._format_failure_result(task)
-            return ToolResponse(success=False, message=result)
+            # Step 1: Get overall file information summary before detailed analysis
+            logger.info(f"| 📊 Getting overall file information summary...")
+            summary = await self._get_overall_file_summary(task, valid_files)
+            if summary and summary.found_answer:
+                return ToolResponse(success=True, message=f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}")
+            elif summary:
+                summaries.append(summary)
+            
+            # Use LLM to classify file types
+            logger.info(f"| 🔍 Classifying {len(valid_files)} files by type...")
+            file_classifications = await self._classify_files(valid_files)
+            
+            # Log classifications
+            for file_info in file_classifications:
+                logger.info(f"| 📋 {os.path.basename(file_info.file_path)}: {file_info.file_type}")
+            
+            # Main analysis loop with max_rounds
+            for round_num in range(1, self.max_rounds + 1):
+                logger.info(f"| 🔄 Main analysis round {round_num}/{self.max_rounds}")
+                
+                round_summaries: List[Summary] = []
+                
+                # Process each file in this round
+                for file_info in file_classifications:
+                    file_path = file_info.file_path
+                    file_type = file_info.file_type
+                    
+                    logger.info(f"| 📄 Processing {file_type} file: {os.path.basename(file_path)}")
+                    
+                    # Analyze based on file type
+                    if file_type == "text":
+                        await self._analyze_text_file(task, file_path, round_summaries)
+                    elif file_type == "image":
+                        await self._analyze_image_file(task, file_path, round_summaries)
+                    elif file_type == "audio":
+                        await self._analyze_audio_file(task, file_path, round_summaries)
+                    elif file_type == "video":
+                        await self._analyze_video_file(task, file_path, round_summaries)
+                    
+                    # Check if answer found after processing this file
+                    round_summary = await self._summarize_summaries(task, round_summaries)
+                    if round_summary.found_answer:
+                        return ToolResponse(success=True, message=f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}")
+                    else:
+                        summaries.append(round_summary)
+            
+            final_summary = await self._summarize_summaries(task, summaries)
+            if final_summary.found_answer:
+                return ToolResponse(success=True, message=f"Answer found from all file analysis.\n\nTask: {task}\n\nAnswer: {final_summary.answer}")
+            else:
+                return ToolResponse(success=False, message=f"Analysis completed after {self.max_rounds} rounds but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries[-10:]]))
             
         except Exception as e:
             logger.error(f"| ❌ Error in deep analysis: {e}")
             return ToolResponse(success=False, message=f"Error during deep analysis: {str(e)}")
-        
-    async def _prepare_enhanced_task(self, task: str, files: Optional[List[str]]) -> str:
-        """Prepare enhanced task by loading and organizing files."""
-        if not files:
-            return task
-        
-        file_infos = []
-        
-        for file_path in files:
-            try:
-                # Validate file
-                if not await self._validate_file(file_path):
-                    logger.warning(f"Skipping invalid file: {file_path}")
-                    continue
-                
-                # Check if it's an image file (for multimodal analysis)
-                _, ext = os.path.splitext(file_path.lower())
-                image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg']
-                if ext in image_extensions:
-                    self.image_files.append(file_path)
-                    logger.info(f"| ✅ Added image file for multimodal analysis: {file_path}")
-                    continue
-                
-                # Extract file content for non-image files
-                file_info = await self._extract_file_content(file_path)
-                file_infos.append(file_info)
-                self.file_contents[file_path] = file_info["content"]
-                logger.info(f"| ✅ Loaded file: {file_path}")
-                
-            except Exception as e:
-                logger.error(f"| ❌ Error processing file {file_path}: {e}")
-        
-        # Generate enhanced task
-        enhanced_task = await self._generate_enhanced_task(task, file_infos)
-        return enhanced_task
-
-    async def _extract_file_content(self, file: str) -> Dict[str, Any]:
-        """Extract file information."""
-        info = get_file_info(file)
-        
-        # Extract file content
-        file_content = await self.mdify_tool._arun(file, "markdown")
-        
-        # Use LLM to summarize the file content
-        system_prompt = "You are a helpful assistant that summarizes file content."
-        
-        user_prompt = dedent(f"""
-            Summarize the following file content as 1-3 sentences:
-            {file_content}
-        """)
-        
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        summary = await self.model.ainvoke(messages)
-        
-        info["content"] = file_content
-        info["summary"] = summary.content
-        
-        return info
-
-    async def _generate_enhanced_task(self, task: str, file_infos: List[Dict[str, Any]]) -> str:
-        """Generate enhanced task with file information."""
-        if not file_infos:
-            return task
-        
-        attach_files_string = "\n".join([
-            f"File: {file_info['path']}\nSummary: {file_info['summary']}" 
-            for file_info in file_infos
-        ])
-        
-        enhanced_task = dedent(f"""
-        - Task:
-        {task}
-        - Attached files:
-        {attach_files_string}
-        """)
-        
-        return enhanced_task
-
-    async def _analyze_enhanced_task(self, enhanced_task: str, round_num: int) -> List[str]:
-        """Analyze enhanced task with images using multimodal approach."""
+    
+    async def _get_overall_file_summary(self, task: str, files: List[str]) -> Optional[Summary]:
+        """Get overall summary of all files' information before detailed analysis."""
         try:
-            # Prepare text context
-            text_context = enhanced_task
+            # Get file info for all files
+            file_infos = []
+            for file_path in files:
+                try:
+                    file_info = get_file_info(file_path)
+                    file_infos.append({
+                        "path": file_path,
+                        "name": os.path.basename(file_path),
+                        "info": file_info
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to get info for {file_path}: {e}")
             
-            # Add previous insights for context
-            if self.all_insights:
-                previous_insights = "\n".join(self.all_insights[-5:])
-                text_context += f"\n\nPrevious insights from round {round_num-1}:\n{previous_insights}"
+            if not file_infos:
+                return None
             
-            # Build multimodal message
-            message_content = [
-                {"type": "text", "text": dedent(f"""Analyze the following task and files in detail.
-                
-                {text_context}
-                
-                Extract key insights, patterns, and findings that help answer the task.
-                Focus on:
-                - Key information from the files
-                - Patterns and relationships
-                - Actionable insights
-                - Important details that might be overlooked
-                
-                Provide specific insights as bullet points.""")}
-            ]
+            # Format file information for LLM
+            files_info_text = "\n".join([
+                dedent(f"""
+                File: {info['name']}
+                Path: {info['path']}
+                Size: {info['info'].get('size', 'unknown')}
+                Created: {info['info'].get('created', 'unknown')}
+                Modified: {info['info'].get('modified', 'unknown')}
+                """).strip()
+                for info in file_infos
+            ])
             
-            # Add all images to the message
-            for image_path in self.image_files:
-                if os.path.exists(image_path):
-                    try:
-                        image = Image.open(assemble_project_path(image_path))
-                        image_url = make_image_url(encode_image_base64(image))
-                        message_content.append({
-                            "type": "image_url", 
-                            "image_url": {"url": image_url}
-                        })
-                    except Exception as e:
-                        logger.warning(f"Failed to process image {image_path}: {e}")
+            prompt = dedent(f"""Analyze the following task and provide a summary based on the file information provided.
+            
+            Task: {task}
+            
+            File Information:
+            {files_info_text}
+            
+            Based on the file information (sizes, types, names, timestamps, etc.), provide a summary that:
+            1. Describes what information can be found from the file metadata
+            2. Answers the task if it can be answered from file information alone (e.g., file sizes, video durations, file counts, etc.)
+            3. If the task requires file content analysis, indicate what needs to be analyzed
+            
+            Provide a concise summary (3-5 sentences).
+            """)
             
             messages = [
-                SystemMessage(content="You are an expert analyst specializing in comprehensive file and visual content analysis."),
-                HumanMessage(content=message_content)
+                SystemMessage(content="You are an expert at analyzing file metadata and determining if questions can be answered from file information alone."),
+                HumanMessage(content=prompt)
             ]
             
-            response = await self.model.ainvoke(messages)
+            structured_llm = self.model.with_structured_output(SummaryResponse)
+            response = await structured_llm.ainvoke(messages)
             
-            if response and response.content.strip():
-                content = response.content.strip()
-                insights = [line.strip() for line in content.split('\n') if line.strip().startswith(('-', '•', '*'))]
-                return insights
+            summary = Summary(
+                id=self._get_next_summary_id(),
+                summary=response.summary,
+                found_answer=response.found_answer,
+                answer=response.answer
+            )
+            
+            logger.info(f"| ✅ Overall file summary generated")
+            return summary
             
         except Exception as e:
-            logger.warning(f"Failed to analyze enhanced task: {e}")
-        
-        return []
-
-    async def _summarize_round(self, insights: List[str], enhanced_task: str, round_num: int) -> str:
-        """Summarize the current analysis round."""
-        if not insights:
-            return f"No insights found in round {round_num}"
-        
-        prompt = dedent(f"""Summarize the analysis results for this round.
-        
-        Round: {round_num}
-        Insights found: {len(insights)}
-        
-        Key insights:
-        {chr(10).join(insights)}
-        
-        Provide a brief summary (1-2 sentences) of what was discovered in this round.
-        Focus on the most important findings and their relevance to the task.""")
-        
-        try:
-            message = HumanMessage(content=prompt)
-            response = await self.model.ainvoke([message])
-            return response.content.strip()
-        
-        except Exception as e:
-            logger.warning(f"Failed to summarize round: {e}")
-            return f"Round {round_num} analysis completed with {len(insights)} insights"
-
-    async def _evaluate_completeness(self, task: str) -> str:
-        """Evaluate if we have found a complete answer."""
-        if not self.all_insights:
-            return "No insights collected yet"
-        
-        prompt = dedent(f"""Evaluate if we have collected sufficient information to answer the analysis task.
-        
-        Analysis Task: {task}
-        
-        Insights collected so far:
-        {chr(10).join(self.all_insights)}
-        
-        Determine if we have enough information to provide a complete answer.
-        
-        If YES, respond with: "ANALYSIS_COMPLETE: [brief explanation of what we found]"
-        If NO, respond with: "INCOMPLETE: [explanation of what information is still missing]"
-        
-        Consider:
-        - Does the information directly address the task?
-        - Is there sufficient detail and depth?
-        - Are there multiple perspectives or sources?
-        - Is the information comprehensive and reliable?""")
-        
-        try:
-            message = HumanMessage(content=prompt)
-            response = await self.model.ainvoke([message])
-            if response and response.content.strip():   
-                return response.content.strip()
-            else:
-                return self._fallback_completeness_check(task)
-        
-        except Exception as e:
-            logger.warning(f"Failed to evaluate completeness with LLM: {e}")
-            return self._fallback_completeness_check(task)
+            logger.warning(f"Failed to generate overall file summary: {e}")
+            return None
     
-    def _fallback_completeness_check(self, task: str) -> str:
-        """Fallback method for completeness evaluation using simple heuristics."""
-        if len(self.all_insights) >= 5:
-            task_lower = task.lower()
-            key_terms = task_lower.split()
+    async def _summarize_summaries(self, task: str, summaries: List[Summary]) -> Summary:
+        """Summarize all summaries to get a new Summary."""
+        try:
+            if not summaries:
+                return Summary(
+                    id=self._get_next_summary_id(),
+                    summary="No summaries to summarize.",
+                    found_answer=False,
+                    answer=None
+                )
             
-            coverage = 0
-            for insight in self.all_insights:
-                insight_lower = insight.lower()
-                for term in key_terms:
-                    if term in insight_lower:
-                        coverage += 1
+            # Combine all summaries
+            summaries_text = "\n".join([f"- {s.summary}" for s in summaries])
             
-            if coverage >= len(key_terms) * 2:
-                return "ANALYSIS_COMPLETE: Sufficient information collected to answer the task"
-        
-        return "INCOMPLETE: Need more information to provide a complete answer"
-
+            prompt = dedent(f"""Based on the following analysis summaries, provide a comprehensive summary.
+            
+            Task: {task}
+            
+            Analysis summaries:
+            {summaries_text}
+            
+            Synthesize all the information from the summaries and provide:
+            1. A comprehensive summary (3-5 sentences) that integrates all findings
+            2. Determine if we have found the answer to the task based on all summaries
+            3. If the answer is found, provide it in the answer field
+            """)
+            
+            messages = [
+                SystemMessage(content="You are an expert at synthesizing information from multiple analysis summaries."),
+                HumanMessage(content=prompt)
+            ]
+            
+            structured_llm = self.model.with_structured_output(SummaryResponse)
+            response = await structured_llm.ainvoke(messages)
+            
+            return Summary(
+                id=self._get_next_summary_id(),
+                summary=response.summary,
+                found_answer=response.found_answer,
+                answer=response.answer
+            )
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error summarizing summaries: {e}")
+            return Summary(
+                id=self._get_next_summary_id(),
+                summary=f"Error summarizing summaries: {e}",
+                found_answer=False,
+                answer=None
+            )
+    
+    async def _analyze_task_only(self, task: str, summaries: List[Summary]) -> None:
+        """Analyze task without files (text games, math problems, logic puzzles, etc.)."""
+        try:
+            logger.info(f"| 🧠 Analyzing task directly (no files)")
+            
+            # Multi-round analysis for complex tasks
+            for round_num in range(1, self.max_rounds + 1):
+                logger.info(f"| 🔄 Analysis round {round_num}/{self.max_rounds}")
+                
+                prompt = dedent(f"""Analyze the following task step by step. This could be a text game, math problem, logic puzzle, or reasoning task.
+                
+                Task: {task}
+                
+                For this round, perform detailed analysis:
+                1. Break down the task into components
+                2. Identify key information and constraints
+                3. Apply logical reasoning or mathematical operations
+                4. Generate insights and partial solutions
+                5. If you find the complete answer, clearly state it
+                
+                Provide a concise summary (2-4 sentences) of your analysis for this round.
+                """)
+                
+                messages = [
+                    SystemMessage(content="You are an expert at solving complex reasoning tasks, text games, math problems, and logic puzzles."),
+                    HumanMessage(content=prompt)
+                ]
+                
+                structured_llm = self.model.with_structured_output(Summary)
+                response = await structured_llm.ainvoke(messages)
+                
+                # Assign ID to parsed summary
+                response.id = self._get_next_summary_id()
+                summaries.append(response)
+                
+                # Check if we found the answer
+                if response.found_answer:
+                    logger.info(f"| ✅ Answer found in round {round_num}, early stopping.")
+                    return None
+            
+            logger.info(f"| ✅ Task analysis completed after {self.max_rounds} rounds")
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error analyzing task: {e}")
+            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing task: {e}", found_answer=False, answer=None))
+            return None
+    
+    async def _analyze_text_file(self, task: str, file_path: str, summaries: List[Summary]) -> None:
+        """Analyze a single text file: get file info, convert to markdown, analyze in chunks."""
+        try:
+            # Get file basic info
+            file_info = get_file_info(file_path)
+            logger.info(f"| 📄 Processing text file: {os.path.basename(file_path)} ({file_info.get('size', 'unknown')} bytes)")
+            
+            # Convert to markdown using mdify_tool (automatically saves to base_dir)
+            mdify_response = await self.mdify_tool._arun(file_path=file_path, output_format="markdown")
+            if not mdify_response.success:
+                logger.warning(f"Failed to convert file to markdown: {mdify_response.message}")
+                summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to convert file to markdown: {file_path}", found_answer=False, answer=None))
+                return None
+            
+            saved_path = mdify_response.extra["saved_path"]
+            
+            # Read all lines once
+            with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            
+            total_lines = len(lines)
+            total_chunks = (total_lines + self.chunk_size - 1) // self.chunk_size
+            
+            # Internal loop: analyze chunks one by one
+            for chunk_num in range(1, total_chunks + 1):
+                logger.info(f"| 🔄 Analyzing text file chunk {chunk_num}/{total_chunks}")
+                
+                # Extract chunk text
+                start_line = (chunk_num - 1) * self.chunk_size
+                end_line = min(start_line + self.chunk_size, total_lines)
+                chunk_lines = lines[start_line:end_line]
+                chunk_text = "".join(chunk_lines)
+                
+                summary = await self._analyze_markdown_chunk(task, chunk_text, chunk_num, start_line + 1, end_line)
+                summaries.append(summary)
+                
+                if summary.found_answer:
+                    logger.info(f"| ✅ Answer found in chunk {chunk_num}, early stopping.")
+                    return None
+            
+            logger.info(f"| ✅ All chunks of text file analyzed")
+            
+        except Exception as e:
+            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing text file {file_path}: {e}", found_answer=False, answer=None))
+            return None
+    
+    async def _analyze_markdown_chunk(self, task: str, chunk_text: str, chunk_num: int, start_line: int, end_line: int) -> Summary:
+        """Analyze a chunk of markdown text."""
+        try:
+            logger.info(f"| 🔍 Analyzing chunk {chunk_num} (lines {start_line}-{end_line})")
+            
+            context = f"Task: {task}\n\n"
+            context += f"Current chunk (lines {start_line}-{end_line}):\n{chunk_text}"
+            
+            prompt = dedent(f"""Analyze this chunk of the document and extract information relevant to the task.
+            
+            {context}
+            
+            Extract key information that helps answer the task. Provide a concise summary (2-3 sentences) of findings from this chunk.
+            If this chunk contains the answer to the task, set found_answer to True and provide the answer in the answer field.
+            """)
+            
+            messages = [
+                SystemMessage(content="You are an expert at extracting key information from documents."),
+                HumanMessage(content=prompt)
+            ]
+            
+            structured_llm = self.model.with_structured_output(Summary)
+            response = await structured_llm.ainvoke(messages)
+            
+            # Assign ID to parsed summary
+            response.id = self._get_next_summary_id()
+            return response
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error analyzing markdown chunk: {e}")
+            return Summary(id=self._get_next_summary_id(), summary=f"Error analyzing markdown chunk: {e}", found_answer=False, answer=None)
+    
+    async def _analyze_image_file(self, task: str, file_path: str, summaries: List[Summary]) -> None:
+        """Analyze a single image file: directly send to LLM without mdify conversion."""
+        try:
+            if not os.path.exists(file_path):
+                logger.warning(f"Image file not found: {file_path}")
+                return None
+            
+            # Internal loop: analyze image multiple times
+            for step_num in range(1, self.max_steps + 1):
+                logger.info(f"| 🔄 Analyzing image step {step_num}/{self.max_steps}")
+                
+                # Build multimodal message with the image
+                message_content = [
+                    {"type": "text", "text": dedent(f"""Analyze the following image to answer the task.
+                    
+                    Task: {task}
+                    
+                    Extract key information from the image that helps answer the task.
+                    Focus on visual elements, text in images, patterns, and any relevant details.
+                    """)}
+                ]
+                
+                # Add the image
+                try:
+                    image = Image.open(assemble_project_path(file_path))
+                    image_url = make_image_url(encode_image_base64(image))
+                    message_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": image_url}
+                    })
+                    logger.info(f"| ✅ Added image: {os.path.basename(file_path)}")
+                except Exception as e:
+                    logger.warning(f"Failed to process image {file_path}: {e}")
+                    return None
+                
+                messages = [
+                    SystemMessage(content="You are an expert at analyzing images and extracting visual information."),
+                    HumanMessage(content=message_content)
+                ]
+                
+                structured_llm = self.model.with_structured_output(Summary)
+                response = await structured_llm.ainvoke(messages)
+                
+                # Assign ID to parsed summary
+                response.id = self._get_next_summary_id()
+                summaries.append(response)
+                
+                # Check if answer found after each step
+                if response.found_answer:
+                    logger.info(f"| ✅ Answer found in image step {step_num}, early stopping.")
+                    return None
+            
+            logger.info(f"| ✅ Image analysis completed after {self.max_steps} steps")
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error analyzing image file {file_path}: {e}")
+            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing image file {file_path}: {e}", found_answer=False, answer=None))
+            return None
+    
+    async def _analyze_audio_file(self, task: str, file_path: str, summaries: List[Summary]) -> None:
+        """Analyze a single audio file: convert to markdown, then analyze like text."""
+        try:
+            # Get file basic info
+            file_info = get_file_info(file_path)
+            logger.info(f"| 🎵 Processing audio file: {os.path.basename(file_path)} ({file_info.get('size', 'unknown')} bytes)")
+            
+            # Convert to markdown using mdify_tool (automatically saves to base_dir)
+            mdify_response = await self.mdify_tool._arun(file_path=file_path, output_format="markdown")
+            if not mdify_response.success:
+                logger.warning(f"Failed to convert audio file to markdown: {mdify_response.message}")
+                summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to convert audio file to markdown: {file_path}", found_answer=False, answer=None))
+                return None
+            
+            saved_path = mdify_response.extra["saved_path"]
+            
+            # Read all lines once
+            with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            
+            total_lines = len(lines)
+            total_chunks = (total_lines + self.chunk_size - 1) // self.chunk_size
+            
+            # Internal loop: analyze chunks one by one
+            for chunk_num in range(1, total_chunks + 1):
+                logger.info(f"| 🔄 Analyzing audio file chunk {chunk_num}/{total_chunks}")
+                
+                # Extract chunk text
+                start_line = (chunk_num - 1) * self.chunk_size
+                end_line = min(start_line + self.chunk_size, total_lines)
+                chunk_lines = lines[start_line:end_line]
+                chunk_text = "".join(chunk_lines)
+                
+                summary = await self._analyze_markdown_chunk(task, chunk_text, chunk_num, start_line + 1, end_line)
+                summaries.append(summary)
+                
+                if summary.found_answer:
+                    logger.info(f"| ✅ Answer found in chunk {chunk_num}, early stopping.")
+                    return None
+            
+            logger.info(f"| ✅ All chunks of audio file analyzed")
+            
+        except Exception as e:
+            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing audio file {file_path}: {e}", found_answer=False, answer=None))
+            return None
+    
+    async def _analyze_video_file(self, task: str, file_path: str, summaries: List[Summary]) -> None:
+        """Analyze a single video file: convert to markdown, then analyze like text."""
+        try:
+            # Get file basic info
+            file_info = get_file_info(file_path)
+            logger.info(f"| 🎬 Processing video file: {os.path.basename(file_path)} ({file_info.get('size', 'unknown')} bytes)")
+            
+            # Convert to markdown using mdify_tool (automatically saves to base_dir)
+            mdify_response = await self.mdify_tool._arun(file_path=file_path, output_format="markdown")
+            if not mdify_response.success:
+                logger.warning(f"Failed to convert video file to markdown: {mdify_response.message}")
+                summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to convert video file to markdown: {file_path}", found_answer=False, answer=None))
+                return None
+            
+            saved_path = mdify_response.extra["saved_path"]
+            
+            # Read all lines once
+            with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            
+            total_lines = len(lines)
+            total_chunks = (total_lines + self.chunk_size - 1) // self.chunk_size
+            
+            # Internal loop: analyze chunks one by one
+            for chunk_num in range(1, total_chunks + 1):
+                logger.info(f"| 🔄 Analyzing video file chunk {chunk_num}/{total_chunks}")
+                
+                # Extract chunk text
+                start_line = (chunk_num - 1) * self.chunk_size
+                end_line = min(start_line + self.chunk_size, total_lines)
+                chunk_lines = lines[start_line:end_line]
+                chunk_text = "".join(chunk_lines)
+                
+                summary = await self._analyze_markdown_chunk(task, chunk_text, chunk_num, start_line + 1, end_line)
+                summaries.append(summary)
+                
+                if summary.found_answer:
+                    logger.info(f"| ✅ Answer found in chunk {chunk_num}, early stopping.")
+                    return None
+            
+            logger.info(f"| ✅ All chunks of video file analyzed")
+            
+        except Exception as e:
+            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing video file {file_path}: {e}", found_answer=False, answer=None))
+            return None
+    
     async def _validate_file(self, file_path: str) -> bool:
         """Validate if file can be processed."""
         try:
-            # Check if file exists
             if not os.path.exists(file_path):
                 logger.warning(f"File does not exist: {file_path}")
                 return False
             
-            # Check file size
             file_size = os.path.getsize(file_path)
             if file_size > self.max_file_size:
                 logger.warning(f"File too large: {file_path} ({file_size} bytes)")
-                return False
-            
-            # Check file type
-            _, ext = os.path.splitext(file_path.lower())
-            if ext not in self.supported_file_types:
-                logger.warning(f"Unsupported file type: {file_path} ({ext})")
                 return False
             
             return True
@@ -466,118 +713,6 @@ class DeepAnalyzerTool(BaseTool):
         except Exception as e:
             logger.error(f"Error validating file {file_path}: {e}")
             return False
-
-    async def _format_final_result(self, conclusion: str, round_num: int) -> str:
-        """Format the final successful result."""
-        try:
-            prompt = dedent(f"""Format the final analysis results into a comprehensive report.
-            
-            Analysis completed in {round_num} rounds.
-            
-            Final Conclusion: {conclusion}
-            
-            All Insights Collected ({len(self.all_insights)} total):
-            {chr(10).join(self.all_insights)}
-            
-            Analysis Statistics:
-            - Total rounds: {len(self.analysis_history)}
-            - Total insights: {len(self.all_insights)}
-            - Files analyzed: {len(self.file_contents)}
-            - Images analyzed: {len(self.image_files)}
-            
-            Create a professional analysis report that includes:
-            1. Executive summary
-            2. Key findings (prioritize the most important insights)
-            3. Supporting evidence
-            4. Analysis methodology
-            5. Conclusions and recommendations
-            
-            Use appropriate formatting and make it engaging and easy to read.""")
-            
-            message = HumanMessage(content=prompt)
-            response = await self.model.ainvoke([message])
-            
-            if response and response.content.strip():
-                return response.content.strip()
-            else:
-                return self._fallback_format_result(conclusion, round_num)
-                
-        except Exception as e:
-            logger.warning(f"Failed to format final result: {e}")
-            return self._fallback_format_result(conclusion, round_num)
-    
-    def _fallback_format_result(self, conclusion: str, round_num: int) -> str:
-        """Basic fallback formatting for successful results."""
-        result = f"🎯 Analysis completed in {round_num} rounds!\n\n"
-        result += "📋 Summary:\n"
-        result += conclusion.replace("ANALYSIS_COMPLETE: ", "") + "\n\n"
-        
-        result += "🔍 Key Insights:\n"
-        for i, insight in enumerate(self.all_insights[-10:], 1):
-            result += f"{i}. {insight}\n"
-        
-        result += f"\n📊 Analysis Statistics:\n"
-        result += f"- Total rounds: {len(self.analysis_history)}\n"
-        result += f"- Total insights: {len(self.all_insights)}\n"
-        result += f"- Files analyzed: {len(self.file_contents)}\n"
-        result += f"- Images analyzed: {len(self.image_files)}\n"
-        
-        return result
-
-    async def _format_failure_result(self, task: str) -> str:
-        """Format the failure result when max steps are reached."""
-        try:
-            prompt = dedent(f"""The analysis task was incomplete after maximum steps. Format a helpful failure report.
-            
-            Task: {task}
-            
-            Partial insights collected ({len(self.all_insights)} total):
-            {chr(10).join(self.all_insights) if self.all_insights else "No insights collected"}
-            
-            Analysis Statistics:
-            - Total rounds: {len(self.analysis_history)}
-            - Total insights: {len(self.all_insights)}
-            - Files analyzed: {len(self.file_contents)}
-            - Images analyzed: {len(self.image_files)}
-            
-            Create a professional failure report that includes:
-            1. Clear explanation of what happened
-            2. Summary of partial findings (if any)
-            3. Specific recommendations for improvement
-            4. Alternative approaches to try
-            
-            Be constructive and helpful.""")
-            
-            message = HumanMessage(content=prompt)
-            response = await self.model.ainvoke([message])
-            
-            if response and response.content.strip():
-                return response.content.strip()
-            else:
-                return self._fallback_format_failure_result(task)
-                
-        except Exception as e:
-            logger.warning(f"Failed to format failure result: {e}")
-            return self._fallback_format_failure_result(task)
-    
-    def _fallback_format_failure_result(self, task: str) -> str:
-        """Basic fallback formatting for failure results."""
-        result = f"❌ Analysis incomplete after maximum steps reached.\n\n"
-        result += f"📋 Task: {task}\n\n"
-        
-        if self.all_insights:
-            result += "🔍 Partial insights collected:\n"
-            for i, insight in enumerate(self.all_insights[-5:], 1):
-                result += f"{i}. {insight}\n"
-            
-            result += "\n💡 Recommendations:\n"
-            result += "- Try providing more specific files or data\n"
-            result += "- Consider breaking down the task into smaller subtasks\n"
-            result += "- Check if the files contain the required information"
-        else:
-            result += "🔍 No insights collected. The task might be too complex or the files might not contain relevant information."
-        
-        return result
 
     def _run(self, task: str, files: Optional[List[str]] = None) -> ToolResponse:
         """Execute deep analysis synchronously (fallback)."""
@@ -591,4 +726,4 @@ class DeepAnalyzerTool(BaseTool):
                 loop.close()
         except Exception as e:
             logger.error(f"Error in synchronous execution: {e}")
-            return ToolResponse(content=f"Error in synchronous execution: {e}")
+            return ToolResponse(success=False, message=f"Error in synchronous execution: {e}")
