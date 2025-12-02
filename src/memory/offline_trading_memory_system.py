@@ -356,11 +356,26 @@ class OfflineTradingMemorySystem:
                         event_type,
                         data: Any,
                         agent_name: str,
-                        task_id: Optional[str] = None):
-        """Add trading event to memory"""
-        event_id = "trade_event_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+                        task_id: Optional[str] = None,
+                        session_id: Optional[str] = None,
+                        **kwargs):
+        """Add trading event to memory
         
-        session_id = self.current_session_id
+        Args:
+            step_number: Step number
+            event_type: Event type
+            data: Event data
+            agent_name: Agent name
+            task_id: Optional task ID
+            session_id: Optional session ID. If None, uses current session.
+            **kwargs: Additional arguments
+        """
+        session_id = await self._check_session_id(session_id)
+        if session_id is None:
+            logger.warning("| No session ID available for add_event")
+            return
+        
+        event_id = "trade_event_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         
         event = ChatEvent(
             id=event_id,
@@ -372,7 +387,7 @@ class OfflineTradingMemorySystem:
             session_id=session_id
         )
     
-        if session_id and session_id in self.session_memory:
+        if session_id in self.session_memory:
             await self.session_memory[session_id].add_event(event)
     
     async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
@@ -398,26 +413,73 @@ class OfflineTradingMemorySystem:
         for session_id in list(self.session_info.keys()):
             await self.clear_session(session_id)
             
-    async def get_event(self, n: Optional[int] = None) -> List[ChatEvent]:
-        session_id = self.current_session_id
+    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[ChatEvent]:
+        """Get events from memory system.
+        
+        Args:
+            n: Number of events to retrieve. If None, returns all events.
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            List of events
+        """
+        session_id = await self._check_session_id(session_id)
         if session_id and session_id in self.session_memory:
             return await self.session_memory[session_id].get_event(n=n)
         return []
     
-    async def get_summary(self, n: Optional[int] = None) -> List[OfflineTradingSummary]:
-        session_id = self.current_session_id
+    async def get_summary(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[OfflineTradingSummary]:
+        """Get summaries from memory system.
+        
+        Args:
+            n: Number of summaries to retrieve. If None, returns all summaries.
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            List of summaries
+        """
+        session_id = await self._check_session_id(session_id)
         if session_id and session_id in self.session_memory:
             return await self.session_memory[session_id].get_summary(n=n)
         return []
     
-    async def get_insight(self, n: Optional[int] = None) -> List[OfflineTradingInsight]:
-        session_id = self.current_session_id
+    async def get_insight(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[OfflineTradingInsight]:
+        """Get insights from memory system.
+        
+        Args:
+            n: Number of insights to retrieve. If None, returns all insights.
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            List of insights
+        """
+        session_id = await self._check_session_id(session_id)
         if session_id and session_id in self.session_memory:
             return await self.session_memory[session_id].get_insight(n=n)
         return []
     
     async def save_to_json(self, file_path: str) -> str:
         """Save memory system state to JSON file.
+        
+        Structure:
+        {
+            "metadata": {
+                "memory_system_type": str,
+                "current_session_id": str,
+                "session_ids": [str, ...]
+            },
+            "sessions": {
+                "session_id": {
+                    "session_info": {...},
+                    "session_memory": {
+                        "events": [...],
+                        "summaries": [...],
+                        "insights": [...]
+                    }
+                },
+                ...
+            }
+        }
         
         Args:
             file_path: File path to save to
@@ -428,25 +490,45 @@ class OfflineTradingMemorySystem:
         file_path = Path(file_path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         
-        save_data = {
+        # Prepare metadata
+        metadata = {
             "memory_system_type": "offline_trading_memory_system",
             "current_session_id": self.current_session_id,
-            "session_info": {},
-            "session_memory": {},
+            "session_ids": list(self.session_info.keys())
         }
         
-        # Save session info
-        for session_id, session_info in self.session_info.items():
-            save_data["session_info"][session_id] = session_info.model_dump(mode="json")
-        
-        # Save session memory
-        for session_id, session_memory in self.session_memory.items():
+        # Prepare sessions data
+        sessions = {}
+        for session_id in self.session_info.keys():
             session_data = {
-                "events": [event.model_dump(mode="json") for event in session_memory.events],
-                "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
-                "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                "session_info": None,
+                "session_memory": {
+                    "events": [],
+                    "summaries": [],
+                    "insights": []
+                }
             }
-            save_data["session_memory"][session_id] = session_data
+            
+            # Save session info
+            if session_id in self.session_info:
+                session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
+            
+            # Save session memory
+            if session_id in self.session_memory:
+                session_memory = self.session_memory[session_id]
+                session_data["session_memory"] = {
+                    "events": [event.model_dump(mode="json") for event in session_memory.events],
+                    "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                    "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                }
+            
+            sessions[session_id] = session_data
+        
+        # Prepare save data
+        save_data = {
+            "metadata": metadata,
+            "sessions": sessions
+        }
         
         # Save to file
         with open(file_path, "w", encoding="utf-8") as f:
@@ -457,6 +539,26 @@ class OfflineTradingMemorySystem:
     
     async def load_from_json(self, file_path: str) -> bool:
         """Load memory system state from JSON file.
+        
+        Expected format:
+        {
+            "metadata": {
+                "memory_system_type": str,
+                "current_session_id": str,
+                "session_ids": [str, ...]
+            },
+            "sessions": {
+                "session_id": {
+                    "session_info": {...},
+                    "session_memory": {
+                        "events": [...],
+                        "summaries": [...],
+                        "insights": [...]
+                    }
+                },
+                ...
+            }
+        }
         
         Args:
             file_path: File path to load from
@@ -474,21 +576,32 @@ class OfflineTradingMemorySystem:
             with open(file_path, "r", encoding="utf-8") as f:
                 load_data = json.load(f)
             
-            # Restore current session ID
-            self.current_session_id = load_data.get("current_session_id")
+            # Validate format
+            if "metadata" not in load_data or "sessions" not in load_data:
+                raise ValueError(
+                    f"Invalid memory format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
+                    f"got keys: {list(load_data.keys())}"
+                )
             
-            # Restore session info
-            for session_id, session_info_data in load_data.get("session_info", {}).items():
-                # Parse datetime strings
-                if session_info_data.get("start_time"):
-                    session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
-                if session_info_data.get("end_time"):
-                    session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+            # Restore metadata
+            metadata = load_data.get("metadata", {})
+            self.current_session_id = metadata.get("current_session_id")
+            
+            # Restore sessions
+            sessions_data = load_data.get("sessions", {})
+            
+            for session_id, session_data in sessions_data.items():
+                # Restore session info
+                session_info_data = session_data.get("session_info")
+                if session_info_data:
+                    # Parse datetime strings
+                    if session_info_data.get("start_time"):
+                        session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
+                    if session_info_data.get("end_time"):
+                        session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                    
+                    self.session_info[session_id] = SessionInfo(**session_info_data)
                 
-                self.session_info[session_id] = SessionInfo(**session_info_data)
-            
-            # Restore session memory
-            for session_id, session_memory_data in load_data.get("session_memory", {}).items():
                 # Ensure session memory exists
                 if session_id not in self.session_memory:
                     await self.start_session(
@@ -499,6 +612,7 @@ class OfflineTradingMemorySystem:
                     )
                 
                 session_memory = self.session_memory[session_id]
+                session_memory_data = session_data.get("session_memory", {})
                 
                 # Restore events
                 if "events" in session_memory_data:

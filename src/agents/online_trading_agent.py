@@ -147,7 +147,10 @@ class OnlineTradingAgent(BaseAgent):
         
         if os.path.exists(self.tracer_save_path):
             self.tracer.load_from_json(self.tracer_save_path)
-            self.record = self.tracer.get_record(len(self.tracer.records) - 1)
+            # Get the last record from current session if any exist
+            last_record = self.tracer.get_last_record()
+            if last_record:
+                self.record = last_record
         
         self.think_output_builder = ThinkOutputBuilder()
         self.think_output_builder.register(tcp.args_schemas())
@@ -463,7 +466,9 @@ class OnlineTradingAgent(BaseAgent):
             
             # Update tracer and save to json
             self.tracer.add_record(observation=self.record.observation, 
-                                   action=self.record.action)
+                                   action=self.record.action,
+                                   session_id=session_id,
+                                   task_id=task_id)
             self.tracer.save_to_json(self.tracer_save_path)
             
             # Save memory to json

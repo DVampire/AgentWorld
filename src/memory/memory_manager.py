@@ -28,26 +28,55 @@ class MemoryManager:
                   data: Any,
                   agent_name: str,
                   task_id: Optional[str] = None,
+                  session_id: Optional[str] = None,
                   **kwargs):
+        """Add event to memory system.
         
+        Args:
+            step_number: Step number
+            event_type: Event type
+            data: Event data
+            agent_name: Agent name
+            task_id: Optional task ID
+            session_id: Optional session ID. If None, uses current session.
+            **kwargs: Additional arguments
+        """
         await self.memory_system.add_event(step_number,
                                            event_type, 
                                            data, 
                                            agent_name,
                                            task_id,
+                                           session_id=session_id,
                                            **kwargs)
         logger.info(f"| Added event successfully.")
 
     
-    async def get_event(self, n: Optional[int] = None):
-        return await self.memory_system.get_event(n=n)
-    
-    async def get_state(self, n: Optional[int] = None):
+    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None):
+        """Get events from memory system.
         
+        Args:
+            n: Number of events to retrieve. If None, returns all events.
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            List of events
+        """
+        return await self.memory_system.get_event(n=n, session_id=session_id)
+    
+    async def get_state(self, n: Optional[int] = None, session_id: Optional[str] = None):
+        """Get memory state including events, summaries, and insights.
+        
+        Args:
+            n: Number of items to retrieve. If None, returns all items.
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            Dictionary containing events, summaries, and insights
+        """
         state = dict()
-        events = await self.memory_system.get_event(n=n)
-        summaries = await self.memory_system.get_summary(n=n)
-        insights = await self.memory_system.get_insight(n=n)
+        events = await self.memory_system.get_event(n=n, session_id=session_id)
+        summaries = await self.memory_system.get_summary(n=n, session_id=session_id)
+        insights = await self.memory_system.get_insight(n=n, session_id=session_id)
         
         state["events"] = events
         state["summaries"] = summaries
@@ -56,6 +85,29 @@ class MemoryManager:
         logger.info(f"| Get memory state successfully.")
         
         return state
+    
+    def get_current_session_id(self) -> Optional[str]:
+        """Get current session ID from memory system.
+        
+        Returns:
+            Current session ID if available, None otherwise
+        """
+        if hasattr(self.memory_system, 'current_session_id'):
+            return self.memory_system.current_session_id
+        return None
+    
+    async def get_session_info(self, session_id: Optional[str] = None):
+        """Get session info from memory system.
+        
+        Args:
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            SessionInfo if available, None otherwise
+        """
+        if hasattr(self.memory_system, 'get_session_info'):
+            return await self.memory_system.get_session_info(session_id=session_id)
+        return None
     
     async def save_to_json(self, file_path: str) -> str:
         """Save memory system state to JSON file.

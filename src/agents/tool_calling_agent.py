@@ -74,7 +74,10 @@ class ToolCallingAgent(BaseAgent):
         
         if os.path.exists(self.tracer_save_path):
             self.tracer.load_from_json(self.tracer_save_path)
-            self.record = self.tracer.get_record(len(self.tracer.records) - 1)
+            # Get the last record from current session if any exist
+            last_record = self.tracer.get_last_record()
+            if last_record:
+                self.record = last_record
         
         self.think_output_builder = ThinkOutputBuilder()
         self.think_output_builder.register(tcp.args_schemas())
@@ -261,12 +264,21 @@ class ToolCallingAgent(BaseAgent):
         else:
             enhanced_task = task
         
-        session_info = await self._generate_session_info(enhanced_task)
-        session_id = session_info.session_id
-        description = session_info.description
+        # Check if we should restore from checkpoint
+        restored_session_id = self.memory_manager.get_current_session_id()
         
-        # Start session
-        await self.memory_manager.start_session(session_id, description)
+        if restored_session_id:
+            # Restore from checkpoint
+            logger.info(f"| 🔄 Restoring session from checkpoint: {restored_session_id}")
+            session_id = restored_session_id
+            session_info_obj = await self.memory_manager.get_session_info(session_id)
+            description = session_info_obj.description if session_info_obj else None
+        else:
+            # Start new session
+            session_info = await self._generate_session_info(enhanced_task)
+            session_id = session_info.session_id
+            description = session_info.description
+            await self.memory_manager.start_session(session_id, description)
         
         # Add task start event
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -295,7 +307,9 @@ class ToolCallingAgent(BaseAgent):
             
             # Update tracer and save to json
             self.tracer.add_record(observation=self.record.observation, 
-                                   action=self.record.action)
+                                   action=self.record.action,
+                                   session_id=session_id,
+                                   task_id=task_id)
             self.tracer.save_to_json(self.tracer_save_path)
             
             # Save memory to json
