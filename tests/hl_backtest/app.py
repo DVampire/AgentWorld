@@ -5,15 +5,16 @@ from matplotlib.backends.backend_pdf import PdfPages
 from io import BytesIO
 from typing import Dict, Callable
 
-from data_store import ensure_history_csv,load_klines_from_sqlite
+from data_store import load_klines_from_sqlite
 from backtest import run_backtest
 from regime_based import (
     PRICE_COL,
     MAX_LEVERAGE,
     bh_baseline,
-    ma_crossover_baseline,
-    zscore_mr_baseline,
-    tsmom_baseline,
+    # ma_crossover_baseline,
+    # zscore_mr_baseline,
+    # tsmom_baseline,
+    livetrading_baseline,
 )
 
 # ========= Streamlit 基本设置 =========
@@ -29,7 +30,7 @@ st.markdown(
     """
 本面板会：
 - 载入 1m K 线数据
-- 同时回测 4 个基线策略（BH / MA / ZScoreMR / TSMOM）
+- 同时回测 3 个策略（BH / LiveTrading gpt-5 / LiveTrading deepseek-v3.1）
 - 支持为 **每个策略设置最小持仓周期（bar 数）**
 - 展示 equity 对比 + stats 表格
 - 一键导出 PDF 报告
@@ -54,9 +55,11 @@ st.sidebar.markdown("---")
 st.sidebar.header("最小持仓周期 (bars)")
 
 bh_min_hold = st.sidebar.number_input("BH min hold", min_value=0, value=0, step=1)
-ma_min_hold = st.sidebar.number_input("MA min hold", min_value=0, value=0, step=1)
-zs_min_hold = st.sidebar.number_input("ZScoreMR min hold", min_value=0, value=0, step=1)
-ts_min_hold = st.sidebar.number_input("TSMOM min hold", min_value=0, value=0, step=1)
+# ma_min_hold = st.sidebar.number_input("MA min hold", min_value=0, value=0, step=1)
+# zs_min_hold = st.sidebar.number_input("ZScoreMR min hold", min_value=0, value=0, step=1)
+# ts_min_hold = st.sidebar.number_input("TSMOM min hold", min_value=0, value=0, step=1)
+lt_gpt5_min_hold = st.sidebar.number_input("LiveTrading (gpt-5) min hold", min_value=0, value=0, step=1)
+lt_deepseek_min_hold = st.sidebar.number_input("LiveTrading (deepseek-v3.1) min hold", min_value=0, value=0, step=1)
 
 run_button = st.sidebar.button("🚀 运行回测")
 
@@ -168,26 +171,33 @@ else:
             return bh_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
         return strat
 
-    def make_ma_strat(min_hold: int):
-        def strat(df_, pos_, eq_):
-            return ma_crossover_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
-        return strat
+    # def make_ma_strat(min_hold: int):
+    #     def strat(df_, pos_, eq_):
+    #         return ma_crossover_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+    #     return strat
 
-    def make_zs_strat(min_hold: int):
-        def strat(df_, pos_, eq_):
-            return zscore_mr_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
-        return strat
+    # def make_zs_strat(min_hold: int):
+    #     def strat(df_, pos_, eq_):
+    #         return zscore_mr_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+    #     return strat
 
-    def make_ts_strat(min_hold: int):
+    # def make_ts_strat(min_hold: int):
+    #     def strat(df_, pos_, eq_):
+    #         return tsmom_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+    #     return strat
+
+    def make_lt_strat(min_hold: int):
         def strat(df_, pos_, eq_):
-            return tsmom_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+            return livetrading_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
         return strat
 
     strategies: Dict[str, Callable[[pd.DataFrame, float, float], float]] = {
         "BH": make_bh_strat(bh_min_hold),
-        "MA": make_ma_strat(ma_min_hold),
-        "ZScoreMR": make_zs_strat(zs_min_hold),
-        "TSMOM": make_ts_strat(ts_min_hold),
+        # "MA": make_ma_strat(ma_min_hold),
+        # "ZScoreMR": make_zs_strat(zs_min_hold),
+        # "TSMOM": make_ts_strat(ts_min_hold),
+        "livetrading (gpt-5)": make_lt_strat(lt_gpt5_min_hold),
+        "livetrading (deepseek-v3.1)": make_lt_strat(lt_deepseek_min_hold),
     }
 
     # 3) 跑所有策略
