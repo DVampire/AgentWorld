@@ -9,7 +9,7 @@ from src.config import config
 from src.environments.database.service import DatabaseService
 from src.environments.database.types import CreateTableRequest, InsertRequest, QueryRequest, SelectRequest
 from src.environments.hyperliquidentry.exceptions import HyperliquidError
-from src.supports.registry import INDICATOR
+from src.registry import INDICATOR
 from src.utils import get_standard_timestamp
 
 class CandleHandler:
