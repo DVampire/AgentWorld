@@ -15,8 +15,8 @@ from src.environments.protocol import ecp
 from src.logger import logger
 from src.utils import dedent
 from src.environments.protocol.environment import BaseEnvironment
-from src.supports.metric import ARR, SR, MDD, SOR, CR, VOL
-from src.supports.registry import DATASETS
+from src.metrics import ARR, SR, MDD, SOR, CR, VOL
+from src.registry import DATASETS
 from src.utils import get_token_count
 
 _STATE_RULES = """The state of the intraday trading environment will be provided with the following information:
