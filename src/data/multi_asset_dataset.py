@@ -12,14 +12,14 @@ from copy import deepcopy
 
 from src.utils import get_start_end_timestamp, TimeLevel, TimeLevelFormat
 from src.utils import get_tag_name
-from src.supports.registry import DATASETS
-from src.supports.registry import SCALER
+from src.registry import DATASET
+from src.registry import SCALER
 from src.utils import assemble_project_path
-from src.supports.datasets.collate_fn import MultiAssetPriceTextCollateFn
+from src.data.collate_fn import MultiAssetPriceTextCollateFn
 from torch.utils.data.sampler import SequentialSampler
-from src.supports.datasets.dataloader import DataLoader
+from src.data.dataloader import DataLoader
 
-@DATASETS.register_module(force=True)
+@DATASET.register_module(force=True)
 class MultiAssetDataset(Dataset):
 
     def __init__(self,

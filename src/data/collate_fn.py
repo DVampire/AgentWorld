@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from typing import Dict, Any
 
-from src.supports.registry import COLLATE_FN
+from src.registry import COLLATE_FN
 
 @COLLATE_FN.register_module(force=True)
 class SingleAssetPriceTextCollateFn():

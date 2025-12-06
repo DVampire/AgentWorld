@@ -1,7 +1,7 @@
 """Memory manager for session-based memory operations."""
 from typing import Optional, Any, Dict
 
-from src.memory.registry import MEMORY_SYSTEM
+from src.registry import MEMORY_SYSTEM
 from src.logger import logger
 
 class MemoryManager:

@@ -19,19 +19,17 @@ import base64
 import importlib.metadata
 import importlib.util
 import inspect
+import mimetypes
 import json
 import json5
 import keyword
 import os
 import re
-import io
 import types
 from functools import lru_cache
-from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Optional, Union
-from PIL import Image
+from typing import Any, Dict, Tuple, Optional, Union
 
 @lru_cache
 def _is_package_available(package_name: str) -> bool:
@@ -378,21 +376,17 @@ def get_source(obj) -> str:
         raise e from inspect_error
 
 
-def encode_image_base64(image: Image.Image):
-    if isinstance(image, Image.Image):
-        buffered = BytesIO()
-        image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
-    
-    else:
-        raise ValueError(f"Invalid image type: {type(image)}")
-    
-def decode_image_base64(image_b64: str) -> Image.Image:
-    """Decode a base64 encoded image string to a PIL Image."""
-    return Image.open(io.BytesIO(base64.b64decode(image_b64)))
+def encode_file_base64(file_path: str) -> str:
+    with open(file_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode("utf-8")
 
-def make_image_url(base64_image):
-    return f"data:image/png;base64,{base64_image}"
+def decode_file_base64(data_base64: str) -> bytes:
+    return base64.b64decode(data_base64)
+
+def make_file_url(file_path: str) -> str:
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return f"data:{mime_type.lower()};base64,{encode_file_base64(file_path)}"
 
 
 def make_init_file(folder: Union[str, Path]):

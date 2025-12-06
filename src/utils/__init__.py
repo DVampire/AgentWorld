@@ -1,9 +1,9 @@
 from .path_utils import get_project_root, assemble_project_path
 from .singleton import Singleton
 from .utils import (_is_package_available,
-                    encode_image_base64, 
-                    decode_image_base64,
-                    make_image_url, 
+                    encode_file_base64, 
+                    decode_file_base64,
+                    make_file_url, 
                     parse_json_blob,
                     truncate_content)
 from .record_utils import Record, TradingRecords, PortfolioRecords
@@ -22,9 +22,9 @@ __all__ = [
     "assemble_project_path",
     "Singleton",
     "_is_package_available",
-    "encode_image_base64",
-    "decode_image_base64",
-    "make_image_url",
+    "encode_file_base64",
+    "decode_file_base64",
+    "make_file_url",
     "parse_json_blob",
     "truncate_content",
     "Record",

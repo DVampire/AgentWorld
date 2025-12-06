@@ -1,7 +1,6 @@
-import imp
 import os
 import sys
-import numpy as np
+import json
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
@@ -9,21 +8,87 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
-from PIL import Image
-from langchain_core.messages import HumanMessage
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager
-from src.utils import assemble_project_path
-from src.utils import make_image_url, encode_image_base64
+from src.model import model_manager
+from src.message import message_manager
+from src.message import HumanMessage, SystemMessage
+
+from src.tool import tcp
+
+from src.utils import assemble_project_path, encode_file_base64, make_file_url
+
+
+async def test_acompletion():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing acompletion with different models")
+    models = [
+        "openrouter/gpt-4o",
+        "openrouter/gpt-4.1",
+        "openrouter/gpt-5",
+        "openrouter/gpt-5.1",
+        "openrouter/o3",
+        "openrouter/gemini-2.5-flash",
+        "openrouter/gemini-2.5-pro",
+        "openrouter/claude-4.5-sonnet",
+    ]
+    
+    image_url = make_file_url(file_path=assemble_project_path("tests/files/pokemon.jpg"))
+    
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            {
+                "type": "text",
+                "text": "What are the names of the Pokémon in the image?"
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": image_url
+                }
+            }
+        ]),
+    ]
+    
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager.acompletion(
+            model=model,
+            messages=messages
+        )
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+    logger.info(f"| --------------------------------------------------")
+
+async def test_aembedding():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing aembedding with different models")
+    
+    models = [
+        "openrouter/text-embedding-3-large",
+    ]
+    
+    messages = [
+        HumanMessage(content="What is the capital of France?"),
+        HumanMessage(content="What is the capital of Germany?")
+    ]
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager.aembedding(
+            model=model,
+            messages=messages
+        )
+        
+        logger.info(f"| {model} Response: length {len(response.extra['embeddings'])}, shape {response.extra['embeddings'][0].shape}")
+    logger.info(f"| --------------------------------------------------")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "operator_browser_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -38,167 +103,6 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-async def test_general_models():
-    messages = [
-        HumanMessage(content=[
-            {
-                "type": "text",
-                "text": "What is animal in the image?"
-            },
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/cat.png"))))
-                }
-            }
-        ]),
-    ]
-    
-    for model_name in [
-        "gpt-4o", 
-        # "gpt-4.1", 
-        # "gpt-5", 
-        # "gpt-5.1",
-        # "o1", 
-        # "o3",
-        # "claude-3.7-sonnet",
-        # "claude-4-sonnet",
-        # "claude-4.5-sonnet",
-        # "gemini-2.5-pro",  
-    ]:
-        model = model_manager.get(model_name)
-        response = await model.ainvoke(messages)
-        logger.info(f"| {model_name} Response: {response}")
-        
-    messages = [
-        HumanMessage(content=[
-            {
-                "type": "text",
-                "text": "What is the capital of France?"
-            },
-        ]),
-    ]
-    
-    for model_name in [
-        "deepseek-reasoner",
-    ]:
-        model = model_manager.get(model_name)
-        response = await model.ainvoke(messages)
-        logger.info(f"| {model_name} Response: {response}")
-        
-
-async def test_deep_research_models():
-    
-    messages = [
-        HumanMessage(content="What is the capital of France?")
-    ]
-    
-    for model_name in [
-        # "o3-deep-research",
-        # "o4-mini-deep-research",
-        # "gpt-4o-search-preview",
-    ]:
-        model = model_manager.get(model_name)
-        response = await model.ainvoke(messages)
-        logger.info(f"| {model_name} Response: {response}")
-        
-async def test_transcribe_models():
-    for model_name in [
-        "gpt-4o-transcribe",
-        "gpt-4o-mini-transcribe",
-    ]:
-        model = model_manager.get(model_name)
-        
-        # Test with file path
-        audio_path = assemble_project_path("tests/files/audio.mp3")
-        
-        # Test 1: File path (original way)
-        messages = [
-            HumanMessage(content=audio_path),
-        ]
-        response = await model.ainvoke(messages)
-        logger.info(f"| {model_name} (file path) Response: {response}")
-        
-async def test_embedding_models():
-    for model_name in [
-        "text-embedding-3-large",
-    ]:
-        model = model_manager.get(model_name)
-        response = await model.aembed_query("Hello, world!")
-        response = np.array(response)
-        logger.info(f"| {model_name} Response: {response.shape}")
-        
-
-async def test_openai_computer_use_models():
-    """Test computer-use-preview model with responses API.
-    
-    Note: computer-use-preview uses OpenAI's responses API, not chat completions.
-    The model is already bound with computer_use_preview tool in model_manager.
-    Do not use response_format with structured output, as it conflicts with the responses API.
-    """
-    
-    for model_name in [
-        "computer-browser-use",
-    ]:
-        # Create message with proper format for responses API
-        messages = [
-            HumanMessage(content=[
-                {
-                    "type": "text",
-                    "text": "What is the next action to search 'python programming' on google?"
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/google.png"))))
-                    }
-                }
-            ])
-        ]
-        
-        # Get the model (already configured with computer_use_preview tool)
-        model = model_manager.get(model_name)
-        
-        # Invoke with reasoning parameter for computer-use-preview
-        # Changed from "generate_summary" to "summary" as per OpenAI API
-        response = await model.ainvoke(
-            messages,
-            reasoning={"summary": "concise"},
-        )
-        
-        logger.info(f"| {model_name} Response: {response}")
-        
-async def test_anthropic_computer_use_models():
-    for model_name in [
-        "computer-use-claude-4.5-sonnet",
-    ]:
-        # Create message with proper format for responses API
-        messages = [
-            HumanMessage(content=[
-                {
-                    "type": "text",
-                    "text": "What is the next action to search 'python programming' on google?"
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": make_image_url(encode_image_base64(Image.open(assemble_project_path("tests/files/google.png"))))
-                    }
-                }
-            ])
-        ]
-        
-        # Get the model (already configured with computer_use_preview tool)
-        model = model_manager.get(model_name)
-        
-        # Invoke with reasoning parameter for computer-use-preview
-        # Changed from "generate_summary" to "summary" as per OpenAI API
-        response = await model.ainvoke(
-            messages,
-        )
-        
-        logger.info(f"| {model_name} Response: {response}")
-        
 async def main():
     args = parse_args()
     
@@ -206,16 +110,22 @@ async def main():
     logger.init_logger(config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    await model_manager.initialize(use_local_proxy=True)
-    logger.info(f"| Models: {model_manager.list()}")
+    # Initialize model manager
+    await model_manager.initialize()
+    logger.info(f"| Model manager initialized")
     
-    await test_general_models()
-    # await test_deep_research_models()
-    # await test_transcribe_models()
-    # await test_embedding_models()
-    # await test_openai_computer_use_models()
-    # await test_anthropic_computer_use_models()
+    # Initialize message manager
+    await message_manager.initialize()
+    logger.info(f"| Message manager initialized")
     
+    # Initialize tools
+    await tcp.initialize()
+    logger.info(f"| Tools initialized: {await tcp.list()}")
+    exit()
     
+    # await test_acompletion()
+    await test_aembedding()
+
+
 if __name__ == "__main__":
     asyncio.run(main())

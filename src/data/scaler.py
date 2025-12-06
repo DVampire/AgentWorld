@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from pandas import DataFrame
 
-from src.supports.registry import SCALER
+from src.registry import SCALER
 from src.utils import assemble_project_path
 
 EPS = 1e-12

@@ -11,12 +11,12 @@ from pandas import DataFrame
 from copy import deepcopy
 
 from src.utils import get_tag_name
-from src.supports.registry import DATASETS
-from src.supports.registry import SCALER
+from src.registry import DATASET
+from src.registry import SCALER
 from src.utils import assemble_project_path
 from src.utils import get_start_end_timestamp, TimeLevel, TimeLevelFormat
 
-@DATASETS.register_module(force=True)
+@DATASET.register_module(force=True)
 class SingleAssetDataset(Dataset):
 
     def __init__(self,

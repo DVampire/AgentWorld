@@ -10,17 +10,17 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.config import config
 from src.logger import logger
-from src.tools.protocol.tool import WrappedTool
-from src.tools.protocol.types import ToolInfo
-from src.tools.protocol.server import tcp
-from src.environments.protocol.environment import BaseEnvironment
-from src.environments.protocol.types import ActionInfo, EnvironmentInfo
-from src.environments.protocol.server import ecp
-from src.agents.protocol.agent import BaseAgent, ThinkOutputBuilder
-from src.agents.protocol.types import AgentInfo
-from src.agents.protocol.server import acp
-from src.agents import ToolCallingAgent
-from src.models import model_manager
+from src.tool.protocol.tool import WrappedTool
+from src.tool.protocol.types import ToolInfo
+from src.tool.protocol.server import tcp
+from src.environment.protocol.environment import BaseEnvironment
+from src.environment.protocol.types import ActionInfo, EnvironmentInfo
+from src.environment.protocol.server import ecp
+from src.agent.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.agent.protocol.types import AgentInfo
+from src.agent.protocol.server import acp
+from src.agent import ToolCallingAgent
+from src.model import model_manager
 from src.utils import dedent
 from src.transformation.protocol.types import (
     TransformationType,

@@ -16,6 +16,7 @@ anthropic>=0.69.0
 aiohttp>=3.8.0
 asyncio-mqtt>=0.13.0
 aiofiles>=23.0.0
+asyncio_atexit>=1.0.1
 
 # HTTP and networking
 requests>=2.28.0
@@ -94,4 +95,5 @@ plotly>=5.18.0
 TA-lib>=0.6.8
 diskcache>=5.6.3
 streamlit>=1.51.0
-
+jsonlines>=4.0.0
+seaborn>=0.13.2

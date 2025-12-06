@@ -18,9 +18,9 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from pydantic import BaseModel, Field
 
 from src.logger import logger
-from src.models import model_manager
+from src.model import model_manager
 from src.utils import dedent
-from src.memory.registry import MEMORY_SYSTEM
+from src.registry import MEMORY_SYSTEM
 from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo
 
 class CombinedMemoryOutput(BaseModel):

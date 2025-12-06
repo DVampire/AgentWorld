@@ -6,7 +6,7 @@ from torch.utils.data.sampler import SequentialSampler, RandomSampler
 
 from src.utils import get_world_size
 from src.utils import get_rank
-from src.supports.registry import DATALOADER
+from src.registry import DATALOADER
 
 
 @DATALOADER.register_module(force=True)
