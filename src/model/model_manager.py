@@ -91,6 +91,10 @@ class ModelManager:
                 "model_name": "openrouter/gemini-2.5-pro",
                 "model_id": "google/gemini-2.5-pro",
             },
+            {
+                "model_name": "openrouter/gemini-3-pro-preview",
+                "model_id": "google/gemini-3-pro-preview",
+            },
             # Anthropic models for chat, vision.
             {
                 "model_name": "openrouter/claude-4.5-sonnet",

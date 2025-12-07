@@ -34,6 +34,7 @@ async def test_acompletion():
         "openrouter/o3",
         "openrouter/gemini-2.5-flash",
         "openrouter/gemini-2.5-pro",
+        "openrouter/gemini-3-pro-preview",
         "openrouter/claude-4.5-sonnet",
     ]
     
@@ -121,10 +122,9 @@ async def main():
     # Initialize tools
     await tcp.initialize()
     logger.info(f"| Tools initialized: {await tcp.list()}")
-    exit()
     
-    # await test_acompletion()
-    await test_aembedding()
+    await test_acompletion()
+    # await test_aembedding()
 
 
 if __name__ == "__main__":
