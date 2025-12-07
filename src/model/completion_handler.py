@@ -128,7 +128,7 @@ class CompletionHandler:
             params["api_key"] = config.api_key
         if config.api_base:
             params["api_base"] = config.api_base
-        
+
         return params
         
     def _build_general_params(self, 

@@ -295,7 +295,7 @@ class FaissService:
                     message="No valid texts to add (all texts were empty)",
                     extra={"ids": [], "count": 0, "total_input": len(request.texts)}
                 )
-            
+
             # Generate IDs
             ids = []
             if request.ids:

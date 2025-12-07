@@ -5,6 +5,7 @@ from .todo import TodoTool
 from .web_fetcher import WebFetcherTool
 from .web_searcher import WebSearcherTool
 from .mdify import MdifyTool
+from .leetcode import LeetCodeTool
 
 __all__ = [
     "BashTool",
@@ -14,4 +15,5 @@ __all__ = [
     "WebFetcherTool",
     "WebSearcherTool",
     "MdifyTool",
+    "LeetCodeTool",
 ]

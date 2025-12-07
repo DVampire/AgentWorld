@@ -107,18 +107,18 @@ class APIRequest:
                 "model": params.get("model", config.model_id),
                 "messages": params.get("messages", []),
             }
+        
+        if params.get("tools"):
+            request_data["tools"] = params["tools"]
+        
+        if params.get("response_format"):
+            request_data["response_format"] = params["response_format"]
+        
+        if params.get("stream"):
+            request_data["stream"] = True
             
-            if params.get("tools"):
-                request_data["tools"] = params["tools"]
-            
-            if params.get("response_format"):
-                request_data["response_format"] = params["response_format"]
-            
-            if params.get("stream"):
-                request_data["stream"] = True
-                
-            if params.get('plugins'):
-                request_data["plugins"] = params["plugins"]
+        if params.get('plugins'):
+            request_data["plugins"] = params["plugins"]
         
         # Add any additional parameters from params (excluding internal ones)
         exclude_keys = {"model", "messages", "tools", "response_format", "stream", "api_key", "api_base", "plugins", "encoding_format", "input"}
@@ -173,18 +173,18 @@ class APIRequest:
                 "model": params.get("model", config.model_id),
                 "messages": params.get("messages", []),
             }
+        
+        if params.get("tools"):
+            request_data["tools"] = params["tools"]
+        
+        if params.get("response_format"):
+            request_data["response_format"] = params["response_format"]
+        
+        if params.get("stream"):
+            request_data["stream"] = True
             
-            if params.get("tools"):
-                request_data["tools"] = params["tools"]
-            
-            if params.get("response_format"):
-                request_data["response_format"] = params["response_format"]
-            
-            if params.get("stream"):
-                request_data["stream"] = True
-                
-            if params.get('plugins'):
-                request_data["plugins"] = params["plugins"]
+        if params.get('plugins'):
+            request_data["plugins"] = params["plugins"]
         
         # Add any additional parameters from params (excluding internal ones)
         exclude_keys = {"model", "messages", "tools", "response_format", "stream", "api_key", "api_base", "plugins", "encoding_format", "input"}

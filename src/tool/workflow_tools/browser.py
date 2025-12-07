@@ -41,7 +41,7 @@ class BrowserTool(Tool):
             
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
-            logger.info(f"| Browser tool base directory: {self.base_dir}")
+        logger.info(f"| Browser tool base directory: {self.base_dir}")
                 
     async def __call__(self, task: str) -> ToolResponse:
         """Use the browser to interact with the internet to complete the task.

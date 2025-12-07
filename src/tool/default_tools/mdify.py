@@ -46,7 +46,7 @@ class MdifyTool(Tool):
         
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
-            logger.info(f"| Mdify tool base directory: {self.base_dir}")
+        logger.info(f"| Mdify tool base directory: {self.base_dir}")
 
     def model_post_init(self, __context: Any) -> None:
         if self.converter is None:
