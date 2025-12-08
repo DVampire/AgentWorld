@@ -13,10 +13,10 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager
-from src.tools import tcp
-from src.environments import ecp
-from src.agents import acp
+from src.model import model_manager
+from src.tool import tcp
+from src.environment import ecp
+from src.agent import acp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
