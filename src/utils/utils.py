@@ -171,7 +171,7 @@ def parse_code_blobs(text: str) -> str:
     )
 
 
-MAX_LENGTH_TRUNCATE_CONTENT = 20000
+MAX_LENGTH_TRUNCATE_CONTENT = 128
 
 
 def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT) -> str:
@@ -183,6 +183,42 @@ def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT
             + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
             + content[-max_length // 2 :]
         )
+
+def truncate_dict(value, max_len=128):
+    """
+    Recursively create a new structure where all long strings
+    are truncated. The original input is NOT modified.
+
+    :param value: any Python object (dict, list, tuple, str, etc.)
+    :param max_len: max length before truncation
+    :return: new structure with truncated strings
+    """
+
+    # If it's a string → apply truncation
+    if isinstance(value, str):
+        return value if len(value) <= max_len else value[:max_len] + "..."
+
+    # If it's a dict → recursively process each key/value
+    if isinstance(value, dict):
+        return {k: truncate_dict(v, max_len) for k, v in value.items()}
+
+    # If it's a list → return a new list
+    if isinstance(value, list):
+        return [truncate_dict(item, max_len) for item in value]
+
+    # If it's a tuple → return a new tuple
+    if isinstance(value, tuple):
+        return tuple(truncate_dict(item, max_len) for item in value)
+
+    # Otherwise return the value unchanged (int, bool, None, etc.)
+    return value
+
+def truncate_file_url(url: str, max_length: int = 50) -> str:
+    if url.startswith('data:'):
+        media_type = url.split(';')[0].split(':')[1] if ';' in url else 'image'
+        return f'<base64 {media_type}>'
+    else:
+        return truncate_content(url, max_length)
 
 
 class ImportFinder(ast.NodeVisitor):

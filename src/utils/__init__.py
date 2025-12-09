@@ -5,7 +5,9 @@ from .utils import (_is_package_available,
                     decode_file_base64,
                     make_file_url, 
                     parse_json_blob,
-                    truncate_content)
+                    truncate_content,
+                    truncate_dict,
+                    truncate_file_url)
 from .record_utils import Record, TradingRecords, PortfolioRecords
 from .token_utils import get_token_count
 from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp, calculate_time_info, get_standard_timestamp
@@ -27,6 +29,8 @@ __all__ = [
     "make_file_url",
     "parse_json_blob",
     "truncate_content",
+    "truncate_dict",
+    "truncate_file_url",
     "Record",
     "TradingRecords",
     "PortfolioRecords",
