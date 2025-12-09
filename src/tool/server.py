@@ -124,16 +124,17 @@ class TCPServer:
         """
         return await self.tool_context_manager.to_function_call(tool_name)
     
-    async def get(self, tool_name: str) -> Optional[ToolConfig]:
+    async def get(self, tool_name: str) -> Tool:
         """Get tool configuration by name
         
         Args:
             tool_name: Tool name
             
         Returns:
-            ToolConfig: Tool configuration or None if not found
+            Tool: Tool instance or None if not found
         """
-        return await self.tool_context_manager.get(tool_name)
+        tool = await self.tool_context_manager.get(tool_name)
+        return tool
     
     async def cleanup(self):
         """Cleanup all tools"""

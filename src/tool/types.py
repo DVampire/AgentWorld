@@ -117,19 +117,7 @@ class Tool(BaseModel):
             ToolResponse: The response from the tool call.
         """
         raise NotImplementedError("Tool subclasses must implement __call__")
-
-    async def run(self, input: Dict[str, Any]) -> ToolResponse:
-        """
-        Convenience wrapper that proxies to __call__.
-        
-        Args:
-            input (Dict[str, Any]): The input to the tool.
-            
-        Returns:
-            ToolResponse: The response from the tool call.
-        """
-        return await self(input)
-
+    
     def to_function_call(self) -> Dict[str, Any]:
         """Return the OpenAI-compatible function-calling representation."""
         # Remove x-python-type field from schema as it's only for internal use

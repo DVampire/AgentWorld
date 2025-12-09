@@ -384,16 +384,19 @@ class ToolContextManager:
             raise
     
     
-    async def get(self, tool_name: str) -> Optional[ToolConfig]:
+    async def get(self, tool_name: str) -> Tool:
         """Get tool configuration by name
         
         Args:
             tool_name: Tool name
             
         Returns:
-            ToolConfig: Tool configuration or None if not found
+            Tool: Tool instance or None if not found
         """
-        return self._tool_configs.get(tool_name)
+        tool_config = self._tool_configs.get(tool_name)
+        if tool_config is None:
+            return None
+        return tool_config.instance if tool_config.instance is not None else None
     
     async def list(self, include_disabled: bool = False) -> List[str]:
         """Get list of registered tools

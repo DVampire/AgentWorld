@@ -8,6 +8,8 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
+from pydantic import BaseModel, Field
+from typing import List
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -39,11 +41,11 @@ async def test_chat():
     logger.info(f"| Testing chat with different models")
     models = [
         # OpenAI models
-        # "openrouter/gpt-4o",
-        # "openrouter/gpt-4.1",
-        # "openrouter/gpt-5",
-        # "openrouter/gpt-5.1",
-        # "openrouter/o3",
+        "openrouter/gpt-4o",
+        "openrouter/gpt-4.1",
+        "openrouter/gpt-5",
+        "openrouter/gpt-5.1",
+        "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
         # "openai/gpt-5",
@@ -56,9 +58,9 @@ async def test_chat():
         # "openrouter/claude-opus-4",
         # "openrouter/claude-sonnet-4.5",
         # "openrouter/claude-opus-4.5",
-        "anthropic/claude-sonnet-3.7",
-        "anthropic/claude-sonnet-4",
-        "anthropic/claude-sonnet-4.5",
+        # "anthropic/claude-sonnet-3.7",
+        # "anthropic/claude-sonnet-4",
+        # "anthropic/claude-sonnet-4.5",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
@@ -174,6 +176,98 @@ async def test_pdf():
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
+
+async def test_response_format():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing response format with different models")
+    models = [
+        # OpenAI models
+        "openrouter/gpt-4o",
+        "openrouter/gpt-4.1",
+        "openrouter/gpt-5",
+        "openrouter/gpt-5.1",
+        "openrouter/o3",
+        
+        # Anthropic models
+        # "openrouter/claude-sonnet-3.7",
+        # "openrouter/claude-sonnet-4",
+        # "openrouter/claude-opus-4",
+        # "openrouter/claude-sonnet-4.5",
+        # "openrouter/claude-opus-4.5",
+        
+        # Gemini models
+        # "openrouter/gemini-2.5-flash",
+        # "openrouter/gemini-2.5-pro",
+        # "openrouter/gemini-3-pro-preview",
+    ]
+    
+    class Add(BaseModel):
+        a: int = Field(description="The first number to add")
+        b: int = Field(description="The second number to add")
+        result: int = Field(description="The result of the addition")
+
+    class AddList(BaseModel):
+        adds: List[Add] = Field(description="The list of additions to perform")
+        reasoning: str = Field(description="The reasoning process of the addition")
+    
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            ContentPartText(text="Please add the numbers 1 and 2, 3 and 4, 5 and 6, 7 and 8, 9 and 10."),
+        ]),
+    ]
+    
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager(model=model, messages=messages, response_format=AddList)
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+    logger.info(f"| --------------------------------------------------")
+
+async def test_tool_calling():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing tool calling with different models")
+    models = [
+        # OpenAI models
+        "openrouter/gpt-4o",
+        "openrouter/gpt-4.1",
+        "openrouter/gpt-5",
+        "openrouter/gpt-5.1",
+        "openrouter/o3",
+        
+        # Anthropic models
+        # "openrouter/claude-sonnet-3.7",
+        # "openrouter/claude-sonnet-4",
+        # "openrouter/claude-opus-4",
+        # "openrouter/claude-sonnet-4.5",
+        # "openrouter/claude-opus-4.5",
+        
+        # Gemini models
+        # "openrouter/gemini-2.5-flash",
+        # "openrouter/gemini-2.5-pro",
+        # "openrouter/gemini-3-pro-preview",
+    ]
+    
+    tools = [
+        await tcp.get('bash'),
+    ]
+    
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            ContentPartText(text="Please run the command 'ls -l' and return the output."),
+        ]),
+    ]
+    
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager(
+            model=model, 
+            messages=messages,
+            tools=tools,
+        )
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+    logger.info(f"| --------------------------------------------------")
+
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
@@ -205,8 +299,10 @@ async def main():
     # Initialize tools
     await tcp.initialize()
     logger.info(f"| Tools initialized: {await tcp.list()}")
-    
+
     await test_chat()
+    # await test_response_format()
+    # await test_tool_calling()
     # await test_transcription()
     # await test_embedding()
     # await test_video()

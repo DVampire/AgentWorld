@@ -8,6 +8,9 @@ import base64
 from typing import BinaryIO, Any
 import camelot
 import tempfile
+import asyncio  
+import threading
+import concurrent.futures
 from markitdown.converters import PdfConverter
 from markitdown.converters import AudioConverter
 from markitdown.converters._pdf_converter import _dependency_exc_info
@@ -20,7 +23,7 @@ import pdfminer.high_level
 
 
 from src.model import model_manager
-from src.message import HumanMessage, SystemMessage
+from src.message import HumanMessage, SystemMessage, ContentPartText, ContentPartAudio, AudioURL
 from src.logger import logger
 
 
@@ -32,25 +35,47 @@ def read_tables_from_stream(file_stream):
         return tables
 
 def transcribe_audio(file_stream, audio_format):
+    """Transcribe audio file using model_manager (synchronous wrapper for async call)."""
     audio_base64 = base64.b64encode(file_stream).decode("utf-8")
+    audio_url = "data:audio/" + audio_format + ";base64," + audio_base64
     messages = [
         SystemMessage(content="You are a helpful assistant that transcribes audio files."),
         HumanMessage(content=[
-            {
-                "type": "text",
-                "text": "Please transcribe the audio file and provide the transcription. Only return the transcription, no other text or formatting."
-            },
-            {
-                "type": "input_audio",
-                "input_audio": {
-                    "data": audio_base64,
-                    "format": audio_format # "mp3", "wav", "m4a", "ogg", "flac"
-                }
-            }
+            ContentPartText(text="Please transcribe the audio file and provide the transcription. Only return the transcription, no other text or formatting."),
+            ContentPartAudio(audio_url=AudioURL(url=audio_url)),
         ]),
     ]
-    response = model_manager.completion(model="gpt-4o-transcribe", messages=messages)
-    return response.message.strip()
+    
+    async def _transcribe_async():
+        """Internal async function to call model_manager."""
+        response = await model_manager(model="gpt-4o-transcribe", messages=messages)
+        return response.message.strip()
+    
+    # Run async function in sync context
+    try:
+        # Try to get the current event loop
+        loop = asyncio.get_running_loop()
+        # If we get here, there's a running loop - use create_task and wait
+        result = None
+        exception = None
+        
+        def run_in_thread():
+            nonlocal result, exception
+            try:
+                result = asyncio.run(_transcribe_async())
+            except Exception as e:
+                exception = e
+        
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+        thread.join()
+        
+        if exception:
+            raise exception
+        return result
+    except RuntimeError:
+        # No running event loop, can use asyncio.run directly
+        return asyncio.run(_transcribe_async())
 
 class AudioWhisperConverter(AudioConverter):
 

@@ -1,4 +1,4 @@
-from typing import overload, Any, Union, List
+from typing import overload, Any, Union, List, Dict, Type
 import base64
 import os
 
@@ -28,6 +28,9 @@ except ImportError:
     OpenAIImageURL = dict
     OpenAIFunction = dict
 
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel
+
 from src.message.types import (
     AssistantMessage,
     ContentPartAudio,
@@ -41,6 +44,7 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
+from src.tool.types import Tool
 from src.utils import assemble_project_path, encode_file_base64
 
 
@@ -305,18 +309,18 @@ class OpenRouterChatSerializer:
 
     @overload
     @staticmethod
-    def serialize(message: HumanMessage) -> ChatCompletionUserMessageParam: ...
+    def serialize_message(message: HumanMessage) -> ChatCompletionUserMessageParam: ...
 
     @overload
     @staticmethod
-    def serialize(message: SystemMessage) -> ChatCompletionSystemMessageParam: ...
+    def serialize_message(message: SystemMessage) -> ChatCompletionSystemMessageParam: ...
 
     @overload
     @staticmethod
-    def serialize(message: AssistantMessage) -> ChatCompletionAssistantMessageParam: ...
+    def serialize_message(message: AssistantMessage) -> ChatCompletionAssistantMessageParam: ...
 
     @staticmethod
-    def serialize(message: Message) -> ChatCompletionMessageParam:
+    def serialize_message(message: Message) -> ChatCompletionMessageParam:
         """Serialize a custom message to an OpenRouter message param."""
         if isinstance(message, HumanMessage):
             user_result: ChatCompletionUserMessageParam = {
@@ -358,5 +362,168 @@ class OpenRouterChatSerializer:
 
     @staticmethod
     def serialize_messages(messages: list[Message]) -> list[ChatCompletionMessageParam]:
-        return [OpenRouterChatSerializer.serialize(m) for m in messages]
+        return [OpenRouterChatSerializer.serialize_message(m) for m in messages]
 
+    @staticmethod
+    def serialize_tool(tool: Tool) -> Dict[str, Any]:
+        """Serialize a Tool instance to an OpenRouter tool param."""
+        return tool.to_function_call()
+    
+    @staticmethod
+    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
+        """Serialize a list of Tool instances to an OpenRouter tools param."""
+        return [OpenRouterChatSerializer.serialize_tool(tool) for tool in tools]
+    
+    @staticmethod
+    def serialize_response_format(
+        response_format: Union[Type[BaseModel], BaseModel]
+    ) -> Dict[str, Any]:
+        """
+        Format response_format from Pydantic model to OpenRouter-compatible JSON schema format.
+        
+        This function:
+        1. Resolves $ref references
+        2. Adds additionalProperties: false to all object types (OpenRouter requirement)
+        3. Ensures all properties are in required array (OpenRouter strict mode requirement)
+        
+        Args:
+            response_format: BaseModel class or instance
+            
+        Returns:
+            Dictionary containing response format configuration with:
+            - type: "json_schema"
+            - json_schema: Contains name, strict mode, and optimized schema
+        """
+        # Get the BaseModel class if it's an instance
+        if isinstance(response_format, BaseModel) and not isinstance(response_format, type):
+            model_class = type(response_format)
+        else:
+            model_class = response_format
+        
+        # Get JSON schema from Pydantic model
+        schema = model_class.model_json_schema()
+        
+        # Build a lookup for $defs to resolve references
+        defs_lookup = schema.get("$defs", {})
+        
+        def optimize_schema(obj: Any, defs: Dict[str, Any] = None) -> Any:
+            """
+            Recursively process schema to:
+            1. Resolve $ref references
+            2. Add additionalProperties: false to all object types (OpenRouter requirement)
+            3. Preserve types, descriptions, and default values
+            """
+            if defs is None:
+                defs = defs_lookup
+            
+            if isinstance(obj, dict):
+                optimized = {}
+                
+                # Handle $ref references
+                if "$ref" in obj:
+                    ref_path = obj["$ref"]
+                    if ref_path.startswith("#/$defs/"):
+                        def_name = ref_path.split("/")[-1]
+                        if def_name in defs:
+                            # Resolve the reference and recursively optimize
+                            return optimize_schema(defs[def_name], defs)
+                
+                # Process all keys
+                for key, value in obj.items():
+                    # Skip $ref as we handle it above
+                    if key == "$ref":
+                        continue
+                    
+                    # Recursively process nested structures
+                    if key in ["properties", "items"]:
+                        optimized[key] = optimize_schema(value, defs)
+                    elif key == "anyOf" or key == "oneOf" or key == "allOf":
+                        # Handle union types
+                        optimized[key] = [optimize_schema(item, defs) for item in value] if isinstance(value, list) else value
+                    elif isinstance(value, (dict, list)):
+                        optimized[key] = optimize_schema(value, defs)
+                    else:
+                        optimized[key] = value
+                
+                # CRITICAL: Add additionalProperties: false to ALL objects for OpenRouter
+                if optimized.get("type") == "object":
+                    optimized["additionalProperties"] = False
+                # Also handle root level if it has properties but no explicit type
+                elif "properties" in optimized and "type" not in optimized:
+                    optimized["type"] = "object"
+                    optimized["additionalProperties"] = False
+                
+                return optimized
+            elif isinstance(obj, list):
+                return [optimize_schema(item, defs) for item in obj]
+            else:
+                return obj
+        
+        # Optimize the entire schema
+        optimized_schema = optimize_schema(schema)
+        
+        # Ensure root schema has additionalProperties: false if it's an object
+        if optimized_schema.get("type") == "object" and "additionalProperties" not in optimized_schema:
+            optimized_schema["additionalProperties"] = False
+        # Also handle root level if it has properties but no explicit type
+        elif "properties" in optimized_schema and "type" not in optimized_schema:
+            optimized_schema["type"] = "object"
+            optimized_schema["additionalProperties"] = False
+        
+        # Fix required array: OpenRouter requires that if 'required' exists,
+        # it must include ALL properties. This means all fields in properties must be in required.
+        def fix_required_array(obj: Any, defs: Dict[str, Any] = None) -> Any:
+            """Fix required arrays to include all properties for OpenRouter."""
+            if defs is None:
+                defs = defs_lookup
+            
+            if isinstance(obj, dict):
+                fixed = {}
+                
+                # Handle $ref references
+                if "$ref" in obj:
+                    ref_path = obj["$ref"]
+                    if ref_path.startswith("#/$defs/"):
+                        def_name = ref_path.split("/")[-1]
+                        if def_name in defs:
+                            return fix_required_array(defs[def_name], defs)
+                
+                # Process all keys
+                for key, value in obj.items():
+                    if key == "$ref":
+                        continue
+                    elif isinstance(value, (dict, list)):
+                        fixed[key] = fix_required_array(value, defs)
+                    else:
+                        fixed[key] = value
+                
+                # Fix required array for object types
+                if fixed.get("type") == "object" and "properties" in fixed:
+                    properties = fixed.get("properties", {})
+                    
+                    # OpenRouter requires ALL properties to be in required array
+                    all_property_keys = list(properties.keys())
+                    if all_property_keys:
+                        fixed["required"] = all_property_keys
+                    elif "required" in fixed:
+                        # If no properties, keep empty required array
+                        fixed["required"] = []
+                
+                return fixed
+            elif isinstance(obj, list):
+                return [fix_required_array(item, defs) for item in obj]
+            else:
+                return obj
+        
+        # Fix required arrays in the optimized schema
+        optimized_schema = fix_required_array(optimized_schema)
+        
+        # Build the response format dictionary
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "response",
+                "strict": True,
+                "schema": optimized_schema,
+            },
+        }

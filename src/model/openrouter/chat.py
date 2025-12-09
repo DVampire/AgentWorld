@@ -27,10 +27,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.model.types import LLMResponse
-from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage, ContentPartPdf
+from src.message.types import Message, HumanMessage, ContentPartPdf
 from src.model.openrouter.serializer import OpenRouterChatSerializer
-from src.model.openrouter.rest import OpenRouterREST
-
+from src.model.openrouter.rest import OpenRouterClient
+from src.tool.types import Tool
 
 class ChatOpenRouter(BaseModel):
     """
@@ -110,16 +110,23 @@ class ChatOpenRouter(BaseModel):
 
         return client_params
 
-    def get_client(self) -> AsyncOpenAI:
-        """
-        Returns an AsyncOpenAI client configured for OpenRouter.
-
-        Returns:
-            AsyncOpenAI: An instance of the AsyncOpenAI client.
-        """
+    def get_openrouter_client(self) -> OpenRouterClient:
+        """Get OpenRouterClient for plugins support."""
+        return OpenRouterClient(
+            api_key=self.api_key,
+            base_url=str(self.base_url) if self.base_url else None,
+            http_referer=self.http_referer,
+            x_title=self.x_title,
+            default_headers=self.default_headers,
+            timeout=self.timeout,
+            http_client=self.http_client,
+        )
+    
+    def get_openai_client(self) -> AsyncOpenAI:
+        """Get AsyncOpenAI client for normal requests."""
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
-
+        
         client_params = self._get_client_params()
         return AsyncOpenAI(**client_params)
 
@@ -194,367 +201,156 @@ class ChatOpenRouter(BaseModel):
                             return True
         return False
 
-    async def _make_http_request(
-        self,
-        model: str,
-        messages: List[Dict[str, Any]],
-        plugins: List[Dict[str, Any]],
-        **kwargs: Any,
-    ) -> Dict[str, Any]:
-        """Make direct HTTP request to OpenRouter API for plugins support."""
-        
-        # Prepare parameters for API request
-        api_params: Dict[str, Any] = {}
-        
-        # Add model parameters
-        if self.temperature is not None:
-            api_params["temperature"] = self.temperature
-        if self.frequency_penalty is not None:
-            api_params["frequency_penalty"] = self.frequency_penalty
-        if self.max_completion_tokens is not None:
-            api_params["max_completion_tokens"] = self.max_completion_tokens
-        if self.top_p is not None:
-            api_params["top_p"] = self.top_p
-        if self.seed is not None:
-            api_params["seed"] = self.seed
-        
-        # Handle reasoning models (if any)
-        if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
-            api_params["reasoning_effort"] = self.reasoning_effort
-            # Remove temperature and frequency_penalty for reasoning models
-            api_params.pop("temperature", None)
-            api_params.pop("frequency_penalty", None)
-        
-        # Add tools, response_format, stream from kwargs
-        if kwargs.get("tools"):
-            api_params["tools"] = kwargs["tools"]
-        if kwargs.get("response_format"):
-            api_params["response_format"] = kwargs["response_format"]
-        if kwargs.get("stream"):
-            api_params["stream"] = kwargs["stream"]
-        
-        # Merge remaining kwargs
-        for key, value in kwargs.items():
-            if key not in ["tools", "response_format", "stream"] and value is not None:
-                api_params[key] = value
-        
-        # Make the API request
-        return await OpenRouterREST.request(
-            model=model,
-            messages=messages,
-            api_key=self.api_key,
-            base_url=str(self.base_url) if self.base_url else None,
-            plugins=plugins,
-            http_referer=self.http_referer,
-            x_title=self.x_title,
-            default_headers=self.default_headers,
-            timeout=self.timeout if isinstance(self.timeout, (int, float)) else 300.0,
-            **api_params,
-        )
-
-    async def __call__(
+    async def _build_params(
         self,
         messages: List[Message],
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
+        tools: Optional[List[Tool]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         plugins: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any,
-    ) -> LLMResponse:
+    ) -> Dict[str, Any]:
         """
-        Execute asynchronous completion call via OpenRouter API.
-
+        Build parameters for API call.
+        
+        Step 1: Convert messages, tools, and response_format into API-ready parameters.
+        
         Args:
-            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of tools for function calling
+            messages: List of Message objects
+            tools: Optional list of Tool instances
             response_format: Optional response format (Pydantic model or dict)
             stream: Whether to stream the response
-            plugins: Optional list of plugins (e.g., for PDF parsing)
+            plugins: Optional list of plugins
             **kwargs: Additional parameters
-
-        Returns:
-            LLMResponse with formatted message
-        """
-        if AsyncOpenAI is None:
-            raise ImportError("openai package is required. Install it with: pip install openai")
-
-        # Serialize messages to OpenRouter format (same as OpenAI)
-        openrouter_messages = OpenRouterChatSerializer.serialize_messages(messages)
-
-        try:
-            client = self.get_client()
-
-            # Build model parameters
-            model_params: Dict[str, Any] = {}
-
-            if self.temperature is not None:
-                model_params['temperature'] = self.temperature
-            if self.frequency_penalty is not None:
-                model_params['frequency_penalty'] = self.frequency_penalty
-            if self.max_completion_tokens is not None:
-                model_params['max_completion_tokens'] = self.max_completion_tokens
-            if self.top_p is not None:
-                model_params['top_p'] = self.top_p
-            if self.seed is not None:
-                model_params['seed'] = self.seed
-
-            # Handle reasoning models (if any)
-            if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
-                model_params['reasoning_effort'] = self.reasoning_effort
-                # Remove temperature and frequency_penalty for reasoning models
-                model_params.pop('temperature', None)
-                model_params.pop('frequency_penalty', None)
-
-            # Add tools if provided
-            if tools:
-                model_params['tools'] = tools
-
-            # Handle response_format
-            if response_format:
-                if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                    # Pydantic model - convert to JSON schema format
-                    json_schema = response_format.model_json_schema()
-                    model_params['response_format'] = {
-                        'type': 'json_schema',
-                        'json_schema': {
-                            'name': 'response',
-                            'strict': True,
-                            'schema': json_schema,
-                        }
-                    }
-                elif isinstance(response_format, dict):
-                    # Dict format - use directly
-                    model_params['response_format'] = response_format
-                else:
-                    logger.warning(f"Unsupported response_format type: {type(response_format)}")
-
-            # Handle streaming
-            if stream:
-                model_params['stream'] = True
-
-            # Handle plugins (for PDF parsing, etc.)
-            # Auto-detect PDF content and add plugins if not provided
-            has_pdf = self._has_pdf_content(messages)
-            plugins_to_use = None
-            if plugins is not None:
-                plugins_to_use = plugins
-            elif self.plugins is not None:
-                plugins_to_use = self.plugins
-            elif has_pdf:
-                # Auto-add PDF parser plugin if PDF content is detected
-                plugins_to_use = [
-                    {
-                        "id": "file-parser",
-                        "pdf": {
-                            "engine": self.pdf_engine or "mistral-ocr"
-                        }
-                    }
-                ]
-
-            # Merge additional kwargs
-            model_params.update(kwargs)
-
-            # If plugins are needed, use direct HTTP request instead of OpenAI SDK
-            if plugins_to_use:
-                # Use direct HTTP request for plugins support
-                response = await self._make_http_request(
-                    model=self.model,
-                    messages=openrouter_messages,
-                    plugins=plugins_to_use,
-                    **model_params,
-                )
-                
-                return self._format_http_response(response, tools=tools, response_format=response_format)
-            else:
-                # Use OpenAI SDK for normal requests
-                response = await client.chat.completions.create(
-                    model=self.model,
-                    messages=openrouter_messages,
-                    **model_params,
-                )
-                return self._format_response(response, tools=tools, response_format=response_format)
-
-        except RateLimitError as e:
-            logger.error(f"Rate limit error: {e}")
-            return LLMResponse(
-                success=False,
-                message=f"Rate limit error: {e.message}",
-                extra={"error": str(e), "model": self.name}
-            )
-        except APIConnectionError as e:
-            logger.error(f"API connection error: {e}")
-            return LLMResponse(
-                success=False,
-                message=f"API connection error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
-            )
-        except APIStatusError as e:
-            logger.error(f"API status error: {e}")
-            return LLMResponse(
-                success=False,
-                message=f"API status error: {e.message}",
-                extra={"error": str(e), "status_code": e.status_code, "model": self.name}
-            )
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return LLMResponse(
-                success=False,
-                message=f"Unexpected error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
-            )
-
-    def _format_http_response(
-        self,
-        response: Dict[str, Any],
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
-    ) -> LLMResponse:
-        """Format HTTP response (dict) into LLMResponse."""
-        try:
-            choices = response.get("choices", [])
-            if not choices:
-                return LLMResponse(
-                    success=False,
-                    message="No choices in response",
-                    extra={"raw_response": response}
-                )
-
-            choice = choices[0]
-            message = choice.get("message", {})
-            content = message.get("content", "")
-            finish_reason = choice.get("finish_reason")
             
-            # Extract usage
-            usage_data = response.get("usage", {})
-            usage = None
-            if usage_data:
-                usage = {
-                    'prompt_tokens': usage_data.get('prompt_tokens', 0),
-                    'completion_tokens': usage_data.get('completion_tokens', 0),
-                    'total_tokens': usage_data.get('total_tokens', 0),
-                }
-
-            # Handle function calling
-            if tools and message.get("tool_calls"):
-                tool_calls = message.get("tool_calls", [])
-                formatted_lines = []
-                functions = []
-
-                for tool_call in tool_calls:
-                    function_info = tool_call.get("function", {})
-                    name = function_info.get("name", "")
-                    arguments_str = function_info.get("arguments", "{}")
-
-                    # Parse arguments if it's a string
-                    try:
-                        arguments = json.loads(arguments_str) if isinstance(arguments_str, str) else arguments_str
-                    except json.JSONDecodeError:
-                        arguments = {}
-
-                    # Format arguments as keyword arguments
-                    if arguments:
-                        args_str = ", ".join([f"{k}={v!r}" for k, v in arguments.items()])
-                        formatted_lines.append(f"Calling function {name}({args_str})")
-                    else:
-                        formatted_lines.append(f"Calling function {name}()")
-
-                    functions.append({
-                        "name": name,
-                        "args": arguments
-                    })
-
-                formatted_message = "\n".join(formatted_lines)
-
-                extra = {
-                    "raw_response": response,
-                    "functions": functions,
-                    "usage": usage,
-                    "finish_reason": finish_reason,
-                }
-
-                return LLMResponse(
-                    success=True,
-                    message=formatted_message,
-                    extra=extra
-                )
-
-            # Handle structured output
-            elif response_format and isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                if not content:
-                    return LLMResponse(
-                        success=False,
-                        message="Empty response content from model",
-                        extra={"raw_response": response}
-                    )
-
-                # Parse JSON content
-                try:
-                    data = json.loads(content)
-                    parsed_model = response_format.model_validate(data)
-
-                    # Format as string
-                    model_name = response_format.__name__
-                    model_dict = parsed_model.model_dump()
-
-                    field_lines = []
-                    for field_name, field_value in model_dict.items():
-                        field_lines.append(f"{field_name}={field_value!r}")
-
-                    formatted_message = f"Response result:\n\n{model_name}(\n"
-                    formatted_message += ",\n".join(f"    {line}" for line in field_lines)
-                    formatted_message += "\n)"
-
-                    extra = {
-                        "raw_response": response,
-                        "parsed_model": parsed_model,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }
-
-                    return LLMResponse(
-                        success=True,
-                        message=formatted_message,
-                        extra=extra
-                    )
-                except json.JSONDecodeError as e:
-                    return LLMResponse(
-                        success=False,
-                        message=f"Failed to parse JSON from response: {e}",
-                        extra={"error": str(e), "content": content}
-                    )
-                except Exception as e:
-                    return LLMResponse(
-                        success=False,
-                        message=f"Failed to validate response against schema: {e}",
-                        extra={"error": str(e), "content": content}
-                    )
-
-            # Default: return content as string
+        Returns:
+            Dictionary containing:
+            - messages: Serialized messages
+            - plugins: Plugins to use (if any)
+            - params: All other API parameters (tools, response_format, stream, etc.)
+        """
+        # Serialize messages to OpenRouter format
+        openrouter_messages = OpenRouterChatSerializer.serialize_messages(messages)
+        
+        # Build API parameters
+        params: Dict[str, Any] = {}
+        
+        # Add model parameters
+        if self.temperature is not None:
+            params['temperature'] = self.temperature
+        if self.frequency_penalty is not None:
+            params['frequency_penalty'] = self.frequency_penalty
+        if self.max_completion_tokens is not None:
+            params['max_completion_tokens'] = self.max_completion_tokens
+        if self.top_p is not None:
+            params['top_p'] = self.top_p
+        if self.seed is not None:
+            params['seed'] = self.seed
+        
+        # Handle reasoning models (if any)
+        if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
+            params['reasoning_effort'] = self.reasoning_effort
+            # Remove temperature and frequency_penalty for reasoning models
+            params.pop('temperature', None)
+            params.pop('frequency_penalty', None)
+        
+        # Format tools using serializer
+        if tools:
+            formatted_tools = OpenRouterChatSerializer.serialize_tools(tools)
+            if formatted_tools:
+                params['tools'] = formatted_tools
+        
+        # Handle response_format
+        if response_format:
+            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+                # Pydantic model class - convert to JSON schema format using serializer
+                params['response_format'] = OpenRouterChatSerializer.serialize_response_format(response_format)
+            elif isinstance(response_format, BaseModel):
+                # BaseModel instance - convert to JSON schema format using serializer
+                params['response_format'] = OpenRouterChatSerializer.serialize_response_format(response_format)
+            elif isinstance(response_format, dict):
+                # Dict format - use directly
+                params['response_format'] = response_format
             else:
-                extra = {
-                    "raw_response": response,
-                    "usage": usage,
-                    "finish_reason": finish_reason,
+                logger.warning(f"Unsupported response_format type: {type(response_format)}")
+        
+        # Handle streaming
+        if stream:
+            params['stream'] = True
+        
+        # Handle plugins (for PDF parsing, etc.)
+        # Auto-detect PDF content and add plugins if not provided
+        has_pdf = self._has_pdf_content(messages)
+        plugins_to_use = None
+        if plugins is not None:
+            plugins_to_use = plugins
+        elif self.plugins is not None:
+            plugins_to_use = self.plugins
+        elif has_pdf:
+            # Auto-add PDF parser plugin if PDF content is detected
+            plugins_to_use = [
+                {
+                    "id": "file-parser",
+                    "pdf": {
+                        "engine": self.pdf_engine or "mistral-ocr"
+                    }
                 }
+            ]
+        
+        # Merge additional kwargs
+        params.update(kwargs)
+        
+        return {
+            "messages": openrouter_messages,
+            "plugins": plugins_to_use,
+            "params": params,
+        }
 
-                return LLMResponse(
-                    success=True,
-                    message=content,
-                    extra=extra
-                )
-
-        except Exception as e:
-            logger.error(f"Failed to format HTTP response: {e}")
-            return LLMResponse(
-                success=False,
-                message=f"Failed to format HTTP response: {e}",
-                extra={"error": str(e)}
+    async def _call_model(
+        self,
+        messages: List[Dict[str, Any]],
+        plugins: Optional[List[Dict[str, Any]]],
+        **params: Any,
+    ) -> ChatCompletion:
+        """
+        Call the model API (Step 2).
+        
+        Unified interface for calling the client.
+        Returns ChatCompletion object regardless of which client is used.
+        
+        Args:
+            messages: Serialized messages
+            plugins: Optional plugins list
+            **params: API parameters
+            
+        Returns:
+            ChatCompletion object (compatible format from both clients)
+        """
+        # If plugins are needed, use OpenRouterClient
+        # Otherwise, use AsyncOpenAI client
+        # Both use the same format: client.chat.completions.create()
+        if plugins:
+            client = self.get_openrouter_client()
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                plugins=plugins,
+                **params,
             )
-
-    def _format_response(
+        else:
+            client = self.get_openai_client()
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                **params,
+            )
+        
+        return response
+    
+    async def _format_response(
         self,
         response: ChatCompletion,
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
+        tools: Optional[List[Tool]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format OpenRouter response into LLMResponse."""
@@ -598,7 +394,7 @@ class ChatOpenRouter(BaseModel):
 
                     functions.append({
                         "name": name,
-                        "args": arguments
+                        "arguments": arguments
                     })
 
                 formatted_message = "\n".join(formatted_lines)
@@ -694,5 +490,82 @@ class ChatOpenRouter(BaseModel):
                 success=False,
                 message=f"Failed to format response: {e}",
                 extra={"error": str(e)}
+            )
+
+    async def __call__(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[BaseModel, Dict]] = None,
+        stream: bool = False,
+        plugins: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """
+        Execute asynchronous completion call via OpenRouter API.
+
+        Args:
+            messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
+            tools: Optional list of Tool instances
+            response_format: Optional response format (Pydantic model or dict)
+            stream: Whether to stream the response
+            plugins: Optional list of plugins (e.g., for PDF parsing)
+            **kwargs: Additional parameters
+
+        Returns:
+            LLMResponse with formatted message
+        """
+        try:
+            # Step 1: Build parameters
+            params = await self._build_params(
+                messages=messages,
+                tools=tools,
+                response_format=response_format,
+                stream=stream,
+                plugins=plugins,
+                **kwargs,
+            )
+            
+            # Step 2: Call model API
+            response = await self._call_model(
+                messages=params["messages"],
+                plugins=params["plugins"],
+                **params["params"],
+            )
+            
+            # Step 3: Format response (now unified since both clients return ChatCompletion)
+            return await self._format_response(
+                response=response,
+                tools=tools,
+                response_format=response_format,
+            )
+
+        except RateLimitError as e:
+            logger.error(f"Rate limit error: {e}")
+            return LLMResponse(
+                success=False,
+                message=f"Rate limit error: {e.message}",
+                extra={"error": str(e), "model": self.name}
+            )
+        except APIConnectionError as e:
+            logger.error(f"API connection error: {e}")
+            return LLMResponse(
+                success=False,
+                message=f"API connection error: {str(e)}",
+                extra={"error": str(e), "model": self.name}
+            )
+        except APIStatusError as e:
+            logger.error(f"API status error: {e}")
+            return LLMResponse(
+                success=False,
+                message=f"API status error: {e.message}",
+                extra={"error": str(e), "status_code": e.status_code, "model": self.name}
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            return LLMResponse(
+                success=False,
+                message=f"Unexpected error: {str(e)}",
+                extra={"error": str(e), "model": self.name}
             )
 

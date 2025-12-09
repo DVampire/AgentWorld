@@ -26,6 +26,8 @@ except ImportError:
     OpenAIImageURL = dict
     OpenAIFunction = dict
 
+from typing import Optional, List, Dict, Any, Union
+
 from src.message.types import (
     AssistantMessage,
     ContentPartImage,
@@ -36,6 +38,7 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
+from src.tool.types import Tool
 
 
 class OpenAIChatSerializer:
@@ -167,6 +170,38 @@ class OpenAIChatSerializer:
     @staticmethod
     def serialize_messages(messages: list[Message]) -> list[ChatCompletionMessageParam]:
         return [OpenAIChatSerializer.serialize(m) for m in messages]
+
+    @staticmethod
+    def serialize_tools(tools: Optional[Union[List[Tool], List[Dict], List[Any]]]) -> Optional[List[Dict[str, Any]]]:
+        """
+        Serialize tools for OpenAI API calls. Convert Tool instances to function call format.
+        
+        Args:
+            tools: Optional list of Tool instances or dicts (function call format)
+            
+        Returns:
+            List of function call format dicts, or None if tools is None/empty
+        """
+        if not tools:
+            return None
+        
+        formatted_tools = []
+        for tool in tools:
+            if isinstance(tool, Tool):
+                # Convert Tool instance to function call format
+                formatted_tools.append(tool.to_function_call())
+            elif isinstance(tool, dict):
+                # Already in function call format, use directly
+                formatted_tools.append(tool)
+            else:
+                # Try to call to_function_call if it exists (duck typing)
+                if hasattr(tool, 'to_function_call') and callable(getattr(tool, 'to_function_call')):
+                    formatted_tools.append(tool.to_function_call())
+                else:
+                    # Skip unknown tool types
+                    continue
+        
+        return formatted_tools if formatted_tools else None
 
 
 class OpenAIResponseSerializer:

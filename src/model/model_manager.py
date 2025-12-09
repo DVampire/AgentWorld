@@ -4,7 +4,7 @@ Provides a unified interface for registering and invoking OpenAI models.
 """
 
 import os
-from typing import Optional, Dict, List, Any, Union, Type
+from typing import Optional, Dict, List, Any, Union
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
@@ -19,12 +19,13 @@ from src.model.openrouter.chat import ChatOpenRouter
 from src.model.anthropic.chat import ChatAnthropic
 from src.message.types import Message
 from src.logger import logger
+from src.tool.types import Tool
 
 
 class ModelManager:
     """
     Central registry and invoker for OpenAI models.
-    
+
     Responsibilities:
     1. Register and store model configurations.
     2. Provide a unified invocation interface using ChatOpenAI or ResponseOpenAI.
@@ -502,7 +503,7 @@ class ModelManager:
         self,
         model: str,
         messages: List[Message],
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
+        tools: Optional[List[Tool]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
@@ -513,7 +514,7 @@ class ModelManager:
         Args:
             model: Model name
             messages: List of Message objects (for transcription models, should contain ContentPartAudio)
-            tools: Optional list of tools for function calling
+            tools: Optional list of Tool instances
             response_format: Optional response format (Pydantic model or dict)
             stream: Whether to stream the response
             **kwargs: Additional parameters
@@ -534,6 +535,7 @@ class ModelManager:
             
             # Check model type and call appropriate method
             model_config = self.models.get(current_model)
+            
             if model_config and model_config.model_type == "transcriptions":
                 # Transcription models use messages parameter (extracts audio from messages)
                 if messages is None:
@@ -635,6 +637,6 @@ class ModelManager:
         return list(self.models.keys())
 
 
-# Global singleton instance
+    # Global singleton instance
 model_manager = ModelManager()
 

@@ -2,6 +2,8 @@ from typing import overload, Any, List, Union, Optional
 import base64
 import os
 
+from typing import Optional, List, Dict, Any, Union
+
 from src.message.types import (
     AssistantMessage,
     ContentPartImage,
@@ -12,6 +14,7 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
+from src.tool.types import Tool
 from src.utils import assemble_project_path, decode_file_base64
 
 
@@ -296,4 +299,84 @@ class AnthropicChatSerializer:
                 anthropic_messages.append(AnthropicChatSerializer.serialize(message))
         
         return system_message, anthropic_messages
+
+    @staticmethod
+    def serialize_tools(tools: Optional[Union[List[Tool], List[Dict], List[Any]]]) -> Optional[List[Dict[str, Any]]]:
+        """
+        Serialize tools for Anthropic API calls. Convert Tool instances to Anthropic tools format.
+        
+        Anthropic tools format:
+        [
+            {
+                "name": "...",
+                "description": "...",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {...},
+                    "required": [...]
+                }
+            }
+        ]
+        
+        Args:
+            tools: Optional list of Tool instances or dicts (function call format)
+            
+        Returns:
+            List of Anthropic tools format dicts, or None if tools is None/empty
+        """
+        if not tools:
+            return None
+        
+        formatted_tools = []
+        for tool in tools:
+            if isinstance(tool, Tool):
+                # Convert Tool instance to Anthropic format
+                function_call = tool.to_function_call()
+                function_def = function_call.get("function", {})
+                
+                # Anthropic uses "input_schema" instead of "parameters"
+                anthropic_tool = {
+                    "name": function_def.get("name", tool.name),
+                    "description": function_def.get("description", tool.description),
+                    "input_schema": function_def.get("parameters", {}),
+                }
+                formatted_tools.append(anthropic_tool)
+            elif isinstance(tool, dict):
+                # Check if it's OpenAI format or Anthropic format
+                if tool.get("type") == "function" and "function" in tool:
+                    # OpenAI format - convert to Anthropic format
+                    function_def = tool["function"]
+                    anthropic_tool = {
+                        "name": function_def.get("name", ""),
+                        "description": function_def.get("description", ""),
+                        "input_schema": function_def.get("parameters", {}),
+                    }
+                    formatted_tools.append(anthropic_tool)
+                elif "name" in tool and "input_schema" in tool:
+                    # Already in Anthropic format, use directly
+                    formatted_tools.append(tool)
+                else:
+                    # Try to convert from function call format
+                    if "name" in tool:
+                        formatted_tools.append({
+                            "name": tool.get("name", ""),
+                            "description": tool.get("description", ""),
+                            "input_schema": tool.get("parameters", tool.get("input_schema", {})),
+                        })
+            else:
+                # Try to call to_function_call if it exists (duck typing)
+                if hasattr(tool, 'to_function_call') and callable(getattr(tool, 'to_function_call')):
+                    function_call = tool.to_function_call()
+                    function_def = function_call.get("function", {})
+                    anthropic_tool = {
+                        "name": function_def.get("name", ""),
+                        "description": function_def.get("description", ""),
+                        "input_schema": function_def.get("parameters", {}),
+                    }
+                    formatted_tools.append(anthropic_tool)
+                else:
+                    # Skip unknown tool types
+                    continue
+        
+        return formatted_tools if formatted_tools else None
 
