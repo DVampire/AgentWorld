@@ -25,6 +25,8 @@ from src.message import (
     AudioURL,
     ContentPartVideo,
     VideoURL,
+    ContentPartPdf,
+    PdfURL,
 )
 
 from src.tool import tcp
@@ -44,19 +46,19 @@ async def test_chat():
         # "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
-        "openai/gpt-5",
-        "openai/gpt-5.1",
-        "openai/o3",
+        # "openai/gpt-5",
+        # "openai/gpt-5.1",
+        # "openai/o3",
         
         # Anthropic models
-        # "openrouter/claude-sonnet-3.5",
         # "openrouter/claude-sonnet-3.7",
         # "openrouter/claude-sonnet-4",
         # "openrouter/claude-opus-4",
         # "openrouter/claude-sonnet-4.5",
         # "openrouter/claude-opus-4.5",
-        # "anthropic/claude-sonnet-4.5",
-        # "anthropic/claude-opus-4.5",
+        "anthropic/claude-sonnet-3.7",
+        "anthropic/claude-sonnet-4",
+        "anthropic/claude-sonnet-4.5",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
@@ -88,6 +90,7 @@ async def test_transcription():
     logger.info(f"| Testing transcription with different models")
     models = [
         "openai/gpt-4o-transcribe",
+        "openrouter/gemini-2.5-flash",
     ]
     
     messages = [
@@ -119,6 +122,49 @@ async def test_embedding():
         HumanMessage(content=[
             ContentPartText(text="Please embed the text and provide the embedding."),
             ContentPartText(text="The text is: The quick brown fox jumps over the lazy dog."),
+        ]),
+    ]
+    
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager(model=model, messages=messages)
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+    logger.info(f"| --------------------------------------------------")
+
+async def test_video():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing video with different models")
+    models = [
+        "openrouter/gemini-2.5-flash",
+    ]
+    
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            ContentPartText(text="Please analyze the video and provide the analysis. Only return the analysis, no other text or formatting."),
+            ContentPartVideo(video_url=VideoURL(url=make_file_url(file_path="tests/files/video.MOV"))),
+        ]),
+    ]
+    
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager(model=model, messages=messages)
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+    logger.info(f"| --------------------------------------------------")
+
+
+async def test_pdf():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing PDF with different models")
+    models = [
+        "openrouter/gemini-2.5-flash",
+    ]
+    
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            ContentPartText(text="Please analyze the PDF and provide the analysis. Only return the analysis, no other text or formatting."),
+            ContentPartPdf(pdf_url=PdfURL(url=make_file_url(file_path="tests/files/pdf.pdf"))),
         ]),
     ]
     
@@ -160,9 +206,11 @@ async def main():
     await tcp.initialize()
     logger.info(f"| Tools initialized: {await tcp.list()}")
     
-    # await test_chat()
+    await test_chat()
     # await test_transcription()
-    await test_embedding()
+    # await test_embedding()
+    # await test_video()
+    # await test_pdf()
 
 
 if __name__ == "__main__":

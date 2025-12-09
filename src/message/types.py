@@ -17,27 +17,7 @@ class ContentPartText(BaseModel):
 SupportedImageMediaType = Literal['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 SupportedAudioMediaType = Literal['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp3', 'audio/m4a', 'audio/flac']
 SupportedVideoMediaType = Literal['video/mp4', 'video/mpeg', 'video/ogg', 'video/webm', 'video/mov']
-
-class ImageURL(BaseModel):
-    """An image URL content part."""
-    url: str = Field(description="Either a URL of the image or the base64 encoded image data.")
-    detail: Literal['auto', 'low', 'high'] = Field(default='auto', description="Specifies the detail level of the image.")  # type: ignore  
-    """Specifies the detail level of the image.
-    Learn more in the
-    [Vision guide](https://platform.openai.com/docs/guides/vision#low-or-high-fidelity-image-understanding).
-    """
-    
-    # needed for Anthropic
-    media_type: SupportedImageMediaType = 'image/png'
-
-    def __str__(self) -> str:
-        url_display = truncate_file_url(self.url)
-        return f'🖼️  Image[{self.media_type}, detail={self.detail}]: {url_display}'
-
-    def __repr__(self) -> str:
-        url_repr = truncate_file_url(self.url)
-        return f'ImageURL(url={repr(url_repr)}, detail={repr(self.detail)}, media_type={repr(self.media_type)})'
-
+SupportedPdfMediaType = Literal['application/pdf']
 
 class AudioURL(BaseModel):
     """An audio URL content part."""
@@ -90,6 +70,26 @@ class ContentPartVideo(BaseModel):
     def __repr__(self) -> str:
         return f'ContentPartVideo(video_url={str(self.video_url)})'
 
+class ImageURL(BaseModel):
+    """An image URL content part."""
+    url: str = Field(description="Either a URL of the image or the base64 encoded image data.")
+    detail: Literal['auto', 'low', 'high'] = Field(default='auto', description="Specifies the detail level of the image.")  # type: ignore  
+    """Specifies the detail level of the image.
+    Learn more in the
+    [Vision guide](https://platform.openai.com/docs/guides/vision#low-or-high-fidelity-image-understanding).
+    """
+    
+    # needed for Anthropic
+    media_type: SupportedImageMediaType = 'image/png'
+
+    def __str__(self) -> str:
+        url_display = truncate_file_url(self.url)
+        return f'🖼️  Image[{self.media_type}, detail={self.detail}]: {url_display}'
+
+    def __repr__(self) -> str:
+        url_repr = truncate_file_url(self.url)
+        return f'ImageURL(url={repr(url_repr)}, detail={repr(self.detail)}, media_type={repr(self.media_type)})'
+
 class ContentPartImage(BaseModel):
     """An image content part."""
     image_url: ImageURL = Field(description="The URL of the image.")
@@ -100,6 +100,30 @@ class ContentPartImage(BaseModel):
 
     def __repr__(self) -> str:
         return f'ContentPartImage(image_url={str(self.image_url)})'
+
+class PdfURL(BaseModel):
+    """A PDF URL content part."""
+    url: str = Field(description="The URL of the PDF.")
+    type: Literal['pdf_url'] = Field(default='pdf_url', description="The type of the content part.")  # type: ignore
+    
+    media_type: SupportedPdfMediaType = 'application/pdf'
+
+    def __str__(self) -> str:
+        return f'📄  PDF[{self.media_type}]: {truncate_file_url(self.url)}'
+
+    def __repr__(self) -> str:
+        return f'PdfURL(url={repr(truncate_file_url(self.url))}, media_type={repr(self.media_type)})'
+
+class ContentPartPdf(BaseModel):
+    """A PDF content part."""
+    pdf_url: PdfURL = Field(description="The URL of the PDF.")
+    type: Literal['pdf_url'] = Field(default='pdf_url', description="The type of the content part.")  # type: ignore
+
+    def __str__(self) -> str:
+        return f'PDF: {str(self.pdf_url)}'
+
+    def __repr__(self) -> str:
+        return f'ContentPartPdf(pdf_url={str(self.pdf_url)})'
 
 class ContentPartRefusal(BaseModel):
     refusal: str = Field(description="The refusal message by the assistant.")
@@ -150,7 +174,8 @@ class HumanMessage(Message):
         ContentPartImage,
         ContentPartAudio,
         ContentPartVideo,
-    ]]] = Field(description="The contents of the user message.")
+        ContentPartPdf,
+        ]]] = Field(description="The contents of the user message.")
     name: Optional[str] = Field(default=None, description="An optional name for the participant. Provides the model information to differentiate between participants of the same role.")  # type: ignore
 
     @property
@@ -177,8 +202,9 @@ class SystemMessage(Message):
     content: Union[str, List[Union[
         ContentPartText, 
         ContentPartImage,
-        ContentPartAudio,
+        ContentPartAudio,   
         ContentPartVideo,
+        ContentPartPdf,
     ]]] = Field(description="The contents of the system message.")
     name: Optional[str] = Field(default=None, description="An optional name for the participant. Provides the model information to differentiate between participants of the same role.")  # type: ignore
 
@@ -208,6 +234,7 @@ class AssistantMessage(Message):
         ContentPartImage,
         ContentPartAudio,
         ContentPartVideo,
+        ContentPartPdf,
         ContentPartRefusal,
     ]]] = Field(description="The contents of the assistant message.")
     name: Optional[str] = Field(default=None, description="An optional name for the participant. Provides the model information to differentiate between participants of the same role.")  # type: ignore

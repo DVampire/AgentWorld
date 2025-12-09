@@ -15,6 +15,8 @@ from src.model.openai.chat import ChatOpenAI
 from src.model.openai.response import ResponseOpenAI
 from src.model.openai.transcribe import TranscribeOpenAI
 from src.model.openai.embedding import EmbeddingOpenAI
+from src.model.openrouter.chat import ChatOpenRouter
+from src.model.anthropic.chat import ChatAnthropic
 from src.message.types import Message
 from src.logger import logger
 
@@ -31,7 +33,7 @@ class ModelManager:
     def __init__(self):
         """Initialize the manager."""
         self.models: Dict[str, ModelConfig] = {}
-        self.model_clients: Dict[str, Union[ChatOpenAI, ResponseOpenAI, TranscribeOpenAI, EmbeddingOpenAI]] = {}
+        self.model_clients: Dict[str, Union[ChatOpenAI, ResponseOpenAI, TranscribeOpenAI, EmbeddingOpenAI, ChatOpenRouter, ChatAnthropic]] = {}
         
         # Default parameters
         self.max_tokens: int = 16384
@@ -41,6 +43,8 @@ class ModelManager:
     async def initialize(self):
         """Initialize the manager and register default models."""
         await self._initialize_openai_models()
+        await self._initialize_openrouter_models()
+        await self._initialize_anthropic_models()
         logger.info(f"| Model manager initialized successfully with {len(self.models)} models.")
     
     async def _initialize_openai_models(self):
@@ -201,9 +205,251 @@ class ModelManager:
             self.models[config.model_name] = config
             self._create_client(config)
     
+    async def _initialize_openrouter_models(self):
+        """Initialize OpenRouter models (OpenAI models via OpenRouter)."""
+        chat_models = [
+            # OpenAI models
+            {
+                "model_name": "openrouter/gpt-4o",
+                "model_id": "openai/gpt-4o",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/gpt-4.1",
+                "model_id": "openai/gpt-4.1",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/gpt-5",
+                "model_id": "openai/gpt-5",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/gpt-5.1",
+                "model_id": "openai/gpt-5.1",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/o3",
+                "model_id": "openai/o3",
+                "model_type": "chat/completions",
+                "temperature": 1.0,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            # Anthropic models
+            {
+                "model_name": "openrouter/claude-sonnet-3.5",
+                "model_id": "anthropic/claude-3.5-sonnet",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/claude-sonnet-3.7",
+                "model_id": "anthropic/claude-3.7-sonnet",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/claude-sonnet-4",
+                "model_id": "anthropic/claude-sonnet-4",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/claude-opus-4",
+                "model_id": "anthropic/claude-opus-4",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/claude-sonnet-4.5",
+                "model_id": "anthropic/claude-sonnet-4.5",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/claude-opus-4.5",
+                "model_id": "anthropic/claude-opus-4.5",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            # Gemini models for chat, vision, audio, video, pdf, etc.
+            {
+                "model_name": "openrouter/gemini-2.5-flash",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-2.5-flash",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-2.5-flash",
+            },
+            {
+                "model_name": "openrouter/gemini-2.5-pro",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-2.5-pro",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-2.5-flash",
+            },
+            {
+                "model_name": "openrouter/gemini-3-pro-preview",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3-pro-preview",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-2.5-flash",
+            }
+        ]
+        
+        # Register OpenRouter models
+        for model in chat_models:
+            config = ModelConfig(
+                model_name=model["model_name"],
+                model_id=model["model_id"],
+                model_type=model["model_type"],
+                provider="openrouter",
+                api_base=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                temperature=model.get("temperature"),
+                max_completion_tokens=model.get("max_completion_tokens"),
+                supports_streaming=True,
+                supports_functions=True,
+                supports_vision=True,
+                output_version=None,
+                fallback_model=model.get("fallback_model"),
+            )
+            self.models[config.model_name] = config
+            self._create_client(config)
+    
+    async def _initialize_anthropic_models(self):
+        """Initialize Anthropic models."""
+        chat_models = [
+            # Note: Claude 3.5 Sonnet is deprecated, use Claude 3.7 Sonnet or Claude Sonnet 4.5 instead
+            # {
+            #     "model_name": "anthropic/claude-sonnet-3.5",
+            #     "model_id": "claude-3-5-sonnet-20240620",
+            #     "model_type": "chat/completions",
+            #     "temperature": self.default_temperature,
+            #     "max_completion_tokens": self.max_tokens,
+            #     "fallback_model": "anthropic/claude-sonnet-4.5",
+            # },
+            {
+                "model_name": "anthropic/claude-sonnet-3.7",
+                "model_id": "claude-3-7-sonnet-20250219",  # Anthropic model ID with version
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "anthropic/claude-sonnet-4.5",
+            },
+            {
+                "model_name": "anthropic/claude-sonnet-4",
+                "model_id": "claude-sonnet-4-20250514",  # Anthropic model ID with version
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "anthropic/claude-sonnet-4.5",
+            },
+            # {
+            #     "model_name": "anthropic/claude-opus-4",
+            #     "model_id": "claude-opus-4-20250514",  # Anthropic model ID with version
+            #     "model_type": "chat/completions",
+            #     "temperature": self.default_temperature,
+            #     "max_completion_tokens": self.max_tokens,
+            #     "fallback_model": "anthropic/claude-sonnet-4.5",
+            # },
+            {
+                "model_name": "anthropic/claude-sonnet-4.5",
+                "model_id": "claude-sonnet-4-5-20250929",  # Anthropic model ID with version
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "anthropic/claude-sonnet-4.5",
+            },
+            # {
+            #     "model_name": "anthropic/claude-opus-4.5",
+            #     "model_id": "claude-opus-4-1-20250805",  # Correct Anthropic model ID (Opus 4.1)
+            #     "model_type": "chat/completions",
+            #     "temperature": self.default_temperature,
+            #     "max_completion_tokens": self.max_tokens,
+            #    "fallback_model": "anthropic/claude-sonnet-4.5",
+            # },
+        ]
+        
+        # Register Anthropic models
+        for model in chat_models:
+            config = ModelConfig(
+                model_name=model["model_name"],
+                model_id=model["model_id"],
+                model_type=model["model_type"],
+                provider="anthropic",
+                api_base=os.getenv("ANTHROPIC_API_BASE"),
+                api_key=os.getenv("ANTHROPIC_API_KEY"),
+                temperature=model.get("temperature"),
+                max_completion_tokens=model.get("max_completion_tokens"),
+                supports_streaming=True,
+                supports_functions=True,
+                supports_vision=True,
+                output_version=None,
+                fallback_model=model.get("fallback_model"),
+            )
+            self.models[config.model_name] = config
+            self._create_client(config)
+    
     def _create_client(self, config: ModelConfig) -> None:
         """Create and cache a client for the given model config."""
-        if config.model_type == "responses":
+        if config.provider == "openrouter":
+            # OpenRouter models (only chat/completions supported for now)
+            if config.model_type == "chat/completions":
+                client = ChatOpenRouter(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
+                    temperature=config.temperature or self.default_temperature,
+                    max_completion_tokens=config.max_completion_tokens or self.max_tokens,
+                    http_referer=os.getenv("OPENROUTER_HTTP_REFERER"),
+                    x_title=os.getenv("OPENROUTER_X_TITLE"),
+                )
+                logger.info(f"| Created ChatOpenRouter client for {config.model_name}")
+            else:
+                raise ValueError(f"Unsupported model type {config.model_type} for OpenRouter provider")
+        elif config.provider == "anthropic":
+            # Anthropic models (only chat/completions supported for now)
+            if config.model_type == "chat/completions":
+                client = ChatAnthropic(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
+                    temperature=config.temperature or self.default_temperature,
+                    max_tokens=config.max_completion_tokens or self.max_tokens,
+                )
+                logger.info(f"| Created ChatAnthropic client for {config.model_name}")
+            else:
+                raise ValueError(f"Unsupported model type {config.model_type} for Anthropic provider")
+        elif config.model_type == "responses":
             # Create ResponseOpenAI client
             client = ResponseOpenAI(
                 model=config.model_id,
@@ -245,8 +491,8 @@ class ModelManager:
     
     def register_model(self, config: ModelConfig) -> None:
         """Register a new model configuration."""
-        if config.provider != "openai":
-            raise ValueError(f"Only OpenAI models are supported. Got provider: {config.provider}")
+        if config.provider not in ["openai", "openrouter", "anthropic"]:
+            raise ValueError(f"Only OpenAI, OpenRouter, and Anthropic models are supported. Got provider: {config.provider}")
         
         self.models[config.model_name] = config
         self._create_client(config)
