@@ -44,7 +44,11 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
-from src.tool.types import Tool
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
+
 from src.utils import assemble_project_path, encode_file_base64
 
 
@@ -365,12 +369,12 @@ class OpenRouterChatSerializer:
         return [OpenRouterChatSerializer.serialize_message(m) for m in messages]
 
     @staticmethod
-    def serialize_tool(tool: Tool) -> Dict[str, Any]:
+    def serialize_tool(tool: "Tool") -> Dict[str, Any]:
         """Serialize a Tool instance to an OpenRouter tool param."""
         return tool.to_function_call()
     
     @staticmethod
-    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
+    def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
         """Serialize a list of Tool instances to an OpenRouter tools param."""
         return [OpenRouterChatSerializer.serialize_tool(tool) for tool in tools]
     

@@ -3,11 +3,10 @@
 import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
-from PIL import Image
 
 from src.tool.default_tools.web_searcher import WebSearcherTool
 from src.logger import logger
-from src.model import model_manager
+from src.model.model_manager import model_manager
 from src.utils import make_file_url
 from src.utils import assemble_project_path
 from src.utils import dedent
@@ -59,10 +58,22 @@ class DeepResearcherTool(Tool):
         default=["o3-deep-research", "sonar-deep-research"],
         description="The LLM models to use for searching the web."
     )
+    base_dir: str = Field(
+        default="workdir/deep_researcher",
+        description="The base directory for the deep researcher."
+    )
 
-    def __init__(self, model_name: Optional[str] = None, use_llm_search: Optional[bool] = None, search_llm_models: Optional[List[str]] = None, **kwargs):
+    def __init__(self, 
+                 base_dir: Optional[str] = None,
+                 model_name: Optional[str] = None, 
+                 use_llm_search: Optional[bool] = None, 
+                 search_llm_models: Optional[List[str]] = None,
+                 **kwargs):
         """Initialize the deep researcher tool."""
         super().__init__(**kwargs)
+        
+        if base_dir is not None:
+            self.base_dir = base_dir
         
         if model_name is not None:
             self.model_name = model_name
@@ -76,13 +87,17 @@ class DeepResearcherTool(Tool):
         self.use_llm_search = self.use_llm_search and len(self.search_llm_models) > 0
         if search_llm_models is not None:
             self.search_llm_models = search_llm_models
-        self.search_llm_models = [model_name for model_name in self.search_llm_models if model_name in model_manager.models]
+        self.search_llm_models = [model_name for model_name in self.search_llm_models]
         
         # Store research history
         self.research_history = []
 
-    async def __call__(self, task: str, image: Optional[str] = None, filter_year: Optional[int] = None) -> ToolResponse:
-        """Execute deep research workflow.
+    async def __call__(self, 
+                       task: str, 
+                       image: Optional[str] = None, 
+                       filter_year: Optional[int] = None) -> ToolResponse:
+        """
+        Execute deep research workflow.
         
         Args:
             task (str): The research task or question to investigate
@@ -218,7 +233,7 @@ class DeepResearcherTool(Tool):
                 HumanMessage(content=user_prompt)
             ]
         
-        response = await model_manager.acompletion(model=self.model_name, messages=messages)
+        response = await model_manager(model=self.model_name, messages=messages)
         return response.message.strip()
 
     async def _parallel_search(self, task: str, query: str, filter_year: Optional[int]) -> List[Dict[str, Any]]:
@@ -317,7 +332,7 @@ class DeepResearcherTool(Tool):
         logger.info(f"| Using LLM {model_name} to search the web.")
         
         message = HumanMessage(content=prompt)
-        response = await model_manager.acompletion(model=model_name, messages=[message])
+        response = await model_manager(model=model_name, messages=[message])
         
         logger.info(f"| LLM {model_name} response: {response.message.strip()[:200]}...")
         
@@ -366,7 +381,7 @@ class DeepResearcherTool(Tool):
         
         try:
             message = HumanMessage(content=prompt)
-            response = await model_manager.acompletion(
+            response = await model_manager(
                 model=self.model_name,
                 messages=[message],
                 response_format=CompletenessEvaluation

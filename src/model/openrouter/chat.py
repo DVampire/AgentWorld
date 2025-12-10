@@ -30,7 +30,10 @@ from src.model.types import LLMResponse
 from src.message.types import Message, HumanMessage, ContentPartPdf
 from src.model.openrouter.serializer import OpenRouterChatSerializer
 from src.model.openrouter.rest import OpenRouterClient
-from src.tool.types import Tool
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
 
 class ChatOpenRouter(BaseModel):
     """
@@ -204,7 +207,7 @@ class ChatOpenRouter(BaseModel):
     async def _build_params(
         self,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         plugins: Optional[List[Dict[str, Any]]] = None,
@@ -350,7 +353,7 @@ class ChatOpenRouter(BaseModel):
     async def _format_response(
         self,
         response: ChatCompletion,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format OpenRouter response into LLMResponse."""
@@ -495,7 +498,7 @@ class ChatOpenRouter(BaseModel):
     async def __call__(
         self,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         plugins: Optional[List[Dict[str, Any]]] = None,

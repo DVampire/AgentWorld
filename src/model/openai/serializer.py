@@ -26,7 +26,7 @@ except ImportError:
     OpenAIImageURL = dict
     OpenAIFunction = dict
 
-from typing import Optional, List, Dict, Any, Union, Type
+from typing import Optional, List, Dict, Any, Union, Type, TYPE_CHECKING
 from pydantic import BaseModel
 
 from src.message.types import (
@@ -39,7 +39,9 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
-from src.tool.types import Tool
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
 
 
 class OpenAIChatSerializer:
@@ -173,7 +175,7 @@ class OpenAIChatSerializer:
         return [OpenAIChatSerializer.serialize(m) for m in messages]
 
     @staticmethod
-    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
+    def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
         """
         Serialize tools for OpenAI API calls. Convert Tool instances to function call format.
         

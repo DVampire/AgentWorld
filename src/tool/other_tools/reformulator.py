@@ -4,7 +4,7 @@ from pydantic import Field
 
 from src.tool.types import Tool, ToolResponse
 from src.message.types import SystemMessage, HumanMessage
-from src.model import model_manager
+from src.model.model_manager import model_manager
 from src.logger import logger
 from src.utils import dedent
 
@@ -79,7 +79,7 @@ class ReformulatorTool(Tool):
             messages.append(HumanMessage(content=final_prompt))
             
             # Call model
-            response = await model_manager.acompletion(model=self.model_name, messages=messages)
+            response = await model_manager(model=self.model_name, messages=messages)
             
             if not response.success:
                 return ToolResponse(

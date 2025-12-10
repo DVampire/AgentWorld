@@ -14,8 +14,8 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager
-from src.tools import tcp
+from src.model import model_manager
+from src.tool import tcp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -55,7 +55,7 @@ async def test_browser_tool():
             }
         }
         
-        result = await tcp.ainvoke(**input)
+        result = await tcp(**input)
         
         print("\n📋 Browser tool result:")
         print("=" * 50)
@@ -71,7 +71,43 @@ async def test_browser_tool():
         print(f"❌ Error testing browser tool: {e}")
         import traceback
         traceback.print_exc()
+        
+        
+async def test_deep_researcher_tool():
+    """Test the deep researcher tool directly."""
+    
+    # Test parameters
+    task = "Search for the latest news about Apple on Google."
+    
+    print("🧪 Testing deep researcher tool...")
+    print(f"Task: {task}")
+    
+    try:
+        # Invoke the deep researcher tool
+        input = {
+            "name": "deep_researcher",
+            "input": {
+                "task": task,
+            }
+        }
+        
+        result = await tcp(**input)
+        
+        print("\n📋 Deep researcher tool result:")
+        print("=" * 50)
+        print(result)
+        print("=" * 50)
+        
+        if result and "Error" not in str(result):
+            print("✅ Deep researcher tool test successful!")
+        else:
+            print("❌ Deep researcher tool test failed!")
             
+    except Exception as e:
+        print(f"❌ Error testing deep researcher tool: {e}")
+        import traceback
+        traceback.print_exc()
+        
 async def main():
     args = parse_args()
     
@@ -81,16 +117,24 @@ async def main():
     
     # Initialize model managerxx
     logger.info("| 🧠 Initializing model manager...")
-    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
+    await model_manager.initialize()
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
+    # from src.tool.workflow_tools.deep_researcher import DeepResearcherTool
+    # deep_researcher_tool = DeepResearcherTool(
+    #     base_dir="workdir/test_deep_researcher_tool",
+    #     model_name="o3",
+    #     use_llm_search=False,
+    #     search_llm_models=["o3-deep-research", "sonar-deep-research"]
+    # )
+    # await tcp.register(deep_researcher_tool)
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
-    await tcp.initialize(config.tool_names)
-    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
+    await tcp.initialize(tool_names=config.tool_names)
+    logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
-    await test_browser_tool()
-
+    # await test_browser_tool()
+    await test_deep_researcher_tool()
     logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":

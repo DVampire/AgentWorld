@@ -7,7 +7,7 @@ from src.tool.default_tools.web_fetcher import WebFetcherTool
 from src.tool.default_tools.search import FirecrawlSearch, SearchItem, BraveSearch
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse
-from src.model import model_manager
+from src.model.model_manager import model_manager
 from src.message.types import HumanMessage, SystemMessage
 from src.utils import dedent
 
@@ -336,7 +336,7 @@ class WebSearcherTool(Tool):
 
             try:
                 message = HumanMessage(content=prompt)
-                response = await model_manager.acompletion(model=self.model_name, messages=[message])
+                response = await model_manager(model=self.model_name, messages=[message])
                 if response and response.message.strip():
                     result["summary"] = response.message.strip()
                 else:
@@ -409,7 +409,7 @@ class WebSearcherTool(Tool):
                 content="You are an expert at synthesizing information from multiple sources into comprehensive research reports."
             )
             user_message = HumanMessage(content=prompt)
-            response = await model_manager.acompletion(
+            response = await model_manager(
                 model=self.model_name,
                 messages=[system_message, user_message]
             )

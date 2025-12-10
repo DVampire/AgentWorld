@@ -140,6 +140,19 @@ class TCPServer:
         """Cleanup all tools"""
         await self.tool_context_manager.cleanup()
         self._registered_configs.clear()
+        
+    async def __call__(self, name: str, input: Dict[str, Any]) -> Any:
+        """Call a tool by name
+        
+        Args:
+            name: Tool name
+            input: Input for the tool
+            
+        Returns:
+            Any: Tool result
+        """
+        tool = await self.get(name)
+        return await tool(**input)
 
 
 # Global TCP server instance

@@ -4,7 +4,7 @@ Provides a unified interface for registering and invoking OpenAI models.
 """
 
 import os
-from typing import Optional, Dict, List, Any, Union
+from typing import Optional, Dict, List, Any, Union, TYPE_CHECKING
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
@@ -20,7 +20,9 @@ from src.model.anthropic.chat import ChatAnthropic
 from src.model.google.chat import ChatGoogle
 from src.message.types import Message
 from src.logger import logger
-from src.tool.types import Tool
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
 
 
 class ModelManager:
@@ -563,7 +565,7 @@ class ModelManager:
         self,
         model: str,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,

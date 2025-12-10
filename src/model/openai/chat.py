@@ -28,7 +28,10 @@ from src.message.types import Message
 from src.model.openai.serializer import OpenAIChatSerializer
 from src.model.types import LLMResponse
 from src.logger import logger
-from src.tool.types import Tool
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
 
 
 class ChatOpenAI(BaseModel):
@@ -179,7 +182,7 @@ class ChatOpenAI(BaseModel):
     async def _build_params(
         self,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
@@ -290,7 +293,7 @@ class ChatOpenAI(BaseModel):
     async def __call__(
         self,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
@@ -363,7 +366,7 @@ class ChatOpenAI(BaseModel):
     async def _format_response(
         self,
         response: ChatCompletion,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format OpenAI response into LLMResponse."""

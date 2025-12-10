@@ -3,6 +3,8 @@ with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.tool_calling import tool_calling_agent
     from .tools.browser import browser_tool
+    from .tools.deep_researcher import deep_researcher_tool
+    from .tools.deep_analyzer import deep_analyzer_tool
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
@@ -10,7 +12,7 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "gpt-4.1"
+model_name = "openrouter/gpt-4.1"
 
 env_names = []
 agent_names = ["tool_calling"]
@@ -27,7 +29,19 @@ tool_names = [
 
 #-----------------BROWSER TOOL CONFIG-----------------
 browser_tool.update(
-    base_dir=workdir,
+    base_dir=f"{workdir}/browser",
+)
+
+#-----------------DEEP RESEARCHER TOOL CONFIG-----------------
+deep_researcher_tool.update(
+    model_name="openrouter/o3",
+    base_dir=f"{workdir}/deep_researcher",
+)
+
+#-----------------DEEP ANALYZER TOOL CONFIG-----------------
+deep_analyzer_tool.update(
+    model_name="openrouter/o3",
+    base_dir=f"{workdir}/deep_analyzer",
 )
 
 #-----------------TOOL CALLING AGENT CONFIG-----------------

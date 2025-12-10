@@ -15,7 +15,11 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
-from src.tool.types import Tool
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
+
 from src.utils import assemble_project_path, decode_file_base64
 
 try:
@@ -307,7 +311,7 @@ class AnthropicChatSerializer:
         return system_message, anthropic_messages
 
     @staticmethod
-    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
+    def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
         """
         Serialize tools for Anthropic API calls. Convert Tool instances to Anthropic tools format.
         

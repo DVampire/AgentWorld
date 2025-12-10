@@ -24,8 +24,10 @@ from src.model.types import LLMResponse
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from src.utils import truncate_dict
-from src.tool.types import Tool
-from typing import Type
+from typing import Type, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
 
 class ChatAnthropic(BaseModel):
     """
@@ -126,7 +128,7 @@ class ChatAnthropic(BaseModel):
     async def _build_params(
         self,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
@@ -247,7 +249,7 @@ class ChatAnthropic(BaseModel):
     async def __call__(
         self,
         messages: List[Message],
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
@@ -320,7 +322,7 @@ class ChatAnthropic(BaseModel):
     async def _format_response(
         self,
         response: Any,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format Anthropic response into LLMResponse."""

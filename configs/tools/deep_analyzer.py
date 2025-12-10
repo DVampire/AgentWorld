@@ -1,3 +1,4 @@
 deep_analyzer_tool = dict(
-    model_name = "o3",
+    base_dir = "workdir/deep_analyzer",
+    model_name = "openrouter/o3",
 )

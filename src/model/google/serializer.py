@@ -1,4 +1,4 @@
-from typing import overload, Any, List, Union, Optional, Type
+from typing import overload, Any, List, Union, Optional, Type, TYPE_CHECKING
 import base64
 import os
 
@@ -15,7 +15,10 @@ from src.message.types import (
     SystemMessage,
     ToolCall,
 )
-from src.tool.types import Tool
+
+if TYPE_CHECKING:
+    from src.tool.types import Tool
+
 from src.utils import assemble_project_path, decode_file_base64
 
 
@@ -272,7 +275,7 @@ class GoogleChatSerializer:
         return system_instruction, gemini_contents
 
     @staticmethod
-    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
+    def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:
         """
         Serialize tools for Google Gemini API calls. Convert Tool instances to Google Gemini tools format.
         
@@ -299,6 +302,9 @@ class GoogleChatSerializer:
         Returns:
             List containing a single dict with function_declarations array
         """
+        # Lazy import to avoid circular dependency
+        from src.tool.types import Tool
+        
         function_declarations = []
         for tool in tools:
             if isinstance(tool, Tool):
