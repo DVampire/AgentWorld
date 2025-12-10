@@ -12,15 +12,12 @@ from pydantic import BaseModel, Field
 import json
 from pathlib import Path
 
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_community.chat_message_histories import ChatMessageHistory
-from pydantic import BaseModel, Field
-
 from src.memory.types import ChatEvent, EventType, Importance, SessionInfo
-from src.model import model_manager
+from src.model.model_manager import model_manager
+from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.registry import MEMORY_SYSTEM
 from src.logger import logger
-from src.utils import dedent
+from src.utils import dedent, file_lock
 
 
 class OnlineTradingSummary(BaseModel):
@@ -73,26 +70,13 @@ class OnlineTradingCombinedMemory:
         self.max_summaries = max_summaries
         self.max_insights = max_insights
         
-        self.llm = None
         self.events: List[ChatEvent] = []
-        self.candidate_chat_history = ChatMessageHistory()
+        self.candidate_chat_history: List[Message] = []
         self.summaries: List[OnlineTradingSummary] = []
         self.insights: List[OnlineTradingInsight] = []
-        self._init_llm()
-    
-    def _init_llm(self):
-        """Initialize LLM for trading memory processing"""
-        try:
-            self.llm = model_manager.get(self.model_name)
-        except Exception as e:
-            logger.warning(f"Could not initialize LLM for trading memory: {e}")
-            self.llm = None
     
     async def add_event(self, event: Union[ChatEvent, List[ChatEvent]]):
         """Process trading events and extract summaries and insights"""
-        if not self.llm:
-            return
-        
         # Add events to chat history
         if isinstance(event, ChatEvent):
             events = [event]
@@ -101,12 +85,12 @@ class OnlineTradingCombinedMemory:
             
         for event in events:
             self.events.append(event)
-            if event.event_type == EventType.ACTION_STEP or event.event_type == EventType.TASK_END:
+            if event.event_type == EventType.TOOL_STEP or event.event_type == EventType.TASK_END:
                 content = str(event)
                 if event.agent_name:
-                    self.candidate_chat_history.add_ai_message(content)
+                    self.candidate_chat_history.append(AssistantMessage(content=content))
                 else:
-                    self.candidate_chat_history.add_user_message(content)
+                    self.candidate_chat_history.append(HumanMessage(content=content))
         
         # Check if we should process trading memory
         should_process = await self._check_should_process_memory()
@@ -116,10 +100,10 @@ class OnlineTradingCombinedMemory:
     async def _get_new_lines_text(self) -> str:
         """Get new trading events from chat history"""
         new_lines = []
-        for msg in self.candidate_chat_history.messages:
+        for msg in self.candidate_chat_history:
             if isinstance(msg, HumanMessage):
                 new_lines.append(f"<market_state>\n{msg.content}\n</market_state>")
-            elif isinstance(msg, AIMessage):
+            elif isinstance(msg, AssistantMessage):
                 new_lines.append(f"<trading_action>\n{msg.content}\n</trading_action>")
         return "\n".join(new_lines)
     
@@ -138,14 +122,13 @@ class OnlineTradingCombinedMemory:
 
     async def _check_should_process_memory(self) -> bool:
         """Check if we should process trading memory"""
-        if not self.llm or len(self.candidate_chat_history.messages) <= 2:
+        if len(self.candidate_chat_history) <= 2:
             return False
             
         new_lines = await self._get_new_lines_text()
         current_memory = await self._get_current_memory_text()
         
         decision_prompt = dedent(f"""You are analyzing online trading (perpetual futures) events to decide whether to process them into decision summaries and insights.
-
         Current trading session has {self.size()} events.
 
         Decision criteria for ONLINE TRADING memory:
@@ -165,10 +148,24 @@ class OnlineTradingCombinedMemory:
         Decide if you should process the trading memory.""")
                 
         try:
-            structured_llm = self.llm.with_structured_output(ProcessDecision)
-            decision_response = await structured_llm.ainvoke(decision_prompt)
-            logger.info(f"| Online trading memory processing decision: {decision_response.should_process} - {decision_response.reason}")
-            return decision_response.should_process
+            # Build messages
+            messages = [
+                SystemMessage(content="You are a trading memory processing decision system. Always respond with valid JSON."),
+                HumanMessage(content=decision_prompt)
+            ]
+            
+            # Call model manager with BaseModel response_format
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                response_format=ProcessDecision
+            )
+            processed_decision_response = response.extra["parsed_model"]
+            should_process = processed_decision_response.should_process
+            reason = processed_decision_response.reason
+            
+            logger.info(f"| Online trading memory processing decision: {should_process} - {reason}")
+            return should_process
                 
         except Exception as e:
             logger.warning(f"Failed to check if should process trading memory: {e}")
@@ -176,14 +173,13 @@ class OnlineTradingCombinedMemory:
     
     async def _process_trading_memory(self):
         """Process trading memory and generate trading-specific summaries and insights"""
-        if not self.llm or not self.candidate_chat_history.messages:
+        if not self.candidate_chat_history:
             return
             
         new_lines = await self._get_new_lines_text()
         current_memory = await self._get_current_memory_text()
         
         prompt = dedent(f"""Analyze the online trading (perpetual futures) events and extract decision summaries and outcome-driven insights.
-
         <intro>
         For ONLINE TRADING SUMMARIES, focus on:
         1. Decisions executed (LONG/SHORT/HOLD/CLOSE) and the reasoning behind them
@@ -229,11 +225,30 @@ class OnlineTradingCombinedMemory:
         Generate new trading summaries and insights based on the events.""")
         
         try:
-            structured_llm = self.llm.with_structured_output(OnlineTradingMemoryOutput)
-            response = await structured_llm.ainvoke(prompt)
+            # Build messages
+            messages = [
+                SystemMessage(content="You are a trading memory processing system. Always respond with valid JSON."),
+                HumanMessage(content=prompt)
+            ]
             
-            new_summaries = response.summaries
-            new_insights = response.insights
+            # Call model manager with BaseModel response_format
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                response_format=OnlineTradingMemoryOutput
+            )
+            
+            # Check if response was successful and contains parsed model
+            if not response.success:
+                raise ValueError(f"Model call failed: {response.message}")
+            
+            if not response.extra or "parsed_model" not in response.extra:
+                raise ValueError(f"Response does not contain parsed_model. Response: {response.message}")
+            
+            combined_memory_output_response = response.extra["parsed_model"]
+            
+            new_summaries = combined_memory_output_response.summaries
+            new_insights = combined_memory_output_response.insights
             
             # Update summaries and insights
             self.summaries.extend(new_summaries)
@@ -487,55 +502,56 @@ class OnlineTradingMemorySystem:
         Returns:
             Path to the saved file
         """
-        file_path = Path(file_path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Prepare metadata
-        metadata = {
-            "memory_system_type": "online_trading_memory_system",
-            "current_session_id": self.current_session_id,
-            "session_ids": list(self.session_info.keys())
-        }
-        
-        # Prepare sessions data
-        sessions = {}
-        for session_id in self.session_info.keys():
-            session_data = {
-                "session_info": None,
-                "session_memory": {
-                    "events": [],
-                    "summaries": [],
-                    "insights": []
-                }
+        async with file_lock(file_path):
+            file_path = Path(file_path)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Prepare metadata
+            metadata = {
+                "memory_system_type": "online_trading_memory_system",
+                "current_session_id": self.current_session_id,
+                "session_ids": list(self.session_info.keys())
             }
             
-            # Save session info
-            if session_id in self.session_info:
-                session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
-            
-            # Save session memory
-            if session_id in self.session_memory:
-                session_memory = self.session_memory[session_id]
-                session_data["session_memory"] = {
-                    "events": [event.model_dump(mode="json") for event in session_memory.events],
-                    "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
-                    "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+            # Prepare sessions data
+            sessions = {}
+            for session_id in self.session_info.keys():
+                session_data = {
+                    "session_info": None,
+                    "session_memory": {
+                        "events": [],
+                        "summaries": [],
+                        "insights": []
+                    }
                 }
+                
+                # Save session info
+                if session_id in self.session_info:
+                    session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
+                
+                # Save session memory
+                if session_id in self.session_memory:
+                    session_memory = self.session_memory[session_id]
+                    session_data["session_memory"] = {
+                        "events": [event.model_dump(mode="json") for event in session_memory.events],
+                        "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                        "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                    }
+                
+                sessions[session_id] = session_data
             
-            sessions[session_id] = session_data
-        
-        # Prepare save data
-        save_data = {
-            "metadata": metadata,
-            "sessions": sessions
-        }
-        
-        # Save to file
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(save_data, f, indent=2, ensure_ascii=False, default=str)
-        
-        logger.info(f"| 💾 Memory saved to {file_path}")
-        return str(file_path)
+            # Prepare save data
+            save_data = {
+                "metadata": metadata,
+                "sessions": sessions
+            }
+            
+            # Save to file
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(save_data, f, indent=4, ensure_ascii=False)
+            
+            logger.info(f"| 💾 Memory saved to {file_path}")
+            return str(file_path)
     
     async def load_from_json(self, file_path: str) -> bool:
         """Load memory system state from JSON file.
@@ -566,15 +582,16 @@ class OnlineTradingMemorySystem:
         Returns:
             True if loaded successfully, False otherwise
         """
-        file_path = Path(file_path)
-        
-        if not file_path.exists():
-            logger.warning(f"| ⚠️  Memory file not found: {file_path}")
-            return False
-        
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
+        async with file_lock(file_path):
+            file_path = Path(file_path)
+            
+            if not file_path.exists():
+                logger.warning(f"| ⚠️  Memory file not found: {file_path}")
+                return False
+            
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    load_data = json.load(f)
             
             # Validate format
             if "metadata" not in load_data or "sessions" not in load_data:
@@ -647,10 +664,10 @@ class OnlineTradingMemorySystem:
                         insights.append(OnlineTradingInsight(**insight_data))
                     session_memory.insights = insights
             
-            logger.info(f"| 📂 Memory loaded from {file_path}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"| ❌ Failed to load memory from {file_path}: {e}", exc_info=True)
-            return False
+                logger.info(f"| 📂 Memory loaded from {file_path}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"| ❌ Failed to load memory from {file_path}: {e}", exc_info=True)
+                return False
 

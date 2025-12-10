@@ -15,7 +15,7 @@ from .string_utils import extract_boxed_content, dedent
 from .misc import get_world_size, get_rank
 from .name_utils import get_tag_name, get_newspage_name, get_md5
 from .url_utils import fetch_url
-from .file_utils import get_file_info
+from .file_utils import get_file_info, file_lock
 from .env_utils import get_env
 from .screenshot_utils import ScreenshotService
 
@@ -51,4 +51,5 @@ __all__ = [
     "get_env",
     "dedent",
     "ScreenshotService",
+    "file_lock",
 ]

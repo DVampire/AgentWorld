@@ -1,6 +1,10 @@
+import asyncio
 from typing import Dict, Any
 from pathlib import Path
 from datetime import datetime
+from contextlib import asynccontextmanager
+
+from src.utils.singleton import Singleton
 
 def format_size(size_bytes: int) -> str:
     """Format file size in human readable format (from project.py)."""
@@ -33,3 +37,29 @@ def get_file_info(file_path: str) -> Dict[str, Any]:
     info["is_symlink"] = file_path.is_symlink()
     
     return info
+
+class FileLock(metaclass=Singleton):
+    def __init__(self):
+        self._locks = {}
+
+    def get_lock(self, key):
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+        return self._locks[key]
+
+    def __call__(self, key):
+        return _FileLockContext(self.get_lock(key))
+
+
+class _FileLockContext:
+    def __init__(self, lock):
+        self._lock = lock
+
+    async def __aenter__(self):
+        await self._lock.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self._lock.release()
+        
+file_lock = FileLock()

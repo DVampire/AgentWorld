@@ -8,6 +8,7 @@ from .offline_trading_memory_system import OfflineTradingMemorySystem
 
 __all__ = [
     "MemoryManager",
+    "memory_manager",
     "GeneralMemorySystem",
     "OnlineTradingMemorySystem",
     "OfflineTradingMemorySystem",
