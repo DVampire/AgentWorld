@@ -1,8 +1,9 @@
-from typing import overload, Any, List, Union, Optional
+from typing import overload, Any, List, Union, Optional, Type
 import base64
 import os
 
 from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel
 
 from src.message.types import (
     AssistantMessage,
@@ -16,6 +17,11 @@ from src.message.types import (
 )
 from src.tool.types import Tool
 from src.utils import assemble_project_path, decode_file_base64
+
+try:
+    from anthropic import transform_schema
+except ImportError:
+    transform_schema = None
 
 
 class AnthropicChatSerializer:
@@ -301,7 +307,7 @@ class AnthropicChatSerializer:
         return system_message, anthropic_messages
 
     @staticmethod
-    def serialize_tools(tools: Optional[Union[List[Tool], List[Dict], List[Any]]]) -> Optional[List[Dict[str, Any]]]:
+    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
         """
         Serialize tools for Anthropic API calls. Convert Tool instances to Anthropic tools format.
         
@@ -319,14 +325,11 @@ class AnthropicChatSerializer:
         ]
         
         Args:
-            tools: Optional list of Tool instances or dicts (function call format)
+            tools: List of Tool instances
             
         Returns:
-            List of Anthropic tools format dicts, or None if tools is None/empty
+            List of Anthropic tools format dicts
         """
-        if not tools:
-            return None
-        
         formatted_tools = []
         for tool in tools:
             if isinstance(tool, Tool):
@@ -341,42 +344,85 @@ class AnthropicChatSerializer:
                     "input_schema": function_def.get("parameters", {}),
                 }
                 formatted_tools.append(anthropic_tool)
-            elif isinstance(tool, dict):
-                # Check if it's OpenAI format or Anthropic format
-                if tool.get("type") == "function" and "function" in tool:
-                    # OpenAI format - convert to Anthropic format
-                    function_def = tool["function"]
-                    anthropic_tool = {
-                        "name": function_def.get("name", ""),
-                        "description": function_def.get("description", ""),
-                        "input_schema": function_def.get("parameters", {}),
-                    }
-                    formatted_tools.append(anthropic_tool)
-                elif "name" in tool and "input_schema" in tool:
-                    # Already in Anthropic format, use directly
-                    formatted_tools.append(tool)
-                else:
-                    # Try to convert from function call format
-                    if "name" in tool:
-                        formatted_tools.append({
-                            "name": tool.get("name", ""),
-                            "description": tool.get("description", ""),
-                            "input_schema": tool.get("parameters", tool.get("input_schema", {})),
-                        })
-            else:
-                # Try to call to_function_call if it exists (duck typing)
-                if hasattr(tool, 'to_function_call') and callable(getattr(tool, 'to_function_call')):
-                    function_call = tool.to_function_call()
-                    function_def = function_call.get("function", {})
-                    anthropic_tool = {
-                        "name": function_def.get("name", ""),
-                        "description": function_def.get("description", ""),
-                        "input_schema": function_def.get("parameters", {}),
-                    }
-                    formatted_tools.append(anthropic_tool)
-                else:
-                    # Skip unknown tool types
-                    continue
         
-        return formatted_tools if formatted_tools else None
+        return formatted_tools
+    
+    @staticmethod
+    def serialize_response_format(
+        response_format: Union[Type[BaseModel], BaseModel, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Format response_format to Anthropic's output_format parameter.
+        
+        Anthropic uses output_format with beta API:
+        - Requires beta API: client.beta.messages.create()
+        - Requires betas parameter: ['structured-outputs-2025-11-13']
+        - Format: {"type": "json_schema", "schema": {...}}
+        - Uses transform_schema() if available for better compatibility
+        
+        Args:
+            response_format: BaseModel class, instance, or dict
+            
+        Returns:
+            Dictionary containing output_format configuration:
+            - type: "json_schema"
+            - schema: JSON schema (optimized with transform_schema if available)
+        """
+        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+            # Pydantic model class - use transform_schema if available
+            if transform_schema is not None:
+                schema = transform_schema(response_format)
+            else:
+                # Fallback to model_json_schema
+                schema = response_format.model_json_schema()
+                # Ensure additionalProperties: false
+                if schema.get("type") == "object" and "additionalProperties" not in schema:
+                    schema["additionalProperties"] = False
+                elif "properties" in schema and "type" not in schema:
+                    schema["type"] = "object"
+                    schema["additionalProperties"] = False
+            
+            return {
+                'type': 'json_schema',
+                'schema': schema
+            }
+        elif isinstance(response_format, BaseModel):
+            # BaseModel instance - get the class
+            model_class = type(response_format)
+            if transform_schema is not None:
+                schema = transform_schema(model_class)
+            else:
+                schema = model_class.model_json_schema()
+                # Ensure additionalProperties: false
+                if schema.get("type") == "object" and "additionalProperties" not in schema:
+                    schema["additionalProperties"] = False
+                elif "properties" in schema and "type" not in schema:
+                    schema["type"] = "object"
+                    schema["additionalProperties"] = False
+            
+            return {
+                'type': 'json_schema',
+                'schema': schema
+            }
+        elif isinstance(response_format, dict):
+            # Dict format - check if it's already in output_format format
+            if "type" in response_format and "schema" in response_format:
+                # Already in output_format format
+                return response_format
+            elif "type" in response_format and "json_schema" in response_format:
+                # Chat completions format - convert to Anthropic output_format format
+                json_schema_obj = response_format["json_schema"]
+                schema = json_schema_obj.get("schema", {})
+                return {
+                    'type': 'json_schema',
+                    'schema': schema
+                }
+            else:
+                # Assume it's a schema dict - wrap it
+                return {
+                    'type': 'json_schema',
+                    'schema': response_format
+                }
+        else:
+            raise ValueError(f"Unsupported response_format type: {type(response_format)}")
 

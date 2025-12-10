@@ -7,6 +7,7 @@ langchain_mcp_adapters>=0.1.13
 langchain_community>=0.4.1
 langgraph>=0.0.20
 mmengine>=0.10.0
+google-generativeai>=0.8.5
 
 # LLM providers
 openai>=1.0.0

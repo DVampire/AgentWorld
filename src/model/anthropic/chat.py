@@ -1,13 +1,18 @@
-from typing import Any, Optional, Union, List, Dict
+from typing import Any, Optional, Union, List, Dict, ClassVar
 import httpx
 
 try:
     from anthropic import AsyncAnthropic, APIError, APIConnectionError, RateLimitError
+    try:
+        from anthropic import transform_schema
+    except ImportError:
+        transform_schema = None
 except ImportError:
     AsyncAnthropic = None
     APIError = Exception
     APIConnectionError = Exception
     RateLimitError = Exception
+    transform_schema = None
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -19,6 +24,8 @@ from src.model.types import LLMResponse
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from src.utils import truncate_dict
+from src.tool.types import Tool
+from typing import Type
 
 class ChatAnthropic(BaseModel):
     """
@@ -26,9 +33,20 @@ class ChatAnthropic(BaseModel):
     
     This class handles Anthropic API-specific formatting and provides methods for chat completions
     with support for tools and streaming.
+    
+    Note: Only certain models support output_format (structured outputs):
+    - claude-sonnet-4-5-20250929 and newer models support output_format
+    - Older models like claude-3-7-sonnet-20250219 and claude-sonnet-4-20250514 do not support it
     """
     
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Models that support output_format (structured outputs)
+    OUTPUT_FORMAT_SUPPORTED_MODELS: ClassVar[List[str]] = [
+        'claude-sonnet-4-5-20250929',
+        'claude-opus-4-1-20250805',  # Opus 4.1
+        # Add newer models here as they become available
+    ]
 
     # Model configuration
     model: str
@@ -52,11 +70,18 @@ class ChatAnthropic(BaseModel):
 
     def _get_client_params(self) -> Dict[str, Any]:
         """Prepare client parameters dictionary."""
+        # Prepare default headers
+        headers = dict(self.default_headers) if self.default_headers else {}
+        
+        # Add Anthropic beta header for structured outputs support
+        if 'anthropic-beta' not in headers:
+            headers['anthropic-beta'] = 'structured-outputs-2025-11-13'
+        
         base_params = {
             'api_key': self.api_key,
             'timeout': self.timeout,
             'max_retries': self.max_retries,
-            'default_headers': self.default_headers,
+            'default_headers': headers if headers else None,
         }
         
         # Add base_url if provided
@@ -98,11 +123,132 @@ class ChatAnthropic(BaseModel):
             }
         return None
 
+    async def _build_params(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Build parameters for API call.
+        
+        Step 1: Convert messages, tools, and response_format into API-ready parameters.
+        
+        Args:
+            messages: List of Message objects
+            tools: Optional list of Tool instances
+            response_format: Optional response format (Pydantic model class, instance or dict)
+            stream: Whether to stream the response
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dictionary containing:
+            - system: System message (if any)
+            - messages: Serialized messages
+            - params: All other API parameters (tools, temperature, max_tokens, etc.)
+        """
+        # Serialize messages to Anthropic format
+        system_message, anthropic_messages = AnthropicChatSerializer.serialize_messages(messages)
+        
+        # Build API parameters
+        params: Dict[str, Any] = {
+            'model': self.model,
+            'messages': anthropic_messages,
+        }
+        
+        # Add system message if provided
+        if system_message:
+            params['system'] = system_message
+        
+        # Add model parameters
+        if self.temperature is not None:
+            params['temperature'] = self.temperature
+        if self.top_p is not None:
+            params['top_p'] = self.top_p
+        if self.max_tokens is not None:
+            params['max_tokens'] = self.max_tokens
+        
+        # Format tools using serializer
+        if tools:
+            formatted_tools = AnthropicChatSerializer.serialize_tools(tools)
+            if formatted_tools:
+                params['tools'] = formatted_tools
+        
+        # Handle response_format (Anthropic uses output_format parameter with beta API)
+        # Only certain models support output_format
+        use_beta_api = False
+        if response_format:
+            # Check if model supports output_format
+            model_supports_output_format = any(
+                supported_model in self.model 
+                for supported_model in ChatAnthropic.OUTPUT_FORMAT_SUPPORTED_MODELS
+            )
+            
+            if not model_supports_output_format:
+                logger.warning(
+                    f"Model {self.model} does not support output_format. "
+                    f"Supported models: {', '.join(ChatAnthropic.OUTPUT_FORMAT_SUPPORTED_MODELS)}. "
+                    f"Skipping structured output."
+                )
+            else:
+                try:
+                    params['output_format'] = AnthropicChatSerializer.serialize_response_format(response_format)
+                    use_beta_api = True
+                except ValueError as e:
+                    logger.warning(f"Failed to serialize response_format: {e}")
+        
+        # Add betas parameter if using structured outputs
+        if use_beta_api:
+            params['betas'] = ['structured-outputs-2025-11-13']
+        
+        # Handle streaming
+        if stream:
+            params['stream'] = True
+            logger.warning("Streaming is not yet fully implemented for Anthropic API")
+        
+        # Merge additional kwargs
+        params.update(kwargs)
+        
+        return {
+            "system": system_message,
+            "messages": anthropic_messages,
+            "params": params,
+            "use_beta_api": use_beta_api,
+        }
+
+    async def _call_model(
+        self,
+        use_beta_api: bool = False,
+        **params: Any,
+    ) -> Any:
+        """
+        Call the model API (Step 2).
+        
+        Unified interface for calling the Anthropic API.
+        
+        Args:
+            use_beta_api: Whether to use beta API (for structured outputs)
+            **params: API parameters (should include model, messages, system, temperature, etc.)
+            
+        Returns:
+            Response object from Anthropic API
+        """
+        client = self.get_client()
+        # Use beta API if output_format is provided
+        if use_beta_api:
+            response = await client.beta.messages.create(**params)
+        else:
+            response = await client.messages.create(**params)
+        
+        return response
+
     async def __call__(
         self,
         messages: List[Message],
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
     ) -> LLMResponse:
@@ -111,8 +257,8 @@ class ChatAnthropic(BaseModel):
 
         Args:
             messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of tools for function calling
-            response_format: Optional response format (Pydantic model or dict) - Note: Anthropic doesn't support structured output directly
+            tools: Optional list of Tool instances
+            response_format: Optional response format (Pydantic model class, instance or dict)
             stream: Whether to stream the response (not implemented yet)
             **kwargs: Additional parameters
 
@@ -122,51 +268,25 @@ class ChatAnthropic(BaseModel):
         if AsyncAnthropic is None:
             raise ImportError("anthropic package is required. Install it with: pip install anthropic")
 
-        # Serialize messages to Anthropic format
-        system_message, anthropic_messages = AnthropicChatSerializer.serialize_messages(messages)
-
         try:
-            client = self.get_client()
-
-            # Build model parameters
-            model_params: Dict[str, Any] = {
-                'model': self.model,
-                'messages': anthropic_messages,
-            }
-
-            # Add system message if provided
-            if system_message:
-                model_params['system'] = system_message
-
-            if self.temperature is not None:
-                model_params['temperature'] = self.temperature
-            if self.top_p is not None:
-                model_params['top_p'] = self.top_p
-            if self.max_tokens is not None:
-                model_params['max_tokens'] = self.max_tokens
-
-            # Add tools if provided
-            if tools:
-                # Anthropic tools format: list of {"name": "...", "description": "...", "input_schema": {...}}
-                model_params['tools'] = tools
-
-            # Handle response_format (Anthropic doesn't support structured output directly)
-            if response_format:
-                logger.warning("Anthropic API doesn't support structured output via response_format. Consider using tools instead.")
-
-            # Handle streaming
-            if stream:
-                model_params['stream'] = True
-                logger.warning("Streaming is not yet fully implemented for Anthropic API")
-                # TODO: Implement streaming response handling
-
-            # Merge additional kwargs
-            model_params.update(kwargs)
-
-            # Make the API request using SDK
-            response = await client.messages.create(**model_params)
-
-            return self._format_response(response, tools=tools, response_format=response_format)
+            params = await self._build_params(
+                messages=messages,
+                tools=tools,
+                response_format=response_format,
+                stream=stream,
+                **kwargs,
+            )
+            
+            response = await self._call_model(
+                use_beta_api=params.get("use_beta_api", False),
+                **params["params"],
+            )
+            
+            return await self._format_response(
+                response=response,
+                tools=tools,
+                response_format=response_format,
+            )
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
@@ -197,11 +317,11 @@ class ChatAnthropic(BaseModel):
                 extra={"error": str(e), "model": self.name}
             )
 
-    def _format_response(
+    async def _format_response(
         self,
-        response,
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
+        response: Any,
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format Anthropic response into LLMResponse."""
         try:

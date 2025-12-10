@@ -26,7 +26,8 @@ except ImportError:
     OpenAIImageURL = dict
     OpenAIFunction = dict
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Type
+from pydantic import BaseModel
 
 from src.message.types import (
     AssistantMessage,
@@ -172,36 +173,111 @@ class OpenAIChatSerializer:
         return [OpenAIChatSerializer.serialize(m) for m in messages]
 
     @staticmethod
-    def serialize_tools(tools: Optional[Union[List[Tool], List[Dict], List[Any]]]) -> Optional[List[Dict[str, Any]]]:
+    def serialize_tools(tools: List[Tool]) -> List[Dict[str, Any]]:
         """
         Serialize tools for OpenAI API calls. Convert Tool instances to function call format.
         
         Args:
-            tools: Optional list of Tool instances or dicts (function call format)
+            tools: List of Tool instances
             
         Returns:
-            List of function call format dicts, or None if tools is None/empty
+            List of function call format dicts
         """
-        if not tools:
-            return None
+        return [tool.to_function_call() for tool in tools]
+    
+    @staticmethod
+    def serialize_response_format(
+        response_format: Union[Type[BaseModel], BaseModel]
+    ) -> Dict[str, Any]:
+        """
+        Format response_format from Pydantic model to OpenAI-compatible JSON schema format.
         
-        formatted_tools = []
-        for tool in tools:
-            if isinstance(tool, Tool):
-                # Convert Tool instance to function call format
-                formatted_tools.append(tool.to_function_call())
-            elif isinstance(tool, dict):
-                # Already in function call format, use directly
-                formatted_tools.append(tool)
+        OpenAI requires additionalProperties: false for all object types (similar to OpenRouter).
+        
+        Args:
+            response_format: BaseModel class or instance
+            
+        Returns:
+            Dictionary containing response format configuration with:
+            - type: "json_schema"
+            - json_schema: Contains name, strict mode, and optimized schema
+        """
+        # Get the BaseModel class if it's an instance
+        if isinstance(response_format, BaseModel) and not isinstance(response_format, type):
+            model_class = type(response_format)
+        else:
+            model_class = response_format
+        
+        # Get JSON schema from Pydantic model
+        schema = model_class.model_json_schema()
+        
+        # Build a lookup for $defs to resolve references
+        defs_lookup = schema.get("$defs", {})
+        
+        def optimize_schema(obj: Any, defs: Dict[str, Any] = None) -> Any:
+            """
+            Recursively process schema to:
+            1. Resolve $ref references
+            2. Add additionalProperties: false to all object types (OpenAI requirement)
+            """
+            if defs is None:
+                defs = defs_lookup
+            
+            if isinstance(obj, dict):
+                optimized = {}
+                
+                # Handle $ref references
+                if "$ref" in obj:
+                    ref_path = obj["$ref"]
+                    if ref_path.startswith("#/$defs/"):
+                        def_name = ref_path.split("/")[-1]
+                        if def_name in defs:
+                            return optimize_schema(defs[def_name], defs)
+                
+                # Process all keys
+                for key, value in obj.items():
+                    if key == "$ref":
+                        continue
+                    elif key in ["properties", "items"]:
+                        optimized[key] = optimize_schema(value, defs)
+                    elif key == "anyOf" or key == "oneOf" or key == "allOf":
+                        optimized[key] = [optimize_schema(item, defs) for item in value] if isinstance(value, list) else value
+                    elif isinstance(value, (dict, list)):
+                        optimized[key] = optimize_schema(value, defs)
+                    else:
+                        optimized[key] = value
+                
+                # CRITICAL: Add additionalProperties: false to ALL objects for OpenAI
+                if optimized.get("type") == "object":
+                    optimized["additionalProperties"] = False
+                elif "properties" in optimized and "type" not in optimized:
+                    optimized["type"] = "object"
+                    optimized["additionalProperties"] = False
+                
+                return optimized
+            elif isinstance(obj, list):
+                return [optimize_schema(item, defs) for item in obj]
             else:
-                # Try to call to_function_call if it exists (duck typing)
-                if hasattr(tool, 'to_function_call') and callable(getattr(tool, 'to_function_call')):
-                    formatted_tools.append(tool.to_function_call())
-                else:
-                    # Skip unknown tool types
-                    continue
+                return obj
         
-        return formatted_tools if formatted_tools else None
+        # Optimize the entire schema
+        optimized_schema = optimize_schema(schema)
+        
+        # Ensure root schema has additionalProperties: false if it's an object
+        if optimized_schema.get("type") == "object" and "additionalProperties" not in optimized_schema:
+            optimized_schema["additionalProperties"] = False
+        elif "properties" in optimized_schema and "type" not in optimized_schema:
+            optimized_schema["type"] = "object"
+            optimized_schema["additionalProperties"] = False
+        
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "response",
+                "strict": True,
+                "schema": optimized_schema,
+            },
+        }
 
 
 class OpenAIResponseSerializer:

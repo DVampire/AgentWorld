@@ -1,5 +1,5 @@
-from collections.abc import Iterable, Mapping
-from typing import Any, Literal, Optional, Union, List, Dict, Type, overload
+from collections.abc import Mapping
+from typing import Any, Literal, Optional, Union, List, Dict, Type
 import httpx
 
 try:
@@ -22,12 +22,13 @@ except ImportError:
     ResponseFormatJSONSchema = dict
     ChatCompletionContentPartTextParam = dict
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
+from src.message.types import Message
 from src.model.openai.serializer import OpenAIChatSerializer
 from src.model.types import LLMResponse
 from src.logger import logger
+from src.tool.types import Tool
 
 
 class ChatOpenAI(BaseModel):
@@ -175,11 +176,122 @@ class ChatOpenAI(BaseModel):
         
         return reasoning
 
+    async def _build_params(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Build parameters for API call.
+        
+        Step 1: Convert messages, tools, and response_format into API-ready parameters.
+        
+        Args:
+            messages: List of Message objects
+            tools: Optional list of Tool instances
+            response_format: Optional response format (Pydantic model class, instance or dict)
+            stream: Whether to stream the response
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dictionary containing:
+            - messages: Serialized messages
+            - params: All other API parameters (tools, response_format, stream, etc.)
+        """
+        # Serialize messages to OpenAI format
+        openai_messages = OpenAIChatSerializer.serialize_messages(messages)
+        
+        # Build API parameters
+        params: Dict[str, Any] = {}
+        
+        # Add model parameters
+        if self.temperature is not None:
+            params['temperature'] = self.temperature
+        if self.frequency_penalty is not None:
+            params['frequency_penalty'] = self.frequency_penalty
+        if self.max_completion_tokens is not None:
+            params['max_completion_tokens'] = self.max_completion_tokens
+        if self.top_p is not None:
+            params['top_p'] = self.top_p
+        if self.seed is not None:
+            params['seed'] = self.seed
+        if self.service_tier is not None:
+            params['service_tier'] = self.service_tier
+        
+        # Handle reasoning models
+        if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
+            params['reasoning_effort'] = self.reasoning_effort
+            # Remove temperature and frequency_penalty for reasoning models
+            params.pop('temperature', None)
+            params.pop('frequency_penalty', None)
+        
+        # Format tools using serializer
+        if tools:
+            formatted_tools = OpenAIChatSerializer.serialize_tools(tools)
+            if formatted_tools:
+                params['tools'] = formatted_tools
+        
+        # Handle response_format
+        if response_format:
+            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+                # Pydantic model class - convert to JSON schema format using serializer
+                params['response_format'] = OpenAIChatSerializer.serialize_response_format(response_format)
+            elif isinstance(response_format, BaseModel):
+                # BaseModel instance - convert to JSON schema format using serializer
+                params['response_format'] = OpenAIChatSerializer.serialize_response_format(response_format)
+            elif isinstance(response_format, dict):
+                # Dict format - use directly
+                params['response_format'] = response_format
+            else:
+                logger.warning(f"Unsupported response_format type: {type(response_format)}")
+        
+        # Handle streaming
+        if stream:
+            params['stream'] = True
+        
+        # Merge additional kwargs
+        params.update(kwargs)
+        
+        return {
+            "messages": openai_messages,
+            "params": params,
+        }
+
+    async def _call_model(
+        self,
+        messages: List[Dict[str, Any]],
+        **params: Any,
+    ) -> ChatCompletion:
+        """
+        Call the model API (Step 2).
+        
+        Unified interface for calling the client.
+        Returns ChatCompletion object.
+        
+        Args:
+            messages: Serialized messages
+            **params: API parameters
+            
+        Returns:
+            ChatCompletion object
+        """
+        client = self.get_client()
+        response = await client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            **params,
+        )
+        
+        return response
+
     async def __call__(
         self,
         messages: List[Message],
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
     ) -> LLMResponse:
@@ -188,8 +300,8 @@ class ChatOpenAI(BaseModel):
 
         Args:
             messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of tools for function calling
-            response_format: Optional response format (Pydantic model or dict)
+            tools: Optional list of Tool instances
+            response_format: Optional response format (Pydantic model class, instance or dict)
             stream: Whether to stream the response
             **kwargs: Additional parameters
 
@@ -199,74 +311,25 @@ class ChatOpenAI(BaseModel):
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
 
-        # Serialize messages to OpenAI format
-        openai_messages = OpenAIChatSerializer.serialize_messages(messages)
-
         try:
-            client = self.get_client()
-            
-            # Build model parameters
-            model_params: dict[str, Any] = {}
-
-            if self.temperature is not None:
-                model_params['temperature'] = self.temperature
-            if self.frequency_penalty is not None:
-                model_params['frequency_penalty'] = self.frequency_penalty
-            if self.max_completion_tokens is not None:
-                model_params['max_completion_tokens'] = self.max_completion_tokens
-            if self.top_p is not None:
-                model_params['top_p'] = self.top_p
-            if self.seed is not None:
-                model_params['seed'] = self.seed
-            if self.service_tier is not None:
-                model_params['service_tier'] = self.service_tier
-
-            # Handle reasoning models
-            if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
-                model_params['reasoning_effort'] = self.reasoning_effort
-                # Remove temperature and frequency_penalty for reasoning models
-                model_params.pop('temperature', None)
-                model_params.pop('frequency_penalty', None)
-
-            # Add tools if provided
-            if tools:
-                model_params['tools'] = tools
-
-            # Handle response_format
-            if response_format:
-                if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                    # Pydantic model - convert to JSON schema format
-                    json_schema = response_format.model_json_schema()
-                    model_params['response_format'] = {
-                        'type': 'json_schema',
-                        'json_schema': {
-                            'name': 'response',
-                            'strict': True,
-                            'schema': json_schema,
-                        }
-                    }
-                elif isinstance(response_format, dict):
-                    # Dict format - use directly
-                    model_params['response_format'] = response_format
-                else:
-                    logger.warning(f"Unsupported response_format type: {type(response_format)}")
-
-            # Handle streaming
-            if stream:
-                model_params['stream'] = True
-
-            # Merge additional kwargs
-            model_params.update(kwargs)
-
-            # Make the API call
-            response = await client.chat.completions.create(
-                model=self.model,
-                messages=openai_messages,
-                **model_params,
+            params = await self._build_params(
+                messages=messages,
+                tools=tools,
+                response_format=response_format,
+                stream=stream,
+                **kwargs,
             )
-
-            # Format response
-            return self._format_response(response, tools=tools, response_format=response_format)
+            
+            response = await self._call_model(
+                messages=params["messages"],
+                **params["params"],
+            )
+            
+            return await self._format_response(
+                response=response,
+                tools=tools,
+                response_format=response_format,
+            )
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
@@ -297,11 +360,11 @@ class ChatOpenAI(BaseModel):
                 extra={"error": str(e), "model": self.name}
             )
 
-    def _format_response(
+    async def _format_response(
         self,
         response: ChatCompletion,
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format OpenAI response into LLMResponse."""
         try:

@@ -17,6 +17,7 @@ from src.model.openai.transcribe import TranscribeOpenAI
 from src.model.openai.embedding import EmbeddingOpenAI
 from src.model.openrouter.chat import ChatOpenRouter
 from src.model.anthropic.chat import ChatAnthropic
+from src.model.google.chat import ChatGoogle
 from src.message.types import Message
 from src.logger import logger
 from src.tool.types import Tool
@@ -46,6 +47,7 @@ class ModelManager:
         await self._initialize_openai_models()
         await self._initialize_openrouter_models()
         await self._initialize_anthropic_models()
+        await self._initialize_google_models()
         logger.info(f"| Model manager initialized successfully with {len(self.models)} models.")
     
     async def _initialize_openai_models(self):
@@ -420,6 +422,52 @@ class ModelManager:
             self.models[config.model_name] = config
             self._create_client(config)
     
+    async def _initialize_google_models(self):
+        """Initialize Google Gemini models."""
+        chat_models = [
+            {
+                "model_name": "google/gemini-2.5-flash",
+                "model_id": "gemini-2.5-flash",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+            },
+            {
+                "model_name": "google/gemini-2.5-pro",
+                "model_id": "gemini-2.5-pro",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+            },
+            {
+                "model_name": "google/gemini-3-pro-preview",
+                "model_id": "gemini-3-pro-preview",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+            },
+        ]
+        
+        # Register Google models
+        for model in chat_models:
+            config = ModelConfig(
+                model_name=model["model_name"],
+                model_id=model["model_id"],
+                model_type=model["model_type"],
+                provider="google",
+                api_base=None,  # Google Gemini doesn't use custom API base
+                api_key=os.getenv("GOOGLE_API_KEY"),
+                temperature=model.get("temperature"),
+                max_completion_tokens=model.get("max_completion_tokens"),
+                supports_streaming=True,
+                supports_functions=True,
+                supports_vision=True,
+                output_version=None,
+                fallback_model=None,
+            )
+            self.models[config.model_name] = config
+            self._create_client(config)
+    
     def _create_client(self, config: ModelConfig) -> None:
         """Create and cache a client for the given model config."""
         if config.provider == "openrouter":
@@ -450,6 +498,18 @@ class ModelManager:
                 logger.info(f"| Created ChatAnthropic client for {config.model_name}")
             else:
                 raise ValueError(f"Unsupported model type {config.model_type} for Anthropic provider")
+        elif config.provider == "google":
+            # Google Gemini models (only chat/completions supported for now)
+            if config.model_type == "chat/completions":
+                client = ChatGoogle(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    temperature=config.temperature or self.default_temperature,
+                    max_output_tokens=config.max_completion_tokens or self.max_tokens,
+                )
+                logger.info(f"| Created ChatGoogle client for {config.model_name}")
+            else:
+                raise ValueError(f"Unsupported model type {config.model_type} for Google provider")
         elif config.model_type == "responses":
             # Create ResponseOpenAI client
             client = ResponseOpenAI(
@@ -492,8 +552,8 @@ class ModelManager:
     
     def register_model(self, config: ModelConfig) -> None:
         """Register a new model configuration."""
-        if config.provider not in ["openai", "openrouter", "anthropic"]:
-            raise ValueError(f"Only OpenAI, OpenRouter, and Anthropic models are supported. Got provider: {config.provider}")
+        if config.provider not in ["openai", "openrouter", "anthropic", "google"]:
+            raise ValueError(f"Only OpenAI, OpenRouter, Anthropic, and Google models are supported. Got provider: {config.provider}")
         
         self.models[config.model_name] = config
         self._create_client(config)

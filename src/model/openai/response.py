@@ -18,9 +18,10 @@ except ImportError:
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.message.types import Message
-from src.model.openai.serializer import OpenAIResponseSerializer
+from src.model.openai.serializer import OpenAIResponseSerializer, OpenAIChatSerializer
 from src.model.types import LLMResponse
 from src.logger import logger
+from src.tool.types import Tool
 
 
 class ResponseOpenAI(BaseModel):
@@ -269,11 +270,162 @@ class ResponseOpenAI(BaseModel):
         
         return text
 
+    async def _build_params(
+        self,
+        messages: List[Message],
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Build parameters for API call.
+        
+        Step 1: Convert messages, tools, and response_format into API-ready parameters.
+        
+        Args:
+            messages: List of Message objects
+            tools: Optional list of Tool instances (may not be supported in responses API)
+            response_format: Optional response format (Pydantic model class, instance or dict)
+            stream: Whether to stream the response (may not be supported in responses API)
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dictionary containing:
+            - input: Serialized messages for responses API
+            - params: All other API parameters (reasoning, max_output_tokens, response_format, etc.)
+        """
+        # Serialize messages to responses API format
+        input_messages = OpenAIResponseSerializer.serialize_messages(messages)
+        
+        # Build API parameters
+        params: Dict[str, Any] = {
+            "model": self.model,
+            "input": input_messages,
+        }
+        
+        # Add reasoning_effort (required for responses API)
+        params["reasoning"] = {
+            "effort": self.reasoning_effort,
+        }
+        
+        # Add max_output_tokens if specified
+        if self.max_output_tokens is not None:
+            params["max_output_tokens"] = self.max_output_tokens
+        
+        # Handle response_format (responses API uses text.format with flat structure)
+        if response_format:
+            if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+                # Pydantic model class - convert to responses API format
+                # Responses API format: text.format = {type, name, strict, schema}
+                # (not nested json_schema like chat completions)
+                json_schema = response_format.model_json_schema()
+                # Use serializer to optimize schema (add additionalProperties: false)
+                optimized = OpenAIChatSerializer.serialize_response_format(response_format)
+                # Extract schema from optimized format
+                schema = optimized['json_schema']['schema']
+                
+                # Build responses API format (flat structure)
+                params["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": response_format.__name__,
+                        "strict": True,
+                        "schema": schema
+                    }
+                }
+            elif isinstance(response_format, BaseModel):
+                # BaseModel instance - convert to responses API format
+                model_class = type(response_format)
+                optimized = OpenAIChatSerializer.serialize_response_format(model_class)
+                schema = optimized['json_schema']['schema']
+                
+                params["text"] = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": model_class.__name__,
+                        "strict": True,
+                        "schema": schema
+                    }
+                }
+            elif isinstance(response_format, dict):
+                # Dict format - check if it's already in text.format format
+                if "text" in response_format:
+                    # Already in text.format format
+                    params["text"] = response_format["text"]
+                elif "type" in response_format and "name" in response_format and "schema" in response_format:
+                    # Already in responses API text.format format (flat structure)
+                    params["text"] = {
+                        "format": response_format
+                    }
+                elif "type" in response_format and "json_schema" in response_format:
+                    # Chat completions format - convert to responses API format
+                    json_schema_obj = response_format["json_schema"]
+                    params["text"] = {
+                        "format": {
+                            "type": "json_schema",
+                            "name": json_schema_obj.get("name", "response"),
+                            "strict": json_schema_obj.get("strict", True),
+                            "schema": json_schema_obj.get("schema", {})
+                        }
+                    }
+                else:
+                    # Assume it's a schema dict - wrap it
+                    params["text"] = {
+                        "format": {
+                            "type": "json_schema",
+                            "name": "response",
+                            "strict": True,
+                            "schema": response_format
+                        }
+                    }
+            else:
+                logger.warning(f"Unsupported response_format type: {type(response_format)}")
+        
+        # Note: tools and stream may not be supported in responses API
+        if tools:
+            logger.warning("Tools may not be supported in responses API")
+            # params["tools"] = tools  # Uncomment if supported
+        
+        if stream:
+            logger.warning("Streaming may not be supported in responses API")
+            # params["stream"] = True  # Uncomment if supported
+        
+        # Merge additional kwargs
+        params.update(kwargs)
+        
+        return {
+            "input": input_messages,
+            "params": params,
+        }
+
+    async def _call_model(
+        self,
+        input_messages: List[Dict[str, Any]],
+        **params: Any,
+    ) -> Any:
+        """
+        Call the model API (Step 2).
+        
+        Unified interface for calling the responses API.
+        
+        Args:
+            input_messages: Serialized messages for responses API
+            **params: API parameters
+            
+        Returns:
+            Response object from responses API
+        """
+        client = self.get_client()
+        response = await client.responses.create(**params)
+        
+        return response
+
     async def __call__(
         self,
         messages: List[Message],
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
         stream: bool = False,
         **kwargs: Any,
     ) -> LLMResponse:
@@ -282,8 +434,8 @@ class ResponseOpenAI(BaseModel):
 
         Args:
             messages: List of Message objects (HumanMessage, SystemMessage, AssistantMessage)
-            tools: Optional list of tools for function calling (may not be supported in responses API)
-            response_format: Optional response format (Pydantic model or dict)
+            tools: Optional list of Tool instances (may not be supported in responses API)
+            response_format: Optional response format (Pydantic model class, instance or dict)
             stream: Whether to stream the response (may not be supported in responses API)
             **kwargs: Additional parameters
 
@@ -293,63 +445,25 @@ class ResponseOpenAI(BaseModel):
         if AsyncOpenAI is None:
             raise ImportError("openai package is required. Install it with: pip install openai")
 
-        # Serialize messages to responses API format
-        input_messages = OpenAIResponseSerializer.serialize_messages(messages)
-
         try:
-            client = self.get_client()
+            params = await self._build_params(
+                messages=messages,
+                tools=tools,
+                response_format=response_format,
+                stream=stream,
+                **kwargs,
+            )
             
-            # Build parameters for responses API
-            params: dict[str, Any] = {
-                "model": self.model,
-                "input": input_messages,
-            }
-
-            # Add reasoning_effort (required for responses API)
-            params["reasoning"] = {
-                "effort": self.reasoning_effort,
-            }
-
-            # Add max_output_tokens if specified
-            if self.max_output_tokens is not None:
-                params["max_output_tokens"] = self.max_output_tokens
-
-            # Handle response_format
-            if response_format:
-                if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-                    # Pydantic model - convert to JSON schema format
-                    json_schema = response_format.model_json_schema()
-                    params["response_format"] = {
-                        'type': 'json_schema',
-                        'json_schema': {
-                            'name': 'response',
-                            'strict': True,
-                            'schema': json_schema,
-                        }
-                    }
-                elif isinstance(response_format, dict):
-                    # Dict format - use directly
-                    params["response_format"] = response_format
-                else:
-                    logger.warning(f"Unsupported response_format type: {type(response_format)}")
-
-            # Note: tools and stream may not be supported in responses API
-            if tools:
-                logger.warning("Tools may not be supported in responses API")
-                # params["tools"] = tools  # Uncomment if supported
-
-            if stream:
-                logger.warning("Streaming may not be supported in responses API")
-                # params["stream"] = True  # Uncomment if supported
-
-            # Merge additional kwargs
-            params.update(kwargs)
-
-            # Make the API call using responses API
-            response = await client.responses.create(**params)
-
-            # Format response
-            return self._format_response(response, tools=tools, response_format=response_format)
+            response = await self._call_model(
+                input_messages=params["input"],
+                **params["params"],
+            )
+            
+            return await self._format_response(
+                response=response,
+                tools=tools,
+                response_format=response_format,
+            )
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {e}")
@@ -380,11 +494,11 @@ class ResponseOpenAI(BaseModel):
                 extra={"error": str(e), "model": self.name}
             )
 
-    def _format_response(
+    async def _format_response(
         self,
         response: Any,
-        tools: Optional[Union[List[Dict], List[Any]]] = None,
-        response_format: Optional[Union[BaseModel, Dict]] = None,
+        tools: Optional[List[Tool]] = None,
+        response_format: Optional[Union[Type[BaseModel], BaseModel, Dict]] = None,
     ) -> LLMResponse:
         """Format OpenAI responses API response into LLMResponse."""
         try:

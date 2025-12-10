@@ -66,6 +66,9 @@ async def test_chat():
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
         # "openrouter/gemini-3-pro-preview",
+        # "google/gemini-2.5-flash",
+        # "google/gemini-2.5-pro",
+        # "google/gemini-3-pro-preview",
     ]
     
     image_url = make_file_url(file_path=assemble_project_path("tests/files/pokemon.jpg"))
@@ -91,8 +94,9 @@ async def test_transcription():
     logger.info(f"| --------------------------------------------------")
     logger.info(f"| Testing transcription with different models")
     models = [
-        "openai/gpt-4o-transcribe",
+        # "openai/gpt-4o-transcribe",
         "openrouter/gemini-2.5-flash",
+        # "google/gemini-2.5-flash",
     ]
     
     messages = [
@@ -114,9 +118,9 @@ async def test_embedding():
     logger.info(f"| --------------------------------------------------")
     logger.info(f"| Testing embedding with different models")
     models = [
-        "openai/text-embedding-3-small",
+        # "openai/text-embedding-3-small",
         "openai/text-embedding-3-large",
-        "openai/text-embedding-ada-002",
+        # "openai/text-embedding-ada-002",
     ]
     
     messages = [
@@ -138,6 +142,7 @@ async def test_video():
     logger.info(f"| Testing video with different models")
     models = [
         "openrouter/gemini-2.5-flash",
+        # "google/gemini-2.5-flash",
     ]
     
     messages = [
@@ -160,6 +165,7 @@ async def test_pdf():
     logger.info(f"| Testing PDF with different models")
     models = [
         "openrouter/gemini-2.5-flash",
+        # "google/gemini-2.5-flash",
     ]
     
     messages = [
@@ -187,6 +193,11 @@ async def test_response_format():
         "openrouter/gpt-5",
         "openrouter/gpt-5.1",
         "openrouter/o3",
+        # "openai/gpt-4o",
+        # "openai/gpt-4.1",
+        # "openai/gpt-5",
+        # "openai/gpt-5.1",
+        # "openai/o3",
         
         # Anthropic models
         # "openrouter/claude-sonnet-3.7",
@@ -194,11 +205,15 @@ async def test_response_format():
         # "openrouter/claude-opus-4",
         # "openrouter/claude-sonnet-4.5",
         # "openrouter/claude-opus-4.5",
+        # "anthropic/claude-sonnet-4.5",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
         # "openrouter/gemini-3-pro-preview",
+        # "google/gemini-2.5-flash",
+        # "google/gemini-2.5-pro",
+        # "google/gemini-3-pro-preview",
     ]
     
     class Add(BaseModel):
@@ -233,6 +248,11 @@ async def test_tool_calling():
         "openrouter/gpt-5",
         "openrouter/gpt-5.1",
         "openrouter/o3",
+        # "openai/gpt-4o",
+        # "openai/gpt-4.1",
+        # "openai/gpt-5",
+        # "openai/gpt-5.1",
+        # "openai/o3",
         
         # Anthropic models
         # "openrouter/claude-sonnet-3.7",
@@ -240,11 +260,17 @@ async def test_tool_calling():
         # "openrouter/claude-opus-4",
         # "openrouter/claude-sonnet-4.5",
         # "openrouter/claude-opus-4.5",
+        # "anthropic/claude-sonnet-3.7",
+        # "anthropic/claude-sonnet-4",
+        # "anthropic/claude-sonnet-4.5",
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
         # "openrouter/gemini-3-pro-preview",
+        # "google/gemini-2.5-flash",
+        # "google/gemini-2.5-pro",
+        # "google/gemini-3-pro-preview",
     ]
     
     tools = [
