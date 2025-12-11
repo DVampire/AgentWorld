@@ -23,22 +23,8 @@ class TCPServer(BaseModel):
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the TCP Server."""
         super().__init__(**kwargs)
-        
-        if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
-        else:
-            self.base_dir = assemble_project_path(os.path.join(config.workdir, "tools"))
-        os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "tools.json")
-        logger.info(f"| 📁 TCP Server base directory: {self.base_dir} and save path: {self.save_path}")
-        
         self._registered_configs: Dict[str, ToolConfig] = {}  # tool_name -> ToolConfig
-        self.tool_context_manager = ToolContextManager(
-            base_dir=self.base_dir,
-            save_path=self.save_path,
-            auto_discover=True,
-            model_name="openrouter/text-embedding-3-large",
-        )
+
         
     async def initialize(self, tool_names: Optional[List[str]] = None):
         """Initialize tools by names using tool context manager with concurrent support.
@@ -46,7 +32,19 @@ class TCPServer(BaseModel):
         Args:
             tool_names: List of tool names to initialize. If None, initialize all registered tools.
         """
+        
+        self.base_dir = assemble_project_path(os.path.join(config.workdir, "tool"))
+        os.makedirs(self.base_dir, exist_ok=True)
+        self.save_path = os.path.join(self.base_dir, "tool.json")
+        logger.info(f"| 📁 TCP Server base directory: {self.base_dir} and save path: {self.save_path}")
+        
         # Initialize tool context manager
+        self.tool_context_manager = ToolContextManager(
+            base_dir=self.base_dir,
+            save_path=self.save_path,
+            auto_discover=True,
+            model_name="openrouter/text-embedding-3-large",
+        )
         await self.tool_context_manager.initialize()
         
         # Auto-discover tools if needed

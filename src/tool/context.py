@@ -71,12 +71,8 @@ class ToolContextManager(BaseModel):
         """Initialize the tool context manager."""
         
         # Initialize Faiss service for tool embedding
-        # config.workdir is already a string after process_general
-        base_dir = os.path.join(config.workdir, "tools")
-        os.makedirs(base_dir, exist_ok=True)
-        
         self._faiss_service = FaissService(
-            base_dir=base_dir,
+            base_dir=self.base_dir,
             model_name=self.model_name
         )
         

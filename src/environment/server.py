@@ -16,53 +16,16 @@ from src.utils import assemble_project_path
 
 class ECPServer(BaseModel):
     """ECP Server for managing environments and actions with decorator support"""
-    
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
     save_path: str = Field(default=None, description="The path to save the environments")
     
-    def __init__(self, base_dir: Optional[str] = None, **kwargs):
+    def __init__(self, **kwargs):
         """Initialize the ECP Server."""
         super().__init__(**kwargs)
-        
-        if base_dir is not None:
-            self.base_dir = assemble_project_path(base_dir)
-        else:
-            self.base_dir = assemble_project_path(os.path.join(config.workdir, "environments"))
-        os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "environments.json")
-        logger.info(f"| 📁 ECP Server base directory: {self.base_dir} and save path: {self.save_path}")
-        
         self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
-        self.environment_context_manager = EnvironmentContextManager(base_dir=self.base_dir, save_path=self.save_path)
         self._pending_registrations: List[Type[Environment]] = []  # Classes to register on initialize
         self._all_environment_classes: List[Type[Environment]] = []  # All discovered environment classes
-    
-    
-    def action(self, 
-               name: str = None, 
-               description: str = "",
-               metadata: Optional[Dict[str, Any]] = None):
-        """Decorator to register an action (tool) for an environment
-        
-        Actions will be registered to the environment instance's actions dictionary during instantiation.
-        
-        Args:
-            name: Action name (defaults to function name)
-            description: Action description
-            metadata: Action metadata
-        """
-        def decorator(func: Callable):
-            action_name = name or func.__name__
-            
-            # Store action metadata for registration in instance's __init__
-            func._action_name = action_name
-            func._action_description = description
-            func._action_function = func
-            func._metadata = metadata if metadata is not None else {}
-            
-            return func
-        return decorator
     
     async def initialize(self, env_names: Optional[List[str]] = None):
         """Initialize environments by names using environment context manager with concurrent support.
@@ -70,7 +33,13 @@ class ECPServer(BaseModel):
         Args:
             env_names: List of environment names to initialize. If None, initialize all registered environments.
         """
+        self.base_dir = assemble_project_path(os.path.join(config.workdir, "environment"))
+        os.makedirs(self.base_dir, exist_ok=True)
+        self.save_path = os.path.join(self.base_dir, "environment.json")
+        logger.info(f"| 📁 ECP Server base directory: {self.base_dir} and save path: {self.save_path}")
+        
         # Initialize environment context manager (this will trigger discovery if auto_discover is True)
+        self.environment_context_manager = EnvironmentContextManager(base_dir=self.base_dir, save_path=self.save_path)
         await self.environment_context_manager.initialize()
         
         # Sync registered_configs from context manager after discovery
@@ -129,6 +98,31 @@ class ECPServer(BaseModel):
         await asyncio.gather(*init_tasks, return_exceptions=True)
         
         logger.info("| ✅ Environments initialization completed")
+    
+    def action(self, 
+               name: str = None, 
+               description: str = "",
+               metadata: Optional[Dict[str, Any]] = None):
+        """Decorator to register an action (tool) for an environment
+        
+        Actions will be registered to the environment instance's actions dictionary during instantiation.
+        
+        Args:
+            name: Action name (defaults to function name)
+            description: Action description
+            metadata: Action metadata
+        """
+        def decorator(func: Callable):
+            action_name = name or func.__name__
+            
+            # Store action metadata for registration in instance's __init__
+            func._action_name = action_name
+            func._action_description = description
+            func._action_function = func
+            func._metadata = metadata if metadata is not None else {}
+            
+            return func
+        return decorator
     
     async def register(self, env: Union[Environment, Type[Environment]], *, override: bool = False, **kwargs: Any) -> EnvironmentConfig:
         """Register an environment class or instance asynchronously.

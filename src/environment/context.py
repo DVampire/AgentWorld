@@ -87,7 +87,14 @@ class EnvironmentContextManager(BaseModel):
                 raise ValueError(f"Action {action} not found in environment {name}")
             action_function = action_config.function
             
-            return await action_function(instance, **input)
+            # Check if action_function is a bound method (already has self bound)
+            # Bound methods have __self__ attribute, unbound methods don't
+            if hasattr(action_function, '__self__'):
+                # Bound method: call directly without passing instance
+                return await action_function(**input)
+            else:
+                # Unbound method: pass instance as first argument
+                return await action_function(instance, **input)
         else:
             raise ValueError(f"Environment {name} not found")
     
@@ -186,20 +193,23 @@ class EnvironmentContextManager(BaseModel):
                     env_description = temp_instance.description
                 except Exception:
                     # If still fails, try to get from model_fields
-                    from pydantic import PydanticUndefined
                     if hasattr(env_cls, 'model_fields') and 'name' in env_cls.model_fields:
                         field_info = env_cls.model_fields['name']
-                        if hasattr(field_info, 'default') and field_info.default is not None:
-                            if field_info.default is not PydanticUndefined:
-                                env_name = field_info.default
+                        if hasattr(field_info, 'default'):
+                            default_value = field_info.default
+                            # Check if default is a string (not None and not undefined)
+                            if isinstance(default_value, str) and default_value:
+                                env_name = default_value
                     
                     if hasattr(env_cls, 'model_fields') and 'description' in env_cls.model_fields:
                         field_info = env_cls.model_fields['description']
-                        if hasattr(field_info, 'default') and field_info.default is not None:
-                            if field_info.default is not PydanticUndefined:
-                                env_description = field_info.default
-                        else:
-                            env_description = ''
+                        if hasattr(field_info, 'default'):
+                            default_value = field_info.default
+                            # Check if default is a string
+                            if isinstance(default_value, str):
+                                env_description = default_value
+                            else:
+                                env_description = ''
                     else:
                         env_description = ''
                     
@@ -432,19 +442,21 @@ class EnvironmentContextManager(BaseModel):
                     # Try to get name from model_fields default value
                     if hasattr(env, 'model_fields') and 'name' in env.model_fields:
                         field_info = env.model_fields['name']
-                        if hasattr(field_info, 'default') and field_info.default is not None:
-                            from pydantic import PydanticUndefined
-                            if field_info.default is not PydanticUndefined:
-                                env_name = field_info.default
+                        if hasattr(field_info, 'default'):
+                            default_value = field_info.default
+                            # Check if default is a string (not None and not undefined)
+                            if isinstance(default_value, str) and default_value:
+                                env_name = default_value
                                 logger.debug(f"| 📝 Got env_name from model_fields: {env_name}")
                     
                     # Try to get description from model_fields default value
                     if hasattr(env, 'model_fields') and 'description' in env.model_fields:
                         field_info = env.model_fields['description']
-                        if hasattr(field_info, 'default') and field_info.default is not None:
-                            from pydantic import PydanticUndefined
-                            if field_info.default is not PydanticUndefined:
-                                env_description = field_info.default
+                        if hasattr(field_info, 'default'):
+                            default_value = field_info.default
+                            # Check if default is a string
+                            if isinstance(default_value, str):
+                                env_description = default_value
                     
                     env_cls = env
                     env_instance = None

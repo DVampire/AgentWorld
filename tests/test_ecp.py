@@ -69,15 +69,15 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
-    # Initialize version manager, must after tool, agent, environment initialized
-    logger.info("| 📁 Initializing version manager...")
-    await version_manager.initialize()
-    logger.info(f"| ✅ Version manager initialized: {await version_manager.list()}")
-    
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    
+    # Initialize version manager, must after tool, agent, environment initialized
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Version manager initialized: {await version_manager.list()}")
     
     await test_file_system()
     
