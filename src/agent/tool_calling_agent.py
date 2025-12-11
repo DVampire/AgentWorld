@@ -320,7 +320,6 @@ class ToolCallingAgent(Agent):
             await self.tracer.save_to_json(self.tracer_save_path)
             
             # Memory is automatically saved in add_event()
-            
             messages = await self._get_messages(enhanced_task)
             
             if done:
