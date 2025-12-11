@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import List, Optional, Type, Dict, Any
+from typing import List, Optional, Dict, Any
 from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
@@ -16,7 +16,6 @@ from src.memory import memory_manager
 from src.tool.types import ToolResponse
 from src.tracer import Tracer, Record
 from src.model import model_manager
-from src.config import config
 
 class ToolCallingAgent(Agent):
     """Tool calling agent implementation with manual agent logic."""
