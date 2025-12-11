@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.tool.context import ToolContextManager
-from src.tool.types import Tool, ToolConfig
+from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.utils import assemble_project_path
 
 class TCPServer(BaseModel):
@@ -121,27 +121,6 @@ class TCPServer(BaseModel):
         """
         return await self.tool_context_manager.list(include_disabled=include_disabled)
     
-    async def to_text(self, tool_name: str) -> str:
-        """Convert tool information to string
-        
-        Args:
-            tool_name: Tool name
-            
-        Returns:
-            str: Tool information string
-        """
-        return await self.tool_context_manager.to_text(tool_name)
-    
-    async def to_function_call(self, tool_name: str) -> Dict[str, Any]:
-        """Convert tool information to function call
-        
-        Args:
-            tool_name: Tool name
-            
-        Returns:
-            Dict[str, Any]: Function call
-        """
-        return await self.tool_context_manager.to_function_call(tool_name)
     
     async def get(self, tool_name: str) -> Tool:
         """Get tool configuration by name
@@ -155,23 +134,21 @@ class TCPServer(BaseModel):
         tool = await self.tool_context_manager.get(tool_name)
         return tool
     
+    async def get_info(self, tool_name: str) -> Optional[ToolConfig]:
+        """Get tool configuration by name
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            ToolConfig: Tool configuration or None if not found
+        """
+        return await self.tool_context_manager.get_info(tool_name)
+    
     async def cleanup(self):
         """Cleanup all tools"""
         await self.tool_context_manager.cleanup()
         self._registered_configs.clear()
-        
-    async def __call__(self, name: str, input: Dict[str, Any]) -> Any:
-        """Call a tool by name
-        
-        Args:
-            name: Tool name
-            input: Input for the tool
-            
-        Returns:
-            Any: Tool result
-        """
-        tool = await self.get(name)
-        return await tool(**input)
     
     async def update(self, tool_name: str, tool: Union[Tool, Type[Tool]], 
                     new_version: Optional[str] = None, description: Optional[str] = None,
@@ -274,6 +251,18 @@ class TCPServer(BaseModel):
         if tool_config:
             self._registered_configs[tool_config.name] = tool_config
         return tool_config
+    
+    async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
+        """Call a tool by name
+        
+        Args:
+            name: Tool name
+            input: Input for the tool
+            
+        Returns:
+            ToolResponse: Tool result
+        """
+        return await self.tool_context_manager(name, input)
 
 
 # Global TCP server instance

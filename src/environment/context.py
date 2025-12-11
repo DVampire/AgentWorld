@@ -501,6 +501,9 @@ class EnvironmentContextManager(BaseModel):
             else:
                 metadata = {}
             
+            # Get or generate version from version_manager
+            version = await version_manager.get_version("environment", env_name)
+            
             # Create EnvironmentConfig
             if env_instance is not None:
                 # Registering an instance
@@ -508,6 +511,7 @@ class EnvironmentContextManager(BaseModel):
                     name=env_name,
                     description=env_description,
                     rules="",  # Will be generated when needed
+                    version=version,
                     actions=actions,
                     cls=env_cls,
                     config={},
@@ -520,6 +524,7 @@ class EnvironmentContextManager(BaseModel):
                     name=env_name,
                     description=env_description,
                     rules="",  # Will be generated when needed
+                    version=version,
                     actions=actions,
                     cls=env_cls,
                     config=kwargs,
@@ -635,19 +640,10 @@ class EnvironmentContextManager(BaseModel):
         else:
             raise TypeError(f"Expected Environment instance or subclass, got {type(env)!r}")
         
-        # Determine new version
+        # Determine new version from version_manager
         if new_version is None:
-            # Auto-increment version
-            try:
-                version_parts = original_config.version.split(".")
-                if len(version_parts) >= 3:
-                    major, minor, patch = int(version_parts[0]), int(version_parts[1]), int(version_parts[2])
-                    patch += 1
-                    new_version = f"{major}.{minor}.{patch}"
-                else:
-                    new_version = f"{original_config.version}.1"
-            except:
-                new_version = f"{original_config.version}.updated"
+            # Get current version from version_manager and generate next patch version
+            new_version = await version_manager.generate_next_version("environment", env_name, "patch")
         
         # Collect actions
         actions = {}
@@ -748,23 +744,14 @@ class EnvironmentContextManager(BaseModel):
         if new_name in self._environment_configs:
             raise ValueError(f"Environment '{new_name}' already exists. Use a different name.")
         
-        # Determine new version
+        # Determine new version from version_manager
         if new_version is None:
             if new_name == env_name:
-                # If copying with same name, increment version
-                try:
-                    version_parts = original_config.version.split(".")
-                    if len(version_parts) >= 3:
-                        major, minor, patch = int(version_parts[0]), int(version_parts[1]), int(version_parts[2])
-                        patch += 1
-                        new_version = f"{major}.{minor}.{patch}"
-                    else:
-                        new_version = f"{original_config.version}.1"
-                except:
-                    new_version = f"{original_config.version}.copy"
+                # If copying with same name, get next version from version_manager
+                new_version = await version_manager.generate_next_version("environment", new_name, "patch")
             else:
-                # If copying with different name, keep original version
-                new_version = original_config.version
+                # If copying with different name, get or generate version for new name
+                new_version = await version_manager.get_or_generate_version("environment", new_name)
         
         # Create copy of config
         new_config_dict = original_config.model_dump()

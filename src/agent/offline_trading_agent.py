@@ -10,12 +10,11 @@ from pydantic import Field, ConfigDict, BaseModel
 
 from src.logger import logger
 from src.utils import dedent
-from src.agent.protocol import acp
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
-from src.agent.protocol.types import InputArgs
-from src.tool.protocol.types import ToolResponse
-from src.agent.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.agent.server import acp
+from src.tool.server import tcp
+from src.environment.server import ecp
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.tool.types import ToolResponse
 from src.memory import EventType
 from src.tracer import Tracer, Record
 
@@ -90,8 +89,7 @@ class ThinkOutputBuilder:
 
         return ThinkOutput
 
-@acp.agent()
-class OfflineTradingAgent(BaseAgent):
+class OfflineTradingAgent(Agent):
     """Offline trading agent implementation for backtesting with historical data.
     
     This agent is based on OnlineTradingAgent and uses the same implementation
@@ -292,13 +290,13 @@ class OfflineTradingAgent(BaseAgent):
     async def _get_messages(self, task: str) -> List[BaseMessage]:
         
         system_modules = self.prompt_modules
-        system_message = self.prompt_manager.get_system_message(modules=system_modules, reload=False)
+        system_message = await self.prompt_manager.get_system_message(modules=system_modules, reload=False)
         
         agent_message_modules = self.prompt_modules
         agent_message_modules.update(await self._get_agent_context(task))
         agent_message_modules.update(await self._get_environment_context())
         agent_message_modules.update(await self._get_tool_context())
-        agent_message = self.prompt_manager.get_agent_message(modules=agent_message_modules, reload=True)
+        agent_message = await self.prompt_manager.get_agent_message(modules=agent_message_modules, reload=True)
         
         messages = [
             system_message,
@@ -475,9 +473,6 @@ class OfflineTradingAgent(BaseAgent):
                                    task_id=task_id)
             self.tracer.save_to_json(self.tracer_save_path)
             
-            # Save memory to json
-            await self.memory_manager.save_to_json(self.memory_save_path)
-            
             messages = await self._get_messages(enhanced_task)
             
             if done:
@@ -497,14 +492,11 @@ class OfflineTradingAgent(BaseAgent):
             task_id=task_id
         )
         
-        # End session
+        # End session (automatically saves memory to JSON)
         await self.memory_manager.end_session(session_id=session_id)
         
         # Save tracer to json
         self.tracer.save_to_json(self.tracer_save_path)
-        
-        # Save memory to json
-        await self.memory_manager.save_to_json(self.memory_save_path)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

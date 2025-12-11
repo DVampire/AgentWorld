@@ -338,7 +338,7 @@ class AnthropicChatSerializer:
         for tool in tools:
             if isinstance(tool, Tool):
                 # Convert Tool instance to Anthropic format
-                function_call = tool.to_function_call()
+                function_call = tool.function_calling
                 function_def = function_call.get("function", {})
                 
                 # Anthropic uses "input_schema" instead of "parameters"

@@ -7,22 +7,21 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.protocol.agent import BaseAgent
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.logger import logger
 from src.utils import get_file_info, dedent
-from src.agent.protocol import acp
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
+from src.agent.server import acp
+from src.tool.server import tcp
+from src.environment.server import ecp
 from src.memory import SessionInfo, EventType
-from src.tool.protocol.types import ToolResponse
-from src.prompt.prompt_manager import PromptManager
+from src.tool.types import ToolResponse
+from src.prompt import prompt_manager
 
 class AnthropicMobileAgentInputArgs(BaseModel):
     task: str = Field(description="The mobile device automation task to complete.")
 
 
-@acp.agent()
-class AnthropicMobileAgent(BaseAgent):
+class AnthropicMobileAgent(Agent):
     """Anthropic Mobile Agent implementation with visual understanding capabilities for mobile device control."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -68,10 +67,8 @@ class AnthropicMobileAgent(BaseAgent):
             log_max_length=log_max_length,
             **kwargs)
         
-        self.prompt_manager = PromptManager(
-            prompt_name=prompt_name,
-            max_actions_per_step=1, # Max actions per step is 1 for anthropic mobile agent
-        )
+        # Use global prompt_manager instead of creating new instance
+        self.prompt_manager = prompt_manager
         
     async def _extract_file_content(self, file: str) -> str:
         """Extract file information."""
@@ -240,7 +237,7 @@ class AnthropicMobileAgent(BaseAgent):
         system_input_variables.update(dict(
             environment_rules=environment_rules,
         ))
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
@@ -251,7 +248,7 @@ class AnthropicMobileAgent(BaseAgent):
         agent_input_variables.update(agent_state)
         agent_input_variables.update(environment_state)
         
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
             system_message,

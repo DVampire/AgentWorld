@@ -7,8 +7,8 @@ import random
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.agent.protocol.agent import BaseAgent
-from src.agent.protocol import acp
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.agent.server import acp
 
 
 class DebateManagerInputArgs(BaseModel):
@@ -17,8 +17,7 @@ class DebateManagerInputArgs(BaseModel):
     max_rounds: Optional[int] = Field(default=10, description="Maximum number of debate rounds.")
 
 
-@acp.agent()
-class DebateManagerAgent(BaseAgent):
+class DebateManagerAgent(Agent):
     """Manages multi-agent debate sessions."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -173,9 +172,9 @@ class DebateManagerAgent(BaseAgent):
         
         try:
             # Get agent instance and call ainvoke_simple for debate
-            agent_info = acp.get_info(agent_name)
-            if agent_info and hasattr(agent_info, 'instance') and agent_info.instance:
-                agent = agent_info.instance
+            agent_config = acp.get_info(agent_name)
+            if agent_config and hasattr(agent_config, 'instance') and agent_config.instance:
+                agent = agent_config.instance
                 result = await agent.ainvoke_simple(
                     task=message,
                     files=[],
@@ -183,7 +182,7 @@ class DebateManagerAgent(BaseAgent):
                 )
             else:
                 # Fallback to regular acp call
-                result = await acp.ainvoke(
+                result = await acp(
                     name=agent_name,
                     input={
                         "task": message,

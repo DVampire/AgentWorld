@@ -6,20 +6,19 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.logger import logger
 from src.utils import dedent
-from src.agent.protocol import acp
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
+from src.agent.server import acp
+from src.tool.server import tcp
+from src.environment.server import ecp
 from src.memory import SessionInfo, EventType
-from src.tool.protocol.types import ToolResponse
+from src.tool.types import ToolResponse
 
 class InterdayTradingAgentInputArgs(BaseModel):
     task: str = Field(description="The trading task to complete.")
 
-@acp.agent()
-class InterdayTradingAgent(BaseAgent):
+class InterdayTradingAgent(Agent):
     """Interday trading agent implementation for single stock trading tasks."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -279,7 +278,7 @@ class InterdayTradingAgent(BaseAgent):
         system_input_variables.update(dict(
             environment_rules=environment_rules,
         ))
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
@@ -288,7 +287,7 @@ class InterdayTradingAgent(BaseAgent):
         agent_input_variables.update(agent_history)
         agent_input_variables.update(agent_state)
         agent_input_variables.update(environment_state)
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
             system_message,

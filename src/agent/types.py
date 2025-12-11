@@ -1,20 +1,74 @@
-"""Base agent class for multi-agent system."""
-import pandas as pd
-from typing import List, Optional, Type, Dict, Any, Union
-from pydantic import BaseModel, Field, ConfigDict
-from langchain_core.prompts import ChatPromptTemplate
-from datetime import datetime
-import os
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
+"""Agent Context Protocol (ACP) Types
 
+Core type definitions for the Agent Context Protocol.
+"""
+
+from typing import Any, Dict, Optional, Union, Type, List
+from pydantic import BaseModel, Field, ConfigDict
+import pandas as pd
+from enum import Enum
+import uuid
+import os
+from datetime import datetime
+
+from src.config import config
 from src.logger import logger
 from src.model import model_manager
-from src.prompt.prompt_manager import PromptManager
-from src.memory import MemoryManager, SessionInfo, EventType
-from src.agent.protocol.types import InputArgs
+from src.prompt import prompt_manager
+from src.memory import memory_manager
+from src.memory import SessionInfo, EventType
 from src.utils import get_file_info, dedent
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
+from src.tool.server import tcp
+from src.environment.server import ecp
+from src.message.types import SystemMessage, HumanMessage, Message
+
+class InputArgs(BaseModel):
+    task: str = Field(description="The task to complete.")
+    files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
+
+class ACPErrorCode(Enum):
+    """ACP error codes"""
+    INVALID_REQUEST = -32600
+    METHOD_NOT_FOUND = -32601
+    INVALID_PARAMS = -32602
+    INTERNAL_ERROR = -32603
+    AGENT_NOT_FOUND = -32001
+
+class ACPError(BaseModel):
+    """ACP error structure"""
+    code: ACPErrorCode
+    message: str
+    data: Optional[Dict[str, Any]] = None
+
+class ACPRequest(BaseModel):
+    """ACP request structure"""
+    id: Union[str, int] = Field(default_factory=lambda: str(uuid.uuid4()))
+    method: str
+    params: Optional[Dict[str, Any]] = None
+
+class ACPResponse(BaseModel):
+    """ACP response structure"""
+    id: Union[str, int]
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[ACPError] = None
+
+class AgentConfig(BaseModel):
+    """Agent configuration for registration"""
+    name: str
+    type: str
+    description: str
+    version: str = Field(default="1.0.0", description="Version of the agent")
+    args_schema: Optional[Type[BaseModel]] = None
+    cls: Optional[Any] = None
+    instance: Optional[Any] = None
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the agent")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    
+    def __str__(self):
+        return f"AgentConfig(name={self.name}, type={self.type}, description={self.description})"
+    
+    def __repr__(self):
+        return self.__str__()
 
 
 def format_actions(actions: List[BaseModel]) -> str:
@@ -92,27 +146,23 @@ class ThinkOutputBuilder:
 
         return ThinkOutput
 
-class BaseAgent(BaseModel):
+class Agent(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(description="The name of the agent.")
-    type: str = Field(description="The type of the agent.")
     description: str = Field(description="The description of the agent.")
-    args_schema: Type[InputArgs] = Field(description="The args schema of the agent.")
     metadata: Dict[str, Any] = Field(description="The metadata of the agent.")
     
     def __init__(
         self,
         workdir: str,
         name: Optional[str] = None,
-        type: Optional[str] = None,
         description: Optional[str] = None,
-        args_schema: Optional[Type[InputArgs]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         prompt_modules: Optional[Dict[str, Any]] = None,
-        memory_config: Dict[str, Any] = None,
+        memory_name: Optional[str] = None,
         max_tools: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
@@ -123,9 +173,7 @@ class BaseAgent(BaseModel):
         
         # Set default values
         self.name = name or self.name
-        self.type = type or self.type
         self.description = description or self.description
-        self.args_schema = args_schema or self.args_schema
         self.metadata = metadata or self.metadata
         
         # Set working directory
@@ -134,17 +182,11 @@ class BaseAgent(BaseModel):
         
         # Set prompt name and modules
         self.prompt_name = prompt_name
-        self.prompt_modules = prompt_modules or {}
-        
-        # Set memory configuration
-        self.memory_config = memory_config
-        self.memory_save_path = os.path.join(self.workdir, "memory.json")
-        
-        # Set model name
+        self.memory_name = memory_name
         self.model_name = model_name
-        self.model = model_manager.get(model_name)
         
         # Setup steps
+        self.prompt_modules = prompt_modules or {}
         self.max_steps = max_steps if max_steps>0 else int(1e8)
         self.max_tools = max_tools
         if self.max_tools > 0:
@@ -155,36 +197,15 @@ class BaseAgent(BaseModel):
         
     async def initialize(self):
         """Initialize the agent."""
-        # Setup prompt manager
-        self.prompt_manager = PromptManager(prompt_name=self.prompt_name)
+        # Setup think output builder
+        self.think_output_builder = ThinkOutputBuilder()
         
-        # Setup memory manager
-        self.memory_manager = MemoryManager(memory_config=self.memory_config)
-        if os.path.exists(self.memory_save_path):
-            await self.memory_manager.load_from_json(self.memory_save_path)
-        else:
-            await self.memory_manager.save_to_json(self.memory_save_path)
-        
-        # Setup model
-        self.model = await self._setup_model(self.model_name)
-        
-        
-    async def _setup_model(self, model_name: Optional[str]):
-        """Setup the language model."""
-        if model_name:
-            # Get model from ModelManager
-            model = model_manager.get(model_name)
-            if model:
-                return model
-            else:
-                logger.warning(f"Warning: Model '{model_name}' not found in model_manager")
-        
-        # Fallback to default model
-        default_model = model_manager.get("gpt-4.1")
-        if default_model:
-            return default_model
-        else:
-            raise RuntimeError("No model available")
+        self.tool_names = config.tool_names
+        args_schema = {
+            tool_name: tcp.get(tool_name).args_schema for tool_name in self.tool_names
+        }
+        self.think_output_builder.register(args_schema)
+        self.ThinkOutput = self.think_output_builder.build()
     
     def __str__(self):
         return f"Agent(name={self.name}, model={self.model_name}, prompt_name={self.prompt_name})"
@@ -198,7 +219,15 @@ class BaseAgent(BaseModel):
         info = get_file_info(file)
         
         # Extract file content
-        file_content = await tcp.ainvoke("mdify", input={"file_path": file, "output_format": "markdown"})
+        input = {
+            "name": "mdify",
+            "input": {
+                "file_path": file,
+                "output_format": "markdown"
+            }
+        }
+        tool_response = await tcp(**input)
+        file_content = tool_response.message
         
         # Use LLM to summarize the file content
         system_prompt = "You are a helpful assistant that summarizes file content."
@@ -213,10 +242,10 @@ class BaseAgent(BaseModel):
             HumanMessage(content=user_prompt)
         ]
         
-        summary = await self.no_fc_model.ainvoke(messages)
+        model_response = await model_manager(model=self.model_name, messages=messages)
         
         info["content"] = file_content
-        info["summary"] = summary.content
+        info["summary"] = model_response.message
         
         return info
     
@@ -235,37 +264,33 @@ class BaseAgent(BaseModel):
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
-        structured_llm = self.model.with_structured_output(
-            SessionInfo,
-            method="function_calling",
-            include_raw=False
+        system_prompt = f"You are a helpful assistant that generates a session info for agent {self.name}."
+        user_prompt = dedent(f"""
+            <intro>
+            The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
+            The session description should provide a concise description of the task.
+            </intro>
+            <task>
+            {task}
+            </task>"""
         )
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        model_response = await model_manager(
+            model=self.model_name, 
+            messages=messages,
+            response_format=SessionInfo,
+        )
+        model_response = model_response.extra['parsed_model']
+        
+        session_id = f"{self.name}_{datetime.now().isoformat()}"
+        description = model_response.description
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", f"You are a helpful assistant that generates a session info for agent {self.name}."),
-            ("user", 
-             dedent(f"""
-                    <intro>
-                    1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-                    2. The session description should provide a concise description of the task.
-                    </intro>
-                    <task>
-                    {task}
-                    </task>"""
-                )
-             )
-        ])
-
-        chain = prompt | structured_llm
-        result: SessionInfo = chain.invoke({"task": task})
-        
-        timestamp = datetime.now().isoformat()
-        
-        session_id = f"{self.name}_{timestamp}"
-        description = result.description
-        
         return SessionInfo(session_id=session_id, description=description)
-    
+
     async def _get_agent_context(self, task: str) -> Dict[str, Any]:
         """Get the agent context."""
         
@@ -280,7 +305,10 @@ class BaseAgent(BaseModel):
             </step_info>
         """)
         
-        state = await self.memory_manager.get_state(n=self.review_steps)
+        state = await memory_manager.get_state(
+            name=self.memory_name,
+            n=self.review_steps,
+        )
         
         events = state["events"]
         summaries = state["summaries"]
@@ -342,7 +370,7 @@ class BaseAgent(BaseModel):
     
     async def _get_todo_contents(self) -> str:
         """Get the todo contents."""
-        todo_tool = tcp.get("todo")
+        todo_tool = await tcp.get("todo")
         todo_contents = todo_tool.get_todo_content()
         return todo_contents
         
@@ -383,7 +411,8 @@ class BaseAgent(BaseModel):
         """Get the tool context."""
         tool_context = "<tool_context>"
         
-        tool_list = [tcp.to_string(tool) for tool in tcp.list()]
+        tool_list = [await tcp.get_info(tool) for tool in tcp.list()]
+        tool_list = [tool.text for tool in tool_list]
         tool_list_string = "\n".join(tool_list)
         
         tool_context += dedent(f"""
@@ -397,16 +426,32 @@ class BaseAgent(BaseModel):
             "tool_context": tool_context,
         }
         
-    async def _get_messages(self, task: str) -> List[BaseMessage]:
+    async def _get_messages(self, task: str) -> List[Message]:
         
-        system_modules = self.prompt_modules
-        system_message = self.prompt_manager.get_system_message(modules=system_modules, reload=False)
+        system_modules = self.prompt_modules.copy()
+        # Infer prompt name from agent's prompt_name
+        if self.prompt_name:
+            system_prompt_name = f"{self.prompt_name}_system_prompt"
+            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
+        else:
+            system_prompt_name = "tool_calling_system_prompt"
+            agent_message_prompt_name = "tool_calling_agent_message_prompt"
         
-        agent_message_modules = self.prompt_modules
+        system_message = await prompt_manager.get_system_message(
+            prompt_name=system_prompt_name,
+            modules=system_modules, 
+            reload=False
+        )
+        
+        agent_message_modules = self.prompt_modules.copy()
         agent_message_modules.update(await self._get_agent_context(task))
         agent_message_modules.update(await self._get_environment_context())
         agent_message_modules.update(await self._get_tool_context())
-        agent_message = self.prompt_manager.get_agent_message(modules=agent_message_modules, reload=True)
+        agent_message = await prompt_manager.get_agent_message(
+            prompt_name=agent_message_prompt_name,
+            modules=agent_message_modules, 
+            reload=True
+        )
         
         messages = [
             system_message,
@@ -414,11 +459,7 @@ class BaseAgent(BaseModel):
         ]
         
         return messages
-
-    async def ainvoke(self,  task: str, files: Optional[List[str]] = None):
-        """Run the agent. This method should be implemented by the child classes."""
-        raise NotImplementedError("Run method is not implemented by the child class")
     
-    def invoke(self,  task: str, files: Optional[List[str]] = None):
+    async def __all__(self, task: str, files: Optional[List[str]] = None):
         """Run the agent. This method should be implemented by the child classes."""
-        raise NotImplementedError("Run method is not implemented by the child class")
+        raise NotImplementedError("__all__ method is not implemented by the child class")

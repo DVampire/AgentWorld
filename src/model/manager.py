@@ -152,7 +152,7 @@ class ModelManager:
                 fallback_model=model.get("fallback_model"),
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
         
         # Register response models
         for model in response_models:
@@ -172,7 +172,7 @@ class ModelManager:
                 fallback_model=model.get("fallback_model"),
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
         
         # Register transcription models
         for model in transcribe_models:
@@ -190,7 +190,7 @@ class ModelManager:
                 fallback_model=model.get("fallback_model"),
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
         
         # Register embedding models
         for model in embedding_models:
@@ -208,7 +208,7 @@ class ModelManager:
                 fallback_model=model.get("fallback_model"),
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
     
     async def _initialize_openrouter_models(self):
         """Initialize OpenRouter models (OpenAI models via OpenRouter)."""
@@ -348,7 +348,7 @@ class ModelManager:
                 fallback_model=model.get("fallback_model"),
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
     
     async def _initialize_anthropic_models(self):
         """Initialize Anthropic models."""
@@ -422,7 +422,7 @@ class ModelManager:
                 fallback_model=model.get("fallback_model"),
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
     
     async def _initialize_google_models(self):
         """Initialize Google Gemini models."""
@@ -468,9 +468,9 @@ class ModelManager:
                 fallback_model=None,
             )
             self.models[config.model_name] = config
-            self._create_client(config)
+            await self._create_client(config)
     
-    def _create_client(self, config: ModelConfig) -> None:
+    async def _create_client(self, config: ModelConfig) -> None:
         """Create and cache a client for the given model config."""
         if config.provider == "openrouter":
             # OpenRouter models (only chat/completions supported for now)
@@ -552,13 +552,13 @@ class ModelManager:
             
         self.model_clients[config.model_name] = client
     
-    def register_model(self, config: ModelConfig) -> None:
+    async def register_model(self, config: ModelConfig) -> None:
         """Register a new model configuration."""
         if config.provider not in ["openai", "openrouter", "anthropic", "google"]:
             raise ValueError(f"Only OpenAI, OpenRouter, Anthropic, and Google models are supported. Got provider: {config.provider}")
         
         self.models[config.model_name] = config
-        self._create_client(config)
+        await self._create_client(config)
         logger.info(f"Registered model: {config.model_name}")
     
     async def __call__(
@@ -690,11 +690,11 @@ class ModelManager:
                 extra={"error": str(e), "model": current_model}
             )
     
-    def get_model_config(self, model: str) -> Optional[ModelConfig]:
+    async def get_model_config(self, model: str) -> Optional[ModelConfig]:
         """Get the configuration for a model."""
-        return self.models.get(model)
+        return await self.models.get(model)
     
-    def list(self) -> List[str]:
+    async def list(self) -> List[str]:
         """List all registered model names."""
         return list(self.models.keys())
 

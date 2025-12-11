@@ -309,7 +309,7 @@ class GoogleChatSerializer:
         for tool in tools:
             if isinstance(tool, Tool):
                 # Convert Tool instance to Google Gemini format
-                function_call = tool.to_function_call()
+                function_call = tool.function_calling
                 function_def = function_call.get("function", {})
                 
                 # Google Gemini uses "parameters" (same as OpenAI)

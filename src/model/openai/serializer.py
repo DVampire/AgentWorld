@@ -185,7 +185,7 @@ class OpenAIChatSerializer:
         Returns:
             List of function call format dicts
         """
-        return [tool.to_function_call() for tool in tools]
+        return [tool.function_calling for tool in tools]
     
     @staticmethod
     def serialize_response_format(

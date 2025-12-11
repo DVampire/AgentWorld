@@ -128,7 +128,9 @@ class VersionManager(BaseModel):
         self._version_histories: Dict[str, Dict[str, ComponentVersionHistory]] = {
             "tool": {},
             "environment": {},
-            "agent": {}
+            "agent": {},
+            "prompt": {},
+            "memory": {}
         }
 
     async def initialize(self):
@@ -211,6 +213,86 @@ class VersionManager(BaseModel):
         if version_history is None:
             return None
         return version_history.current_version
+    
+    async def generate_next_version(self, component_type: str, name: str, 
+                                   version_type: str = "patch") -> str:
+        """Generate next version number for a component
+        
+        Args:
+            component_type: Type of component (tool, environment, agent)
+            name: Component name
+            version_type: Type of version increment ("major", "minor", "patch")
+            
+        Returns:
+            Next version string (e.g., "1.0.1", "1.1.0", "2.0.0")
+        """
+        current_version = await self.get_current_version(component_type, name)
+        
+        if current_version is None:
+            # First version
+            return "1.0.0"
+        
+        try:
+            # Parse current version (e.g., "1.2.3")
+            version_parts = current_version.split(".")
+            if len(version_parts) >= 3:
+                major = int(version_parts[0])
+                minor = int(version_parts[1])
+                patch = int(version_parts[2])
+            elif len(version_parts) == 2:
+                major = int(version_parts[0])
+                minor = int(version_parts[1])
+                patch = 0
+            elif len(version_parts) == 1:
+                major = int(version_parts[0])
+                minor = 0
+                patch = 0
+            else:
+                # Invalid version format, start fresh
+                return "1.0.0"
+            
+            # Increment based on version_type
+            if version_type == "major":
+                major += 1
+                minor = 0
+                patch = 0
+            elif version_type == "minor":
+                minor += 1
+                patch = 0
+            else:  # patch (default)
+                patch += 1
+            
+            return f"{major}.{minor}.{patch}"
+            
+        except (ValueError, IndexError):
+            # If version parsing fails, start fresh
+            logger.warning(f"| ⚠️ Failed to parse version {current_version} for {component_type}/{name}, starting fresh")
+            return "1.0.0"
+    
+    async def get_version(self, component_type: str, name: str, 
+                         provided_version: Optional[str] = None) -> str:
+        """Get version from version_manager or generate new one
+        
+        Args:
+            component_type: Type of component (tool, environment, agent)
+            name: Component name
+            provided_version: Version provided by user (if any)
+            
+        Returns:
+            Version string to use
+        """
+        if provided_version:
+            # Use provided version
+            return provided_version
+        
+        # Check if component already exists
+        current_version = await self.get_current_version(component_type, name)
+        if current_version is None:
+            # New component, start with 1.0.0
+            return "1.0.0"
+        else:
+            # Existing component, generate next patch version
+            return await self.generate_next_version(component_type, name, "patch")
     
     async def save_to_json(self, file_path: Optional[str] = None) -> str:
         """Save all version histories to JSON

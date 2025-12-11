@@ -7,23 +7,22 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.protocol.agent import BaseAgent
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.logger import logger
 from src.utils import get_file_info, dedent
-from src.agent.protocol import acp
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
+from src.agent.server import acp
+from src.tool.server import tcp
+from src.environment.server import ecp
 from src.memory import SessionInfo, EventType
-from src.tool.protocol.types import ToolResponse
-from src.prompt.prompt_manager import PromptManager
+from src.tool.types import ToolResponse
+from src.prompt import prompt_manager
 from src.model import model_manager
 
 class OperatorBrowserAgentInputArgs(BaseModel):
     task: str = Field(description="The web browsing task to complete.")
 
 
-@acp.agent()
-class OperatorBrowserAgent(BaseAgent):
+class OperatorBrowserAgent(Agent):
     """Operator Browser Agent implementation with visual understanding capabilities."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -73,10 +72,8 @@ class OperatorBrowserAgent(BaseAgent):
         
         self.if_correct_action = if_correct_action
         
-        self.prompt_manager = PromptManager(
-            prompt_name=prompt_name,
-            max_actions_per_step=1, # Max actions per step is 1 for operator browser agent
-        )
+        # Use global prompt_manager instead of creating new instance
+        self.prompt_manager = prompt_manager
     
     async def _extract_file_content(self, file: str) -> str:
         """Extract file information."""
@@ -249,7 +246,7 @@ class OperatorBrowserAgent(BaseAgent):
         system_input_variables.update(dict(
             environment_rules=environment_rules,
         ))
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
@@ -260,7 +257,7 @@ class OperatorBrowserAgent(BaseAgent):
         agent_input_variables.update(agent_state)
         agent_input_variables.update(environment_state)
         
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
             system_message,

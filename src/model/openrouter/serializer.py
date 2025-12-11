@@ -371,7 +371,7 @@ class OpenRouterChatSerializer:
     @staticmethod
     def serialize_tool(tool: "Tool") -> Dict[str, Any]:
         """Serialize a Tool instance to an OpenRouter tool param."""
-        return tool.to_function_call()
+        return tool.function_calling
     
     @staticmethod
     def serialize_tools(tools: List["Tool"]) -> List[Dict[str, Any]]:

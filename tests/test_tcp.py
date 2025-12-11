@@ -3,6 +3,7 @@
 import asyncio
 import sys
 import os
+import json
 from pathlib import Path
 import argparse
 from mmengine import DictAction
@@ -14,8 +15,11 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
+from src.memory import memory_manager
+from src.prompt import prompt_manager
 from src.model import model_manager
 from src.version import version_manager
+from src.environment import ecp
 from src.tool import tcp
 
 def parse_args():
@@ -92,6 +96,19 @@ async def test_deep_researcher_tool():
             }
         }
         
+        tool_info = await tcp.get_info("deep_researcher")
+        
+        print("=" * 50)
+        print("Function_calling:")
+        print(tool_info.function_calling)
+        print("=" * 50)
+        print("Args schema:")
+        print(tool_info.args_schema)
+        print("=" * 50)
+        print("Text:")
+        print(tool_info.text)
+        print("=" * 50)
+        
         result = await tcp(**input)
         
         print("\n📋 Deep researcher tool result:")
@@ -119,17 +136,32 @@ async def main():
     # Initialize model manager
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize()
-    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
+    logger.info(f"| ✅ Model manager initialized: {await model_manager.list()}")
+    
+    # Initialize prompt manager
+    logger.info("| 📁 Initializing prompt manager...")
+    await prompt_manager.initialize()
+    logger.info(f"| ✅ Prompt manager initialized: {await prompt_manager.list()}")
+    
+    # Initialize memory manager
+    logger.info("| 📁 Initializing memory manager...")
+    await memory_manager.initialize(memory_names=config.memory_names)
+    logger.info(f"| ✅ Memory manager initialized: {await memory_manager.list()}")
     
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    await ecp.initialize(config.env_names)
+    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
-    logger.info(f"| ✅ Version manager initialized: {await version_manager.list()}")
+    logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
     # await test_browser_tool()
     await test_deep_researcher_tool()

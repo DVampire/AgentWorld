@@ -6,16 +6,15 @@ import asyncio
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
-from src.agent.protocol.agent import BaseAgent
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.logger import logger
-from src.agent.protocol import acp
+from src.agent.server import acp
 from src.memory import SessionInfo, EventType
 
 class SimpleChatAgentInputArgs(BaseModel):
     message: str = Field(description="The message from the human user.")
 
-@acp.agent()
-class SimpleChatAgent(BaseAgent):
+class SimpleChatAgent(Agent):
     """Simple chat agent for human conversation."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -98,7 +97,7 @@ class SimpleChatAgent(BaseAgent):
     async def _get_messages(self, message: str) -> List[BaseMessage]:
         """Generate messages for the conversation."""
         system_input_variables = {}
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         # Use global conversation history if available
         conversation_history = ""
@@ -110,7 +109,7 @@ class SimpleChatAgent(BaseAgent):
             "conversation_history": conversation_history,
             "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
             system_message,

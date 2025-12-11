@@ -12,10 +12,9 @@ from pydantic import BaseModel, Field
 import json
 import os
 
-from src.memory.types import ChatEvent, EventType, Importance, SessionInfo
+from src.memory.types import ChatEvent, EventType, Importance, SessionInfo, Memory
 from src.model import model_manager
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
-from src.registry import MEMORY_SYSTEM
 from src.logger import logger
 from src.utils import dedent, file_lock
 
@@ -309,15 +308,25 @@ class OfflineTradingCombinedMemory:
         return self.insights[-n:] if len(self.insights) > n else self.insights
 
 
-@MEMORY_SYSTEM.register_module(name="offline_trading_memory_system", force=True)
-class OfflineTradingMemorySystem:
+class OfflineTradingMemorySystem(Memory):
     """Offline trading memory system focused on perpetual futures decision tracking and learning"""
     
     def __init__(self, 
+                 base_dir: Optional[str] = None,
                  model_name: str = "gpt-4.1",
                  max_summaries: int = 15,
-                 max_insights: int = 50):
+                 max_insights: int = 50,
+                 **kwargs):
+        super().__init__(**kwargs)
         
+        if base_dir is not None:
+            self.base_dir = base_dir
+        
+        if self.base_dir is not None:
+            os.makedirs(self.base_dir, exist_ok=True)
+        logger.info(f"| Offline trading memory system base directory: {self.base_dir}")
+        self.save_path = os.path.join(self.base_dir, "memory_system.json") if self.base_dir else None
+            
         self.model_name = model_name
         self.max_summaries = max_summaries
         self.max_insights = max_insights
@@ -336,7 +345,11 @@ class OfflineTradingMemorySystem:
                             agent_name: Optional[str] = None, 
                             task_id: Optional[str] = None, 
                             description: Optional[str] = None) -> str:
-        """Start new trading session"""
+        """Start new trading session. Automatically loads from JSON if file exists."""
+        # Auto-load from JSON if file exists and save_path is set
+        if self.save_path and os.path.exists(self.save_path):
+            await self.load_from_json(self.save_path)
+        
         session_info = SessionInfo(
             session_id=session_id,
             agent_name=agent_name,
@@ -346,18 +359,19 @@ class OfflineTradingMemorySystem:
         self.session_info[session_id] = session_info
         self.current_session_id = session_id
         
-        # Initialize OfflineTradingCombinedMemory for this session
-        self.session_memory[session_id] = OfflineTradingCombinedMemory(
-            model_name=self.model_name, 
-            max_summaries=self.max_summaries,
-            max_insights=self.max_insights
-        )
+        # Initialize OfflineTradingCombinedMemory for this session if it doesn't exist
+        if session_id not in self.session_memory:
+            self.session_memory[session_id] = OfflineTradingCombinedMemory(
+                model_name=self.model_name, 
+                max_summaries=self.max_summaries,
+                max_insights=self.max_insights
+            )
         
         logger.info(f"| Started trading memory session: {session_id}")
         return session_id
     
     async def end_session(self, session_id: Optional[str] = None):
-        """End trading session"""
+        """End trading session. Automatically saves to JSON if save_path is set."""
         session_id = await self._check_session_id(session_id)
             
         if session_id and session_id in self.session_info:
@@ -365,6 +379,10 @@ class OfflineTradingMemorySystem:
             
             if session_id == self.current_session_id:
                 self.current_session_id = None
+            
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
     async def add_event(self,
                         step_number: int,
@@ -404,6 +422,10 @@ class OfflineTradingMemorySystem:
     
         if session_id in self.session_memory:
             await self.session_memory[session_id].add_event(event)
+            
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
     async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
         session_id = await self._check_session_id(session_id)
@@ -546,9 +568,8 @@ class OfflineTradingMemorySystem:
             }
             
             # Save to file
-            async with file_lock(file_path):
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(save_data, f, indent=4, ensure_ascii=False)
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(save_data, f, indent=4, ensure_ascii=False)
             
             logger.info(f"| 💾 Memory saved to {file_path}")
             return str(file_path)

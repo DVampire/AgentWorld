@@ -17,7 +17,7 @@ from src.config import config
 from src.environment.faiss.service import FaissService
 from src.environment.faiss.types import FaissAddRequest
 from src.utils import assemble_project_path
-from src.tool.types import Tool, ToolConfig
+from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.version import version_manager
 from src.utils.file_utils import file_lock
 
@@ -172,33 +172,47 @@ class ToolContextManager(BaseModel):
             override: Whether to override existing registration
         """
         tool_name = None
+        temp_instance = None
         try:
             # Get tool config from global config
             tool_config_key = inflection.underscore(tool_cls.__name__)
-            tool_config = config.get(f"{tool_config_key}_tool", {})
+            tool_config_dict = config.get(f"{tool_config_key}_tool", {})
             
-            # Try to create temporary instance to get name and description
-            try:
-                temp_instance = tool_cls(**tool_config)
-                tool_name = temp_instance.name
-                tool_description = temp_instance.description
-            except Exception:
-                # If instantiation fails, try without config
+            # First, try to get name and description from class attributes (avoid unnecessary instantiation)
+            tool_name = getattr(tool_cls, 'name', None)
+            tool_description = getattr(tool_cls, 'description', '')
+            
+            # If not found in class attributes, try to get from model_fields (Pydantic)
+            if not tool_name or not tool_description:
+                if hasattr(tool_cls, 'model_fields'):
+                    if 'name' in tool_cls.model_fields:
+                        name_field = tool_cls.model_fields['name']
+                        if hasattr(name_field, 'default') and name_field.default is not ...:
+                            tool_name = name_field.default
+                    if 'description' in tool_cls.model_fields:
+                        desc_field = tool_cls.model_fields['description']
+                        if hasattr(desc_field, 'default') and desc_field.default is not ...:
+                            tool_description = desc_field.default
+            
+            # If still not found, try to create a minimal instance (only if needed)
+            temp_instance = None
+            if not tool_name or not tool_description:
                 try:
+                    # Try without config first (minimal instantiation)
                     temp_instance = tool_cls()
-                    tool_name = temp_instance.name
-                    tool_description = temp_instance.description
+                    tool_name = tool_name or temp_instance.name
+                    tool_description = tool_description or temp_instance.description
                 except Exception:
-                    # If still fails, try to get from class attributes or model_fields
-                    tool_name = getattr(tool_cls, 'name', None)
-                    tool_description = getattr(tool_cls, 'description', '')
-                    
-                    if not tool_name:
-                        logger.warning(f"| ⚠️ Tool class {tool_cls.__name__} has no name, skipping")
-                        return
+                    # If instantiation fails, try with config
+                    try:
+                        temp_instance = tool_cls(**tool_config_dict)
+                        tool_name = tool_name or temp_instance.name
+                        tool_description = tool_description or temp_instance.description
+                    except Exception as e:
+                        logger.debug(f"| ⚠️ Failed to instantiate tool {tool_cls.__name__} to get name/description: {e}")
             
             if not tool_name:
-                logger.warning(f"| ⚠️ Tool class {tool_cls.__name__} has empty name, skipping")
+                logger.warning(f"| ⚠️ Tool class {tool_cls.__name__} has no name, skipping")
                 return
             
             if tool_name in self._tool_configs and not override:
@@ -206,16 +220,24 @@ class ToolContextManager(BaseModel):
                 return
             
             # Create ToolConfig with auto-increment ID
+            # Get or generate version from version_manager
+            version = await version_manager.get_version("tool", tool_name)
+            
+            # Note: function_calling, text, and args_schema will be lazily computed when needed (during build)
+            # This avoids unnecessary instantiation during discovery phase
             tool_config = ToolConfig(
                 id=self._next_tool_id,
                 name=tool_name,
                 description=tool_description,
                 enabled=True,
-                version="1.0.0",
+                version=version,
                 cls=tool_cls,
                 config={},
                 instance=None,
-                metadata={}
+                metadata={},
+                function_calling=None,  # Will be computed during build if needed
+                text=None,  # Will be computed during build if needed
+                args_schema=None  # Will be computed during build if needed
             )
             self._next_tool_id += 1
             
@@ -315,6 +337,15 @@ class ToolContextManager(BaseModel):
             tool_instance = tool_config.cls(**tool_config.config)
             tool_config.instance = tool_instance
             
+            # Lazy compute function_calling, text, and args_schema if not already set
+            if tool_config.function_calling is None or tool_config.text is None or tool_config.args_schema is None:
+                try:
+                    tool_config.function_calling = tool_instance.function_calling
+                    tool_config.text = tool_instance.text
+                    tool_config.args_schema = tool_instance.args_schema
+                except Exception as e:
+                    logger.debug(f"| ⚠️ Failed to get properties from tool instance {tool_config.name}: {e}")
+            
             # Store tool metadata
             self._tool_configs[tool_config.name] = tool_config
             
@@ -379,7 +410,7 @@ class ToolContextManager(BaseModel):
             
             # Determine if we're registering a class or instance
             if isinstance(tool, Tool):
-                # Registering an instance
+                # Registering an instance - get properties directly from instance
                 tool_config = ToolConfig(
                     id=self._next_tool_id,
                     name=tool_name,
@@ -389,10 +420,24 @@ class ToolContextManager(BaseModel):
                     cls=type(tool),
                     config={},
                     instance=tool,
-                    metadata=getattr(tool, 'metadata', {})
+                    metadata=getattr(tool, 'metadata', {}),
+                    function_calling=tool.function_calling,
+                    text=tool.text,
+                    args_schema=tool.args_schema
                 )
             else:
-                # Registering a class - store config for lazy loading
+                # Registering a class - create temporary instance to get properties
+                try:
+                    temp_instance = tool(**kwargs)
+                    function_calling = temp_instance.function_calling
+                    text = temp_instance.text
+                    args_schema = temp_instance.args_schema
+                except Exception as e:
+                    logger.debug(f"| ⚠️ Failed to create temp instance for properties: {e}")
+                    function_calling = None
+                    text = None
+                    args_schema = None
+                
                 tool_config = ToolConfig(
                     id=self._next_tool_id,
                     name=tool_name,
@@ -402,7 +447,10 @@ class ToolContextManager(BaseModel):
                     cls=tool,
                     config=kwargs,
                     instance=None,  # Will be created on initialize
-                    metadata={}
+                    metadata={},
+                    function_calling=function_calling,
+                    text=text,
+                    args_schema=args_schema
                 )
             self._next_tool_id += 1
             
@@ -443,6 +491,17 @@ class ToolContextManager(BaseModel):
             return None
         return tool_config.instance if tool_config.instance is not None else None
     
+    async def get_info(self, tool_name: str) -> Optional[ToolConfig]:
+        """Get tool configuration by name
+        
+        Args:
+            tool_name: Tool name
+            
+        Returns:
+            ToolConfig: Tool configuration or None if not found
+        """
+        return self._tool_configs.get(tool_name)
+    
     async def list(self, include_disabled: bool = False) -> List[str]:
         """Get list of registered tools
         
@@ -458,49 +517,6 @@ class ToolContextManager(BaseModel):
             name for name, config in self._tool_configs.items()
             if config.enabled
         ]
-    
-    async def to_text(self, tool_name: str) -> str:
-        """Convert tool information to string
-        
-        Args:
-            tool_name: Tool name
-            
-        Returns:
-            str: Tool information string
-        """
-        tool_config = self._tool_configs.get(tool_name)
-        if not tool_config:
-            raise ValueError(f"Tool {tool_name} not found")
-        
-        # Get instance or create temporary one for schema
-        if tool_config.instance is not None:
-            instance = tool_config.instance
-        elif tool_config.cls is not None:
-            try:
-                instance = tool_config.cls(**tool_config.config)
-            except Exception as e:
-                return f"{tool_config.id:04d}. {tool_config.name}: Failed to create instance ({e})"
-        else:
-            return f"{tool_config.id:04d}. {tool_config.name}: No class available"
-        
-        tool_text = f"{tool_config.id:04d}. {tool_config.name}: {tool_config.description}\n"
-        tool_text += instance.to_text()
-        return tool_text
-    
-    async def to_function_call(self, tool_name: str) -> Dict[str, Any]:
-        """Convert tool information to function call
-        
-        Args:
-            tool_name: Tool name
-            
-        Returns:
-            Dict[str, Any]: Function call
-        """
-        tool_config = await self.get(tool_name)
-        if not tool_config:
-            raise ValueError(f"Tool {tool_name} not found")
-        
-        return tool_config.instance.to_function_call()
     
     async def update(self, tool_name: str, tool: Union[Tool, Type[Tool]], 
                     new_version: Optional[str] = None, description: Optional[str] = None,
@@ -525,23 +541,14 @@ class ToolContextManager(BaseModel):
         temp_instance = self._ensure_tool_instance(tool, **kwargs)
         new_description = temp_instance.description
         
-        # Determine new version
+        # Determine new version from version_manager
         if new_version is None:
-            # Auto-increment version
-            try:
-                version_parts = original_config.version.split(".")
-                if len(version_parts) >= 3:
-                    major, minor, patch = int(version_parts[0]), int(version_parts[1]), int(version_parts[2])
-                    patch += 1
-                    new_version = f"{major}.{minor}.{patch}"
-                else:
-                    new_version = f"{original_config.version}.1"
-            except:
-                new_version = f"{original_config.version}.updated"
+            # Get current version from version_manager and generate next patch version
+            new_version = await version_manager.generate_next_version("tool", tool_name, "patch")
         
         # Create new tool config with updated content
         if isinstance(tool, Tool):
-            # Updating with an instance
+            # Updating with an instance - get properties directly from instance
             updated_config = ToolConfig(
                 id=original_config.id,  # Keep same ID
                 name=tool_name,  # Keep same name
@@ -551,10 +558,24 @@ class ToolContextManager(BaseModel):
                 cls=type(tool),
                 config={},
                 instance=tool,
-                metadata=getattr(tool, 'metadata', {})
+                metadata=getattr(tool, 'metadata', {}),
+                function_calling=tool.function_calling,
+                text=tool.text,
+                args_schema=tool.args_schema
             )
         else:
-            # Updating with a class
+            # Updating with a class - create temporary instance to get properties
+            try:
+                temp_instance = tool(**kwargs)
+                function_calling = temp_instance.function_calling
+                text = temp_instance.text
+                args_schema = temp_instance.args_schema
+            except Exception as e:
+                logger.debug(f"| ⚠️ Failed to create temp instance for properties: {e}")
+                function_calling = None
+                text = None
+                args_schema = None
+            
             updated_config = ToolConfig(
                 id=original_config.id,  # Keep same ID
                 name=tool_name,  # Keep same name
@@ -564,7 +585,10 @@ class ToolContextManager(BaseModel):
                 cls=tool,
                 config=kwargs,
                 instance=None,  # Will be created on initialize
-                metadata={}
+                metadata={},
+                function_calling=function_calling,
+                text=text,
+                args_schema=args_schema
             )
         
         # Update the tool config (replaces current version)
@@ -610,19 +634,14 @@ class ToolContextManager(BaseModel):
         if new_name is None:
             new_name = tool_name
         
-        # Determine new version
+        # Determine new version from version_manager
         if new_version is None:
-            # Try to increment version
-            try:
-                version_parts = original_config.version.split(".")
-                if len(version_parts) >= 3:
-                    major, minor, patch = int(version_parts[0]), int(version_parts[1]), int(version_parts[2])
-                    patch += 1
-                    new_version = f"{major}.{minor}.{patch}"
-                else:
-                    new_version = f"{original_config.version}.1"
-            except:
-                new_version = f"{original_config.version}.copy"
+            if new_name == tool_name:
+                # If copying with same name, get next version from version_manager
+                new_version = await version_manager.generate_next_version("tool", new_name, "patch")
+            else:
+                # If copying with different name, get or generate version for new name
+                new_version = await version_manager.get_or_generate_version("tool", new_name)
         
         # Create copy of config
         new_config_dict = original_config.model_dump()
@@ -929,3 +948,18 @@ class ToolContextManager(BaseModel):
             
         except Exception as e:
             logger.error(f"| ❌ Error during tool context manager cleanup: {e}")
+            
+    async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
+        """Call a tool by name
+        
+        Args:
+            name: Tool name
+            input: Input for the tool
+            
+        Returns:
+            ToolResponse: Tool result
+        """
+        tool = await self.get(name)
+        if tool is None:
+            raise ValueError(f"Tool {name} not found")
+        return await tool(**input)

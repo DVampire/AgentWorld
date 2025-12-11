@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import ast
 import inspect
 import re
 import json
-import uuid
-from enum import Enum
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple, get_type_hints, Type, Union
+import inflection
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 PYTHON_TYPE_FIELD = "x-python-type"
 JSON_TO_PYTHON_TYPE = {
@@ -20,7 +18,6 @@ JSON_TO_PYTHON_TYPE = {
     "object": "dict",
     "array": "list",
 }
-UNSET = object()
 
 class ToolResponse(BaseModel):
     """Response for a tool call."""
@@ -118,7 +115,8 @@ class Tool(BaseModel):
         """
         raise NotImplementedError("Tool subclasses must implement __call__")
     
-    def to_function_call(self) -> Dict[str, Any]:
+    @property
+    def function_calling(self) -> Dict[str, Any]:
         """Return the OpenAI-compatible function-calling representation."""
         # Remove x-python-type field from schema as it's only for internal use
         schema = self.parameter_schema
@@ -133,7 +131,140 @@ class Tool(BaseModel):
             },
         }
         
-    def to_text(self) -> str:
+    @property
+    def args_schema(self) -> Type[BaseModel]:
+        """Return a BaseModel type for the tool's input parameters.
+        
+        The model name will be `{tool_name}Input` (e.g., `bashInput`, `python_interpreterInput`).
+        
+        Returns:
+            Type[BaseModel]: A Pydantic BaseModel class for the tool's input parameters
+        """
+        import inflection
+        
+        schema = self.parameter_schema
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        
+        # Generate model name: {tool_name}Input (PascalCase)
+        model_name = inflection.camelize(self.name) + "Input"
+        
+        # If no properties, return a simple empty model
+        if not properties:
+            return create_model(
+                model_name,
+                __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow")
+            )
+        
+        # Build field definitions for create_model
+        field_definitions = {}
+        for param_name, param_info in properties.items():
+            # Get Python type from x-python-type or convert from JSON type
+            python_type_str = param_info.get(PYTHON_TYPE_FIELD)
+            if python_type_str:
+                # Parse type string (e.g., "str", "Optional[str]", "List[str]")
+                python_type = self._parse_type_string(python_type_str)
+            else:
+                json_type = param_info.get("type", "string")
+                python_type = self._json_type_to_python_type(json_type)
+            
+            # Check if field is required
+            is_required = param_name in required
+            
+            # Get default value if exists
+            if "default" in param_info:
+                default_value = param_info["default"]
+            elif is_required:
+                default_value = ...  # Required field, no default
+            else:
+                default_value = None  # Optional field, default to None
+            
+            # Create Field with description
+            description = param_info.get("description", "")
+            if is_required and default_value is ...:
+                # Required field without default
+                field_definitions[param_name] = (
+                    python_type,
+                    Field(description=description)
+                )
+            else:
+                # Optional field or field with default
+                field_definitions[param_name] = (
+                    Optional[python_type] if not is_required else python_type,
+                    Field(default=default_value, description=description)
+                )
+        
+        # Create the model
+        return create_model(
+            model_name,
+            __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow"),
+            **field_definitions
+        )
+    
+    def _parse_type_string(self, type_str: str) -> Type:
+        """Parse a type string (e.g., "str", "Optional[str]", "List[str]") to Python type.
+        
+        Args:
+            type_str: Type string to parse
+            
+        Returns:
+            Python type
+        """
+        # Handle common type strings
+        type_mapping = {
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "dict": dict,
+            "list": list,
+            "Any": Any,
+        }
+        
+        # Check if it's a direct mapping
+        if type_str in type_mapping:
+            return type_mapping[type_str]
+        
+        # Handle Optional[Type]
+        if type_str.startswith("Optional[") and type_str.endswith("]"):
+            inner_type_str = type_str[9:-1]
+            inner_type = self._parse_type_string(inner_type_str)
+            return Optional[inner_type]
+        
+        # Handle List[Type]
+        if type_str.startswith("List[") and type_str.endswith("]"):
+            inner_type_str = type_str[5:-1]
+            inner_type = self._parse_type_string(inner_type_str)
+            return List[inner_type]
+        
+        # Handle Dict[K, V]
+        if type_str.startswith("Dict[") and type_str.endswith("]"):
+            return dict
+        
+        # Default to Any if can't parse
+        return Any
+    
+    def _json_type_to_python_type(self, json_type: str) -> Type:
+        """Convert JSON schema type to Python type.
+        
+        Args:
+            json_type: JSON schema type (e.g., "string", "integer", "number")
+            
+        Returns:
+            Python type
+        """
+        type_mapping = {
+            "integer": int,
+            "number": float,
+            "string": str,
+            "boolean": bool,
+            "object": dict,
+            "array": list,
+        }
+        return type_mapping.get(json_type, str)
+        
+    @property
+    def text(self) -> str:
         """
         Return the text representation of the tool.
         
@@ -178,31 +309,56 @@ class Tool(BaseModel):
         return cleaned
 
     def _build_parameter_schema(self) -> Dict[str, Any]:
-        docstring = inspect.getdoc(self.__class__.__call__) or ""
-        doc_params = _parse_parameters_from_docstring(docstring)
-        if _only_generic_input(doc_params):
-            doc_params = []
-        sig_params = _parse_parameters_from_signature(self.__class__.__call__)
-        parsed = _merge_parameter_definitions(doc_params, sig_params)
-        if not parsed:
+        """Build parameter schema from function signature and docstring."""
+        try:
+            signature = inspect.signature(self.__class__.__call__)
+        except (TypeError, ValueError):
             return self.default_parameters_schema()
+
+        # Get type hints
+        try:
+            hints = get_type_hints(self.__class__.__call__)
+        except Exception:
+            hints = {}
+
+        # Get docstring for descriptions
+        docstring = inspect.getdoc(self.__class__.__call__) or ""
+        doc_descriptions = self._parse_docstring_descriptions(docstring)
 
         properties = {}
         required = []
-        for arg in parsed:
+        
+        for name, param in signature.parameters.items():
+            if name == "self":
+                continue
+            
+            # Skip generic "input" parameter
+            if name == "input" and len(signature.parameters) == 2:  # self + input
+                continue
+            
+            # Get type annotation
+            annotation = hints.get(name, param.annotation)
+            json_type, python_type = self._annotation_to_types(annotation)
+            
+            # Determine if required
+            is_required = param.default is inspect._empty
+            
+            # Build schema
             schema: Dict[str, Any] = {
-                "type": arg["type"],
-                "description": arg["description"],
+                "type": json_type,
+                "description": doc_descriptions.get(name, ""),
             }
-            if PYTHON_TYPE_FIELD in arg:
-                schema[PYTHON_TYPE_FIELD] = arg[PYTHON_TYPE_FIELD]
-            if "default" in arg:
-                schema["default"] = arg["default"]
-            if "enum" in arg and arg["enum"]:
-                schema["enum"] = arg["enum"]
-            properties[arg["name"]] = schema
-            if arg.get("required"):
-                required.append(arg["name"])
+            schema[PYTHON_TYPE_FIELD] = python_type
+            
+            if not is_required:
+                schema["default"] = param.default
+            
+            properties[name] = schema
+            if is_required:
+                required.append(name)
+
+        if not properties:
+            return self.default_parameters_schema()
 
         result: Dict[str, Any] = {
             "type": "object",
@@ -213,293 +369,75 @@ class Tool(BaseModel):
             result["required"] = required
         return result
 
-
-def _parse_parameters_from_docstring(docstring: str) -> List[Dict[str, Any]]:
-    """Parse the Args section of a Google-style docstring."""
-    if not docstring:
-        return []
-
-    lines = inspect.cleandoc(docstring).splitlines()
-    args_lines: List[str] = []
-    collecting = False
-    for line in lines:
-        stripped = line.strip()
-        if not collecting:
-            if stripped.lower().startswith("args"):
-                collecting = True
-            continue
-        else:
-            if stripped.lower().startswith(("returns:", "yields:", "raises:", "examples:", "note:", "notes:")):
-                break
-            if stripped == "":
-                args_lines.append(line)
+    def _parse_docstring_descriptions(self, docstring: str) -> Dict[str, str]:
+        """Parse parameter descriptions from Google-style docstring."""
+        if not docstring:
+            return {}
+        
+        descriptions = {}
+        lines = inspect.cleandoc(docstring).splitlines()
+        in_args = False
+        
+        for line in lines:
+            stripped = line.strip()
+            if not in_args:
+                if stripped.lower().startswith("args"):
+                    in_args = True
                 continue
-            if not line.startswith((" ", "\t")):
+            
+            # Stop at other sections
+            if stripped.lower().startswith(("returns:", "yields:", "raises:", "examples:")):
                 break
-            args_lines.append(line)
+            
+            # Parse parameter line: "param_name (type): description"
+            match = re.match(r"^\s*(\w+)\s*(?:\([^)]*\))?\s*:\s*(.+)$", stripped)
+            if match:
+                param_name = match.group(1)
+                description = match.group(2).strip()
+                descriptions[param_name] = description
+        
+        return descriptions
 
-    entries = _consolidate_arg_entries(args_lines)
-    parsed: List[Dict[str, Any]] = []
-    for entry in entries:
-        parsed.append(_build_arg_schema(entry))
-    return parsed
-
-
-def _consolidate_arg_entries(lines: List[str]) -> List[Dict[str, Any]]:
-    entries: List[Dict[str, Any]] = []
-    current: Optional[Dict[str, Any]] = None
-    param_pattern = re.compile(
-        r"^(?P<name>[a-zA-Z_][\w]*)\s*(?:\((?P<typeinfo>[^)]*)\))?\s*:\s*(?P<desc>.*)$"
-    )
-
-    for raw in lines:
-        stripped = raw.strip()
-        if not stripped:
-            if current:
-                current["desc_lines"].append("")
-            continue
-        match = param_pattern.match(stripped)
-        if match:
-            if current:
-                entries.append(current)
-            current = {
-                "name": match.group("name"),
-                "typeinfo": match.group("typeinfo") or "",
-                "desc_lines": [match.group("desc").strip()],
-            }
-        else:
-            if current:
-                current["desc_lines"].append(stripped)
-    if current:
-        entries.append(current)
-    return entries
-
-
-def _build_arg_schema(entry: Dict[str, Any]) -> Dict[str, Any]:
-    description = " ".join(line.strip() for line in entry.get("desc_lines", []) if line is not None).strip()
-    typeinfo = entry.get("typeinfo", "")
-    json_type, required, default, enum_values, python_label = _interpret_typeinfo(typeinfo)
-
-    if default is UNSET:
-        default_from_desc = _extract_default_from_description(description)
-        if default_from_desc is not UNSET:
-            default = default_from_desc
-
-    schema = {
-        "name": entry["name"],
-        "type": json_type,
-        "description": description,
-        "required": required,
-    }
-    schema[PYTHON_TYPE_FIELD] = python_label or json_type
-    if default is not UNSET:
-        schema["default"] = default
-    if enum_values:
-        schema["enum"] = enum_values
-    return schema
-
-
-def _interpret_typeinfo(typeinfo: str) -> Tuple[str, bool, Any, Optional[List[Any]], str]:
-    if not typeinfo:
-        return "string", True, UNSET, None, "Any"
-
-    parts = [part.strip() for part in typeinfo.split(",") if part.strip()]
-    base = parts[0]
-    required = True
-    default: Any = UNSET
-    enum_values: Optional[List[Any]] = None
-
-    normalized_base = base.replace("typing.", "")
-    python_label = normalized_base or "Any"
-    optional_match = re.fullmatch(r"Optional\[(.+)\]", normalized_base, re.IGNORECASE)
-    if optional_match:
-        normalized_base = optional_match.group(1)
-        required = False
-        python_label = f"Optional[{normalized_base}]"
-
-    literal_match = re.fullmatch(r"Literal\[(.+)\]", normalized_base, re.IGNORECASE)
-    if literal_match:
-        enum_values = _parse_literal_list(literal_match.group(1))
-        normalized_base = "string"
-        if enum_values:
-            python_label = f"Literal[{', '.join(repr(v) for v in enum_values)}]"
-
-    json_type = _map_type_name(normalized_base)
-
-    for meta in parts[1:]:
-        lower = meta.lower()
-        if lower == "optional":
-            required = False
-        elif lower == "required":
-            required = True
-        elif lower.startswith("default="):
-            default = _safe_literal_eval(meta.split("=", 1)[1].strip())
-
-    if not python_label:
-        python_label = normalized_base or "Any"
-    return json_type, required, default, enum_values, python_label
-
-
-def _map_type_name(type_name: str) -> str:
-    name = type_name.strip().lower()
-    if name.startswith("optional["):
-        inner = name[len("optional[") : -1]
-        return _map_type_name(inner)
-    if any(token in name for token in ("list", "sequence", "tuple", "iterable")):
-        return "array"
-    if any(token in name for token in ("dict", "mapping")):
-        return "object"
-    if name in {"str", "string", "text"}:
-        return "string"
-    if name in {"int", "integer"}:
-        return "integer"
-    if name in {"float", "double", "number"}:
-        return "number"
-    if name in {"bool", "boolean"}:
-        return "boolean"
-    if name in {"any"}:
-        return "object"
-    return "string"
-
-
-def _parse_literal_list(values: str) -> List[Any]:
-    raw_items = [item.strip() for item in values.split(",") if item.strip()]
-    parsed_items = []
-    for item in raw_items:
-        parsed_items.append(_safe_literal_eval(item))
-    return parsed_items
-
-
-def _extract_default_from_description(description: str) -> Any:
-    if not description:
-        return UNSET
-    default_patterns = [
-        r"[Dd]efaults?\s+to\s+([^.;]+)",
-        r"[Dd]efault(?:\s+value)?\s*[:=]\s*([^.;]+)",
-    ]
-    for pattern in default_patterns:
-        match = re.search(pattern, description)
-        if match:
-            value = match.group(1).strip()
-            return _safe_literal_eval(value)
-    return UNSET
-
-
-def _safe_literal_eval(value: str) -> Any:
-    value = value.strip().strip(".")
-    try:
-        return ast.literal_eval(value)
-    except (ValueError, SyntaxError):
-        lowered = value.lower()
-        if lowered in {"true", "false"}:
-            return lowered == "true"
-        if lowered == "none":
-            return None
-        return value
-
-
-def _parse_parameters_from_signature(func) -> List[Dict[str, Any]]:
-    """Fallback parser that inspects the function signature."""
-    try:
-        signature = inspect.signature(func)
-    except (TypeError, ValueError):
-        return []
-
-    hints = get_type_hints(func)
-    parsed: List[Dict[str, Any]] = []
-    for name, param in signature.parameters.items():
-        if name == "self":
-            continue
-        typeinfo = _format_annotation(hints.get(name, param.annotation))
-        json_type, required, default, enum_values, python_label = _interpret_typeinfo(typeinfo)
-        if param.default is not inspect._empty:
-            default = param.default
-
-        schema = {
-            "name": name,
-            "type": json_type,
-            "description": "",
-            "required": required,
-        }
-        schema[PYTHON_TYPE_FIELD] = python_label or json_type
-        if default is not UNSET:
-            schema["default"] = default
-        if enum_values:
-            schema["enum"] = enum_values
-        parsed.append(schema)
-
-    return parsed
-
-
-def _format_annotation(annotation: Any) -> str:
-    if annotation is inspect._empty or annotation is None:
-        return ""
-    if isinstance(annotation, type):
-        return annotation.__name__
-    ann_repr = repr(annotation)
-    return ann_repr.replace("typing.", "")
-
-
-def _only_generic_input(parsed: List[Dict[str, Any]]) -> bool:
-    if len(parsed) != 1:
-        return False
-    arg = parsed[0]
-    return arg["name"] == "input" and arg["type"] == "object"
-
-
-def _merge_parameter_definitions(
-    doc_params: List[Dict[str, Any]],
-    sig_params: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    if not doc_params and not sig_params:
-        return []
-
-    doc_map = {param["name"]: param for param in doc_params}
-    sig_map = {param["name"]: param for param in sig_params}
-
-    ordered_names: List[str] = []
-    for name in doc_map.keys():
-        if name not in ordered_names:
-            ordered_names.append(name)
-    for name in sig_map.keys():
-        if name not in ordered_names:
-            ordered_names.append(name)
-
-    merged: List[Dict[str, Any]] = []
-    for name in ordered_names:
-        doc_entry = doc_map.get(name)
-        sig_entry = sig_map.get(name)
-
-        if doc_entry:
-            entry = dict(doc_entry)
-        elif sig_entry:
-            entry = dict(sig_entry)
-        else:
-            continue
-
-        if sig_entry:
-            entry.setdefault("type", sig_entry.get("type"))
-            entry.setdefault("description", sig_entry.get("description", ""))
-            entry.setdefault(PYTHON_TYPE_FIELD, sig_entry.get(PYTHON_TYPE_FIELD))
-
-            if "default" in sig_entry:
-                entry["default"] = sig_entry["default"]
-
-            if "required" not in entry:
-                entry["required"] = sig_entry.get("required", True)
-            else:
-                if sig_entry.get("required") is False:
-                    entry["required"] = False
-
-            if sig_entry.get("enum") and "enum" not in entry:
-                entry["enum"] = sig_entry["enum"]
-
-        if "required" not in entry:
-            entry["required"] = True
-
-        merged.append(entry)
-
-    return merged
+    def _annotation_to_types(self, annotation: Any) -> Tuple[str, str]:
+        """Convert Python type annotation to JSON type and Python type string."""
+        if annotation is inspect._empty or annotation is None:
+            return "string", "Any"
+        
+        # Handle basic types
+        if annotation is str or annotation == str:
+            return "string", "str"
+        if annotation is int or annotation == int:
+            return "integer", "int"
+        if annotation is float or annotation == float:
+            return "number", "float"
+        if annotation is bool or annotation == bool:
+            return "boolean", "bool"
+        if annotation is dict or annotation == dict:
+            return "object", "dict"
+        if annotation is list or annotation == list:
+            return "array", "list"
+        
+        # Handle typing types
+        origin = getattr(annotation, "__origin__", None)
+        args = getattr(annotation, "__args__", ())
+        
+        # Optional[Type] or Union[Type, None]
+        if origin is Union and len(args) == 2 and type(None) in args:
+            inner_type = args[0] if args[1] is type(None) else args[1]
+            json_type, python_type = self._annotation_to_types(inner_type)
+            return json_type, f"Optional[{python_type}]"
+        
+        # List[Type]
+        if origin is list or (hasattr(annotation, "__origin__") and "List" in str(annotation)):
+            return "array", "list"
+        
+        # Dict[K, V]
+        if origin is dict or (hasattr(annotation, "__origin__") and "Dict" in str(annotation)):
+            return "object", "dict"
+        
+        # Default fallback
+        type_str = str(annotation).replace("typing.", "")
+        return "string", type_str
 
 class ToolConfig(BaseModel):
     """Tool configuration"""
@@ -515,6 +453,11 @@ class ToolConfig(BaseModel):
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the tool")
     instance: Optional[Tool] = Field(default=None, description="The instance of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
+    
+    # Default representations
+    function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")
+    text: Optional[str] = Field(default=None, description="Default text representation")
+    args_schema: Optional[Type[BaseModel]] = Field(default=None, description="Default args schema (BaseModel type)")
 
 __all__ = [
     "Tool",

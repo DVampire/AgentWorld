@@ -12,10 +12,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.protocol.agent import BaseAgent
+from src.agent.types import Agent
 from src.logger import logger
 from src.utils import dedent
-from src.agent.protocol import acp
+from src.agent.server import acp
 from src.tool.protocol import tcp
 from src.environment.protocol import ecp
 from src.memory import SessionInfo, EventType
@@ -32,7 +32,7 @@ class IntradayDayAnalysisAgentInputArgs(BaseModel):
     data: str = Field(description="The data for the day analysis agent.")
 
 
-class IntradayDayAnalysisAgent(BaseAgent):
+class IntradayDayAnalysisAgent(Agent):
     """Intraday day analysis agent - performs deep daily trend analysis."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -134,14 +134,14 @@ class IntradayDayAnalysisAgent(BaseAgent):
     async def _get_messages(self, data: Dict[str, Any]) -> List[BaseMessage]:
         """Get messages for the day analysis agent."""
         system_input_variables = {}
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
         environment_state = await self._get_environment_state(data)
         agent_input_variables.update(agent_history)
         agent_input_variables.update(environment_state)
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
             system_message,
@@ -247,8 +247,7 @@ class IntradayMinuteTradingAgentInputArgs(BaseModel):
     data: str = Field(description="The data for the minute trading agent.")
 
 
-@acp.agent()
-class IntradayMinuteTradingAgent(BaseAgent):
+class IntradayMinuteTradingAgent(Agent):
     """Intraday minute trading agent - fast execution based on day analysis."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -372,7 +371,7 @@ class IntradayMinuteTradingAgent(BaseAgent):
     async def _get_messages(self, data: Dict[str, Any], daily_trend_forecast: str) -> List[BaseMessage]:
         """Get messages for the minute trading agent."""
         system_input_variables = {}
-        system_message = self.prompt_manager.get_system_message(system_input_variables)
+        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
         agent_history = await self._get_agent_history()
@@ -380,7 +379,7 @@ class IntradayMinuteTradingAgent(BaseAgent):
         agent_input_variables.update(agent_history)
         agent_input_variables.update(environment_state)
         agent_input_variables.update(dict(daily_trend_forecast=daily_trend_forecast))
-        agent_message = self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
         
         messages = [
             system_message,
@@ -467,8 +466,7 @@ class IntradayTradingAgentInputArgs(BaseModel):
     task: str = Field(description="The trading task to complete.")
 
 
-@acp.agent()
-class IntradayTradingAgent(BaseAgent):
+class IntradayTradingAgent(Agent):
     """Intraday trading agent - coordinates day analysis and minute trading agents."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

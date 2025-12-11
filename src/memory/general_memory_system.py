@@ -8,7 +8,6 @@ Architecture:
 
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
-from enum import Enum
 from pydantic import BaseModel, Field
 import json
 import os
@@ -17,8 +16,7 @@ from src.logger import logger
 from src.model import model_manager
 from src.utils import dedent
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
-from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo
-from src.registry import MEMORY_SYSTEM
+from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo, Memory
 from src.utils import file_lock
 
 class CombinedMemoryOutput(BaseModel):
@@ -30,10 +28,8 @@ class ProcessDecision(BaseModel):
     should_process: bool = Field(description="Whether to process the memory")
     reason: str = Field(description="Reason for the decision")
 
-@MEMORY_SYSTEM.register_module(name="general_memory_system", force=True)
 class CombinedMemory:
     """Combined memory that handles both summaries and insights using structured output"""
-    
     def __init__(self, 
                  model_name: str = "gpt-4.1", 
                  max_summaries: int = 20,
@@ -292,15 +288,26 @@ class CombinedMemory:
             return self.insights
         return self.insights[-n:] if len(self.insights) > n else self.insights
 
-class GeneralMemorySystem:
+class GeneralMemorySystem(Memory):
     """Memory system that combines different types of memory for comprehensive agent memory management."""
     
     def __init__(self, 
+                 base_dir: Optional[str] = None,
                  model_name: str = "gpt-4.1",
-                 max_summaries: int = 20,
-                 max_insights: int = 100
+                 max_summaries: int = 10,
+                 max_insights: int = 10,
+                 **kwargs
                  ):
+        super().__init__(**kwargs)
         
+        if base_dir is not None:
+            self.base_dir = base_dir
+        
+        if self.base_dir is not None:
+            os.makedirs(self.base_dir, exist_ok=True)
+        logger.info(f"| General memory system base directory: {self.base_dir}")
+        self.save_path = os.path.join(self.base_dir, "memory_system.json")
+            
         self.model_name = model_name
         self.max_summaries = max_summaries
         self.max_insights = max_insights
@@ -320,7 +327,11 @@ class GeneralMemorySystem:
                             task_id: Optional[str] = None, 
                             description: Optional[str] = None
                             ) -> str:
-        """Start new session with MemorySystem"""
+        """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
+        # Auto-load from JSON if file exists and save_path is set
+        if self.save_path and os.path.exists(self.save_path):
+            await self.load_from_json(self.save_path)
+        
         session_info = SessionInfo(
             session_id=session_id,
             agent_name=agent_name,
@@ -330,17 +341,18 @@ class GeneralMemorySystem:
         self.session_info[session_id] = session_info
         self.current_session_id = session_id
         
-        # Initialize CombinedMemory for this session
-        self.session_memory[session_id] = CombinedMemory(
-            model_name=self.model_name, 
-            max_summaries=self.max_summaries,
-            max_insights=self.max_insights
-        )
+        # Initialize CombinedMemory for this session if it doesn't exist
+        if session_id not in self.session_memory:
+            self.session_memory[session_id] = CombinedMemory(
+                model_name=self.model_name, 
+                max_summaries=self.max_summaries,
+                max_insights=self.max_insights
+            )
         
         return session_id
     
     async def end_session(self, session_id: Optional[str] = None):
-        """End session"""
+        """End session. Automatically saves to JSON if save_path is set."""
         session_id = await self._check_session_id(session_id)
             
         if session_id and session_id in self.session_info:
@@ -348,6 +360,10 @@ class GeneralMemorySystem:
             
             if session_id == self.current_session_id:
                 self.current_session_id = None
+            
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
     async def add_event(self,
                         step_number: int,
@@ -387,6 +403,10 @@ class GeneralMemorySystem:
     
         if session_id in self.session_memory:
             await self.session_memory[session_id].add_event(event)
+            
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
     async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
         session_id = await self._check_session_id(session_id)

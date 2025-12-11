@@ -7,18 +7,16 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
 
-from src.agent.protocol.agent import BaseAgent, ThinkOutputBuilder
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.logger import logger
 from src.utils import dedent
-from src.agent.protocol import acp
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
-from src.tool.protocol.types import ToolResponse
-from src.agent.protocol.types import InputArgs
+from src.tool.server import tcp
+from src.environment.server import ecp
+from src.memory import memory_manager
+from src.tool.types import ToolResponse
 from src.tracer import Tracer, Record
 
-@acp.agent()
-class ToolCallingAgent(BaseAgent):
+class ToolCallingAgent(Agent):
     """Tool calling agent implementation with manual agent logic."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -227,7 +225,12 @@ class ToolCallingAgent(BaseAgent):
             
             # Update record action
             self.record.action = record_action
-            await self.memory_manager.add_event(
+            
+            # Get memory system name
+            memory_name = self.memory_manager.name
+            
+            await memory_manager.add_event(
+                memory_name=memory_name,
                 step_number=self.step_number,
                 event_type="action_step",
                 data=event_data,
@@ -237,7 +240,8 @@ class ToolCallingAgent(BaseAgent):
             self.step_number += 1
             
             if done:
-                await self.memory_manager.add_event(
+                await memory_manager.add_event(
+                    memory_name=memory_name,
                     step_number=self.step_number,
                     event_type="task_end",
                     data=dict(result=final_result),
@@ -250,10 +254,10 @@ class ToolCallingAgent(BaseAgent):
         
         return done, final_result
         
-    async def ainvoke(self, 
+    async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None,
-                  ):
+                  files: Optional[List[str]] = None
+                  ) -> Any:
         """Run the tool calling agent with loop."""
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
@@ -264,30 +268,40 @@ class ToolCallingAgent(BaseAgent):
         else:
             enhanced_task = task
         
+        # Get memory system name
+        memory_name = self.memory_manager.name
+        
         # Check if we should restore from checkpoint
-        restored_session_id = self.memory_manager.get_current_session_id()
+        restored_session_id = self.memory_manager.current_session_id
         
         if restored_session_id:
             # Restore from checkpoint
             logger.info(f"| 🔄 Restoring session from checkpoint: {restored_session_id}")
             session_id = restored_session_id
-            session_info_obj = await self.memory_manager.get_session_info(session_id)
+            session_info_obj = await memory_manager.get_session_info(memory_name, session_id=session_id)
             description = session_info_obj.description if session_info_obj else None
         else:
             # Start new session
             session_info = await self._generate_session_info(enhanced_task)
             session_id = session_info.session_id
             description = session_info.description
-            await self.memory_manager.start_session(session_id, description)
+            await memory_manager.start_session(
+                memory_name=memory_name,
+                session_id=session_id,
+                agent_name=self.name,
+                description=description
+            )
         
         # Add task start event
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        await self.memory_manager.add_event(step_number=self.step_number, 
-                                      event_type="task_start", 
-                                      data=dict(task=enhanced_task),
-                                      agent_name=self.name,
-                                      task_id=task_id
-                                      )
+        await memory_manager.add_event(
+            memory_name=memory_name,
+            step_number=self.step_number,
+            event_type="task_start",
+            data=dict(task=enhanced_task),
+            agent_name=self.name,
+            task_id=task_id
+        )
         
         # Initialize messages
         messages = await self._get_messages(enhanced_task)
@@ -312,8 +326,7 @@ class ToolCallingAgent(BaseAgent):
                                    task_id=task_id)
             self.tracer.save_to_json(self.tracer_save_path)
             
-            # Save memory to json
-            await self.memory_manager.save_to_json(self.memory_save_path)
+            # Memory is automatically saved in add_event()
             
             messages = await self._get_messages(enhanced_task)
             
@@ -325,8 +338,12 @@ class ToolCallingAgent(BaseAgent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             final_result = "Reached maximum number of steps"
         
+        # Get memory system name
+        memory_name = self.memory_manager.name
+        
         # Add task end event
-        await self.memory_manager.add_event(
+        await memory_manager.add_event(
+            memory_name=memory_name,
             step_number=self.step_number,
             event_type="task_end",
             data=dict(result=final_result),
@@ -334,14 +351,11 @@ class ToolCallingAgent(BaseAgent):
             task_id=task_id
         )
         
-        # End session
-        await self.memory_manager.end_session(session_id=session_id)
+        # End session (automatically saves memory to JSON)
+        await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
         
         # Save tracer to json
         self.tracer.save_to_json(self.tracer_save_path)
-        
-        # Save memory to json
-        await self.memory_manager.save_to_json(self.memory_save_path)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         
