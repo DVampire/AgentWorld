@@ -15,6 +15,7 @@ sys.path.append(root)
 from src.config import config
 from src.logger import logger
 from src.model import model_manager
+from src.version import version_manager
 from src.tool import tcp
 
 def parse_args():
@@ -115,7 +116,7 @@ async def main():
     logger.initialize(config = config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    # Initialize model managerxx
+    # Initialize model manager
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize()
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
@@ -124,6 +125,11 @@ async def main():
     logger.info("| 🛠️ Initializing tools...")
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
+    
+    # Initialize version manager
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Version manager initialized: {await version_manager.list()}")
     
     # await test_browser_tool()
     await test_deep_researcher_tool()

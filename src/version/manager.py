@@ -175,24 +175,18 @@ class VersionManager(BaseModel):
         
         return version_history
     
-    async def list_versions(self, component_type: str, name: str) -> List[str]:
-        """List all versions for a component
+    async def list(self) -> Dict[str, Dict[str, List[str]]]:
+        """List all versions for all components
         
-        Args:
-            component_type: Type of component
-            name: Component name
-            
         Returns:
-            List of version strings
+            Dictionary mapping component_type -> component_name -> list of versions
         """
-        if component_type not in self._version_histories:
-            return []
-        
-        version_history = self._version_histories[component_type].get(name)
-        if version_history is None:
-            return []
-        
-        return version_history.list_versions()
+        result = {}
+        for component_type, histories in self._version_histories.items():
+            result[component_type] = {}
+            for name, version_history in histories.items():
+                result[component_type][name] = version_history.list_versions()
+        return result
     
     async def get_version_history(self, component_type: str, name: str) -> Optional[ComponentVersionHistory]:
         """Get version history for a component
