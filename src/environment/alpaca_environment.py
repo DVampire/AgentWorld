@@ -29,15 +29,12 @@ from src.environment.alpacaentry.types import (
 )
 from src.utils import dedent, assemble_project_path
 
-@ecp.environment()
 class AlpacaEnvironment(Environment):
     """Alpaca Trading Environment that provides Alpaca trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="alpaca", description="The name of the Alpaca trading environment.")
-    type: str = Field(default="Alpaca Trading", description="The type of the Alpaca trading environment.")
     description: str = Field(default="Alpaca trading environment for real-time data and trading operations", description="The description of the Alpaca trading environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Alpaca trading environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -627,7 +624,6 @@ class AlpacaEnvironment(Environment):
             }
             
     @ecp.action(name="step",
-                type="Alpaca Trading",
                 description="Step the trading environment.")
     async def step(self, 
                    symbol: str = "BTC/USD", 

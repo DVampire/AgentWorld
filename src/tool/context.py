@@ -9,7 +9,6 @@ from asyncio_atexit import register as async_atexit_register
 from typing import Any, Dict, List, Type, Optional, Union
 from datetime import datetime
 import inflection
-from copy import deepcopy
 import json
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,8 +22,7 @@ from src.version import version_manager
 from src.utils.file_utils import file_lock
 
 
-
-class ToolContextManager:
+class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

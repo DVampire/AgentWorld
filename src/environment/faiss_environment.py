@@ -16,15 +16,12 @@ from src.utils import assemble_project_path
 from src.environment.server import ecp
 from src.environment.types import Environment
 
-@ecp.environment()
 class FaissEnvironment(Environment):
     """FAISS Vector Store Environment that provides vector operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="faiss", description="The name of the FAISS environment.")
-    type: str = Field(default="Vector Store", description="The type of the FAISS environment.")
     description: str = Field(default="FAISS vector store environment for similarity search and document management", description="The description of the FAISS environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the FAISS environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -71,7 +68,6 @@ class FaissEnvironment(Environment):
     
     @ecp.action(
         name="add_documents",
-        type="Faiss Environment",
         description="Add documents to the FAISS vector store",
     )
     async def add_documents(
@@ -113,7 +109,6 @@ class FaissEnvironment(Environment):
     @ecp.action(
         name="search_similar",
         description="Search for similar documents in the FAISS vector store",
-        type="Faiss Environment",
         metadata={}
     )
     async def search_similar(
@@ -176,7 +171,6 @@ class FaissEnvironment(Environment):
     @ecp.action(
         name="delete_documents",
         description="Delete documents from the FAISS vector store",
-        type="Faiss Environment",
     )
     async def delete_documents(self, ids: List[str]) -> Dict[str, Any]:
         """Delete documents from the FAISS vector store.
@@ -207,8 +201,7 @@ class FaissEnvironment(Environment):
     
     @ecp.action(
         name="get_index_info",
-        description="Get information about the FAISS index",
-        type="Faiss Environment"
+        description="Get information about the FAISS index"
     )
     async def get_index_info(self) -> Dict[str, Any]:
         """Get information about the FAISS index.
@@ -245,8 +238,7 @@ class FaissEnvironment(Environment):
     
     @ecp.action(
         name="save_index",
-        description="Save the FAISS index to disk",
-        type="Faiss Environment"
+        description="Save the FAISS index to disk"
     )
     async def save_index(self) -> Dict[str, Any]:
         """Save the FAISS index to disk.

@@ -1,13 +1,9 @@
 """Mobile Environment for AgentWorld - provides mobile device automation operations as an environment."""
-
-from typing import Any, Dict, List, Union, Optional, Type
-from langgraph.store.base import Op
-from pydantic import BaseModel, Field, ConfigDict
-import shutil
-import asyncio
-import os
-from PIL import Image
 import io
+import asyncio
+from PIL import Image
+from typing import Any, Dict, List, Optional
+from pydantic import Field, ConfigDict
 
 from src.environment.mobile.service import MobileService
 from src.environment.mobile.types import (
@@ -20,19 +16,16 @@ from src.environment.mobile.types import (
     ScrollRequest,
 )
 from src.logger import logger
-from src.environment.server import ecp
 from src.environment.types import Environment, ScreenshotInfo
 from src.utils import dedent, ScreenshotService, encode_file_base64, decode_file_base64, make_file_url
+from src.environment.server import ecp
 
-@ecp.environment()
 class MobileEnvironment(Environment):
     """Mobile Environment that provides mobile device automation operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="mobile", description="The name of the Mobile environment.")
-    type: str = Field(default="Mobile", description="The type of the Mobile environment.")
     description: str = Field(default="Mobile device automation environment for Android device control", description="The description of the Mobile environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Mobile environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": True,
         "additional_rules": {
@@ -109,7 +102,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="tap",
         description="Tap at specified coordinates on the mobile device",
-        type="Mobile Environment",
     )
     async def tap(self, x: int, y: int) -> Dict[str, Any]:
         """
@@ -179,7 +171,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="swipe",
         description="Swipe at specified coordinates on the mobile device",
-        type="Mobile Environment",
     )
     async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300) -> Dict[str, Any]:
         """
@@ -265,7 +256,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="press",
         description="Long press at specified coordinates on the mobile device",
-        type="Mobile Environment",
     )
     async def press(self, x: int, y: int, duration: int = 1000) -> Dict[str, Any]:
         """
@@ -334,7 +324,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="type",
         description="Type text at the current cursor position on the mobile device",
-        type="Mobile Environment",
     )
     async def type_text(self, text: str) -> Dict[str, Any]:
         """
@@ -389,7 +378,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="key_event",
         description="Press a key on the mobile device",
-        type="Mobile Environment",
     )
     async def key_event(self, keycode: int) -> Dict[str, Any]:
         """
@@ -446,7 +434,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="swipe_path",
         description="Swipe along a path of coordinates on the mobile device",
-        type="Mobile Environment",
     )
     async def swipe_path(self, path: List[List[int]], duration: int = 300) -> Dict[str, Any]:
         """
@@ -518,7 +505,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="scroll",
         description="Scroll on the mobile device in specified direction",
-        type="Mobile Environment",
     )
     async def scroll(self, direction: str, distance: int = 500) -> Dict[str, Any]:
         """
@@ -575,7 +561,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="screenshot",
         description="Take a screenshot of the mobile device",
-        type="Mobile Environment",
     )
     async def taske_screenshot(self) -> Dict[str, Any]:
         """Take a screenshot of the mobile device.
@@ -602,7 +587,6 @@ class MobileEnvironment(Environment):
     @ecp.action(
         name="wait",
         description="Wait for a specified duration",
-        type="Mobile Environment",
     )
     async def wait(self, duration: int) -> Dict[str, Any]:
         """

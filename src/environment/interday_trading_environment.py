@@ -11,10 +11,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import TradingRecords
 from src.utils import get_start_end_timestamp
-from src.environment.server import ecp
 from src.logger import logger
 from src.utils import dedent
 from src.environment.types import Environment
+from src.environment.server import ecp
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 from src.registry import DATASET
 from src.utils import get_token_count
@@ -55,15 +55,12 @@ _INTERACTION_RULES = """Interaction guidelines:
 2. If you DO NOT have enough current position, you CAN NOT execute the `SELL` action.
 """
 
-@ecp.environment()
 class InterdayTradingEnvironment(Environment):
     """Trading Offline Environment that provides trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="interday_trading", description="The name of the Trading Offline environment.")
-    type: str = Field(default="Trading Offline", description="The type of the Trading Offline environment.")
     description: str = Field(default="Interday trading environment for trading", description="The description of the Trading Offline environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Trading Offline environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -592,7 +589,6 @@ class InterdayTradingEnvironment(Environment):
         return state, reward, self.done, self.truncted, info
     
     @ecp.action(name = "step",
-                type = "Trading Offline",
                 description = "Step the trading environment.")
     async def step(self, action: str) -> Dict[str, Any]:
         """Step the trading environment.

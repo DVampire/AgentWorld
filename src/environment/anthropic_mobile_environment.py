@@ -7,10 +7,10 @@ from src.logger import logger
 import asyncio
 import io
 from PIL import Image
-from src.environment.server import ecp
 from src.environment.mobile.types import TapRequest, ScrollRequest, TypeTextRequest
 from src.utils import dedent, ScreenshotService, encode_file_base64, decode_file_base64
 from src.environment.types import ScreenshotInfo, Environment
+from src.environment.server import ecp
 
 ScrollDirection = Literal["up", "down", "left", "right"]
 
@@ -32,15 +32,12 @@ Available operations:
 Note: Screenshots are automatically captured after each action - do not use screenshot action.
 """
 
-@ecp.environment()
 class AnthropicMobileEnvironment(Environment):
     """Mobile Environment that provides mobile device automation operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="anthropic_mobile", description="The name of the Mobile environment.")
-    type: str = Field(default="Anthropic Mobile", description="The type of the Mobile environment.")
     description: str = Field(default="Mobile device automation environment for Android device control", description="The description of the Mobile environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Mobile environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": True,
         "additional_rules": {
@@ -116,7 +113,6 @@ class AnthropicMobileEnvironment(Environment):
     @ecp.action(
         name = "computer",
         description = "Run operations on the mobile device.",
-        type = "Anthropic Mobile Environment",
     )
     async def computer(self, 
                        action: str,

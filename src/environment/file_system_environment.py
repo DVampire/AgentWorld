@@ -22,20 +22,16 @@ from src.environment.filesystem.types import (
 )
 from src.logger import logger
 from src.utils import assemble_project_path
-from src.environment.server import ecp
 from src.environment.types import Environment
 from src.utils import dedent
+from src.environment.server import ecp
 
-@ecp.environment()
 class FileSystemEnvironment(Environment):
     """File System Environment hat provides file operations as an environment interface."""
-    
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="file_system", description="The name of the file system environment.")
-    type: str = Field(default="File System", description="The type of the file system environment.")
     description: str = Field(default="File system environment for file operations", description="The description of the file system environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the file system environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -74,7 +70,6 @@ class FileSystemEnvironment(Environment):
         logger.info("| 🧹 File System Environment cleanup completed")
         
     @ecp.action(name = "read", 
-                type = "File System", 
                 description = "Read a file from the file system.")
     async def read(self, 
                     file_path: str, 
@@ -123,7 +118,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "write", 
-                type = "File System", 
                 description = "Write content to a file.")
     async def write(self, 
                      file_path: str, 
@@ -163,7 +157,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "replace", 
-                type = "File System", 
                 description = "Replace a string in a file.")
     async def replace(self, 
                        file_path: str, 
@@ -209,7 +202,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "delete", 
-                type = "File System", 
                 description = "Delete a file from the file system.")
     async def delete(self, file_path: str) -> Dict[str, Any]:
         """Delete a file from the file system.
@@ -240,7 +232,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "copy", 
-                type = "File System", 
                 description = "Copy a file from source to destination.")
     async def copy(self, src_path: str, dst_path: str) -> Dict[str, Any]:
         """Copy a file from source to destination.
@@ -273,7 +264,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "move",
-                type = "File System", 
                 description = "Move a file from source to destination.")
     async def move(self, src_path: str, dst_path: str) -> Dict[str, Any]:
         """Move a file from source to destination.
@@ -309,7 +299,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "rename",
-                type = "File System", 
                 description = "Rename a file or directory.")
     async def rename(self, old_path: str, new_path: str) -> Dict[str, Any]:
         """Rename a file or directory.
@@ -345,7 +334,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "get_info",
-                type = "File System", 
                 description = "Get detailed information about a file.")
     async def get_info(self, file_path: str,
                         include_stats: Optional[bool] = True) -> Dict[str, Any]:
@@ -393,7 +381,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "create_dir",
-                type = "File System", 
                 description = "Create a directory.")
     async def create_dir(self, dir_path: str) -> Dict[str, Any]:
         """Create a directory.
@@ -424,7 +411,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "delete_dir",
-                type = "File System", 
                 description = "Delete a directory.")
     async def delete_dir(self, dir_path: str) -> Dict[str, Any]:
         """Delete a directory.
@@ -455,7 +441,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "listdir",
-                type = "File System", 
                 description = "List directory contents.")
     async def listdir(self, 
                        dir_path: str, 
@@ -517,7 +502,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "tree",
-                type = "File System", 
                 description = "Show directory tree structure.")
     async def tree(self, 
                     dir_path: str, 
@@ -574,7 +558,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "describe",
-                type = "File System", 
                 description = "Describe the file system with directory structure and file information.")
     async def describe(self) -> Dict[str, Any]:
         """Describe the file system with directory structure and file information.
@@ -624,7 +607,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "search",
-                type = "File System", 
                 description = "Search for files by name or content.")
     async def search(self, 
                       search_path: str, 
@@ -693,7 +675,6 @@ class FileSystemEnvironment(Environment):
             }
     
     @ecp.action(name = "change_permissions",
-                type = "File System", 
                 description = "Change file or directory permissions.")
     async def change_permissions(self, file_path: str, permissions: str) -> Dict[str, Any]:
         """Change file or directory permissions.

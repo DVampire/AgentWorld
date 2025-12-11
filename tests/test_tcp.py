@@ -126,7 +126,7 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
-    # Initialize version manager
+    # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
     logger.info(f"| ✅ Version manager initialized: {await version_manager.list()}")

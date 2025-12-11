@@ -30,15 +30,12 @@ from src.environment.binanceentry.types import (
 )
 from src.utils import dedent, assemble_project_path
 
-@ecp.environment()
 class BinanceEnvironment(Environment):
     """Binance Trading Environment that provides Binance trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="binance", description="The name of the Binance trading environment.")
-    type: str = Field(default="Binance Trading", description="The type of the Binance trading environment.")
     description: str = Field(default="Binance trading environment for real-time data and trading operations", description="The description of the Binance trading environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Binance trading environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -665,7 +662,6 @@ class BinanceEnvironment(Environment):
             }
     
     @ecp.action(name="step",
-                type="Binance Trading",
                 description="Step the trading environment for perpetual futures trading.")
     async def step(self, 
                    symbol: str = "BTCUSDT", 

@@ -1,19 +1,16 @@
 """GitHub Environment for AgentWorld - provides GitHub operations as an environment."""
-
 from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, Union
-from pydantic import BaseModel, Field, SecretStr, ConfigDict
+from typing import Any, Dict, Optional
+from pydantic import Field, SecretStr, ConfigDict
 
 from src.logger import logger
 from src.environment.types import Environment
-from src.environment.server import ecp
 from src.environment.github import (
     GitHubService,
-    AuthenticationError,
     NotFoundError,
     GitError,
     RepositoryError
@@ -36,16 +33,14 @@ from src.environment.github.types import (
     GitStatusRequest
 )
 from src.utils import dedent, get_env, assemble_project_path
+from src.environment.server import ecp
 
-@ecp.environment()
 class GitHubEnvironment(Environment):
     """GitHub Environment that provides GitHub operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="github", description="The name of the GitHub environment.")
-    type: str = Field(default="GitHub", description="The type of the GitHub environment.")
     description: str = Field(default="GitHub environment for repository and Git operations", description="The description of the GitHub environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the GitHub environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -110,7 +105,6 @@ class GitHubEnvironment(Environment):
 
     # --------------- Repository Operations ---------------
     @ecp.action(name="create_repository", 
-                type="GitHub", 
                 description="Create a new GitHub repository")
     async def create_repository(
         self,
@@ -180,7 +174,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="get_repository",
-                type="GitHub", 
                 description="Get your repository information")
     async def get_repository(self, repo: str) -> Dict[str, Any]:
         """Get repository information for your own repository.
@@ -236,7 +229,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="fork_repository",
-                type="GitHub", 
                 description="Fork a public repository to your account")
     async def fork_repository(self, owner: str, repo: str) -> Dict[str, Any]:
         """Fork a public repository to your account.
@@ -275,7 +267,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="delete_repository",
-                type="GitHub", 
                 description="Delete your own repository")
     async def delete_repository(self, repo: str) -> Dict[str, Any]:
         """Delete your own repository.
@@ -316,7 +307,6 @@ class GitHubEnvironment(Environment):
 
     # --------------- Git Operations ---------------
     @ecp.action(name="git_init", 
-                type="GitHub", 
                 description="Initialize a local directory as Git repository")
     async def git_init(
         self,
@@ -360,7 +350,6 @@ class GitHubEnvironment(Environment):
             }
     
     @ecp.action(name="git_clone", 
-                type="GitHub", 
                 description="Clone a repository to local directory (automatically forks if not your repository)")
     async def git_clone(
         self,
@@ -492,7 +481,6 @@ class GitHubEnvironment(Environment):
             }
     
     @ecp.action(name="git_commit",
-                type="GitHub", 
                 description="Commit changes to local repository")
     async def git_commit(
         self,
@@ -543,7 +531,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_push",
-                type="GitHub", 
                 description="Push changes to remote repository")
     async def git_push(
         self,
@@ -594,7 +581,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_pull",
-                type="GitHub", 
                 description="Pull changes from remote repository")
     async def git_pull(
         self,
@@ -645,7 +631,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_fetch",
-                type="GitHub", 
                 description="Fetch changes from remote repository")
     async def git_fetch(
         self,
@@ -693,7 +678,6 @@ class GitHubEnvironment(Environment):
 
     # --------------- Branch Operations ---------------
     @ecp.action(name="git_create_branch",
-                type="GitHub", 
                 description="Create a new branch")
     async def git_create_branch(
         self,
@@ -744,7 +728,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_checkout_branch",
-                type="GitHub", 
                 description="Checkout an existing branch")
     async def git_checkout_branch(
         self,
@@ -791,7 +774,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_list_branches",
-                type="GitHub", 
                 description="List all branches")
     async def git_list_branches(self, local_path: str) -> Dict[str, Any]:
         """List all branches.
@@ -829,7 +811,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_delete_branch",
-                type="GitHub", 
                 description="Delete a branch")
     async def git_delete_branch(
         self,
@@ -880,7 +861,6 @@ class GitHubEnvironment(Environment):
             }
 
     @ecp.action(name="git_status",
-                type="GitHub", 
                 description="Get Git repository status")
     async def git_status(self, local_path: str) -> Dict[str, Any]:
         """Get Git repository status.

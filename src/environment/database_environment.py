@@ -20,15 +20,12 @@ from src.environment.server import ecp
 from src.environment.types import Environment
 from src.utils import dedent
 
-@ecp.environment()
 class DatabaseEnvironment(Environment):
     """Database Environment that provides database operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="database", description="The name of the database environment.")
-    type: str = Field(default="Database", description="The type of the database environment.")
     description: str = Field(default="Database environment for SQLite database operations", description="The description of the database environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the database environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -138,7 +135,6 @@ class DatabaseEnvironment(Environment):
             logger.warning(f"| ⚠️ Failed to create sample tables: {e}")
     
     @ecp.action(name="execute_sql",
-                type="Database",
                 description="Execute a SQL query.")
     async def execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute a SQL query.
@@ -177,7 +173,6 @@ class DatabaseEnvironment(Environment):
             }
     
     @ecp.action(name="create_table",
-                type="Database",
                 description="Create a table.")
     async def create_table(self, 
                            table_name: str,
@@ -220,7 +215,6 @@ class DatabaseEnvironment(Environment):
             }
     
     @ecp.action(name="insert_data",
-                type="Database",
                 description="Insert data into a table.")
     async def insert_data(self, 
                           table_name: str,
@@ -254,7 +248,6 @@ class DatabaseEnvironment(Environment):
             }
     
     @ecp.action(name="select_data",
-                type="Database",
                 description="Select data from a table.")
     async def select_data(self, 
                           table_name: str,
@@ -311,7 +304,6 @@ class DatabaseEnvironment(Environment):
             }
     
     @ecp.action(name="update_data",
-                type="Database",
                 description="Update data in a table.")
     async def update_data(self, 
                           table_name: str,
@@ -354,7 +346,6 @@ class DatabaseEnvironment(Environment):
             }
     
     @ecp.action(name="delete_data",
-                type="Database",
                 description="Delete data from a table.")
     async def delete_data(self, 
                           table_name: str,
@@ -394,7 +385,6 @@ class DatabaseEnvironment(Environment):
             }
     
     @ecp.action(name="get_tables",
-                type="Database",
                 description="Get information about all tables.")
     async def get_tables(self) -> Dict[str, Any]:
         """Get information about all tables.

@@ -29,6 +29,16 @@ def process_tools(config: MMConfig) -> MMConfig:
                 ))
     return config
 
+def process_environments(config: MMConfig) -> MMConfig:
+    for key in config:
+        if "environment" in key and isinstance(config[key], dict):
+            if "base_dir" in config[key]:
+                base_dir = str(assemble_project_path(config[key]["base_dir"]))
+                config[key].update(dict(
+                    base_dir = base_dir
+                ))
+    return config
+
 def process_agent(config: MMConfig) -> MMConfig:
     if "agent" in config:
         if "workdir" in config.agent:
@@ -58,6 +68,7 @@ class Config(MMConfig, metaclass=Singleton):
         # Process general configuration
         mmconfig = process_general(mmconfig)
         mmconfig = process_tools(mmconfig)
+        mmconfig = process_environments(mmconfig)
         mmconfig = process_agent(mmconfig)
 
         self.__dict__.update(mmconfig.__dict__)

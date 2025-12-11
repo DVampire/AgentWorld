@@ -2,19 +2,17 @@
 
 Core type definitions for the Environment Context Protocol.
 """
-from typing import Any, Dict, Optional, Union, Type, Callable
-from pydantic import BaseModel, Field
+
 from enum import Enum
 import uuid
 from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, Optional, Union, Type, Callable
 
 
 class Environment(BaseModel):
     """Base abstract class for ECP environments"""
     
     name: str = Field(description="The name of the environment.")
-    type: str = Field(description="The type of the environment.")
-    args_schema: Type[BaseModel] = Field(description="The args schema of the environment.")
     description: str = Field(description="The description of the environment.")
     metadata: Dict[str, Any] = Field(description="The metadata of the environment.")
     
@@ -23,8 +21,33 @@ class Environment(BaseModel):
         extra="allow"
     )
     
+    def __init_subclass__(cls, **kwargs):
+        """Automatically register Environment subclasses"""
+        super().__init_subclass__(**kwargs)
+        # No need to manually track classes here - we'll use __subclasses__() in initialize()
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # Initialize actions dictionary for this instance
+        self.actions: Dict[str, ActionConfig] = {}
+        
+        # Register all actions marked with @ecp.action decorator
+        from src.environment.server import ecp
+        for attr_name in dir(self):
+            if attr_name.startswith('_'):
+                continue
+            attr = getattr(self, attr_name)
+            if callable(attr) and hasattr(attr, '_action_name'):
+                action_name = attr._action_name
+                if action_name not in self.actions:
+                    action_config = ActionConfig(
+                        env_name=self.name,
+                        name=action_name,
+                        description=getattr(attr, '_action_description', ''),
+                        function=attr,
+                        metadata=getattr(attr, '_metadata', {})
+                    )
+                    self.actions[action_name] = action_config
     
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the environment"""
@@ -73,14 +96,12 @@ class ActionConfig(BaseModel):
     
     env_name: str = Field(description="The name of the environment this action belongs to")
     name: str = Field(description="The name of the action")
-    type: str = Field(description="The type of the action")
     description: str = Field(description="The description of the action")
-    args_schema: Optional[Type[BaseModel]] = Field(default=None, description="The args schema of the action")
     function: Optional[Callable] = Field(default=None, description="The function implementing the action")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the action")
     
     def __str__(self):
-        return f"ActionConfig(env_name={self.env_name}, name={self.name}, type={self.type}, description={self.description})"
+        return f"ActionConfig(env_name={self.env_name}, name={self.name}, description={self.description})"
     
     def __repr__(self):
         return self.__str__()
@@ -91,10 +112,9 @@ class EnvironmentConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(description="The name of the environment")
-    type: str = Field(description="The type of the environment")
     rules: str = Field(description="The rules of the environment")
     description: str = Field(description="The description of the environment")
-    args_schema: Optional[Type[BaseModel]] = Field(default=None, description="The args schema of the environment")
+    version: str = Field(default="1.0.0", description="Version of the environment")
     actions: Dict[str, ActionConfig] = Field(default_factory=dict, description="Dictionary of actions available in this environment")
     cls: Optional[Type[Environment]] = Field(default=None, description="The class of the environment")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the environment")
@@ -102,7 +122,7 @@ class EnvironmentConfig(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the environment")
     
     def __str__(self):
-        return f"EnvironmentConfig(name={self.name}, type={self.type}, description={self.description}, actions={len(self.actions)})"
+        return f"EnvironmentConfig(name={self.name}, description={self.description}, actions={len(self.actions)})"
     
     def __repr__(self):
         return self.__str__()

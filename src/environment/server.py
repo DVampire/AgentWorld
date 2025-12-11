@@ -1,421 +1,68 @@
 """ECP Server
-
 Server implementation for the Environment Context Protocol with decorator support.
 """
 
-import inspect
 import asyncio
-from typing import Any, Dict, List, Optional, Callable, Type, Union, get_origin, get_args
-from pydantic import BaseModel, create_model, Field
+import os
+from typing import Any, Dict, List, Optional, Callable, Type, Union
+from pydantic import BaseModel, ConfigDict, Field
 import inflection
-import typing
 
 from src.config import config
 from src.logger import logger
 from src.environment.types import EnvironmentConfig, ActionConfig, Environment
 from src.environment.context import EnvironmentContextManager
+from src.utils import assemble_project_path
 
-class ECPServer:
+class ECPServer(BaseModel):
     """ECP Server for managing environments and actions with decorator support"""
     
-    def __init__(self):
-        self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
-        self.environment_context_manager = EnvironmentContextManager()
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    base_dir: str = Field(default=None, description="The base directory to use for the environments")
+    save_path: str = Field(default=None, description="The path to save the environments")
     
-    def environment(self):
-        """Decorator to register an environment class"""
-        def decorator(cls: Type[Environment]):
-            model_fields = cls.model_fields
-            
-            # Store environment metadata
-            env_name = model_fields['name'].default
-            env_type = model_fields['type'].default
-            args_schema = model_fields['args_schema'].default
-            description = model_fields['description'].default
-            metadata = model_fields['metadata'].default
-            has_vision = metadata.get('has_vision', False)
-            additional_rules = metadata.get('additional_rules', None)
-            
-            # Collect all actions from the class
-            actions = {}
-            for attr_name in dir(cls):
-                attr = getattr(cls, attr_name)
-                if hasattr(attr, '_action_name'):
-                    # Set the environment name for this action
-                    attr._env_name = env_name
-                    
-                    # Create ActionConfig from the decorated method
-                    action_config = ActionConfig(
-                        env_name=env_name,
-                        name=getattr(attr, '_action_name'),
-                        type=getattr(attr, '_action_type', ''),
-                        description=getattr(attr, '_action_description', ''),
-                        args_schema=getattr(attr, '_args_schema', None),
-                        function=getattr(attr, '_action_function', None),
-                        metadata=getattr(attr, '_metadata', {})
-                    )
-                    
-                    actions[getattr(attr, '_action_name')] = action_config
-            
-            # Generate rules
-            final_rules = self.genetate_rules(
-                env_name,
-                env_type,
-                description,
-                actions,
-                has_vision,
-                additional_rules
-            )
-            
-            # Create EnvironmentConfig and store it
-            env_config = EnvironmentConfig(
-                name=env_name,
-                type=env_type,
-                description=description,
-                args_schema=args_schema,
-                rules=final_rules,
-                actions=actions,
-                cls=cls,
-                config={},
-                instance=None,
-                metadata=metadata
-            )
-            
-            self._registered_configs[env_name] = env_config
-            
-            return cls
-        return decorator
+    def __init__(self, base_dir: Optional[str] = None, **kwargs):
+        """Initialize the ECP Server."""
+        super().__init__(**kwargs)
+        
+        if base_dir is not None:
+            self.base_dir = assemble_project_path(base_dir)
+        else:
+            self.base_dir = assemble_project_path(os.path.join(config.workdir, "environments"))
+        os.makedirs(self.base_dir, exist_ok=True)
+        self.save_path = os.path.join(self.base_dir, "environments.json")
+        logger.info(f"| 📁 ECP Server base directory: {self.base_dir} and save path: {self.save_path}")
+        
+        self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
+        self.environment_context_manager = EnvironmentContextManager(base_dir=self.base_dir, save_path=self.save_path)
+        self._pending_registrations: List[Type[Environment]] = []  # Classes to register on initialize
+        self._all_environment_classes: List[Type[Environment]] = []  # All discovered environment classes
+    
     
     def action(self, 
                name: str = None, 
-               type: str = None,
                description: str = "",
                metadata: Optional[Dict[str, Any]] = None):
         """Decorator to register an action (tool) for an environment
         
+        Actions will be registered to the environment instance's actions dictionary during instantiation.
+        
         Args:
             name: Action name (defaults to function name)
-            type: Action type (defaults to function name)
-            description: Action description,
+            description: Action description
             metadata: Action metadata
         """
         def decorator(func: Callable):
             action_name = name or func.__name__
             
-            # Parse function signature to generate schemas
-            sig = inspect.signature(func)
-            args_schema = self._parse_function_signature(sig, action_name, func)
-            
-            # Store action metadata (env_name will be set later by environment decorator)
+            # Store action metadata for registration in instance's __init__
             func._action_name = action_name
-            func._action_type = type
             func._action_description = description
-            func._args_schema = args_schema
             func._action_function = func
             func._metadata = metadata if metadata is not None else {}
             
             return func
         return decorator
-    
-    def _parse_function_signature(self, sig: inspect.Signature, action_name: str, func: Callable = None) -> Type[BaseModel]:
-        """Parse function signature to generate args and output type
-        
-        Args:
-            sig: Function signature
-            action_name: Action name
-            func: Function object (for docstring parsing)
-            
-        Returns:
-            Type[BaseModel]: args_schema_class
-        """
-        # Parse docstring for parameter descriptions
-        param_descriptions = {}
-        if func and func.__doc__:
-            import re
-            # Parse docstring for Args section
-            docstring = func.__doc__
-            args_section = re.search(r'Args:\s*\n(.*?)(?:\n\s*\n|\n\s*Returns:|\n\s*$)', docstring, re.DOTALL)
-            if args_section:
-                args_text = args_section.group(1)
-                # Parse individual parameter descriptions
-                param_pattern = r'(\w+)\s*\([^)]*\):\s*([^\n]+)'
-                for match in re.finditer(param_pattern, args_text):
-                    param_name = match.group(1)
-                    param_desc = match.group(2).strip()
-                    param_descriptions[param_name] = param_desc
-        
-        # Parse parameters for args schema
-        fields = {}
-        for param_name, param in sig.parameters.items():
-            if param_name == 'self':
-                continue
-                
-            # Get the type annotation
-            field_type = param.annotation
-            if field_type == inspect.Parameter.empty:
-                field_type = str  # Default to string if no annotation
-            
-            # Get description from docstring or create default
-            if isinstance(field_type, str):
-                type_name = field_type
-            else:
-                type_name = getattr(field_type, '__name__', str(field_type))
-            field_description = param_descriptions.get(param_name, f"Parameter {param_name} of type {type_name}")
-            
-            # Handle default values
-            if param.default != inspect.Parameter.empty:
-                fields[param_name] = (field_type, Field(default=param.default, description=field_description))
-            else:
-                fields[param_name] = (field_type, Field(description=field_description))
-        
-        # Create args schema class with camelCase naming
-        args_schema_name = inflection.camelize(action_name) + 'InputArgs'
-        args_schema = create_model(args_schema_name, **fields)
-
-        return args_schema
-    
-    def _get_type_string(self, func: Callable, param_name: str) -> str:
-        """Get the type string for a parameter from function signature
-        
-        Args:
-            func: The function object
-            param_name: The parameter name
-            
-        Returns:
-            str: The type string (e.g., 'str', 'Optional[str]', 'List[str]')
-        """
-        if not func:
-            return 'unknown'
-            
-        try:
-            sig = inspect.signature(func)
-            param = sig.parameters.get(param_name)
-            if not param:
-                return 'unknown'
-                
-            annotation = param.annotation
-            if annotation == inspect.Parameter.empty:
-                return 'unknown'
-            
-            # Convert type annotation to string
-            result = self._format_type_annotation(annotation)
-            return result
-            
-        except Exception:
-            return 'unknown'
-    
-    def _format_type_annotation(self, annotation) -> str:
-        """Format type annotation to readable string
-        
-        Args:
-            annotation: The type annotation
-            
-        Returns:
-            str: Formatted type string
-        """
-        
-        # Handle basic types
-        if annotation is str:
-            return 'str'
-        elif annotation is int:
-            return 'int'
-        elif annotation is float:
-            return 'float'
-        elif annotation is bool:
-            return 'bool'
-        elif annotation is list:
-            return 'List[Any]'
-        elif annotation is dict:
-            return 'Dict[str, Any]'
-        
-        # Handle typing constructs
-        origin = get_origin(annotation)
-        args = get_args(annotation)
-        
-        if origin is typing.Union:
-            # Handle Optional types (Union[SomeType, NoneType])
-            if len(args) == 2 and type(None) in args:
-                non_none_type = args[0] if args[1] is type(None) else args[1]
-                inner_type = self._format_type_annotation(non_none_type)
-                return f"Optional[{inner_type}]"
-            else:
-                # Handle other Union types
-                type_strs = [self._format_type_annotation(arg) for arg in args]
-                return f"Union[{', '.join(type_strs)}]"
-        
-        elif origin is list:
-            if args:
-                return f"List[{self._format_type_annotation(args[0])}]"
-            else:
-                return 'List[Any]'
-        
-        elif origin is dict:
-            if len(args) >= 2:
-                key_type = self._format_type_annotation(args[0])
-                value_type = self._format_type_annotation(args[1])
-                return f"Dict[{key_type}, {value_type}]"
-            else:
-                return 'Dict[str, Any]'
-        
-        elif origin is tuple:
-            if args:
-                type_strs = [self._format_type_annotation(arg) for arg in args]
-                return f"Tuple[{', '.join(type_strs)}]"
-            else:
-                return 'Tuple'
-        
-        elif origin is set:
-            if args:
-                return f"Set[{self._format_type_annotation(args[0])}]"
-            else:
-                return 'Set[Any]'
-        
-        # Handle built-in types and standard library types
-        elif hasattr(annotation, '__name__'):
-            # Check if it's a built-in type or from standard library
-            if self._is_builtin_or_standard_type(annotation):
-                return annotation.__name__
-            else:
-                # Custom type - use Any
-                return 'Any'
-        
-        # Handle typing module types
-        elif hasattr(annotation, '__module__') and annotation.__module__ == 'typing':
-            return str(annotation).replace('typing.', '')
-        
-        # Fallback for custom types - use Any
-        else:
-            return 'Any'
-    
-    def _is_builtin_or_standard_type(self, annotation) -> bool:
-        """Check if annotation is a built-in or standard library type
-        
-        Args:
-            annotation: The type annotation
-            
-        Returns:
-            bool: True if it's a built-in or standard library type
-        """
-        # Built-in types
-        builtin_types = {str, int, float, bool, list, dict, tuple, set, bytes, bytearray}
-        if annotation in builtin_types:
-            return True
-        
-        # Check if it's from builtins module
-        if hasattr(annotation, '__module__'):
-            module = annotation.__module__
-            if module in ('builtins', '__builtin__'):
-                return True
-            
-            # Standard library modules
-            standard_modules = (
-                'collections', 'datetime', 'decimal', 'fractions', 'pathlib',
-                'uuid', 'enum', 'dataclasses', 'typing', 'abc', 'io', 'os',
-                'sys', 'json', 'pickle', 'copy', 'itertools', 'functools',
-                'operator', 'math', 'random', 'statistics', 'time', 'calendar'
-            )
-            if any(module.startswith(std_mod) for std_mod in standard_modules):
-                return True
-        
-        return False
-    
-    def genetate_rules(self, 
-            env_name: str, 
-            env_type: str, 
-            description: str, 
-            actions: Dict[str, ActionConfig],
-            has_vision: bool = False,
-            additional_rules: Optional[Dict[str, str]] = None) -> str:
-        """Generate environment rules from actions and metadata
-        
-        Args:
-            env_name: Environment name
-            env_type: Environment type
-            description: Environment description
-            actions: Dictionary of actions
-            has_vision: Whether environment has vision capabilities
-            additional_rules: Dictionary with custom rules for 'state', 'vision', 'interaction'
-            
-        Returns:
-            str: Generated environment rules
-        """
-        # Start building the rules
-        rules_parts = [f"<environment_{inflection.underscore(env_type)}>"]
-        
-        # Add state section
-        rules_parts.append("<state>")
-        if additional_rules and 'state' in additional_rules:
-            rules_parts.append(additional_rules['state'])
-        else:
-            rules_parts.append(f"The environment state about {env_name}.")
-        rules_parts.append("</state>")
-        
-        # Add vision section
-        rules_parts.append("<vision>")
-        if additional_rules and 'vision' in additional_rules:
-            rules_parts.append(additional_rules['vision'])
-        else:
-            if has_vision:
-                rules_parts.append("The environment vision information.")
-            else:
-                rules_parts.append("No vision available.")
-        rules_parts.append("</vision>")
-        
-        # Add additional rules if provided (for backward compatibility)
-        if additional_rules and 'additional_rules' in additional_rules:
-            rules_parts.append("<additional_rules>")
-            rules_parts.append(additional_rules['additional_rules'])
-            rules_parts.append("</additional_rules>")
-        
-        # Add interaction section with actions
-        rules_parts.append("<interaction>")
-        
-        if additional_rules and 'interaction' in additional_rules:
-            # Use custom interaction rules
-            rules_parts.append(additional_rules['interaction'])
-        else:
-            # Use default interaction rules
-            rules_parts.append("Available actions:")
-            
-            # Sort actions by name for consistent output
-            sorted_actions = sorted(actions.items(), key=lambda x: x[0])
-            
-            for i, (action_name, action_config) in enumerate(sorted_actions, 1):
-                rules_parts.append(f"{i}. {action_name}: {action_config.description}")
-                
-                # Add parameter information if available
-                if action_config.args_schema:
-                    try:
-                        schema = action_config.args_schema.model_json_schema()
-                        properties = schema.get('properties', {})
-                        required = schema.get('required', [])
-                        
-                        for param_name, param_info in properties.items():
-                            # Get the original type annotation from the function signature
-                            param_type_str = self._get_type_string(action_config.function, param_name)
-                            param_desc = param_info.get('description', f'Parameter {param_name}')
-                            is_required = param_name in required
-                            
-                            
-                            if is_required:
-                                rules_parts.append(f"    - {param_name} ({param_type_str}): {param_desc}")
-                            else:
-                                default_val = param_info.get('default', 'None')
-                                rules_parts.append(f"    - {param_name} ({param_type_str}): {param_desc} (default: {default_val})")
-                                
-                    except Exception:
-                        # If schema parsing fails, just add basic info
-                        rules_parts.append(f"    - Parameters: See function signature")
-            
-            rules_parts.append("Input format: JSON string with action-specific parameters.")
-            rules_parts.append("Example: {\"name\": \"action_name\", \"args\": {\"action-specific parameters\"}}")
-        
-        rules_parts.append("</interaction>")
-        
-        # Close the environment tag
-        rules_parts.append(f"</environment_{inflection.underscore(env_type)}>")
-        
-        return "\n".join(rules_parts)
     
     async def initialize(self, env_names: Optional[List[str]] = None):
         """Initialize environments by names using environment context manager with concurrent support.
@@ -423,8 +70,14 @@ class ECPServer:
         Args:
             env_names: List of environment names to initialize. If None, initialize all registered environments.
         """
-        # Initialize environment context manager
+        # Initialize environment context manager (this will trigger discovery if auto_discover is True)
         await self.environment_context_manager.initialize()
+        
+        # Sync registered_configs from context manager after discovery
+        for env_name in self.environment_context_manager.list():
+            env_config = self.environment_context_manager.get_info(env_name)
+            if env_config and env_name not in self._registered_configs:
+                self._registered_configs[env_name] = env_config
         
         environments_to_init = env_names if env_names is not None else list(self._registered_configs.keys())
         
@@ -460,6 +113,11 @@ class ECPServer:
                         return env_config.cls()
                 
                 await self.environment_context_manager.build(env_config, environment_factory)
+                
+                # Update actions from instance
+                if env_config.instance and hasattr(env_config.instance, 'actions'):
+                    env_config.actions = env_config.instance.actions.copy()
+                
                 # Sync to registered_configs for consistency
                 self._registered_configs[env_name] = env_config
                 logger.debug(f"| ✅ Environment {env_name} initialized")
@@ -528,33 +186,101 @@ class ECPServer:
         """
         return self.environment_context_manager.get(env_name)
     
-    def invoke(self, name: str, action: str, input: Any, **kwargs) -> Any:
-        """Invoke an environment action using context manager.
+    async def __call__(self, name: str, action: str, input: Dict[str, Any]) -> Any:
+        """Call an environment action
         
         Args:
             name: Name of the environment
             action: Name of the action
             input: Input for the action
-            **kwargs: Keyword arguments for the action
             
         Returns:
             Action result
         """
-        return self.environment_context_manager.invoke(name, action, input, **kwargs)
+        return await self.environment_context_manager(name, action, input)
     
-    async def ainvoke(self, name: str, action: str, input: Any, **kwargs) -> Any:
-        """Invoke an environment action asynchronously using context manager.
+    async def update(self, env_name: str, env: Union[Environment, Type[Environment]], 
+                    new_version: Optional[str] = None, description: Optional[str] = None,
+                    **kwargs: Any) -> EnvironmentConfig:
+        """Update an existing environment with new configuration and create a new version
         
         Args:
-            name: Name of the environment
-            action: Name of the action
-            input: Input for the action
-            **kwargs: Keyword arguments for the action
+            env_name: Name of the environment to update
+            env: New environment class or instance with updated implementation
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            **kwargs: Configuration for environment initialization
             
         Returns:
-            Action result
+            EnvironmentConfig: Updated environment configuration
         """
-        return await self.environment_context_manager.ainvoke(name, action, input, **kwargs)
+        env_config = await self.environment_context_manager.update(
+            env_name, env, new_version, description, **kwargs
+        )
+        self._registered_configs[env_config.name] = env_config
+        return env_config
+    
+    async def copy(self, env_name: str, new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, **override_config) -> EnvironmentConfig:
+        """Copy an existing environment
+        
+        Args:
+            env_name: Name of the environment to copy
+            new_name: New name for the copied environment. If None, uses original name.
+            **override_config: Configuration overrides
+            
+        Returns:
+            EnvironmentConfig: New environment configuration
+        """
+        env_config = await self.environment_context_manager.copy(env_name, new_name, new_version, **override_config)
+        self._registered_configs[env_config.name] = env_config
+        return env_config
+    
+    async def unregister(self, env_name: str) -> bool:
+        """Unregister an environment
+        
+        Args:
+            env_name: Name of the environment to unregister
+            
+        Returns:
+            True if unregistered successfully, False otherwise
+        """
+        success = await self.environment_context_manager.unregister(env_name)
+        if success and env_name in self._registered_configs:
+            del self._registered_configs[env_name]
+        return success
+    
+    async def save_to_json(self, file_path: Optional[str] = None) -> str:
+        """Save all environment configurations to JSON
+        
+        Args:
+            file_path: File path to save to
+            
+        Returns:
+            Path to saved file
+        """
+        file_path = file_path if file_path is not None else self.save_path
+        return await self.environment_context_manager.save_to_json(file_path)
+    
+    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
+        """Load environment configurations from JSON
+        
+        Args:
+            file_path: File path to load from
+            auto_initialize: Whether to automatically initialize environments after loading
+            
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        file_path = file_path if file_path is not None else self.save_path
+        success = await self.environment_context_manager.load_from_json(file_path, auto_initialize)
+        if success:
+            # Sync registered_configs
+            for env_name in self.environment_context_manager.list():
+                env_config = self.environment_context_manager.get_info(env_name)
+                if env_config:
+                    self._registered_configs[env_name] = env_config
+        return success
     
     def cleanup(self):
         """Cleanup all environments using context manager."""

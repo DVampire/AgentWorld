@@ -21,18 +21,15 @@ from src.environment.operator_browser.types import (
 from src.logger import logger
 from src.utils import assemble_project_path, encode_file_base64, decode_file_base64, make_file_url
 from src.utils import dedent, ScreenshotService
-from src.environment.server import ecp
 from src.environment.types import Environment, ScreenshotInfo
+from src.environment.server import ecp
 
-@ecp.environment()
 class OperatorBrowserEnvironment(Environment):
     """Operator Browser Environment that provides browser automation as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="operator_browser", description="The name of the Operator Browser environment.")
-    type: str = Field(default="Operator Browser Environment", description="The type of the Operator Browser environment.")
     description: str = Field(default="OpenAI Operator compatible browser environment for web automation", description="The description of the Operator Browser environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Operator Browser environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": True,
         "additional_rules": {
@@ -87,7 +84,6 @@ class OperatorBrowserEnvironment(Environment):
     
     @ecp.action(
         name="click",
-        type="Operator Browser Environment",
         description="Click at specified coordinates on the page",
     )
     async def click(self, x: int, y: int, button: str = "left") -> Dict[str, Any]:
@@ -145,7 +141,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="double_click",
         description="Double click at specified coordinates on the page",
-        type="Operator Browser Environment",
     )
     async def double_click(self, x: int, y: int, button: str = "left") -> Dict[str, Any]:
         """Double click at specified coordinates on the page.
@@ -202,7 +197,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="scroll",
         description="Scroll at specified coordinates with given offsets",
-        type="Operator Browser Environment",
     )
     async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> Dict[str, Any]:
         """Scroll at specified coordinates with given offsets.
@@ -260,7 +254,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="type",
         description="Type text at the current cursor position",
-        type="Operator Browser Environment",
     )
     async def type_text(self, text: str) -> Dict[str, Any]:
         """Type text at the current cursor position.
@@ -311,7 +304,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="wait",
         description="Wait for specified milliseconds",
-        type="Operator Browser Environment",
     )
     async def wait(self, ms: int) -> Dict[str, Any]:
         """Wait for specified milliseconds.
@@ -364,7 +356,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="move",
         description="Move mouse to specified coordinates",
-        type="Operator Browser Environment",
     )
     async def move(self, x: int, y: int) -> Dict[str, Any]:
         """Move mouse to specified coordinates.
@@ -418,7 +409,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="keypress",
         description="Press specified keys",
-        type="Operator Browser Environment",
     )
     async def keypress(self, keys: List[str]) -> Dict[str, Any]:
         """Press specified keys.
@@ -469,7 +459,6 @@ class OperatorBrowserEnvironment(Environment):
     @ecp.action(
         name="drag",
         description="Drag mouse along specified path",
-        type="Operator Browser Environment",
     )
     async def drag(self, path: List[List[int]]) -> Dict[str, Any]:
         """Drag mouse along specified path.

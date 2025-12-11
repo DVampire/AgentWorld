@@ -11,10 +11,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import TradingRecords
 from src.utils import get_start_end_timestamp
-from src.environment.server import ecp
 from src.logger import logger
 from src.utils import dedent
 from src.environment.types import Environment
+from src.environment.server import ecp
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 from src.registry import DATASET
 from src.utils import get_token_count
@@ -57,15 +57,12 @@ _INTERACTION_RULES = """Interaction guidelines for intraday trading:
 4. All positions must be closed by the end of trading day (automatic liquidation if not closed).
 """
 
-@ecp.environment()
 class IntradayTradingEnvironment(Environment):
     """Intraday Trading Environment that provides minute-level trading operations."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = Field(default="intraday_trading", description="The name of the intraday trading environment.")
-    type: str = Field(default="Intraday Trading", description="The type of the intraday trading environment.")
     description: str = Field(default="Intraday trading environment for minute-level trading", description="The description of the intraday trading environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the intraday trading environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -600,7 +597,6 @@ class IntradayTradingEnvironment(Environment):
         return state, reward, self.done, self.truncted, info
     
     @ecp.action(name = "step",
-                type = "Intraday Trading",
                 description = "Step the intraday trading environment.")
     async def step(self, action: str) -> Dict[str, Any]:
         """Step the intraday trading environment.

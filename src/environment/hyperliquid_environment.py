@@ -32,15 +32,12 @@ from src.environment.hyperliquidentry.types import (
 )
 from src.utils import dedent, assemble_project_path
 
-@ecp.environment()
 class OnlineHyperliquidEnvironment(Environment):
     """Hyperliquid Trading Environment that provides Hyperliquid trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="online_hyperliquid", description="The name of the Hyperliquid trading environment.")
-    type: str = Field(default="Hyperliquid Trading", description="The type of the Hyperliquid trading environment.")
     description: str = Field(default="Hyperliquid trading environment for real-time data and trading operations", description="The description of the Hyperliquid trading environment.")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the Hyperliquid trading environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -849,7 +846,6 @@ class OnlineHyperliquidEnvironment(Environment):
             }
     
     @ecp.action(name="step",
-                type="Hyperliquid Trading",
                 description=dedent("""
                     Step the trading environment for perpetual futures trading.
                     Example:
@@ -1223,7 +1219,6 @@ class OnlineHyperliquidEnvironment(Environment):
                 "extra": {"error": str(e)}
             }
 
-@ecp.environment()
 class OfflineHyperliquidEnvironment(Environment):
     """
     Offline backtest environment: Simulates HyperliquidEnvironment using historical data from local database.
@@ -1240,9 +1235,7 @@ class OfflineHyperliquidEnvironment(Environment):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="offline_hyperliquid", description="Backtest environment name (consistent with online trading)")
-    type: str = Field(default="Hyperliquid Trading", description="Backtest trading environment (consistent with online trading)")
     description: str = Field(default="Hyperliquid trading environment for backtest with historical data", description="Backtest environment description")
-    args_schema: Type[BaseModel] = Field(default=None, description="The args schema of the backtest environment.")
     metadata: Dict[str, Any] = Field(default={
         "has_vision": False,
         "additional_rules": {
@@ -1909,7 +1902,6 @@ class OfflineHyperliquidEnvironment(Environment):
             }
     
     @ecp.action(name="step",
-                type="Hyperliquid Trading",
                 description=dedent("""
                     Step the trading environment for perpetual futures trading.
                     Example:
