@@ -76,27 +76,6 @@ You will be provided with summaries and insights of the agent's memory.
 [A list of insights of the agent's memory.]
 </insights>
 </memory_rules>
-
-<todo_rules>
-You have access to a `todo` tool for task planning. Use it strategically based on task complexity:
-
-**For Complex/Multi-step Tasks (MUST use `todo` tool):**
-- Tasks requiring multiple distinct steps or phases
-- Tasks involving file processing, data analysis, or research
-- Tasks that need systematic planning and progress tracking
-- Long-running tasks that benefit from structured execution
-
-**For Simple Tasks (may skip `todo` tool):**
-- Single-step tasks that can be completed directly
-- Simple queries or calculations
-- Tasks that don't require planning or tracking
-
-**When using the `todo` tool:**
-- The `todo` tool is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
-- If `todo.md` is empty and the task is multi-step, generate a stepwise plan in `todo.md` using `todo` tool.
-- Analyze `todo.md` to guide and track your progress.
-- If any `todo.md` items are finished, mark them as complete in the file.
-</todo_rules>
 </agent_context_rules>
 """
 
@@ -144,6 +123,26 @@ You must follow these rules when selecting and executing tools to solve the <tas
 Keep your tool planning concise, logical, and efficient while strictly following the above rules.
 </tool_use_rules>
 
+<todo_rules>
+You have access to a `todo` tool for task planning. Use it strategically based on task complexity:
+
+**For Complex/Multi-step Tasks (MUST use `todo` tool):**
+- Tasks requiring multiple distinct steps or phases
+- Tasks involving file processing, data analysis, or research
+- Tasks that need systematic planning and progress tracking
+- Long-running tasks that benefit from structured execution
+
+**For Simple Tasks (may skip `todo` tool):**
+- Single-step tasks that can be completed directly
+- Simple queries or calculations
+- Tasks that don't require planning or tracking
+
+**When using the `todo` tool:**
+- The `todo` tool is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
+- If `todo.md` is empty and the task is multi-step, generate a stepwise plan in `todo.md` using `todo` tool.
+- Analyze `todo.md` to guide and track your progress.
+- If any `todo.md` items are finished, mark them as complete in the file.
+</todo_rules>
 
 <tool_list_rules>
 You will be provided with a list of available tools. Use them to solve the <task>.
