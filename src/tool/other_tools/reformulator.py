@@ -4,7 +4,7 @@ from pydantic import Field
 
 from src.tool.types import Tool, ToolResponse
 from src.message.types import SystemMessage, HumanMessage
-from src.model.model_manager import model_manager
+from src.model import model_manager
 from src.logger import logger
 from src.utils import dedent
 

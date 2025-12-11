@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Optional, Union
 
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.database.types import (
     QueryRequest, 
     TableInfo,

@@ -1,25 +1,51 @@
 import os
 from mmengine import Config as MMConfig
 from argparse import Namespace
+from typing import Union
 
 from src.utils import assemble_project_path, Singleton
 
 def process_general(config: MMConfig) -> MMConfig:
+    """Process general configuration and ensure paths are strings"""
+    workdir = str(assemble_project_path(config.workdir))
+    os.makedirs(workdir, exist_ok=True)
+    config.workdir = workdir
+    
+    log_path = getattr(config, 'log_path', 'agent.log')
+    log_path = str(assemble_project_path(os.path.join(workdir, log_path)))
+    config.log_path = log_path
 
-    config.workdir = assemble_project_path(config.workdir)
-    os.makedirs(config.workdir, exist_ok=True)
+    return config
 
-    config.log_path = os.path.join(config.workdir, getattr(config, 'log_path', 'agent.log'))
+def process_tools(config: MMConfig) -> MMConfig:
+    for key in config:
+        if "tool" in key and isinstance(config[key], dict):
+            if "base_dir" in config[key]:
+                # base_dir in config is already a relative path from project root
+                # (e.g., "workdir/tool_calling_agent/browser"), so just assemble it
+                base_dir = str(assemble_project_path(config[key]["base_dir"]))
+                config[key].update(dict(
+                    base_dir = base_dir
+                ))
+    return config
 
+def process_agent(config: MMConfig) -> MMConfig:
+    if "agent" in config:
+        if "workdir" in config.agent:
+            # agent workdir should use the same workdir as config
+            config.agent.update(dict(
+                workdir = config.workdir
+            ))
     return config
 
 class Config(MMConfig, metaclass=Singleton):
     def __init__(self):
         super(Config, self).__init__()
 
-    def init_config(self, config_path: str, args: Namespace) -> None:
+    def initialize(self, config_path: Union[str], args: Namespace) -> None:
         # Initialize the general configuration
-        mmconfig = MMConfig.fromfile(filename=assemble_project_path(config_path))
+        config_path = str(assemble_project_path(config_path))
+        mmconfig = MMConfig.fromfile(filename=config_path)
         if 'cfg_options' not in args or args.cfg_options is None:
             cfg_options = dict()
         else:
@@ -31,8 +57,14 @@ class Config(MMConfig, metaclass=Singleton):
 
         # Process general configuration
         mmconfig = process_general(mmconfig)
+        mmconfig = process_tools(mmconfig)
+        mmconfig = process_agent(mmconfig)
 
         self.__dict__.update(mmconfig.__dict__)
+    
+    def dump(self) -> str:
+        """Dump the configuration"""
+        return super().dump()
 
 config = Config()
-config.init_config(config_path=assemble_project_path("configs/base.py"), args=Namespace())
+config.initialize(config_path="configs/base.py", args=Namespace())

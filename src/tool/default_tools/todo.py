@@ -2,14 +2,15 @@
 
 import json
 import uuid
+import os
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 import tempfile
 
 from src.tool.types import Tool, ToolResponse
 from src.utils import assemble_project_path
+from src.utils import file_lock
 
 class Step(BaseModel):
     """Step model for todo management."""
@@ -61,17 +62,17 @@ class TodoTool(Tool):
     name: str = "todo"
     description: str = _TODO_TOOL_DESCRIPTION
     
-    todo_file: Optional[Path] = None
-    steps_file: Optional[Path] = None
+    todo_file: Optional[str] = None
+    steps_file: Optional[str] = None
     steps: Optional[List[Step]] = None
     
     def __init__(self, **kwargs):
         """A tool for managing a todo.md file with task decomposition and step tracking."""
         super().__init__(**kwargs)
         # Use temporary file for todo.md
-        temp_dir = Path(assemble_project_path(tempfile.mkdtemp()))
-        self.todo_file = Path(assemble_project_path(temp_dir / "todo.md"))
-        self.steps_file = Path(assemble_project_path(temp_dir / "todo_steps.json"))
+        temp_dir = assemble_project_path(tempfile.mkdtemp())
+        self.todo_file = assemble_project_path(os.path.join(temp_dir, "todo.md"))
+        self.steps_file = assemble_project_path(os.path.join(temp_dir, "todo_steps.json"))
         self.steps = []
         self._load_steps()
     
@@ -131,66 +132,70 @@ class TodoTool(Tool):
     def _load_steps(self) -> None:
         """Load steps from JSON file."""
         try:
-            if self.steps_file.exists():
-                with open(self.steps_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.steps = [Step(**step_data) for step_data in data]
-            else:
-                self.steps = []
+            with file_lock(self.steps_file):
+                if os.path.exists(self.steps_file):
+                    with open(self.steps_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        self.steps = [Step(**step_data) for step_data in data]
+                else:
+                    self.steps = []
         except Exception:
             self.steps = []
     
     def _save_steps(self) -> None:
         """Save steps to JSON file."""
         try:
-            with open(self.steps_file, 'w', encoding='utf-8') as f:
-                json.dump([step.model_dump() for step in self.steps], f, indent=2, ensure_ascii=False)
+            with file_lock(self.steps_file):
+                with open(self.steps_file, 'w', encoding='utf-8') as f:
+                    json.dump([step.model_dump() for step in self.steps], f, indent=2, ensure_ascii=False)
         except Exception:
             pass
     
     def _sync_to_markdown(self) -> None:
         """Sync steps list to markdown file."""
         try:
-            content = "# Todo List\n\n"
-            
-            for step in self.steps:
-                priority_emoji = {
-                    "high": "🔴", 
-                    "medium": "🟡", 
-                    "low": "🟢"
-                }.get(step.priority, "🟡")
+            with file_lock(self.todo_file):
+                content = "# Todo List\n\n"
                 
-                status_emoji = {
-                    "pending": "⏳",
-                    "success": "✅",
-                    "failed": "❌"
-                }.get(step.status, "⏳")
+                for step in self.steps:
+                    priority_emoji = {
+                        "high": "🔴", 
+                        "medium": "🟡", 
+                        "low": "🟢"
+                    }.get(step.priority, "🟡")
+                    
+                    status_emoji = {
+                        "pending": "⏳",
+                        "success": "✅",
+                        "failed": "❌"
+                    }.get(step.status, "⏳")
+                    
+                    category_text = f" [{step.category}]" if step.category else ""
+                    
+                    # Create step line
+                    if step.status == "pending":
+                        checkbox = "[ ]"
+                    else:
+                        checkbox = "[x]"
+                    
+                    step_line = f"- {checkbox} **{step.id}** {priority_emoji} {status_emoji} {step.name}{category_text}"
+                    
+                    if step.parameters:
+                        step_line += f" *(params: {json.dumps(step.parameters)})*"
+                    
+                    step_line += f" *(created: {step.created_at}*"
+                    
+                    if step.updated_at:
+                        step_line += f", updated: {step.updated_at}"
+                    
+                    if step.result:
+                        step_line += f", result: {step.result}"
+                    
+                    step_line += ")"
+                    content += step_line + "\n"
                 
-                category_text = f" [{step.category}]" if step.category else ""
-                
-                # Create step line
-                if step.status == "pending":
-                    checkbox = "[ ]"
-                else:
-                    checkbox = "[x]"
-                
-                step_line = f"- {checkbox} **{step.id}** {priority_emoji} {status_emoji} {step.name}{category_text}"
-                
-                if step.parameters:
-                    step_line += f" *(params: {json.dumps(step.parameters)})*"
-                
-                step_line += f" *(created: {step.created_at}*"
-                
-                if step.updated_at:
-                    step_line += f", updated: {step.updated_at}"
-                
-                if step.result:
-                    step_line += f", result: {step.result}"
-                
-                step_line += ")"
-                content += step_line + "\n"
-            
-            self.todo_file.write_text(content, encoding='utf-8')
+                with open(self.todo_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
         except Exception:
             pass
     
@@ -366,10 +371,11 @@ class TodoTool(Tool):
     
     async def _show_todo_file(self) -> ToolResponse:
         """Show the complete todo.md file content."""
-        if not self.todo_file.exists():
+        if not os.path.exists(self.todo_file):
             return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
         
-        content = self.todo_file.read_text(encoding='utf-8')
+        with open(self.todo_file, 'r', encoding='utf-8') as f:
+            content = f.read()
         return ToolResponse(success=True, message=f"📄 Todo.md content:\n\n```markdown\n{content}\n```")
     
     async def _export_todo_file(self, export_path: str) -> ToolResponse:
@@ -381,20 +387,19 @@ class TodoTool(Tool):
             # Ensure the todo.md file is up to date
             self._sync_to_markdown()
             
-            if not self.todo_file.exists():
+            if not os.path.exists(self.todo_file):
                 return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
             
-            # Convert to Path object
-            export_path_obj = Path(export_path)
-            
             # Create parent directories if they don't exist
-            export_path_obj.parent.mkdir(parents=True, exist_ok=True)
+            os.makedirs(os.path.dirname(export_path), exist_ok=True)
             
             # Read the current todo.md content
-            content = self.todo_file.read_text(encoding='utf-8')
+            with open(self.todo_file, 'r', encoding='utf-8') as f:
+                content = f.read()
             
             # Write to the export path
-            export_path_obj.write_text(content, encoding='utf-8')
+            with open(export_path, 'w', encoding='utf-8') as f:
+                f.write(content)
             
             return ToolResponse(success=True, message=f"✅ Successfully exported todo.md to: {export_path}")
             
@@ -403,9 +408,10 @@ class TodoTool(Tool):
     
     def get_todo_content(self) -> str:
         """Get the content of the todo.md file."""
-        if not self.todo_file.exists():
+        if not os.path.exists(self.todo_file):
             return "[Current todo.md is empty, fill it with your plan when applicable]"
-        todo_contents = self.todo_file.read_text(encoding='utf-8')
+        with open(self.todo_file, 'r', encoding='utf-8') as f:
+            todo_contents = f.read()
         return todo_contents
     
     async def export_todo_file(self, export_path: str):
@@ -416,20 +422,19 @@ class TodoTool(Tool):
             # Ensure the todo.md file is up to date
             self._sync_to_markdown()
             
-            if not self.todo_file.exists():
+            if not os.path.exists(self.todo_file):
                 return
             
-            # Convert to Path object
-            export_path_obj = Path(export_path)
-            
             # Create parent directories if they don't exist
-            export_path_obj.parent.mkdir(parents=True, exist_ok=True)
+            os.makedirs(os.path.dirname(export_path), exist_ok=True)
             
             # Read the current todo.md content
-            content = self.todo_file.read_text(encoding='utf-8')
+            with open(self.todo_file, 'r', encoding='utf-8') as f:
+                content = f.read()
             
             # Write to the export path
-            export_path_obj.write_text(content, encoding='utf-8')
+            with open(export_path, 'w', encoding='utf-8') as f:
+                f.write(content)
         except Exception as e:
             return
     

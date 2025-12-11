@@ -5,7 +5,6 @@ from typing import Optional, Union, List, Dict
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
-import concurrent.futures
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
@@ -22,7 +21,7 @@ from alpaca.common.exceptions import APIError
 from pydantic import BaseModel
 
 from src.logger import logger
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.alpacaentry.types import (
     AccountInfo,
     GetAccountRequest,

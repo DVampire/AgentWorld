@@ -10,8 +10,8 @@ from typing import Any, Dict, Optional, Type, List, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol import ecp
+from src.environment.types import Environment
+from src.environment.server import ecp
 from src.environment.binanceentry.service import BinanceService
 from src.environment.binanceentry.exceptions import (
     AuthenticationError,
@@ -31,7 +31,7 @@ from src.environment.binanceentry.types import (
 from src.utils import dedent, assemble_project_path
 
 @ecp.environment()
-class BinanceEnvironment(BaseEnvironment):
+class BinanceEnvironment(Environment):
     """Binance Trading Environment that provides Binance trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

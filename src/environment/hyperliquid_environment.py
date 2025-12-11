@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 from src.logger import logger
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol import ecp
+from src.environment.types import Environment
+from src.environment.server import ecp
 from src.environment.hyperliquidentry.service import OnlineHyperliquidService
 from src.environment.hyperliquidentry.service import OfflineHyperliquidService
 from src.environment.hyperliquidentry.exceptions import (
@@ -33,7 +33,7 @@ from src.environment.hyperliquidentry.types import (
 from src.utils import dedent, assemble_project_path
 
 @ecp.environment()
-class OnlineHyperliquidEnvironment(BaseEnvironment):
+class OnlineHyperliquidEnvironment(Environment):
     """Hyperliquid Trading Environment that provides Hyperliquid trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
@@ -1224,7 +1224,7 @@ class OnlineHyperliquidEnvironment(BaseEnvironment):
             }
 
 @ecp.environment()
-class OfflineHyperliquidEnvironment(BaseEnvironment):
+class OfflineHyperliquidEnvironment(Environment):
     """
     Offline backtest environment: Simulates HyperliquidEnvironment using historical data from local database.
     

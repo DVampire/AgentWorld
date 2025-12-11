@@ -10,10 +10,10 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
 import json
-from pathlib import Path
+import os
 
 from src.memory.types import ChatEvent, EventType, Importance, SessionInfo
-from src.model.model_manager import model_manager
+from src.model import model_manager
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.registry import MEMORY_SYSTEM
 from src.logger import logger
@@ -503,8 +503,7 @@ class OfflineTradingMemorySystem:
             Path to the saved file
         """
         async with file_lock(file_path):
-            file_path = Path(file_path)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # Prepare metadata
             metadata = {
@@ -583,11 +582,8 @@ class OfflineTradingMemorySystem:
         Returns:
             True if loaded successfully, False otherwise
         """
-        
         async with file_lock(file_path):
-            file_path = Path(file_path)
-            
-            if not file_path.exists():
+            if not os.path.exists(file_path):
                 logger.warning(f"| ⚠️  Memory file not found: {file_path}")
                 return False
             

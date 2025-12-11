@@ -6,7 +6,7 @@ from typing import Optional, List, Tuple
 from github import Github, GithubException
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.github.types import (
     GitHubRepository,
     GitHubUser, 

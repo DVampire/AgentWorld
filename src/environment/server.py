@@ -4,27 +4,27 @@ Server implementation for the Environment Context Protocol with decorator suppor
 """
 
 import inspect
-from typing import Any, Dict, List, Optional, Callable, Type, get_origin, get_args
+import asyncio
+from typing import Any, Dict, List, Optional, Callable, Type, Union, get_origin, get_args
 from pydantic import BaseModel, create_model, Field
 import inflection
 import typing
 
 from src.config import config
 from src.logger import logger
-from src.environment.protocol.types import EnvironmentInfo, ActionInfo
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol.context import EnvironmentContextManager
+from src.environment.types import EnvironmentConfig, ActionConfig, Environment
+from src.environment.context import EnvironmentContextManager
 
 class ECPServer:
     """ECP Server for managing environments and actions with decorator support"""
     
     def __init__(self):
-        self._registered_environments: Dict[str, EnvironmentInfo] = {}  # env_name -> EnvironmentInfo
+        self._registered_configs: Dict[str, EnvironmentConfig] = {}  # env_name -> EnvironmentConfig
         self.environment_context_manager = EnvironmentContextManager()
     
     def environment(self):
         """Decorator to register an environment class"""
-        def decorator(cls: Type[BaseEnvironment]):
+        def decorator(cls: Type[Environment]):
             model_fields = cls.model_fields
             
             # Store environment metadata
@@ -44,8 +44,8 @@ class ECPServer:
                     # Set the environment name for this action
                     attr._env_name = env_name
                     
-                    # Create ActionInfo from the decorated method
-                    action_info = ActionInfo(
+                    # Create ActionConfig from the decorated method
+                    action_config = ActionConfig(
                         env_name=env_name,
                         name=getattr(attr, '_action_name'),
                         type=getattr(attr, '_action_type', ''),
@@ -55,7 +55,7 @@ class ECPServer:
                         metadata=getattr(attr, '_metadata', {})
                     )
                     
-                    actions[getattr(attr, '_action_name')] = action_info
+                    actions[getattr(attr, '_action_name')] = action_config
             
             # Generate rules
             final_rules = self.genetate_rules(
@@ -67,8 +67,8 @@ class ECPServer:
                 additional_rules
             )
             
-            # Create EnvironmentInfo and store it
-            env_info = EnvironmentInfo(
+            # Create EnvironmentConfig and store it
+            env_config = EnvironmentConfig(
                 name=env_name,
                 type=env_type,
                 description=description,
@@ -76,11 +76,12 @@ class ECPServer:
                 rules=final_rules,
                 actions=actions,
                 cls=cls,
+                config={},
                 instance=None,
                 metadata=metadata
             )
             
-            self._registered_environments[env_name] = env_info
+            self._registered_configs[env_name] = env_config
             
             return cls
         return decorator
@@ -322,7 +323,7 @@ class ECPServer:
             env_name: str, 
             env_type: str, 
             description: str, 
-            actions: Dict[str, ActionInfo],
+            actions: Dict[str, ActionConfig],
             has_vision: bool = False,
             additional_rules: Optional[Dict[str, str]] = None) -> str:
         """Generate environment rules from actions and metadata
@@ -379,19 +380,19 @@ class ECPServer:
             # Sort actions by name for consistent output
             sorted_actions = sorted(actions.items(), key=lambda x: x[0])
             
-            for i, (action_name, action_info) in enumerate(sorted_actions, 1):
-                rules_parts.append(f"{i}. {action_name}: {action_info.description}")
+            for i, (action_name, action_config) in enumerate(sorted_actions, 1):
+                rules_parts.append(f"{i}. {action_name}: {action_config.description}")
                 
                 # Add parameter information if available
-                if action_info.args_schema:
+                if action_config.args_schema:
                     try:
-                        schema = action_info.args_schema.model_json_schema()
+                        schema = action_config.args_schema.model_json_schema()
                         properties = schema.get('properties', {})
                         required = schema.get('required', [])
                         
                         for param_name, param_info in properties.items():
                             # Get the original type annotation from the function signature
-                            param_type_str = self._get_type_string(action_info.function, param_name)
+                            param_type_str = self._get_type_string(action_config.function, param_name)
                             param_desc = param_info.get('description', f'Parameter {param_name}')
                             is_required = param_name in required
                             
@@ -416,41 +417,75 @@ class ECPServer:
         
         return "\n".join(rules_parts)
     
-    async def initialize(self, env_names: List[str]):
-        """Initialize environments by names
+    async def initialize(self, env_names: Optional[List[str]] = None):
+        """Initialize environments by names using environment context manager with concurrent support.
         
         Args:
-            env_names: List of environment names
+            env_names: List of environment names to initialize. If None, initialize all registered environments.
         """
-        logger.info(f"| 🎮 Initializing {len(self._registered_environments)} environments with context manager...")
+        # Initialize environment context manager
+        await self.environment_context_manager.initialize()
         
-        for env_name, env_info in self._registered_environments.items():
-            if env_name in env_names:
-                logger.debug(f"| 🔧 Initializing environment: {env_name}")
-                
+        environments_to_init = env_names if env_names is not None else list(self._registered_configs.keys())
+        
+        logger.info(f"| 🎮 Initializing {len(environments_to_init)} environments with context manager...")
+        
+        # Prepare initialization tasks for concurrent execution
+        async def init_environment(env_name: str):
+            # Get environment config
+            env_config = self._registered_configs.get(env_name)
+            if env_config is None:
+                logger.warning(f"| ⚠️ Environment {env_name} not found in registered configs")
+                return
+            
+            # Skip if already initialized
+            if env_config.instance is not None:
+                logger.debug(f"| ⏭️ Environment {env_name} already initialized")
+                return
+            
+            logger.debug(f"| 🔧 Initializing environment: {env_name}")
+            
+            # Get environment config from global config if available
+            global_config = config.get(f"{env_name}_environment", {})
+            if global_config:
+                # Merge with existing config
+                env_config.config = {**env_config.config, **global_config}
+            
+            # Create environment instance and store it in context manager
+            try:
                 def environment_factory():
-                    env_config = config.get(f"{env_name}_environment", None)
-                    if env_config:
-                        return env_info.cls(**env_config)
+                    if env_config.config:
+                        return env_config.cls(**env_config.config)
                     else:
-                        return env_info.cls()
+                        return env_config.cls()
                 
-                await self.environment_context_manager.build(env_info, environment_factory)
+                await self.environment_context_manager.build(env_config, environment_factory)
+                # Sync to registered_configs for consistency
+                self._registered_configs[env_name] = env_config
                 logger.debug(f"| ✅ Environment {env_name} initialized")
-            else:
-                logger.info(f"| ⏭️ Environment {env_name} not found")
-                
-        logger.info("| ✅ Environments initialization completed")
+            except Exception as e:
+                logger.error(f"| ❌ Failed to initialize environment {env_name}: {e}")
         
-    async def register(self, env_info: EnvironmentInfo):
-        """Register an environment
+        # Initialize environments concurrently
+        init_tasks = [init_environment(env_name) for env_name in environments_to_init]
+        await asyncio.gather(*init_tasks, return_exceptions=True)
+        
+        logger.info("| ✅ Environments initialization completed")
+    
+    async def register(self, env: Union[Environment, Type[Environment]], *, override: bool = False, **kwargs: Any) -> EnvironmentConfig:
+        """Register an environment class or instance asynchronously.
         
         Args:
-            env_info: Environment information
+            env: Environment class or instance to register
+            override: Whether to override existing registration
+            **kwargs: Configuration for environment initialization
+            
+        Returns:
+            EnvironmentConfig: Environment configuration
         """
-        if env_info.name not in self._registered_environments:
-            self._registered_environments[env_info.name] = env_info
-        await self.environment_context_manager.register(env_info)
+        env_config = await self.environment_context_manager.register(env, override=override, **kwargs)
+        self._registered_configs[env_config.name] = env_config
+        return env_config
     
     async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
@@ -467,29 +502,29 @@ class ECPServer:
         """Get list of registered environments
         
         Returns:
-            List[EnvironmentInfo]: List of registered environment information
+            List[str]: List of registered environment names
         """
         return self.environment_context_manager.list()
     
-    def get_info(self, env_name: str) -> Optional[EnvironmentInfo]:
-        """Get environment information by name
+    def get_info(self, env_name: str) -> Optional[EnvironmentConfig]:
+        """Get environment configuration by name
         
         Args:
             env_name: Environment name
             
         Returns:
-            EnvironmentInfo: Environment information or None if not found
+            EnvironmentConfig: Environment configuration or None if not found
         """
         return self.environment_context_manager.get_info(env_name)
     
-    def get(self, env_name: str) -> Optional[BaseEnvironment]:
-        """Get environment information by type
+    def get(self, env_name: str) -> Optional[Environment]:
+        """Get environment instance by name
         
         Args:
             env_name: Environment name
             
         Returns:
-            EnvironmentInfo: Environment information or None if not found
+            Environment: Environment instance or None if not found
         """
         return self.environment_context_manager.get(env_name)
     

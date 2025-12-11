@@ -13,11 +13,11 @@ from src.environment.faiss.types import (
 from src.utils import dedent
 from src.logger import logger
 from src.utils import assemble_project_path
-from src.environment.protocol.server import ecp
-from src.environment.protocol.environment import BaseEnvironment
+from src.environment.server import ecp
+from src.environment.types import Environment
 
 @ecp.environment()
-class FaissEnvironment(BaseEnvironment):
+class FaissEnvironment(Environment):
     """FAISS Vector Store Environment that provides vector operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

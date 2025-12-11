@@ -15,7 +15,7 @@ from pydantic import BaseModel
 cdp_logger = logging.getLogger('cdp_use.client')
 cdp_logger.setLevel(logging.CRITICAL)  # Only show critical errors, suppress common CDP errors
 
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.browser.browser.session import BrowserSession
 from src.environment.browser.browser.events import (
     ClickElementEvent,

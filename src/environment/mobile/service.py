@@ -19,7 +19,7 @@ from src.environment.mobile.types import (
     ScreenshotRequest, 
     SwipePathRequest,
 )
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 
 # Import the three components
 from src.environment.mobile.adb import AdbDriver

@@ -99,7 +99,7 @@ class Logger(logging.Logger, metaclass=Singleton):
         except Exception:
             pass  # Logging failure should not affect main program
 
-    def init_logger(self, config, level: int = LogLevel.INFO):
+    def initialize(self, config, level: int = LogLevel.INFO):
         """
         Initialize the logger with a file path and optional main process check.
 

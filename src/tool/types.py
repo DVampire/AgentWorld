@@ -509,8 +509,9 @@ class ToolConfig(BaseModel):
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
     enabled: bool = Field(default=True, description="Whether the tool is enabled")
+    version: str = Field(default="1.0.0", description="Version of the tool")
     
-    cls: Type[Tool] = Field(description="The class of the tool")
+    cls: Optional[Type[Tool]] = Field(default=None, description="The class of the tool")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the tool")
     instance: Optional[Tool] = Field(default=None, description="The instance of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")

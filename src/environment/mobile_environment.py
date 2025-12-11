@@ -20,13 +20,12 @@ from src.environment.mobile.types import (
     ScrollRequest,
 )
 from src.logger import logger
-from src.environment.protocol.server import ecp
-from src.environment.protocol.environment import BaseEnvironment
+from src.environment.server import ecp
+from src.environment.types import Environment, ScreenshotInfo
 from src.utils import dedent, ScreenshotService, encode_file_base64, decode_file_base64, make_file_url
-from src.environment.protocol.types import ScreenshotInfo
 
 @ecp.environment()
-class MobileEnvironment(BaseEnvironment):
+class MobileEnvironment(Environment):
     """Mobile Environment that provides mobile device automation operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

@@ -10,10 +10,10 @@ from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
 import json
-from pathlib import Path
+import os
 
 from src.memory.types import ChatEvent, EventType, Importance, SessionInfo
-from src.model.model_manager import model_manager
+from src.model import model_manager
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.registry import MEMORY_SYSTEM
 from src.logger import logger
@@ -502,8 +502,8 @@ class OnlineTradingMemorySystem:
         Returns:
             Path to the saved file
         """
+        
         async with file_lock(file_path):
-            file_path = Path(file_path)
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Prepare metadata
@@ -583,9 +583,7 @@ class OnlineTradingMemorySystem:
             True if loaded successfully, False otherwise
         """
         async with file_lock(file_path):
-            file_path = Path(file_path)
-            
-            if not file_path.exists():
+            if not os.path.exists(file_path):
                 logger.warning(f"| ⚠️  Memory file not found: {file_path}")
                 return False
             
@@ -593,80 +591,80 @@ class OnlineTradingMemorySystem:
                 with open(file_path, "r", encoding="utf-8") as f:
                     load_data = json.load(f)
             
-            # Validate format
-            if "metadata" not in load_data or "sessions" not in load_data:
-                raise ValueError(
-                    f"Invalid memory format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
-                    f"got keys: {list(load_data.keys())}"
-                )
-            
-            # Restore metadata
-            metadata = load_data.get("metadata", {})
-            self.current_session_id = metadata.get("current_session_id")
-            
-            # Restore sessions
-            sessions_data = load_data.get("sessions", {})
-            
-            for session_id, session_data in sessions_data.items():
-                # Restore session info
-                session_info_data = session_data.get("session_info")
-                if session_info_data:
-                    # Parse datetime strings
-                    if session_info_data.get("start_time"):
-                        session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
-                    if session_info_data.get("end_time"):
-                        session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
-                    
-                    self.session_info[session_id] = SessionInfo(**session_info_data)
-                
-                # Ensure session memory exists
-                if session_id not in self.session_memory:
-                    await self.start_session(
-                        session_id=session_id,
-                        agent_name=self.session_info.get(session_id).agent_name if session_id in self.session_info else None,
-                        task_id=self.session_info.get(session_id).task_id if session_id in self.session_info else None,
-                        description=self.session_info.get(session_id).description if session_id in self.session_info else None,
+                # Validate format
+                if "metadata" not in load_data or "sessions" not in load_data:
+                    raise ValueError(
+                        f"Invalid memory format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
+                        f"got keys: {list(load_data.keys())}"
                     )
                 
-                session_memory = self.session_memory[session_id]
-                session_memory_data = session_data.get("session_memory", {})
+                # Restore metadata
+                metadata = load_data.get("metadata", {})
+                self.current_session_id = metadata.get("current_session_id")
                 
-                # Restore events
-                if "events" in session_memory_data:
-                    events = []
-                    for event_data in session_memory_data["events"]:
-                        if event_data.get("timestamp"):
-                            event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
-                        if event_data.get("event_type"):
-                            event_data["event_type"] = EventType(event_data["event_type"])
-                        events.append(ChatEvent(**event_data))
-                    session_memory.events = events
+                # Restore sessions
+                sessions_data = load_data.get("sessions", {})
                 
-                # Restore summaries
-                if "summaries" in session_memory_data:
-                    summaries = []
-                    for summary_data in session_memory_data["summaries"]:
-                        if summary_data.get("timestamp"):
-                            summary_data["timestamp"] = datetime.fromisoformat(summary_data["timestamp"])
-                        if summary_data.get("importance"):
-                            summary_data["importance"] = Importance(summary_data["importance"])
-                        summaries.append(OnlineTradingSummary(**summary_data))
-                    session_memory.summaries = summaries
+                for session_id, session_data in sessions_data.items():
+                    # Restore session info
+                    session_info_data = session_data.get("session_info")
+                    if session_info_data:
+                        # Parse datetime strings
+                        if session_info_data.get("start_time"):
+                            session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
+                        if session_info_data.get("end_time"):
+                            session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                        
+                        self.session_info[session_id] = SessionInfo(**session_info_data)
+                    
+                    # Ensure session memory exists
+                    if session_id not in self.session_memory:
+                        await self.start_session(
+                            session_id=session_id,
+                            agent_name=self.session_info.get(session_id).agent_name if session_id in self.session_info else None,
+                            task_id=self.session_info.get(session_id).task_id if session_id in self.session_info else None,
+                            description=self.session_info.get(session_id).description if session_id in self.session_info else None,
+                        )
+                    
+                    session_memory = self.session_memory[session_id]
+                    session_memory_data = session_data.get("session_memory", {})
+                    
+                    # Restore events
+                    if "events" in session_memory_data:
+                        events = []
+                        for event_data in session_memory_data["events"]:
+                            if event_data.get("timestamp"):
+                                event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
+                            if event_data.get("event_type"):
+                                event_data["event_type"] = EventType(event_data["event_type"])
+                            events.append(ChatEvent(**event_data))
+                        session_memory.events = events
+                    
+                    # Restore summaries
+                    if "summaries" in session_memory_data:
+                        summaries = []
+                        for summary_data in session_memory_data["summaries"]:
+                            if summary_data.get("timestamp"):
+                                summary_data["timestamp"] = datetime.fromisoformat(summary_data["timestamp"])
+                            if summary_data.get("importance"):
+                                summary_data["importance"] = Importance(summary_data["importance"])
+                            summaries.append(OnlineTradingSummary(**summary_data))
+                        session_memory.summaries = summaries
+                    
+                    # Restore insights
+                    if "insights" in session_memory_data:
+                        insights = []
+                        for insight_data in session_memory_data["insights"]:
+                            if insight_data.get("timestamp"):
+                                insight_data["timestamp"] = datetime.fromisoformat(insight_data["timestamp"])
+                            if insight_data.get("importance"):
+                                insight_data["importance"] = Importance(insight_data["importance"])
+                            insights.append(OnlineTradingInsight(**insight_data))
+                        session_memory.insights = insights
                 
-                # Restore insights
-                if "insights" in session_memory_data:
-                    insights = []
-                    for insight_data in session_memory_data["insights"]:
-                        if insight_data.get("timestamp"):
-                            insight_data["timestamp"] = datetime.fromisoformat(insight_data["timestamp"])
-                        if insight_data.get("importance"):
-                            insight_data["importance"] = Importance(insight_data["importance"])
-                        insights.append(OnlineTradingInsight(**insight_data))
-                    session_memory.insights = insights
-            
-                logger.info(f"| 📂 Memory loaded from {file_path}")
-                return True
-                
+                    logger.info(f"| 📂 Memory loaded from {file_path}")
+                    return True
+                    
             except Exception as e:
                 logger.error(f"| ❌ Failed to load memory from {file_path}: {e}", exc_info=True)
                 return False

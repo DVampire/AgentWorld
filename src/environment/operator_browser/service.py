@@ -12,7 +12,7 @@ os.environ['LMNR_LOGGING_LEVEL'] = 'debug'
 
 from src.logger import logger
 from src.environment.browser import Browser 
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.operator_browser.types import (
     ClickRequest,
     DoubleClickRequest,

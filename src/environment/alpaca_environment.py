@@ -10,8 +10,8 @@ from typing import Any, Dict, Optional, Type, List, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol import ecp
+from src.environment.types import Environment
+from src.environment.server import ecp
 from src.environment.alpacaentry.service import AlpacaService
 from src.environment.alpacaentry.exceptions import (
     AuthenticationError,
@@ -30,7 +30,7 @@ from src.environment.alpacaentry.types import (
 from src.utils import dedent, assemble_project_path
 
 @ecp.environment()
-class AlpacaEnvironment(BaseEnvironment):
+class AlpacaEnvironment(Environment):
     """Alpaca Trading Environment that provides Alpaca trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

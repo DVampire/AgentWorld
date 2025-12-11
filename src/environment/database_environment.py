@@ -16,12 +16,12 @@ from src.environment.database.types import (
 )
 from src.logger import logger
 from src.utils import assemble_project_path
-from src.environment.protocol.server import ecp
-from src.environment.protocol.environment import BaseEnvironment
+from src.environment.server import ecp
+from src.environment.types import Environment
 from src.utils import dedent
 
 @ecp.environment()
-class DatabaseEnvironment(BaseEnvironment):
+class DatabaseEnvironment(Environment):
     """Database Environment that provides database operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

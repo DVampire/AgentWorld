@@ -2,7 +2,7 @@
 from typing import Optional, List, Dict
 
 from src.logger import logger
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.binanceentry.klines import KlinesHandler
 from src.environment.binanceentry.types import DataStreamType, GetDataRequest
 from src.environment.binanceentry.exceptions import BinanceError

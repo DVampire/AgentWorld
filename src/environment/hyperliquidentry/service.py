@@ -10,7 +10,7 @@ load_dotenv(verbose=True)
 from src.environment.hyperliquidentry.client import HyperliquidClient
 
 from src.logger import logger
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.hyperliquidentry.types import (
     AccountInfo,
     GetAccountRequest,

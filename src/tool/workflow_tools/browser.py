@@ -57,9 +57,9 @@ class BrowserTool(Tool):
                     task=task,
                     llm=ChatOpenAI(model=self.model_name),
                     page_extraction_llm=ChatOpenAI(model=self.model_name),
-                    file_system_path=self.base_dir,
-                    generate_gif=os.path.join(self.base_dir, "browser.gif"),
-                    save_conversation_path=os.path.join(self.base_dir, "logs"),
+                    file_system_path=self.base_dir if self.base_dir else None,
+                    generate_gif=os.path.join(self.base_dir, "browser.gif") if self.base_dir else None,
+                    save_conversation_path=os.path.join(self.base_dir, "logs") if self.base_dir else None,
                     max_steps=50,
                     verbose=True,
                 )

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.tool.default_tools.web_searcher import WebSearcherTool
 from src.logger import logger
-from src.model.model_manager import model_manager
+from src.model import model_manager
 from src.utils import make_file_url
 from src.utils import assemble_project_path
 from src.utils import dedent

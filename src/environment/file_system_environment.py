@@ -1,7 +1,7 @@
 """File System Environment for AgentWorld - provides file system operations as an environment."""
 
 from pathlib import Path
-from typing import List, Optional, Any, Dict, Type
+from typing import List, Optional, Any, Dict, Type, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.environment.filesystem.service import FileSystemService
@@ -22,12 +22,12 @@ from src.environment.filesystem.types import (
 )
 from src.logger import logger
 from src.utils import assemble_project_path
-from src.environment.protocol.server import ecp
-from src.environment.protocol.environment import BaseEnvironment
+from src.environment.server import ecp
+from src.environment.types import Environment
 from src.utils import dedent
 
 @ecp.environment()
-class FileSystemEnvironment(BaseEnvironment):
+class FileSystemEnvironment(Environment):
     """File System Environment hat provides file operations as an environment interface."""
     
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -45,7 +45,7 @@ class FileSystemEnvironment(BaseEnvironment):
     
     def __init__(
         self,
-        base_dir: str = None,
+        base_dir: Optional[Union[str, Path]] = None,
         max_file_size: int = 1024 * 1024,  # 1MB
         **kwargs
     ):

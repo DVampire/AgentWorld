@@ -21,12 +21,11 @@ from src.environment.operator_browser.types import (
 from src.logger import logger
 from src.utils import assemble_project_path, encode_file_base64, decode_file_base64, make_file_url
 from src.utils import dedent, ScreenshotService
-from src.environment.protocol.server import ecp
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol.types import ScreenshotInfo
+from src.environment.server import ecp
+from src.environment.types import Environment, ScreenshotInfo
 
 @ecp.environment()
-class OperatorBrowserEnvironment(BaseEnvironment):
+class OperatorBrowserEnvironment(Environment):
     """Operator Browser Environment that provides browser automation as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

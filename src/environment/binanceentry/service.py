@@ -10,7 +10,7 @@ from src.environment.binanceentry.spot_client import BinanceSpotClient
 from src.environment.binanceentry.futures_client import BinanceFuturesClient
 
 from src.logger import logger
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.binanceentry.types import (
     AccountInfo,
     GetAccountRequest,

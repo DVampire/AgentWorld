@@ -2,7 +2,7 @@
 from typing import Optional, List, Dict
 
 from src.logger import logger
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.alpacaentry.bars import BarsHandler
 from src.environment.alpacaentry.quotes import QuotesHandler
 from src.environment.alpacaentry.trades import TradesHandler

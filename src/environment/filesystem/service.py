@@ -19,7 +19,7 @@ from src.environment.filesystem.handlers import (
 from src.environment.filesystem.lock_manager import AsyncLockManager
 from src.environment.filesystem.path_policy import PathPolicy
 from src.environment.filesystem.storage import LocalAsyncStorage, StorageBackend
-from src.environment.protocol.types import ActionResult
+from src.environment.types import ActionResult
 from src.environment.filesystem.types import (
     FileReadRequest,
     SearchMatch,

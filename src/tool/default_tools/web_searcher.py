@@ -7,7 +7,7 @@ from src.tool.default_tools.web_fetcher import WebFetcherTool
 from src.tool.default_tools.search import FirecrawlSearch, SearchItem, BraveSearch
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse
-from src.model.model_manager import model_manager
+from src.model import model_manager
 from src.message.types import HumanMessage, SystemMessage
 from src.utils import dedent
 

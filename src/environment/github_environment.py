@@ -9,8 +9,8 @@ from typing import Any, Dict, Optional, Type, Union
 from pydantic import BaseModel, Field, SecretStr, ConfigDict
 
 from src.logger import logger
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol import ecp
+from src.environment.types import Environment
+from src.environment.server import ecp
 from src.environment.github import (
     GitHubService,
     AuthenticationError,
@@ -38,7 +38,7 @@ from src.environment.github.types import (
 from src.utils import dedent, get_env, assemble_project_path
 
 @ecp.environment()
-class GitHubEnvironment(BaseEnvironment):
+class GitHubEnvironment(Environment):
     """GitHub Environment that provides GitHub operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     

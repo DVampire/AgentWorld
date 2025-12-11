@@ -11,10 +11,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import TradingRecords
 from src.utils import get_start_end_timestamp
-from src.environment.protocol import ecp
+from src.environment.server import ecp
 from src.logger import logger
 from src.utils import dedent
-from src.environment.protocol.environment import BaseEnvironment
+from src.environment.types import Environment
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 from src.registry import DATASET
 from src.utils import get_token_count
@@ -58,7 +58,7 @@ _INTERACTION_RULES = """Interaction guidelines for intraday trading:
 """
 
 @ecp.environment()
-class IntradayTradingEnvironment(BaseEnvironment):
+class IntradayTradingEnvironment(Environment):
     """Intraday Trading Environment that provides minute-level trading operations."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 

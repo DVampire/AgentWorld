@@ -111,8 +111,8 @@ async def test_deep_researcher_tool():
 async def main():
     args = parse_args()
     
-    config.init_config(args.config, args)
-    logger.init_logger(config)
+    config.initialize(config_path = args.config, args = args)
+    logger.initialize(config = config)
     logger.info(f"| Config: {config.pretty_text}")
     
     # Initialize model managerxx
@@ -120,14 +120,6 @@ async def main():
     await model_manager.initialize()
     logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
     
-    # from src.tool.workflow_tools.deep_researcher import DeepResearcherTool
-    # deep_researcher_tool = DeepResearcherTool(
-    #     base_dir="workdir/test_deep_researcher_tool",
-    #     model_name="o3",
-    #     use_llm_search=False,
-    #     search_llm_models=["o3-deep-research", "sonar-deep-research"]
-    # )
-    # await tcp.register(deep_researcher_tool)
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
     await tcp.initialize(tool_names=config.tool_names)

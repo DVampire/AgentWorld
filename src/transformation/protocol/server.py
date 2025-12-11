@@ -10,12 +10,10 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.config import config
 from src.logger import logger
-from src.tool.protocol.tool import WrappedTool
-from src.tool.protocol.types import ToolInfo
-from src.tool.protocol.server import tcp
-from src.environment.protocol.environment import BaseEnvironment
-from src.environment.protocol.types import ActionInfo, EnvironmentInfo
-from src.environment.protocol.server import ecp
+from src.tool.types import Tool, ToolConfig
+from src.tool.server import tcp
+from src.environment.types import Environment, EnvironmentConfig, ActionConfig
+from src.environment.server import ecp
 from src.agent.protocol.agent import BaseAgent, ThinkOutputBuilder
 from src.agent.protocol.types import AgentInfo
 from src.agent.protocol.server import acp
@@ -178,7 +176,7 @@ class TransformationServer:
                 }
             }
             
-            class ComposedEnvironment(BaseEnvironment):
+            class ComposedEnvironment(Environment):
                 name: str = Field(default=env_name, description="The name of the composed environment")
                 type: str = Field(default=env_type, description="The type of the composed environment")
                 description: str = Field(default=env_description, description="The description of the composed environment")
@@ -207,20 +205,9 @@ class TransformationServer:
                         "state": f"The state of the composed environment from {len(selected_tool_infos)} tools: {', '.join([t.name for t in selected_tool_infos])}"
                     }
 
-            env_info = EnvironmentInfo(
-                name=env_name,
-                type=env_type,
-                rules="",
-                description=env_description,
-                args_schema=args_schema,
-                actions={},
-                cls=ComposedEnvironment,
-                instance=None,
-                metadata=metadata_
-            )
             actions = {}
             for tool_info in selected_tool_infos:
-                actions[tool_info.name] = ActionInfo(
+                actions[tool_info.name] = ActionConfig(
                     env_name=env_name,
                     name=tool_info.name,
                     type=tool_info.type,
@@ -229,7 +216,6 @@ class TransformationServer:
                     function=tool_info.instance._arun,
                     metadata=tool_info.metadata
                 )
-            env_info.actions = actions
             
             rules = ecp.genetate_rules(
                 env_name,
@@ -239,9 +225,21 @@ class TransformationServer:
                 metadata_.get('has_vision', False),
                 metadata_.get('additional_rules', {})
             )
-            env_info.rules = rules
             
-            await ecp.register(env_info)
+            env_config = EnvironmentConfig(
+                name=env_name,
+                type=env_type,
+                rules=rules,
+                description=env_description,
+                args_schema=args_schema,
+                actions=actions,
+                cls=ComposedEnvironment,
+                config={},
+                instance=None,
+                metadata=metadata_
+            )
+            
+            await ecp.register(env_config)
             logger.info(f"| ✅ Composed environment {env_name} registered to ECP")
             
             return T2EResponse(
@@ -296,41 +294,41 @@ class TransformationServer:
         Returns:
             E2TResponse: E2TResponse
         """
-        def make_wrapped_func(env_info, action_info):
-            if asyncio.iscoroutinefunction(action_info.function):
+        def make_wrapped_func(env_config, action_config):
+            if asyncio.iscoroutinefunction(action_config.function):
                 async def _async_action_wrapper(**kwargs):
-                    return await action_info.function(env_info.instance, **kwargs)
+                    return await action_config.function(env_config.instance, **kwargs)
                 return _async_action_wrapper
             else:
                 def _sync_action_wrapper(**kwargs):
-                    return action_info.function(env_info.instance, **kwargs)
+                    return action_config.function(env_config.instance, **kwargs)
                 return _sync_action_wrapper
         
         try:
             logger.info("| 🔧 ECP to TCP transformation")
             for env_name in request.env_names:
-                env_info = ecp.get_info(env_name)
+                env_config = ecp.get_info(env_name)
                 
-                actions = env_info.actions
-                for action_name, action_info in actions.items():    
+                actions = env_config.actions
+                for action_name, action_config in actions.items():    
                     # Create Tool
                     tool = StructuredTool(
                         name=action_name,
-                        description=action_info.description,
-                        args_schema=action_info.args_schema,
-                        func=make_wrapped_func(env_info, action_info),
-                        coroutine=make_wrapped_func(env_info, action_info) if asyncio.iscoroutinefunction(action_info.function) else None,
-                        metadata=action_info.metadata
+                        description=action_config.description,
+                        args_schema=action_config.args_schema,
+                        func=make_wrapped_func(env_config, action_config),
+                        coroutine=make_wrapped_func(env_config, action_config) if asyncio.iscoroutinefunction(action_config.function) else None,
+                        metadata=action_config.metadata
                     )
                     tool = WrappedTool(tool=tool)
                     
                     # Create ToolInfo
                     tool_info = ToolInfo(
                         name=action_name,
-                        type=action_info.type,
-                        description=action_info.description,
-                        args_schema=action_info.args_schema,
-                        metadata=action_info.metadata,
+                        type=action_config.type,
+                        description=action_config.description,
+                        args_schema=action_config.args_schema,
+                        metadata=action_config.metadata,
                         cls=WrappedTool,
                         instance=None
                     )
@@ -368,24 +366,24 @@ class TransformationServer:
                 env_names=request.env_names
             ))
             
-            selected_env_infos = []
+            selected_env_configs = []
             for env_name in request.env_names:
-                env_info = ecp.get_info(env_name)
-                if env_info:
-                    selected_env_infos.append(env_info)
+                env_config = ecp.get_info(env_name)
+                if env_config:
+                    selected_env_configs.append(env_config)
                 else:
                     logger.warning(f"| ⚠️ Environment {env_name} not found in ECP")
                     
-            if not selected_env_infos:
+            if not selected_env_configs:
                 return E2AResponse(
                     success=False,
                     message="No valid environments found for transformation"
                 )
                 
-            selected_tool_infos = []
+            selected_action_configs = []
             for env_name in request.env_names:
-                env_info = ecp.get_info(env_name)
-                selected_tool_infos.extend(env_info.actions.values())
+                env_config = ecp.get_info(env_name)
+                selected_action_configs.extend(env_config.actions.values())
                 
             class ComposedAgentArgs(BaseModel):
                 name: str = Field(description="The name of the composed agent, the name should be a snake_case string.")
@@ -402,7 +400,7 @@ class TransformationServer:
                 include_raw=False
             )
             
-            env_descriptions = "\n".join([f"- {e.name}: {e.description}" for e in selected_env_infos])
+            env_descriptions = "\n".join([f"- {e.name}: {e.description}" for e in selected_env_configs])
             prompt = dedent(f"""
                 You are a helpful assistant that composes an agent from a list of environments.
                 
@@ -453,29 +451,47 @@ class TransformationServer:
                         log_max_length=log_max_length,
                         **kwargs)
                     
-                    # Get args_schemas from ActionInfo objects
+                    # Get args_schemas from ActionConfig objects
                     args_schemas = {}
-                    for action_info in selected_tool_infos:
-                        if hasattr(action_info, 'args_schema') and action_info.args_schema:
-                            args_schemas[action_info.name] = action_info.args_schema
+                    for action_config in selected_action_configs:
+                        if hasattr(action_config, 'args_schema') and action_config.args_schema:
+                            args_schemas[action_config.name] = action_config.args_schema
                     
                     self.think_output_builder = ThinkOutputBuilder()
                     self.think_output_builder.register(args_schemas)
                     self.ThinkOutput = self.think_output_builder.build()
                     
-                    # Bind tools to model - get tools from TCP using action names
+                    # Store action configs for later tool binding
+                    self._action_configs = selected_action_configs
                     self.tools = []
-                    for action_info in selected_tool_infos:
-                        tool = tcp.get(action_info.name)
-                        if tool:
-                            self.tools.append(tool)
-                    self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
-                    self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
+                    self.no_fc_model = None
+                    self.fc_model = None
                     
+                async def _ensure_tools_bound(self):
+                    """Ensure tools are bound to model (lazy initialization)."""
+                    if self.no_fc_model is None:
+                        # Bind tools to model - get tools from TCP using action names
+                        self.tools = []
+                        for action_config in self._action_configs:
+                            tool = await tcp.get(action_config.name)
+                            if tool:
+                                self.tools.append(tool)
+                        self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
+                        self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
+                
                 async def ainvoke(self, task: str, files: Optional[List[str]] = None) -> Any:
+                    await self._ensure_tools_bound()
                     return await super().ainvoke(task, files)
                 
                 def invoke(self, task: str, files: Optional[List[str]] = None) -> Any:
+                    # For sync invoke, we need to ensure tools are bound
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(self._ensure_tools_bound())
+                    finally:
+                        loop.close()
                     return super().invoke(task, files)
                 
             agent_info = AgentInfo(
@@ -644,7 +660,7 @@ class TransformationServer:
                 }
             }
             
-            class ComposedEnvironment(BaseEnvironment):
+            class ComposedEnvironment(Environment):
                 name: str = Field(default=env_name, description="The name of the composed environment")
                 type: str = Field(default=env_type, description="The type of the composed environment")
                 description: str = Field(default=env_description, description="The description of the composed environment")
@@ -673,22 +689,10 @@ class TransformationServer:
                         "state": f"The state of the composed environment from {len(selected_agent_infos)} agents: {', '.join([a.name for a in selected_agent_infos])}"
                     }
 
-            env_info = EnvironmentInfo(
-                name=env_name,
-                type=env_type,
-                rules="",
-                description=env_description,
-                args_schema=args_schema,
-                actions={},
-                cls=ComposedEnvironment,
-                instance=None,
-                metadata=metadata_
-            )
-            
             # Step 3: Create actions for each agent
             actions = {}
             for agent_info in selected_agent_infos:
-                actions[agent_info.name] = ActionInfo(
+                actions[agent_info.name] = ActionConfig(
                     env_name=env_name,
                     name=agent_info.name,
                     type=agent_info.type,
@@ -697,7 +701,6 @@ class TransformationServer:
                     function=agent_info.instance.ainvoke,
                     metadata=agent_info.metadata
                 )
-            env_info.actions = actions
             
             # Step 4: Generate rules
             rules = ecp.genetate_rules(
@@ -708,10 +711,22 @@ class TransformationServer:
                 metadata_.get('has_vision', False),
                 metadata_.get('additional_rules', {})
             )
-            env_info.rules = rules
+            
+            env_config = EnvironmentConfig(
+                name=env_name,
+                type=env_type,
+                rules=rules,
+                description=env_description,
+                args_schema=args_schema,
+                actions=actions,
+                cls=ComposedEnvironment,
+                config={},
+                instance=None,
+                metadata=metadata_
+            )
             
             # Step 5: Register to ECP
-            await ecp.register(env_info)
+            await ecp.register(env_config)
             
             logger.info(f"| ✅ A2E: Environment {env_name} created with {len(selected_agent_infos)} agents")
             

@@ -1,6 +1,6 @@
 """Memory module for managing agent execution history."""
 
-from .memory_manager import MemoryManager
+from .manager import MemoryManager
 from .types import ChatEvent, EventType, SessionInfo
 from .general_memory_system import GeneralMemorySystem
 from .online_trading_memory_system import OnlineTradingMemorySystem

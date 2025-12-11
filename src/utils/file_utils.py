@@ -1,8 +1,7 @@
 import asyncio
-from typing import Dict, Any
-from pathlib import Path
+import os
+from typing import Dict, Any, Union
 from datetime import datetime
-from contextlib import asynccontextmanager
 
 from src.utils.singleton import Singleton
 
@@ -21,20 +20,20 @@ def format_size(size_bytes: int) -> str:
 
 def get_file_info(file_path: str) -> Dict[str, Any]:
     """Get file information."""
-    file_path = Path(file_path)
+    abs_path = os.path.abspath(file_path)
     
     info = {}
-    file_stats = file_path.stat()
+    file_stats = os.stat(abs_path)
 
-    info["path"] = str(file_path.resolve().absolute())
+    info["path"] = abs_path
     info["size"] = format_size(file_stats.st_size)
     info["created"] = datetime.fromtimestamp(file_stats.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
     info["modified"] = datetime.fromtimestamp(file_stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     info["accessed"] = datetime.fromtimestamp(file_stats.st_atime).strftime("%Y-%m-%d %H:%M:%S")
     info["permissions"] = oct(file_stats.st_mode)[-3:]
-    info["is_directory"] = file_path.is_dir()
-    info["is_file"] = file_path.is_file()
-    info["is_symlink"] = file_path.is_symlink()
+    info["is_directory"] = os.path.isdir(abs_path)
+    info["is_file"] = os.path.isfile(abs_path)
+    info["is_symlink"] = os.path.islink(abs_path)
     
     return info
 
@@ -42,10 +41,12 @@ class FileLock(metaclass=Singleton):
     def __init__(self):
         self._locks = {}
 
-    def get_lock(self, key):
-        if key not in self._locks:
-            self._locks[key] = asyncio.Lock()
-        return self._locks[key]
+    def get_lock(self, key: Union[str]) -> asyncio.Lock:
+        # Convert Path to string if needed (for backward compatibility)
+        key_str = str(key) if not isinstance(key, str) else key
+        if key_str not in self._locks:
+            self._locks[key_str] = asyncio.Lock()
+        return self._locks[key_str]
 
     def __call__(self, key):
         return _FileLockContext(self.get_lock(key))
