@@ -2,13 +2,13 @@
 
 import os
 from typing import Dict, Any
-from langchain_core.messages import HumanMessage
 from bs4 import BeautifulSoup
 from PIL import Image
 
 from src.logger import logger
 from src.prompt.manager import prompt_manager
-from src.utils import encode_image_base64, make_image_url, assemble_project_path
+from src.utils import make_file_url, assemble_project_path
+from src.message import HumanMessage, ImageURL, ContentPartImage, ContentPartText
 from src.optimizer.protocol.variable import Variable
 
 class AgentMessagePrompt:
@@ -39,11 +39,8 @@ class AgentMessagePrompt:
             # Get prompt template from prompt_manager
             prompt_dict = await prompt_manager.get(self.prompt_name)
             if not prompt_dict:
-                # Fallback to template module for backward compatibility
-                from src.prompt.template import PROMPT_TEMPLATES
-                prompt_dict = PROMPT_TEMPLATES.get(self.prompt_name)
-                if not prompt_dict:
-                    raise ValueError(f"Prompt {self.prompt_name} not found")
+                available = await prompt_manager.list()
+                raise ValueError(f"Prompt {self.prompt_name} not found. Available prompts: {available}")
             
             self.prompt = Variable.from_dict(prompt_dict)
         except Exception as e:
@@ -65,7 +62,7 @@ class AgentMessagePrompt:
             prompt_str = self.prompt.render(modules)
             
             contents = [
-                {"type": "text", "text": prompt_str},
+                ContentPartText(text=prompt_str),
             ]
             
             soup = BeautifulSoup(prompt_str, 'html.parser')
@@ -78,17 +75,10 @@ class AgentMessagePrompt:
                 
                 if os.path.exists(image_path):
                     try:
-                        contents.append({
-                            "type": "text",
-                            "text": image_instruction
-                        })
+                        contents.append(ContentPartText(text=image_instruction))
                         
-                        image = Image.open(image_path)
-                        image_url = make_image_url(encode_image_base64(image))
-                        contents.append({
-                            "type": "image_url", 
-                            "image_url": {"url": image_url}
-                        })
+                        image_url = make_file_url(image_path)
+                        contents.append(ContentPartImage(image_url=ImageURL(url=image_url)))
                     except Exception as e:
                         logger.warning(f"Failed to process image {image_path}: {e}")
             

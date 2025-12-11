@@ -8,7 +8,7 @@ from src.utils import dedent
 
 class EventType(Enum):
     TASK_START = "task_start"
-    ACTION_STEP = "action_step"
+    TOOL_STEP = "tool_step"
     TASK_END = "task_end"
 
 class ChatEvent(BaseModel):

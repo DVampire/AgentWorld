@@ -15,8 +15,10 @@ from src.tool.server import tcp
 from src.environment.server import ecp
 from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.tool.types import ToolResponse
-from src.memory import EventType
+from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
+from src.model import model_manager
+from src.prompt import prompt_manager
 
 def format_actions(actions: List[BaseModel]) -> str:
     """Format actions as a Markdown table using pandas."""
@@ -154,11 +156,6 @@ class OnlineTradingAgent(Agent):
         self.think_output_builder.register(tcp.args_schemas())
         self.ThinkOutput = self.think_output_builder.build()
         
-        # Bind tools to model
-        self.tools = [tcp.get(tool) for tool in tcp.list()]
-        self.no_fc_model = self.model.bind_tools(tools=self.tools, tool_choice="none")
-        self.fc_model = self.model.bind_tools(tools=self.tools, tool_choice="any")
-        
     async def _get_agent_context(self, task: str) -> Dict[str, Any]:
         """Get the agent context."""
         
@@ -173,7 +170,7 @@ class OnlineTradingAgent(Agent):
             </step_info>
         """)
         
-        state = await self.memory_manager.get_state(n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -285,14 +282,30 @@ class OnlineTradingAgent(Agent):
         
     async def _get_messages(self, task: str) -> List[BaseMessage]:
         
-        system_modules = self.prompt_modules
-        system_message = await self.prompt_manager.get_system_message(modules=system_modules, reload=False)
+        system_modules = self.prompt_modules.copy()
+        # Infer prompt name from agent's prompt_name
+        if self.prompt_name:
+            system_prompt_name = f"{self.prompt_name}_system_prompt"
+            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
+        else:
+            system_prompt_name = "online_trading_system_prompt"
+            agent_message_prompt_name = "online_trading_agent_message_prompt"
         
-        agent_message_modules = self.prompt_modules
+        system_message = await prompt_manager.get_system_message(
+            prompt_name=system_prompt_name,
+            modules=system_modules, 
+            reload=False
+        )
+        
+        agent_message_modules = self.prompt_modules.copy()
         agent_message_modules.update(await self._get_agent_context(task))
         agent_message_modules.update(await self._get_environment_context())
         agent_message_modules.update(await self._get_tool_context())
-        agent_message = await self.prompt_manager.get_agent_message(modules=agent_message_modules, reload=True)
+        agent_message = await prompt_manager.get_agent_message(
+            prompt_name=agent_message_prompt_name,
+            modules=agent_message_modules, 
+            reload=True
+        )
         
         messages = [
             system_message,
@@ -314,13 +327,6 @@ class OnlineTradingAgent(Agent):
             self.think_output_builder.register(tcp_args_schema)
             self.ThinkOutput = self.think_output_builder.build()
         
-        # Get structured output for thinking
-        structured_llm = self.no_fc_model.with_structured_output(
-            self.ThinkOutput,
-            method="function_calling",
-            include_raw=False
-        )
-        
         done = False
         final_result = None
         
@@ -331,7 +337,12 @@ class OnlineTradingAgent(Agent):
         }
         
         try:
-            think_output = await structured_llm.ainvoke(messages)
+            model_response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                structured_output=self.ThinkOutput
+            )
+            think_output = model_response.extra["parsed_model"]
             
             thinking = think_output.thinking
             memory = think_output.memory
@@ -356,7 +367,11 @@ class OnlineTradingAgent(Agent):
                 
                 logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
                 
-                response = await tcp.ainvoke(tool_name, input=tool_args)
+                input = {
+                    "name": tool_name,
+                    "input": tool_args
+                }
+                response = await tcp(**input)
                 if isinstance(response, ToolResponse):
                     tool_result = response.message
                     response_extra = response.extra if hasattr(response, 'extra') else None
@@ -393,7 +408,8 @@ class OnlineTradingAgent(Agent):
             # Update record action
             self.record.action = record_action
             
-            await self.memory_manager.add_event(
+            await memory_manager.add_event(
+                memory_name=self.memory_name,
                 step_number=self.step_number,
                 event_type="action_step",
                 data=event_data,
@@ -403,7 +419,8 @@ class OnlineTradingAgent(Agent):
             self.step_number += 1
             
             if done:
-                await self.memory_manager.add_event(
+                await memory_manager.add_event(
+                    memory_name=self.memory_name,
                     step_number=self.step_number,
                     event_type="task_end",
                     data=dict(result=final_result),
@@ -435,16 +452,23 @@ class OnlineTradingAgent(Agent):
         description = session_info.description
         
         # Start session
-        await self.memory_manager.start_session(session_id, description)
+        await memory_manager.start_session(
+            memory_name=self.memory_name,
+            session_id=session_id,
+            agent_name=self.name,
+            description=description
+        )
         
         # Add task start event
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        await self.memory_manager.add_event(step_number=self.step_number, 
-                                      event_type="task_start", 
-                                      data=dict(task=enhanced_task),
-                                      agent_name=self.name,
-                                      task_id=task_id
-                                      )
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
+            step_number=self.step_number, 
+            event_type="task_start", 
+            data=dict(task=enhanced_task),
+            agent_name=self.name,
+            task_id=task_id
+        )
         
         # Initialize messages
         messages = await self._get_messages(enhanced_task)
@@ -482,7 +506,8 @@ class OnlineTradingAgent(Agent):
             final_result = "Reached maximum number of steps"
         
         # Add task end event
-        await self.memory_manager.add_event(
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="task_end",
             data=dict(result=final_result),
@@ -491,7 +516,7 @@ class OnlineTradingAgent(Agent):
         )
         
         # End session (automatically saves memory to JSON)
-        await self.memory_manager.end_session(session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
         
         # Save tracer to json
         self.tracer.save_to_json(self.tracer_save_path)

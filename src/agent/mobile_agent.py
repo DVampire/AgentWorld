@@ -13,9 +13,10 @@ from src.utils import get_file_info, dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.memory import SessionInfo, EventType
+from src.memory import memory_manager, SessionInfo, EventType
 from src.tool.types import ToolResponse
 from src.prompt import prompt_manager
+from src.model import model_manager
 
 class MobileAgentInputArgs(BaseModel):
     task: str = Field(description="The mobile device automation task to complete.")
@@ -67,8 +68,6 @@ class MobileAgent(Agent):
             log_max_length=log_max_length,
             **kwargs)
         
-        # Use global prompt_manager instead of creating new instance
-        self.prompt_manager = prompt_manager
         
     async def _extract_file_content(self, file: str) -> str:
         """Extract file information."""
@@ -76,7 +75,15 @@ class MobileAgent(Agent):
         info = get_file_info(file)
         
         # Extract file content
-        file_content = await tcp.ainvoke("mdify", input={"file_path": file, "output_format": "markdown"})
+        input = {
+            "name": "mdify",
+            "input": {
+                "file_path": file,
+                "output_format": "markdown"
+            }
+        }
+        tool_response = await tcp(**input)
+        file_content = tool_response.message
         
         # Use LLM to summarize the file content
         system_prompt = "You are a helpful assistant that summarizes file content."
@@ -91,10 +98,10 @@ class MobileAgent(Agent):
             HumanMessage(content=user_prompt)
         ]
         
-        summary = await self.no_fc_model.ainvoke(messages)
+        model_response = await model_manager(model=self.model_name, messages=messages)
         
         info["content"] = file_content
-        info["summary"] = summary.content
+        info["summary"] = model_response.message
         
         return info
     
@@ -113,29 +120,30 @@ class MobileAgent(Agent):
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
-        structured_llm = self.model.with_structured_output(
-            SessionInfo,
-            method="function_calling",
-            include_raw=False
+        from langchain_core.messages import SystemMessage, HumanMessage
+        
+        system_prompt = f"You are a helpful assistant that generates a session info for agent {self.name}."
+        user_prompt = dedent(f"""
+            <intro>
+            1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
+            2. The session description should provide a concise description of the task.
+            </intro>
+            <task>
+            {task}
+            </task>"""
         )
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", f"You are a helpful assistant that generates a session info for agent {self.name}."),
-            ("user", 
-             dedent(f"""
-                    <intro>
-                    1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-                    2. The session description should provide a concise description of the task.
-                    </intro>
-                    <task>
-                    {task}
-                    </task>"""
-                )
-             )
-        ])
-
-        chain = prompt | structured_llm
-        result: SessionInfo = chain.invoke({"task": task})
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        model_response = await model_manager(
+            model=self.model_name,
+            messages=messages,
+            structured_output=SessionInfo
+        )
+        result = model_response.extra["parsed_model"]
         
         timestamp = datetime.now().isoformat()
         
@@ -146,7 +154,7 @@ class MobileAgent(Agent):
     
     async def _get_agent_history(self) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await self.memory_manager.get_state(n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -230,25 +238,43 @@ class MobileAgent(Agent):
         
     async def _get_messages(self, task: str) -> List[BaseMessage]:
         
-        system_input_variables = {}
+        system_modules = self.prompt_modules.copy()
+        # Infer prompt name from agent's prompt_name
+        if self.prompt_name:
+            system_prompt_name = f"{self.prompt_name}_system_prompt"
+            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
+        else:
+            system_prompt_name = "mobile_system_prompt"
+            agent_message_prompt_name = "mobile_agent_message_prompt"
+        
+        # Add environment rules to system modules
         environment_rules = ""
         for env_name in ecp.list():
             environment_rules += f"{ecp.get_info(env_name).rules}\n"
-        system_input_variables.update(dict(
+        system_modules.update(dict(
             environment_rules=environment_rules,
         ))
-        system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
-        agent_input_variables = {}
+        system_message = await prompt_manager.get_system_message(
+            prompt_name=system_prompt_name,
+            modules=system_modules, 
+            reload=False
+        )
+        
+        agent_message_modules = self.prompt_modules.copy()
         agent_history = await self._get_agent_history()
         agent_state = await self._get_agent_state(task)
         environment_state = await self._get_environment_state()
         
-        agent_input_variables.update(agent_history)
-        agent_input_variables.update(agent_state)
-        agent_input_variables.update(environment_state)
+        agent_message_modules.update(agent_history)
+        agent_message_modules.update(agent_state)
+        agent_message_modules.update(environment_state)
         
-        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message = await prompt_manager.get_agent_message(
+            prompt_name=agent_message_prompt_name,
+            modules=agent_message_modules, 
+            reload=True
+        )
         
         messages = [
             system_message,
@@ -265,11 +291,18 @@ class MobileAgent(Agent):
         final_result = None
         
         try:
-            response = await self.model.ainvoke(messages)
+            model_response = await model_manager(model=self.model_name, messages=messages)
+            response = model_response.message
             
             reasoning = ""
             action = {}
-            contents = response.content
+            # Handle both string and dict responses
+            if isinstance(response, str):
+                contents = response
+            elif hasattr(response, 'content'):
+                contents = response.content
+            else:
+                contents = str(response)
             
             print(contents)
             
@@ -301,7 +334,15 @@ class MobileAgent(Agent):
             
             logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
             
-            tool_result = await tcp.ainvoke(tool_name, input=tool_args)
+            input = {
+                "name": tool_name,
+                "input": tool_args
+            }
+            response = await tcp(**input)
+            if isinstance(response, ToolResponse):
+                tool_result = response.message
+            else:
+                tool_result = str(response)
             if isinstance(tool_result, ToolResponse):
                 tool_result = tool_result.message
             else:
@@ -322,7 +363,8 @@ class MobileAgent(Agent):
                 "reasoning": reasoning,
                 "action": action_results
             }
-            await self.memory_manager.add_event(
+            await memory_manager.add_event(
+                memory_name=self.memory_name,
                 step_number=self.step_number,
                 event_type="action_step",
                 data=event_data,
@@ -332,7 +374,8 @@ class MobileAgent(Agent):
             self.step_number += 1
             
             if done:
-                await self.memory_manager.add_event(
+                await memory_manager.add_event(
+                    memory_name=self.memory_name,
                     step_number=self.step_number,
                     event_type="task_end",
                     data=dict(result=final_result),
@@ -364,16 +407,23 @@ class MobileAgent(Agent):
         description = session_info.description
         
         # Start session
-        await self.memory_manager.start_session(session_id, description)
+        await memory_manager.start_session(
+            memory_name=self.memory_name,
+            session_id=session_id,
+            agent_name=self.name,
+            description=description
+        )
         
         # Add task start event
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        await self.memory_manager.add_event(step_number=self.step_number, 
-                                      event_type="task_start", 
-                                      data=dict(task=enhanced_task),
-                                      agent_name=self.name,
-                                      task_id=task_id
-                                      )
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
+            step_number=self.step_number, 
+            event_type="task_start", 
+            data=dict(task=enhanced_task),
+            agent_name=self.name,
+            task_id=task_id
+        )
         
         # Initialize messages
         messages = await self._get_messages(enhanced_task)
@@ -402,7 +452,8 @@ class MobileAgent(Agent):
             final_result = "Reached maximum number of steps"
         
         # Add task end event
-        await self.memory_manager.add_event(
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="task_end",
             data=dict(result=final_result),
@@ -411,7 +462,7 @@ class MobileAgent(Agent):
         )
         
         # End session
-        await self.memory_manager.end_session(session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

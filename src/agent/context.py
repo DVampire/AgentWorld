@@ -82,7 +82,7 @@ class AgentContextManager(BaseModel):
             if instance is None:
                 raise ValueError(f"Agent {name} is not initialized")
             
-            return await instance.ainvoke(**input, **kwargs)
+            return await instance(**input, **kwargs)
         else:
             raise ValueError(f"Agent {name} not found")
     
@@ -100,8 +100,14 @@ class AgentContextManager(BaseModel):
         Returns:
             AgentConfig: Agent configuration
         """
+        # Check if agent already exists in _agent_configs
         if agent_config.name in self._agent_configs:
-            return self._agent_configs[agent_config.name]
+            existing_config = self._agent_configs[agent_config.name]
+            # If instance already exists, return it
+            if existing_config.instance is not None:
+                return existing_config
+            # Otherwise, use the existing config but create instance
+            agent_config = existing_config
         
         try:
             # Create agent instance
@@ -454,7 +460,7 @@ class AgentContextManager(BaseModel):
         """
         return self._agent_configs.get(name).instance if self._agent_configs.get(name) else None
     
-    def get_info(self, name: str) -> Optional[AgentConfig]:
+    async def get_info(self, name: str) -> Optional[AgentConfig]:
         """Get an agent configuration by name
         
         Args:
@@ -462,7 +468,7 @@ class AgentContextManager(BaseModel):
         """
         return self._agent_configs.get(name)
     
-    def list(self) -> List[str]:
+    async def list(self) -> List[str]:
         """Get list of registered agents
         
         Returns:
@@ -552,6 +558,79 @@ class AgentContextManager(BaseModel):
         
         logger.info(f"| 📝 Updated agent: {agent_name} v{updated_config.version}")
         return updated_config
+    
+    async def copy(self, agent_name: str, new_name: Optional[str] = None,
+                  new_version: Optional[str] = None, **override_config) -> AgentConfig:
+        """Copy an existing agent configuration
+        
+        Args:
+            agent_name: Name of the agent to copy
+            new_name: New name for the copied agent. If None, uses original name.
+            new_version: New version for the copied agent. If None, increments version.
+            **override_config: Configuration overrides
+            
+        Returns:
+            AgentConfig: New agent configuration
+        """
+        original_config = self._agent_configs.get(agent_name)
+        if original_config is None:
+            raise ValueError(f"Agent {agent_name} not found")
+        
+        # Determine new name
+        if new_name is None:
+            new_name = agent_name
+        
+        # Determine new version from version_manager
+        if new_version is None:
+            if new_name == agent_name:
+                # If copying with same name, get next version from version_manager
+                new_version = await version_manager.generate_next_version("agent", new_name, "patch")
+            else:
+                # If copying with different name, get or generate version for new name
+                new_version = await version_manager.get_or_generate_version("agent", new_name)
+        
+        # Create copy of config
+        new_config_dict = original_config.model_dump()
+        new_config_dict["name"] = new_name
+        new_config_dict["version"] = new_version
+        
+        # Apply overrides
+        if override_config:
+            if "type" in override_config:
+                new_config_dict["type"] = override_config.pop("type")
+            if "description" in override_config:
+                new_config_dict["description"] = override_config.pop("description")
+            if "args_schema" in override_config:
+                new_config_dict["args_schema"] = override_config.pop("args_schema")
+            if "metadata" in override_config:
+                if "metadata" in new_config_dict:
+                    new_config_dict["metadata"].update(override_config.pop("metadata"))
+                else:
+                    new_config_dict["metadata"] = override_config.pop("metadata")
+            # Merge remaining overrides into config
+            if "config" in new_config_dict:
+                new_config_dict["config"].update(override_config)
+            else:
+                new_config_dict["config"] = override_config
+        
+        # Clear instance (will be created on demand)
+        new_config_dict["instance"] = None
+        
+        new_config = AgentConfig(**new_config_dict)
+        
+        # Register new agent
+        self._agent_configs[new_name] = new_config
+        
+        # Register version record to version manager
+        await version_manager.register_version(
+            "agent", 
+            new_name, 
+            new_version,
+            description=f"Copied from {agent_name}@{original_config.version}"
+        )
+        
+        logger.info(f"| 📋 Copied agent {agent_name}@{original_config.version} to {new_name}@{new_version}")
+        return new_config
     
     async def save_to_json(self, file_path: Optional[str] = None) -> str:
         """Save all agent configurations to JSON

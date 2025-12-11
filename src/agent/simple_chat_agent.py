@@ -9,7 +9,9 @@ import json
 from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.logger import logger
 from src.agent.server import acp
-from src.memory import SessionInfo, EventType
+from src.memory import memory_manager, SessionInfo, EventType
+from src.model import model_manager
+from src.prompt import prompt_manager
 
 class SimpleChatAgentInputArgs(BaseModel):
     message: str = Field(description="The message from the human user.")
@@ -60,19 +62,20 @@ class SimpleChatAgent(Agent):
     
     async def _generate_session_info(self, message: str) -> SessionInfo:
         """Generate session info for the chat."""
-        structured_llm = self.model.with_structured_output(
-            SessionInfo,
-            method="function_calling",
-            include_raw=False
-        )
-
         prompt = f"""Generate a session info for a simple chat agent.
         
         The user message is: {message}
         
         Create a concise session ID and description for this conversation."""
         
-        result: SessionInfo = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        messages = [HumanMessage(content=prompt)]
+        
+        model_response = await model_manager(
+            model=self.model_name,
+            messages=messages,
+            structured_output=SessionInfo
+        )
+        result = model_response.extra["parsed_model"]
         
         timestamp = datetime.now().isoformat()
         session_id = f"{self.name}_{timestamp}"
@@ -81,7 +84,7 @@ class SimpleChatAgent(Agent):
     
     async def _get_agent_history(self) -> str:
         """Get the agent conversation history."""
-        state = await self.memory_manager.get_state(n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
         
         events = state["events"]
         conversation_history = ""
@@ -96,20 +99,38 @@ class SimpleChatAgent(Agent):
     
     async def _get_messages(self, message: str) -> List[BaseMessage]:
         """Generate messages for the conversation."""
-        system_input_variables = {}
-        system_message = await self.prompt_manager.get_system_message(system_input_variables)
+        system_modules = self.prompt_modules.copy()
+        # Infer prompt name from agent's prompt_name
+        if self.prompt_name:
+            system_prompt_name = f"{self.prompt_name}_system_prompt"
+            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
+        else:
+            system_prompt_name = "simple_chat_system_prompt"
+            agent_message_prompt_name = "simple_chat_agent_message_prompt"
+        
+        system_message = await prompt_manager.get_system_message(
+            prompt_name=system_prompt_name,
+            modules=system_modules, 
+            reload=False
+        )
         
         # Use global conversation history if available
         conversation_history = ""
         if hasattr(self, '_current_global_history') and self._current_global_history:
             conversation_history = self._format_global_history(self._current_global_history)
         
-        agent_input_variables = {
+        agent_message_modules = self.prompt_modules.copy()
+        agent_message_modules.update({
             "user_message": message,
             "conversation_history": conversation_history,
             "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
+        })
+        
+        agent_message = await prompt_manager.get_agent_message(
+            prompt_name=agent_message_prompt_name,
+            modules=agent_message_modules, 
+            reload=True
+        )
         
         messages = [
             system_message,
@@ -151,10 +172,8 @@ Remember: In debates, it's better to engage and provide your perspective rather 
 """
 
         messages = [HumanMessage(content=decision_prompt)]
-        response = await self.model.ainvoke(messages)
-        
-        # Parse the response
-        response_text = response.content if hasattr(response, 'content') else str(response)
+        model_response = await model_manager(model=self.model_name, messages=messages)
+        response_text = model_response.message
         
         try:
             decision = json.loads(response_text)
@@ -191,13 +210,8 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
 """
 
         messages = [HumanMessage(content=proactive_prompt)]
-        response = await self.model.ainvoke(messages)
-        
-        # Extract response content
-        if hasattr(response, 'content'):
-            return response.content
-        else:
-            return str(response)
+        model_response = await model_manager(model=self.model_name, messages=messages)
+        return model_response.message
 
     async def _get_user_input(self, question: str) -> Optional[str]:
         """Get real user input with the given question prompt."""
@@ -229,7 +243,12 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         description = session_info.description
         
         # Start session
-        await self.memory_manager.start_session(session_id, description)
+        await memory_manager.start_session(
+            memory_name=self.memory_name,
+            session_id=session_id,
+            agent_name=self.name,
+            description=description
+        )
         
         # Initialize conversation
         task_id = "chat_" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -255,7 +274,8 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                 break
             
             # Add user message event
-            await self.memory_manager.add_event(
+            await memory_manager.add_event(
+                memory_name=self.memory_name,
                 step_number=self.step_number, 
                 event_type="task_start", 
                 data=dict(message=current_message),
@@ -265,18 +285,14 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             
             # Generate response
             messages = await self._get_messages(current_message)
-            response = await self.model.ainvoke(messages)
-            
-            # Extract response content
-            if hasattr(response, 'content'):
-                response_text = response.content
-            else:
-                response_text = str(response)
+            model_response = await model_manager(model=self.model_name, messages=messages)
+            response_text = model_response.message
             
             logger.info(f"| 🤖 Assistant response: {response_text[:self.log_max_length]}...")
             
             # Add response event
-            await self.memory_manager.add_event(
+            await memory_manager.add_event(
+                memory_name=self.memory_name,
                 step_number=self.step_number,
                 event_type="action_step",
                 data=dict(response=response_text),
@@ -313,7 +329,8 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                 break
         
         # Add task end event
-        await self.memory_manager.add_event(
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="task_end",
             data=dict(result=f"Conversation completed after {conversation_round} rounds"),
@@ -322,7 +339,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         )
         
         # End session
-        await self.memory_manager.end_session(session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
         
         logger.info(f"| ✅ Multi-turn conversation completed after {conversation_round} rounds")
         
@@ -372,13 +389,8 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         
         # Generate response (using regular invoke for now, can be enhanced with streaming later)
         try:
-            response = await self.model.ainvoke(messages)
-            
-            # Extract response content
-            if hasattr(response, 'content'):
-                response_content = response.content
-            else:
-                response_content = str(response)
+            model_response = await model_manager(model=self.model_name, messages=messages)
+            response_content = model_response.message
             
             # Simulate streaming by yielding the full response
             yield {
@@ -436,14 +448,11 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.info(f"| 🔧 {self.name} got {len(messages)} messages")
             
             logger.info(f"| 🔧 {self.name} calling model...")
-            response = await self.model.ainvoke(messages)
-            logger.info(f"| 🔧 {self.name} got response: {type(response)}")
+            model_response = await model_manager(model=self.model_name, messages=messages)
+            logger.info(f"| 🔧 {self.name} got response: {type(model_response)}")
             
             # Extract response content
-            if hasattr(response, 'content'):
-                response_text = response.content
-            else:
-                response_text = str(response)
+            response_text = model_response.message
             
             logger.info(f"| 🤖 {self.name} response: {response_text[:self.log_max_length]}...")
             

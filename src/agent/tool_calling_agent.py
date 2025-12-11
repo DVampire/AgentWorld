@@ -8,6 +8,7 @@ from datetime import datetime
 from pydantic import Field, ConfigDict
 
 from src.agent.types import Agent
+from src.config import config
 from src.logger import logger
 from src.utils import dedent
 from src.tool.server import tcp
@@ -85,7 +86,8 @@ class ToolCallingAgent(Agent):
         
         record_observation = {}
         
-        for env_name in ecp.list():
+        # Only iterate over environments specified in config, not all registered environments
+        for env_name in config.env_names:
             rule_string = ecp.get_info(env_name).rules
             rule_string = dedent(f"""
                 <rules>
@@ -118,11 +120,16 @@ class ToolCallingAgent(Agent):
             "environment_context": environment_context,
         }
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
-        """Think and action for one step."""
+    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str):
+        """Think and tool calls for one step."""
         
         # If the new tool is added, rebuild the ThinkOutput model
-        tcp_args_schema = tcp.args_schemas()
+        # Get all tools asynchronously and build args_schema dict
+        tool_names = config.tool_names
+        tools = await asyncio.gather(*[tcp.get(tool_name) for tool_name in tool_names])
+        tcp_args_schema = {
+            tool_name: tool.args_schema for tool_name, tool in zip(tool_names, tools)
+        }
         agent_args_schema = self.think_output_builder.schemas
         
         logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
@@ -134,12 +141,12 @@ class ToolCallingAgent(Agent):
         done = False
         final_result = None
         
-        record_action = {
+        record_tool = {
             "thinking": None,
             "evaluation_previous_goal": None,
             "memory": None,
             "next_goal": None,
-            "action": [],
+            "tool": [],
         }
         
         try:
@@ -154,31 +161,35 @@ class ToolCallingAgent(Agent):
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            actions = think_output.action
+            tools = think_output.tool
             
-            # Update record action
-            record_action["thinking"] = thinking
-            record_action["evaluation_previous_goal"] = evaluation_previous_goal
-            record_action["memory"] = memory
-            record_action["next_goal"] = next_goal
+            # Update record tool
+            record_tool["thinking"] = thinking
+            record_tool["evaluation_previous_goal"] = evaluation_previous_goal
+            record_tool["memory"] = memory
+            record_tool["next_goal"] = next_goal
             
             logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
+            logger.info(f"| 🔧 Tools to execute: {len(tools)}")
             
-            # Execute actions sequentially
-            action_results = []
+            # Execute tools sequentially
+            tool_results = []
             
-            for i, action in enumerate(actions):
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action.name}")
+            for i, tool in enumerate(tools):
+                logger.info(f"| 📝 Tool {i+1}/{len(tools)}: {tool.name}")
                 
                 # Execute the tool
-                tool_name = action.name
-                tool_args = action.args.model_dump()
+                tool_name = tool.name
+                tool_args = tool.args.model_dump()
                 
-                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
+                logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 
-                response = await tcp.ainvoke(tool_name, input=tool_args)
+                input = {
+                    "name": tool_name,
+                    "input": tool_args
+                }
+                response = await tcp(**input)
                 if isinstance(response, ToolResponse):
                     tool_result = response.message
                     response_extra = response.extra if hasattr(response, 'extra') else None
@@ -186,20 +197,20 @@ class ToolCallingAgent(Agent):
                     tool_result = str(response)
                     response_extra = response.get('extra') if isinstance(response, dict) else None
                 
-                logger.info(f"| ✅ Action {i+1} completed successfully")
+                logger.info(f"| ✅ Tool {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
                 
-                # Update action with result
-                action_dict = action.model_dump()
-                action_dict["output"] = tool_result
-                action_results.append(action_dict)
+                # Update tool with result
+                tool_dict = tool.model_dump()
+                tool_dict["output"] = tool_result
+                tool_results.append(tool_dict)
                 
-                # Update record action
-                action_extra = {}
-                action_extra.update(action_dict)
+                # Update record tool
+                tool_extra = {}
+                tool_extra.update(tool_dict)
                 if response_extra is not None:
-                    action_extra['extra'] = response_extra
-                record_action["action"].append(action_extra)
+                    tool_extra['extra'] = response_extra
+                record_tool["tool"].append(tool_extra)
                     
                 if tool_name == "done":
                     done = True
@@ -211,11 +222,11 @@ class ToolCallingAgent(Agent):
                 "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
                 "next_goal": next_goal,
-                "action": action_results
+                "tool": tool_results
             }
             
-            # Update record action
-            self.record.action = record_action
+            # Update record tool
+            self.record.tool = record_tool
             
             # Get memory system name
             memory_name = self.memory_name
@@ -223,7 +234,7 @@ class ToolCallingAgent(Agent):
             await memory_manager.add_event(
                 memory_name=memory_name,
                 step_number=self.step_number,
-                event_type="action_step",
+                event_type="tool_step",
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id
@@ -241,7 +252,7 @@ class ToolCallingAgent(Agent):
                 )
             
         except Exception as e:
-            logger.error(f"| Error in thinking and action step: {e}")
+            logger.error(f"| Error in thinking and tool step: {e}")
         
         return done, final_result
         
@@ -263,8 +274,11 @@ class ToolCallingAgent(Agent):
         memory_name = self.memory_name
         
         # Get memory instance to check for restored session
+        logger.info(f"| 🔍 Getting memory instance: {memory_name}")
         memory_instance = await memory_manager.get(memory_name)
+        logger.info(f"| ✅ Got memory instance: {memory_name}")
         restored_session_id = memory_instance.current_session_id
+        logger.info(f"| 🔍 Restored session ID: {restored_session_id}")
         
         if restored_session_id:
             # Restore from checkpoint
@@ -274,15 +288,18 @@ class ToolCallingAgent(Agent):
             description = session_info_obj.description if session_info_obj else None
         else:
             # Start new session
+            logger.info(f"| 🆕 Starting new session...")
             session_info = await self._generate_session_info(enhanced_task)
             session_id = session_info.session_id
             description = session_info.description
+            logger.info(f"| 📝 Session ID: {session_id}, Description: {description}")
             await memory_manager.start_session(
                 memory_name=memory_name,
                 session_id=session_id,
                 agent_name=self.name,
                 description=description
             )
+            logger.info(f"| ✅ Session started successfully")
         
         # Add task start event
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -308,12 +325,12 @@ class ToolCallingAgent(Agent):
             logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
             
             # Execute one step
-            done, final_result = await self._think_and_action(messages, task_id)
+            done, final_result = await self._think_and_tool(messages, task_id)
             self.step_number += 1
             
             # Update tracer and save to json
             await self.tracer.add_record(observation=self.record.observation, 
-                                        action=self.record.action,
+                                        tool=self.record.tool,
                                         session_id=session_id,
                                         task_id=task_id)
             await self.tracer.save_to_json(self.tracer_save_path)

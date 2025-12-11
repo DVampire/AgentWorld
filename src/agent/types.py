@@ -9,6 +9,7 @@ import pandas as pd
 from enum import Enum
 import uuid
 import os
+import asyncio
 from datetime import datetime
 
 from src.config import config
@@ -71,19 +72,19 @@ class AgentConfig(BaseModel):
         return self.__str__()
 
 
-def format_actions(actions: List[BaseModel]) -> str:
-    """Format actions as a Markdown table using pandas."""
+def format_tools(tools: List[BaseModel]) -> str:
+    """Format tools as a Markdown table using pandas."""
     rows = []
-    for action in actions:
-        if isinstance(action.args, dict):
-            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
+    for tool in tools:
+        if isinstance(tool.args, dict):
+            args_str = ", ".join(f"{k}={v}" for k, v in tool.args.items())
         else:
-            args_str = str(action.args)
+            args_str = str(tool.args)
 
         rows.append({
-            "Action": action.name,
+            "Tool": tool.name,
             "Args": args_str,
-            "Output": action.output if action.output is not None else None
+            "Output": tool.output if tool.output is not None else None
         })
     
     df = pd.DataFrame(rows)
@@ -105,19 +106,19 @@ class ThinkOutputBuilder:
         return self  # Support chaining
 
     def build(self):
-        """Generate Action and ThinkOutput models"""
+        """Generate Tool and ThinkOutput models"""
 
-        # -------- Dynamically generate Action --------
+        # -------- Dynamically generate Tool --------
         schemas = self.schemas
-        ActionArgs = Union[tuple(schemas.values())]
+        ToolArgs = Union[tuple(schemas.values())]
 
-        class Action(BaseModel):
-            name: str = Field(description="The name of the action.")
-            args: ActionArgs = Field(description="The arguments of the action.")
-            output: Optional[str] = Field(default=None, description="The output of the action.")
+        class Tool(BaseModel):
+            name: str = Field(description="The name of the tool.")
+            args: ToolArgs = Field(description="The arguments of the tool.")
+            output: Optional[str] = Field(default=None, description="The output of the tool.")
             
             def __str__(self):
-                return f"Action: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
+                return f"Tool: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
             
             def __repr__(self):
                 return self.__str__()
@@ -125,11 +126,11 @@ class ThinkOutputBuilder:
         # -------- Dynamically generate ThinkOutput --------
         class ThinkOutput(BaseModel):
             thinking: str = Field(description="A structured <think>-style reasoning block.")
-            evaluation_previous_goal: str = Field(description="One-sentence analysis of your last action.")
+            evaluation_previous_goal: str = Field(description="One-sentence analysis of your last tool call.")
             memory: str = Field(description="1-3 sentences of specific memory.")
-            next_goal: str = Field(description="State the next immediate goals and actions.")
-            action: List[Action] = Field(
-                description='[{"name": "action_name", "args": {...}}, ...]'
+            next_goal: str = Field(description="State the next immediate goals and tool calls.")
+            tool: List[Tool] = Field(
+                description='[{"name": "tool_name", "args": {...}}, ...]'
             )
 
             def __str__(self):
@@ -138,7 +139,7 @@ class ThinkOutputBuilder:
                     f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
                     f"Memory: {self.memory}\n"
                     f"Next Goal: {self.next_goal}\n"
-                    f"Action:\n{format_actions(self.action)}\n"
+                    f"Tool:\n{format_tools(self.tool)}\n"
                 )
             
             def __repr__(self):
@@ -178,7 +179,6 @@ class Agent(BaseModel):
         
         # Set working directory
         self.workdir = workdir
-        logger.info(f"| 📁 Agent working directory: {self.workdir}")
         
         # Set prompt name and modules
         self.prompt_name = prompt_name
@@ -197,12 +197,15 @@ class Agent(BaseModel):
         
     async def initialize(self):
         """Initialize the agent."""
+        logger.info(f"| 📁 Agent working directory: {self.workdir}")
         # Setup think output builder
         self.think_output_builder = ThinkOutputBuilder()
         
         self.tool_names = config.tool_names
+        # Get all tools asynchronously
+        tools = await asyncio.gather(*[tcp.get(tool_name) for tool_name in self.tool_names])
         args_schema = {
-            tool_name: tcp.get(tool_name).args_schema for tool_name in self.tool_names
+            tool_name: tool.args_schema for tool_name, tool in zip(self.tool_names, tools)
         }
         self.think_output_builder.register(args_schema)
         self.ThinkOutput = self.think_output_builder.build()
@@ -263,32 +266,19 @@ class Agent(BaseModel):
         return enhanced_task
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
-        """Use the llm to generate a session id."""
-        system_prompt = f"You are a helpful assistant that generates a session info for agent {self.name}."
-        user_prompt = dedent(f"""
-            <intro>
-            The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-            The session description should provide a concise description of the task.
-            </intro>
-            <task>
-            {task}
-            </task>"""
-        )
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ]
+        """Generate a session id based on task. For simple tasks, skip LLM call for faster startup."""
+        import re
+        import hashlib
         
-        model_response = await model_manager(
-            model=self.model_name, 
-            messages=messages,
-            response_format=SessionInfo,
-        )
-        model_response = model_response.extra['parsed_model']
+        # Generate a simple session_id based on task content (first 50 chars) and timestamp
+        task_hash = hashlib.md5(task.encode('utf-8')).hexdigest()[:8]
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        session_id = f"{self.name}_{timestamp}_{task_hash}"
         
-        session_id = f"{self.name}_{datetime.now().isoformat()}"
-        description = model_response.description
-
+        # Generate a simple description (first 100 chars of task)
+        description = task[:100] + "..." if len(task) > 100 else task
+        
+        logger.info(f"| ✅ Session info generated: {session_id}")
         return SessionInfo(session_id=session_id, description=description)
 
     async def _get_agent_context(self, task: str) -> Dict[str, Any]:
@@ -321,11 +311,11 @@ class Agent(BaseModel):
                 agent_history += f"Task Start: {event.data['task']}\n"
             elif event.event_type == EventType.TASK_END:
                 agent_history += f"Task End: {event.data['result']}\n"
-            elif event.event_type == EventType.ACTION_STEP:
+            elif event.event_type == EventType.TOOL_STEP:
                 agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
                 agent_history += f"Memory: {event.data['memory']}\n"
                 agent_history += f"Next Goal: {event.data['next_goal']}\n"
-                agent_history += f"Action Results: {event.data['action']}\n"
+                agent_history += f"Tool Results: {event.data.get('tool', '')}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         agent_history += "</agent_history>"
@@ -377,7 +367,8 @@ class Agent(BaseModel):
     async def _get_environment_context(self) -> Dict[str, Any]:
         """Get the environment state."""
         environment_context = "<environment_context>"
-        for env_name in ecp.list():
+        # Only iterate over environments specified in config, not all registered environments
+        for env_name in config.env_names:
             rule_string = ecp.get_info(env_name).rules
             rule_string = dedent(f"""
                 <rules>
@@ -411,8 +402,11 @@ class Agent(BaseModel):
         """Get the tool context."""
         tool_context = "<tool_context>"
         
-        tool_list = [await tcp.get_info(tool) for tool in tcp.list()]
-        tool_list = [tool.text for tool in tool_list]
+        # Only get tools specified in config, not all registered tools
+        tool_names = config.tool_names
+        tool_configs = await asyncio.gather(*[tcp.get_info(tool_name) for tool_name in tool_names])
+        # Filter out None values and get text
+        tool_list = [tool.text for tool in tool_configs if tool is not None and tool.text is not None]
         tool_list_string = "\n".join(tool_list)
         
         tool_context += dedent(f"""

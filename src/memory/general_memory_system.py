@@ -330,7 +330,9 @@ class GeneralMemorySystem(Memory):
         """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
         # Auto-load from JSON if file exists and save_path is set
         if self.save_path and os.path.exists(self.save_path):
+            logger.info(f"| 📂 Loading memory from JSON: {self.save_path}")
             await self.load_from_json(self.save_path)
+            logger.info(f"| ✅ Memory loaded from JSON")
         
         session_info = SessionInfo(
             session_id=session_id,
@@ -587,14 +589,18 @@ class GeneralMemorySystem(Memory):
         Returns:
             True if loaded successfully, False otherwise
         """
+        logger.debug(f"| 🔒 Acquiring file lock for: {file_path}")
         async with file_lock(file_path):
+            logger.debug(f"| 🔓 File lock acquired for: {file_path}")
             if not os.path.exists(file_path):
                 logger.warning(f"| ⚠️  Memory file not found: {file_path}")
                 return False
             
             try:
+                logger.debug(f"| 📖 Reading JSON file: {file_path}")
                 with open(file_path, "r", encoding="utf-8") as f:
                     load_data = json.load(f)
+                logger.debug(f"| ✅ JSON file read successfully")
                 
                 # Validate format
                 if "metadata" not in load_data or "sessions" not in load_data:
@@ -609,8 +615,10 @@ class GeneralMemorySystem(Memory):
                 
                 # Restore sessions
                 sessions_data = load_data.get("sessions", {})
+                logger.debug(f"| 📊 Restoring {len(sessions_data)} sessions from JSON")
                 
                 for session_id, session_data in sessions_data.items():
+                    logger.debug(f"| 🔄 Restoring session: {session_id}")
                     # Restore session info
                     session_info_data = session_data.get("session_info")
                     if session_info_data:
@@ -622,13 +630,13 @@ class GeneralMemorySystem(Memory):
                         
                         self.session_info[session_id] = SessionInfo(**session_info_data)
                     
-                    # Ensure session memory exists
+                    # Ensure session memory exists (skip auto-load to avoid recursion)
                     if session_id not in self.session_memory:
-                        await self.start_session(
-                            session_id=session_id,
-                            agent_name=self.session_info.get(session_id).agent_name if session_id in self.session_info else None,
-                            task_id=self.session_info.get(session_id).task_id if session_id in self.session_info else None,
-                            description=self.session_info.get(session_id).description if session_id in self.session_info else None,
+                        # Create CombinedMemory directly without calling start_session to avoid recursion
+                        self.session_memory[session_id] = CombinedMemory(
+                            model_name=self.model_name, 
+                            max_summaries=self.max_summaries,
+                            max_insights=self.max_insights
                         )
                     
                     session_memory = self.session_memory[session_id]

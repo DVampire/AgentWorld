@@ -538,7 +538,7 @@ class TransformationServer:
             
             selected_agent_infos = []
             for agent_name in request.agent_names:
-                agent_info = acp.get_info(agent_name)
+                agent_info = await acp.get_info(agent_name)
                 
                 if agent_info:
                     selected_agent_infos.append(agent_info)
@@ -613,7 +613,7 @@ class TransformationServer:
             # Step 1: Collect selected agent information
             selected_agent_infos = []
             for agent_name in request.agent_names:
-                agent_info = acp.get_info(agent_name)
+                agent_info = await acp.get_info(agent_name)
                 if agent_info:
                     selected_agent_infos.append(agent_info)
                 else:

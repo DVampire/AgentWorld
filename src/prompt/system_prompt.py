@@ -1,10 +1,10 @@
 """System prompt management for agents."""
 
 from typing import Dict, Any
-from langchain_core.messages import SystemMessage
 
 from src.logger import logger
 from src.prompt.manager import prompt_manager
+from src.message import SystemMessage
 from src.optimizer.protocol.variable import Variable
 
 class SystemPrompt:
@@ -40,11 +40,8 @@ class SystemPrompt:
             # Get prompt template from prompt_manager
             prompt_dict = await prompt_manager.get(self.prompt_name)
             if not prompt_dict:
-                # Fallback to template module for backward compatibility
-                from src.prompt.template import PROMPT_TEMPLATES
-                prompt_dict = PROMPT_TEMPLATES.get(self.prompt_name)
-                if not prompt_dict:
-                    raise ValueError(f"Prompt {self.prompt_name} not found")
+                available = await prompt_manager.list()
+                raise ValueError(f"Prompt {self.prompt_name} not found. Available prompts: {available}")
             
             self.prompt = Variable.from_dict(prompt_dict)
             

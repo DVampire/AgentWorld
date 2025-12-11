@@ -16,10 +16,12 @@ from src.agent.types import Agent
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
-from src.tool.protocol import tcp
-from src.environment.protocol import ecp
-from src.memory import SessionInfo, EventType
-from src.tool.protocol.types import ToolResponse
+from src.tool.server import tcp
+from src.environment.server import ecp
+from src.memory import memory_manager, SessionInfo, EventType
+from src.tool.types import ToolResponse
+from src.model import model_manager
+from src.prompt import prompt_manager
 
 class DayAnalysisOutput(BaseModel):
     """Output schema for day analysis."""
@@ -62,12 +64,8 @@ class IntradayDayAnalysisAgent(Agent):
             **kwargs
         )
         
-        # Bind model with structured output
-        self.structured_model = self.model.with_structured_output(
-            DayAnalysisOutput,
-            method="function_calling",
-            include_raw=False
-        )
+        # Store output schema for use with model_manager
+        self.day_analysis_output_schema = DayAnalysisOutput
         
     async def start(self, 
                     task: str, 
@@ -76,8 +74,15 @@ class IntradayDayAnalysisAgent(Agent):
                     description: str):
         """Start the day analysis agent."""
         # Start session
-        await self.memory_manager.start_session(session_id, description)
-        await self.memory_manager.add_event(step_number=self.step_number, 
+        await memory_manager.start_session(
+            memory_name=self.memory_name,
+            session_id=session_id,
+            agent_name=self.name,
+            description=description
+        )
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
+            step_number=self.step_number, 
             event_type="task_start", 
             data=dict(task=task),
             agent_name=self.name,
@@ -86,11 +91,11 @@ class IntradayDayAnalysisAgent(Agent):
     
     async def end(self, session_id: str):
         """End the day analysis agent."""
-        await self.memory_manager.end_session(session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
         
     async def _get_agent_history(self) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await self.memory_manager.get_state(n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -133,15 +138,32 @@ class IntradayDayAnalysisAgent(Agent):
     
     async def _get_messages(self, data: Dict[str, Any]) -> List[BaseMessage]:
         """Get messages for the day analysis agent."""
-        system_input_variables = {}
-        system_message = await self.prompt_manager.get_system_message(system_input_variables)
+        system_modules = self.prompt_modules.copy()
+        # Infer prompt name from agent's prompt_name
+        if self.prompt_name:
+            system_prompt_name = f"{self.prompt_name}_system_prompt"
+            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
+        else:
+            system_prompt_name = "intraday_day_analysis_system_prompt"
+            agent_message_prompt_name = "intraday_day_analysis_agent_message_prompt"
         
-        agent_input_variables = {}
+        system_message = await prompt_manager.get_system_message(
+            prompt_name=system_prompt_name,
+            modules=system_modules, 
+            reload=False
+        )
+        
+        agent_message_modules = self.prompt_modules.copy()
         agent_history = await self._get_agent_history()
         environment_state = await self._get_environment_state(data)
-        agent_input_variables.update(agent_history)
-        agent_input_variables.update(environment_state)
-        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message_modules.update(agent_history)
+        agent_message_modules.update(environment_state)
+        
+        agent_message = await prompt_manager.get_agent_message(
+            prompt_name=agent_message_prompt_name,
+            modules=agent_message_modules, 
+            reload=True
+        )
         
         messages = [
             system_message,
@@ -156,7 +178,12 @@ class IntradayDayAnalysisAgent(Agent):
         messages = await self._get_messages(data)
         
         try:
-            response = await self.structured_model.ainvoke(messages)
+            model_response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                structured_output=self.day_analysis_output_schema
+            )
+            response = model_response.extra["parsed_model"]
             
             trend_type = response.trend_type
             confidence = response.confidence
@@ -168,6 +195,7 @@ class IntradayDayAnalysisAgent(Agent):
             
         except Exception as e:
             logger.error(f"| 🚨 Error: {e}")
+            raise
         
         event_data = {
             "trend_type": trend_type,
@@ -175,7 +203,8 @@ class IntradayDayAnalysisAgent(Agent):
             "reasoning": reasoning,
         }
         
-        await self.memory_manager.add_event(
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="action_step",
             data=event_data,
@@ -279,15 +308,7 @@ class IntradayMinuteTradingAgent(Agent):
         
         self.minute_trading_output_builder = MinuteTradingOutputBuilder()
         self.minute_trading_output_builder.register(tcp.args_schemas())
-        self.MinuteTradingOutput = self.minute_trading_output_builder.build()
-        
-        # Bind model with structured output
-        self.structured_model = self.model.with_structured_output(
-            self.MinuteTradingOutput,
-            method="function_calling",
-            include_raw=False
-        )
-    
+        self.MinuteTradingOutput = self.minute_trading_output_builder.build()    
     async def start(self, 
                     task: str, 
                     session_id: str, 
@@ -295,21 +316,28 @@ class IntradayMinuteTradingAgent(Agent):
                     description: str):
         """Start the minute trading agent."""
         # Start session
-        await self.memory_manager.start_session(session_id, description)
-        await self.memory_manager.add_event(step_number=self.step_number, 
-                                      event_type="task_start", 
-                                      data=dict(task=task),
-                                      agent_name=self.name,
-                                      task_id=task_id
-                                      )
+        await memory_manager.start_session(
+            memory_name=self.memory_name,
+            session_id=session_id,
+            agent_name=self.name,
+            description=description
+        )
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
+            step_number=self.step_number, 
+            event_type="task_start", 
+            data=dict(task=task),
+            agent_name=self.name,
+            task_id=task_id
+        )
     
     async def end(self, session_id: str):
         """End the minute trading agent."""
-        await self.memory_manager.end_session(session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
     
     async def _get_agent_history(self) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await self.memory_manager.get_state(n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -370,16 +398,33 @@ class IntradayMinuteTradingAgent(Agent):
     
     async def _get_messages(self, data: Dict[str, Any], daily_trend_forecast: str) -> List[BaseMessage]:
         """Get messages for the minute trading agent."""
-        system_input_variables = {}
-        system_message = await self.prompt_manager.get_system_message(system_input_variables)
+        system_modules = self.prompt_modules.copy()
+        # Infer prompt name from agent's prompt_name
+        if self.prompt_name:
+            system_prompt_name = f"{self.prompt_name}_system_prompt"
+            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
+        else:
+            system_prompt_name = "intraday_minute_trading_system_prompt"
+            agent_message_prompt_name = "intraday_minute_trading_agent_message_prompt"
         
-        agent_input_variables = {}
+        system_message = await prompt_manager.get_system_message(
+            prompt_name=system_prompt_name,
+            modules=system_modules, 
+            reload=False
+        )
+        
+        agent_message_modules = self.prompt_modules.copy()
         agent_history = await self._get_agent_history()
         environment_state = await self._get_environment_state(data)
-        agent_input_variables.update(agent_history)
-        agent_input_variables.update(environment_state)
-        agent_input_variables.update(dict(daily_trend_forecast=daily_trend_forecast))
-        agent_message = await self.prompt_manager.get_agent_message(agent_input_variables)
+        agent_message_modules.update(agent_history)
+        agent_message_modules.update(environment_state)
+        agent_message_modules.update(dict(daily_trend_forecast=daily_trend_forecast))
+        
+        agent_message = await prompt_manager.get_agent_message(
+            prompt_name=agent_message_prompt_name,
+            modules=agent_message_modules, 
+            reload=True
+        )
         
         messages = [
             system_message,
@@ -397,7 +442,20 @@ class IntradayMinuteTradingAgent(Agent):
         action_result = None
         
         try:
-            minute_trading_output = await self.structured_model.ainvoke(messages)
+            # Check if new tools are added, rebuild if needed
+            tcp_args_schema = tcp.args_schemas()
+            agent_args_schema = self.minute_trading_output_builder.schemas
+            
+            if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
+                self.minute_trading_output_builder.register(tcp_args_schema)
+                self.MinuteTradingOutput = self.minute_trading_output_builder.build()
+            
+            model_response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                structured_output=self.MinuteTradingOutput
+            )
+            minute_trading_output = model_response.extra["parsed_model"]
             
             analysis = minute_trading_output.analysis
             position_check = minute_trading_output.position_check
@@ -414,11 +472,15 @@ class IntradayMinuteTradingAgent(Agent):
             # Execute action
             tool_name = action.name
             tool_args = action.args.model_dump()
-            tool_result = await tcp.ainvoke(tool_name, input=tool_args)
-            if isinstance(tool_result, ToolResponse):
-                tool_result = tool_result.message
+            input = {
+                "name": tool_name,
+                "input": tool_args
+            }
+            response = await tcp(**input)
+            if isinstance(response, ToolResponse):
+                tool_result = response.message
             else:
-                tool_result = str(tool_result)
+                tool_result = str(response)
             
             logger.info(f"| ✅ Action {tool_name} completed successfully")
             logger.info(f"| 📄 Results: {tool_result}")
@@ -446,7 +508,8 @@ class IntradayMinuteTradingAgent(Agent):
             "action": action_result
         }
         
-        await self.memory_manager.add_event(
+        await memory_manager.add_event(
+            memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="action_step",
             data=event_data,
@@ -519,29 +582,30 @@ class IntradayTradingAgent(Agent):
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
-        structured_llm = self.model.with_structured_output(
-            SessionInfo,
-            method="function_calling",
-            include_raw=False
+        from langchain_core.messages import SystemMessage, HumanMessage
+        
+        system_prompt = f"You are a helpful assistant that generates a session info for agent {self.name}."
+        user_prompt = dedent(f"""
+            <intro>
+            1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
+            2. The session description should provide a concise description of the task.
+            </intro>
+            <task>
+            {task}
+            </task>"""
         )
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", f"You are a helpful assistant that generates a session info for agent {self.name}."),
-            ("user", 
-             dedent(f"""
-                    <intro>
-                    1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-                    2. The session description should provide a concise description of the task.
-                    </intro>
-                    <task>
-                    {task}
-                    </task>"""
-                )
-             )
-        ])
-
-        chain = prompt | structured_llm
-        result: SessionInfo = chain.invoke({"task": task})
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        model_response = await model_manager(
+            model=self.model_name,
+            messages=messages,
+            structured_output=SessionInfo
+        )
+        result = model_response.extra["parsed_model"]
         
         timestamp = datetime.now().isoformat()
         

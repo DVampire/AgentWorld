@@ -171,12 +171,15 @@ class MemoryManager(BaseModel):
             config_dict = memory_config.config.copy()
         
         # Create new instance (each agent needs its own memory system instance)
+        logger.debug(f"| 🔧 Creating memory instance: {memory_name}")
         instance = memory_config.cls(**config_dict)
+        logger.debug(f"| ✅ Memory instance created: {memory_name}")
         
         # Store instance for context manager methods (overwrites previous instance for this memory_name)
         self._memory_instances[memory_name] = instance
         # Also store in context manager for its methods
         self.memory_context_manager._set_memory_instance(memory_name, instance)
+        logger.debug(f"| ✅ Memory instance stored: {memory_name}")
         
         return instance
     

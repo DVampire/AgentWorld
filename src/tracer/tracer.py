@@ -16,14 +16,14 @@ class Record(BaseModel):
     session_id: Optional[str] = Field(default=None, description="Session ID for this record")
     task_id: Optional[str] = Field(default=None, description="Task ID for this record")
     observation: Optional[Any] = Field(default=None, description="Observation data for this execution step")
-    action: Optional[Any] = Field(default=None, description="Action taken in this execution step")
+    tool: Optional[Any] = Field(default=None, description="Tool calls taken in this execution step")
     timestamp: Optional[str] = Field(default=None, description="Timestamp of the record in ISO format")
 
 class Tracer:
     """Tracer class for recording agent execution records.
     
     This class maintains execution records organized by session_id, where each record
-    is a Record model containing observation, action, id, session_id, task_id, and timestamp information.
+    is a Record model containing observation, tool, id, session_id, task_id, and timestamp information.
     """
     
     def __init__(self):
@@ -36,7 +36,7 @@ class Tracer:
     async def add_record(
         self,
         observation: Any,
-        action: Any,
+        tool: Any = None,
         session_id: Optional[str] = None,
         task_id: Optional[str] = None,
         timestamp: Optional[datetime] = None
@@ -45,7 +45,7 @@ class Tracer:
         
         Args:
             observation: The observation data for this execution step
-            action: The action taken in this execution step
+            tool: The tool calls taken in this execution step
             session_id: Optional session ID for this record. If None, records are stored without session grouping.
             task_id: Optional task ID for this record.
             timestamp: Optional timestamp for the record. If None, uses current time.
@@ -58,7 +58,7 @@ class Tracer:
             session_id=session_id,
             task_id=task_id,
             observation=observation,
-            action=action,
+            tool=tool,
             timestamp=timestamp.isoformat()
         )
         
@@ -197,7 +197,7 @@ class Tracer:
                         "id": int,
                         "task_id": str,
                         "observation": Any,
-                        "action": Any,
+                        "tool": Any,
                         "timestamp": str
                     },
                     ...
@@ -230,7 +230,7 @@ class Tracer:
                         "id": record.id,
                         "task_id": record.task_id,
                         "observation": self._serialize_for_json(record.observation),
-                        "action": self._serialize_for_json(record.action),
+                        "tool": self._serialize_for_json(record.tool),
                         "timestamp": record.timestamp
                     }
                     sessions[session_id].append(json_record)
@@ -261,7 +261,7 @@ class Tracer:
                         "id": int,
                         "task_id": str,
                         "observation": Any,
-                        "action": Any,
+                        "tool": Any,
                         "timestamp": str
                     },
                     ...
@@ -309,7 +309,7 @@ class Tracer:
                             session_id=session_id,
                             task_id=json_record.get("task_id"),
                             observation=json_record.get("observation"),
-                            action=json_record.get("action"),
+                            tool=json_record.get("tool"),
                             timestamp=json_record.get("timestamp")
                         )
                         self.session_records[session_id].append(record)

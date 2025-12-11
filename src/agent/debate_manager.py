@@ -172,7 +172,7 @@ class DebateManagerAgent(Agent):
         
         try:
             # Get agent instance and call ainvoke_simple for debate
-            agent_config = acp.get_info(agent_name)
+            agent_config = await acp.get_info(agent_name)
             if agent_config and hasattr(agent_config, 'instance') and agent_config.instance:
                 agent = agent_config.instance
                 result = await agent.ainvoke_simple(

@@ -1,11 +1,11 @@
 import os
 import sys
+import json
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
-
-from pathlib import Path
 import argparse
 from mmengine import DictAction
+from pathlib import Path
 import asyncio
 
 root = str(Path(__file__).resolve().parents[1])
@@ -16,6 +16,7 @@ from src.logger import logger
 from src.model import model_manager
 from src.version import version_manager
 from src.prompt import prompt_manager
+from src.memory import memory_manager
 from src.tool import tcp
 from src.environment import ecp
 from src.agent import acp
@@ -47,7 +48,17 @@ async def main():
     # Initialize model manager
     logger.info("| 🧠 Initializing model manager...")
     await model_manager.initialize()
-    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
+    logger.info(f"| ✅ Model manager initialized: {await model_manager.list()}")
+    
+    # Initialize prompt manager
+    logger.info("| 📁 Initializing prompt manager...")
+    await prompt_manager.initialize()
+    logger.info(f"| ✅ Prompt manager initialized: {await prompt_manager.list()}")
+    
+    # Initialize memory manager
+    logger.info("| 📁 Initializing memory manager...")
+    await memory_manager.initialize(memory_names=config.memory_names)
+    logger.info(f"| ✅ Memory manager initialized: {await memory_manager.list()}")
     
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
@@ -59,36 +70,31 @@ async def main():
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
+    # Initialize agents
+    logger.info("| 🤖 Initializing agents...")
+    await acp.initialize(agent_names=config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {await acp.list()}")
+    
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
-    logger.info(f"| ✅ Version manager initialized: {await version_manager.list()}")
-    
-    # Initialize prompt manager
-    logger.info("| 📁 Initializing prompt manager...")
-    await prompt_manager.initialize()
-    logger.info(f"| ✅ Prompt manager initialized: {await prompt_manager.list()}")
-
-    # Initialize agents
-    logger.info("| 🤖 Initializing agents...")
-    await acp.initialize(config.agent_names)
-    logger.info(f"| ✅ Agents initialized: {acp.list()}")
+    logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
     # # Example task
-    # task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
-    # files = []
+    task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
+    files = []
     
-    # logger.info(f"| 📋 Task: {task}")
-    # logger.info(f"| 📂 Files: {files}")
+    logger.info(f"| 📋 Task: {task}")
+    logger.info(f"| 📂 Files: {files}")
     
-    # input = {
-    #     "name": "tool_calling",
-    #     "input": {
-    #         "task": task,
-    #         "files": files
-    #     }
-    # }
-    # await acp.ainvoke(**input)
+    input = {
+        "name": "tool_calling",
+        "input": {
+            "task": task,
+            "files": files
+        }
+    }
+    await acp(**input)
     
 if __name__ == "__main__":
     asyncio.run(main())

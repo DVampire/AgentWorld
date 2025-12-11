@@ -73,5 +73,6 @@ file_system_environment.update(
 #-----------------TOOL CALLING AGENT CONFIG-----------------
 tool_calling_agent.update(
     workdir=workdir,
-    model_name=model_name
+    model_name=model_name,
+    memory_name=memory_names[0]
 )

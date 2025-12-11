@@ -26,7 +26,6 @@ class ACPServer(BaseModel):
         super().__init__(**kwargs)
         self._registered_agents: Dict[str, AgentConfig] = {}  # agent_name -> AgentConfig
     
-    
     async def initialize(self, agent_names: Optional[List[str]] = None):
         """Initialize agents by names using agent context manager with concurrent support.
         
@@ -43,11 +42,13 @@ class ACPServer(BaseModel):
         await self.agent_context_manager.initialize()
         
         # Sync registered_agents from context manager after discovery
-        for agent_name in self.agent_context_manager.list():
-            agent_config = self.agent_context_manager.get_info(agent_name)
+        all_registered_agents = await self.agent_context_manager.list()
+        for agent_name in all_registered_agents:
+            agent_config = self.agent_context_manager._agent_configs.get(agent_name)
             if agent_config and agent_name not in self._registered_agents:
                 self._registered_agents[agent_name] = agent_config
         
+        # Use provided agent_names if specified, otherwise initialize all registered agents
         agents_to_init = agent_names if agent_names is not None else list(self._registered_agents.keys())
         
         logger.info(f"| 🎮 Initializing {len(agents_to_init)} agents with context manager...")
@@ -114,41 +115,26 @@ class ACPServer(BaseModel):
         self._registered_agents[agent_config.name] = agent_config
         return agent_config
         
-    async def copy(self,
-             agent_config: AgentConfig, 
-             name: str,
-             type: Optional[str] = None,
-             description: Optional[str] = None,
-             args_schema: Optional[Type[BaseModel]] = None,
-             metadata: Optional[Dict[str, Any]] = None,
-             ):
+    async def copy(self, agent_name: str, new_name: Optional[str] = None,
+                  new_version: Optional[str] = None, **override_config) -> AgentConfig:
+        """Copy an existing agent
         
-        new_agent_config = AgentConfig(
-            name=name,
-            type=type if type is not None else agent_config.type,
-            description=description if description is not None else agent_config.description,
-            args_schema=args_schema if args_schema is not None else agent_config.args_schema,
-            metadata=metadata if metadata is not None else agent_config.metadata,
-            cls=agent_config.cls,
-            instance=None,
+        Args:
+            agent_name: Name of the agent to copy
+            new_name: New name for the copied agent. If None, uses original name.
+            new_version: New version for the copied agent. If None, increments version.
+            **override_config: Configuration overrides
+            
+        Returns:
+            AgentConfig: New agent configuration
+        """
+        agent_config = await self.agent_context_manager.copy(
+            agent_name, new_name, new_version, **override_config
         )
-        
-        def agent_factory():
-            agent_config_dict = config.get(f"{new_agent_config.name}_agent", {})
-            # Agent requires workdir
-            if 'workdir' not in agent_config_dict:
-                agent_config_dict['workdir'] = config.workdir
-            if agent_config_dict:
-                return new_agent_config.cls(**agent_config_dict)
-            else:
-                return new_agent_config.cls(workdir=config.workdir)
-        
-        # Build agent instance
-        new_agent_config = await self.agent_context_manager.build(new_agent_config, agent_factory)
-        
-        return new_agent_config
+        self._registered_agents[agent_config.name] = agent_config
+        return agent_config
     
-    def get_info(self, agent_name: str) -> Optional[AgentConfig]:
+    async def get_info(self, agent_name: str) -> Optional[AgentConfig]:
         """Get agent configuration by name
         
         Args:
@@ -157,17 +143,17 @@ class ACPServer(BaseModel):
         Returns:
             AgentConfig: Agent configuration or None if not found
         """
-        return self.agent_context_manager.get_info(agent_name)
+        return await self.agent_context_manager.get_info(agent_name)
     
-    def list(self) -> List[str]:
+    async def list(self) -> List[str]:
         """List all registered agents
         
         Returns:
             List[str]: List of agent names
         """
-        return self.agent_context_manager.list()
+        return await self.agent_context_manager.list()
     
-    def get(self, agent_name: str) -> Optional[Agent]:
+    async def get(self, agent_name: str) -> Optional[Agent]:
         """Get agent instance by name
         
         Args:
@@ -176,7 +162,7 @@ class ACPServer(BaseModel):
         Returns:
             Agent: Agent instance or None if not found
         """
-        agent_config = self.agent_context_manager.get_info(agent_name)
+        agent_config = await self.get_info(agent_name)
         return agent_config.instance if agent_config else None
     
     async def __call__(self, name: str, input: Dict[str, Any], **kwargs) -> Any:
@@ -237,15 +223,17 @@ class ACPServer(BaseModel):
         success = await self.agent_context_manager.load_from_json(file_path, auto_initialize)
         if success:
             # Sync registered_agents
-            for agent_name in self.agent_context_manager.list():
-                agent_config = self.agent_context_manager.get_info(agent_name)
+            agent_names = await self.agent_context_manager.list()
+            for agent_name in agent_names:
+                agent_config = self.agent_context_manager._agent_configs.get(agent_name)
                 if agent_config:
                     self._registered_agents[agent_name] = agent_config
         return success
     
-    def cleanup(self):
+    async def cleanup(self):
         """Cleanup all agents using context manager."""
-        self.agent_context_manager.cleanup()
+        if hasattr(self, 'agent_context_manager') and self.agent_context_manager is not None:
+            self.agent_context_manager.cleanup()
 
 
 # Global ACP server instance
