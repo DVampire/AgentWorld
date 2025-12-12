@@ -478,6 +478,7 @@ class EnvironmentContextManager(BaseModel):
                 # If registering an instance, use its actions dictionary
                 if hasattr(env_instance, 'actions') and isinstance(env_instance.actions, dict):
                     actions = env_instance.actions.copy()
+                    # function_calling, text, and args_schema are computed on-demand via properties
             else:
                 # If registering a class, collect actions from class methods marked with @ecp.action
                 target = env_cls
@@ -493,6 +494,7 @@ class EnvironmentContextManager(BaseModel):
                             function=getattr(attr, '_action_function', None),
                             metadata=getattr(attr, '_metadata', {})
                         )
+                        # function_calling, text, and args_schema are computed on-demand via properties
                         actions[action_name] = action_config
             
             # Get metadata
@@ -650,6 +652,7 @@ class EnvironmentContextManager(BaseModel):
         if env_instance is not None:
             if hasattr(env_instance, 'actions') and isinstance(env_instance.actions, dict):
                 actions = env_instance.actions.copy()
+                # function_calling, text, and args_schema are computed on-demand via properties
         else:
             target = env_cls
             for attr_name in dir(target):
@@ -664,6 +667,7 @@ class EnvironmentContextManager(BaseModel):
                         function=getattr(attr, '_action_function', None),
                         metadata=getattr(attr, '_metadata', {})
                     )
+                    # function_calling, text, and args_schema are computed on-demand via properties
                     actions[action_name] = action_config
         
         # Get metadata

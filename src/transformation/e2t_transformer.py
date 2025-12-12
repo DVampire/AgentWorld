@@ -57,10 +57,17 @@ class E2TTransformer:
                             async def __call__(self, input: Dict[str, Any]) -> ToolResponse:
                                 """Execute the wrapped action."""
                                 try:
+                                    # Filter out non-action parameters that LLM might include
+                                    # These are typically from agent's ThinkOutput structure
+                                    filtered_input = {k: v for k, v in input.items() 
+                                                     if k not in ['action', 'task', 'step_id', 'status', 'result', 
+                                                                  'priority', 'category', 'parameters', 'after_step_id', 
+                                                                  'export_path']}
+                                    
                                     if asyncio.iscoroutinefunction(self._action_config.function):
-                                        result = await self._action_config.function(self._env_config.instance, **input)
+                                        result = await self._action_config.function(self._env_config.instance, **filtered_input)
                                     else:
-                                        result = self._action_config.function(self._env_config.instance, **input)
+                                        result = self._action_config.function(self._env_config.instance, **filtered_input)
                                     
                                     # Convert result to ToolResponse if needed
                                     if isinstance(result, ToolResponse):
@@ -87,28 +94,9 @@ class E2TTransformer:
                     WrappedToolClass = create_wrapped_tool_class()
                     wrapped_tool = WrappedToolClass()
                     
-                    # Get args_schema from metadata if available
-                    args_schema = None
-                    if action_config.metadata and 'args_schema' in action_config.metadata:
-                        args_schema = action_config.metadata['args_schema']
-                    elif hasattr(action_config, 'args_schema') and action_config.args_schema:
-                        args_schema = action_config.args_schema
-                    
-                    # Create ToolConfig
-                    tool_info = ToolConfig(
-                        id=0,  # Will be assigned by TCP
-                        name=action_name,
-                        description=action_config.description,
-                        enabled=True,
-                        version="1.0.0",
-                        cls=WrappedToolClass,
-                        config={},
-                        instance=wrapped_tool,
-                        metadata=action_config.metadata or {},
-                        args_schema=args_schema
-                    )
-                    
-                    await tcp.register(tool_info)
+                    # Register the tool instance directly (tcp.register expects Tool instance or class, not ToolConfig)
+                    # The ToolConfig will be created internally by tcp.register
+                    await tcp.register(wrapped_tool, override=True)
                     logger.info(f"| ✅ E2T: Tool {action_name} added to TCP")
                         
             return E2TResponse(

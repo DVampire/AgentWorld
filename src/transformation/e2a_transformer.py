@@ -141,17 +141,18 @@ class E2ATransformer:
                     # Call parent initialize first
                     await super().initialize()
                     
-                    # Get args_schemas from tools (which were converted from actions in e2t step)
+                    # Get args_schemas from ActionConfig properties (computed automatically)
                     if not self._args_schemas_initialized:
                         args_schemas = {}
                         for action_config in self._action_configs:
-                            # Get args_schema from TCP tool (since we converted actions to tools in e2t step)
+                            # Get args_schema directly from ActionConfig property (automatically computed)
                             try:
-                                tool = await tcp.get(action_config.name)
-                                if tool and hasattr(tool, 'args_schema') and tool.args_schema:
-                                    args_schemas[action_config.name] = tool.args_schema
+                                if action_config.function is not None:
+                                    args_schema = action_config.args_schema
+                                    if args_schema:
+                                        args_schemas[action_config.name] = args_schema
                             except Exception as e:
-                                logger.warning(f"| ⚠️ Could not get args_schema for tool {action_config.name}: {e}")
+                                logger.warning(f"| ⚠️ Could not get args_schema for action {action_config.name}: {e}")
                                 continue
                         
                         # Register additional args_schemas if any

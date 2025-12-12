@@ -130,6 +130,7 @@ class T2ETransformer:
                 if hasattr(tool_info, 'args_schema') and tool_info.args_schema:
                     action_metadata['args_schema'] = tool_info.args_schema
                 
+                # Create ActionConfig - function_calling, text, and args_schema are computed automatically
                 actions[tool_info.name] = ActionConfig(
                     env_name=env_name,
                     name=tool_info.name,

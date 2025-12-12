@@ -94,6 +94,12 @@ class A2TTransformer:
                 WrappedToolClass = create_wrapped_tool_class()
                 wrapped_tool = WrappedToolClass()
                 
+                # Get function_calling, text, and args_schema from Tool instance properties
+                # These are computed on-demand, so we access them directly
+                function_calling = wrapped_tool.function_calling
+                text = wrapped_tool.text
+                args_schema = wrapped_tool.args_schema
+                
                 tool_info = ToolConfig(
                     id=0,  # Will be assigned by TCP
                     name=agent_info.name,
@@ -104,7 +110,9 @@ class A2TTransformer:
                     config={},
                     instance=wrapped_tool,
                     metadata=agent_info.metadata or {},
-                    args_schema=agent_info.args_schema
+                    function_calling=function_calling,
+                    text=text,
+                    args_schema=args_schema
                 )
                 
                 await tcp.register(tool_info)

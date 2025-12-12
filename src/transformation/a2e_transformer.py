@@ -121,6 +121,7 @@ class A2ETransformer:
                 if agent_info.args_schema:
                     action_metadata['args_schema'] = agent_info.args_schema
                 
+                # Create ActionConfig - function_calling, text, and args_schema are computed automatically
                 actions[agent_info.name] = ActionConfig(
                     env_name=env_name,
                     name=agent_info.name,
