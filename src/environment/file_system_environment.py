@@ -74,7 +74,8 @@ class FileSystemEnvironment(Environment):
     async def read(self, 
                     file_path: str, 
                     start_line: Optional[int] = None, 
-                    end_line: Optional[int] = None) -> Dict[str, Any]:
+                    end_line: Optional[int] = None,
+                    **kwargs) -> Dict[str, Any]:
         """Read a file from the file system.
         
         Args:
@@ -122,7 +123,8 @@ class FileSystemEnvironment(Environment):
     async def write(self, 
                      file_path: str, 
                      content: str, 
-                     mode: str = "w") -> Dict[str, Any]:
+                     mode: str = "w",
+                     **kwargs) -> Dict[str, Any]:
         """Write content to a file.
         
         Args:
@@ -163,7 +165,8 @@ class FileSystemEnvironment(Environment):
                        old_string: str, 
                        new_string: str, 
                        start_line: Optional[int] = None, 
-                       end_line: Optional[int] = None) -> Dict[str, Any]:
+                       end_line: Optional[int] = None,
+                       **kwargs) -> Dict[str, Any]:
         """Replace a string in a file.
         
         Args:
@@ -203,7 +206,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "delete", 
                 description = "Delete a file from the file system.")
-    async def delete(self, file_path: str) -> Dict[str, Any]:
+    async def delete(self, file_path: str, **kwargs) -> Dict[str, Any]:
         """Delete a file from the file system.
         
         Args:
@@ -233,7 +236,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "copy", 
                 description = "Copy a file from source to destination.")
-    async def copy(self, src_path: str, dst_path: str) -> Dict[str, Any]:
+    async def copy(self, src_path: str, dst_path: str, **kwargs) -> Dict[str, Any]:
         """Copy a file from source to destination.
         
         Args:
@@ -265,7 +268,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "move",
                 description = "Move a file from source to destination.")
-    async def move(self, src_path: str, dst_path: str) -> Dict[str, Any]:
+    async def move(self, src_path: str, dst_path: str, **kwargs) -> Dict[str, Any]:
         """Move a file from source to destination.
         
         Args:
@@ -300,7 +303,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "rename",
                 description = "Rename a file or directory.")
-    async def rename(self, old_path: str, new_path: str) -> Dict[str, Any]:
+    async def rename(self, old_path: str, new_path: str, **kwargs) -> Dict[str, Any]:
         """Rename a file or directory.
         
         Args:
@@ -336,7 +339,8 @@ class FileSystemEnvironment(Environment):
     @ecp.action(name = "get_info",
                 description = "Get detailed information about a file.")
     async def get_info(self, file_path: str,
-                        include_stats: Optional[bool] = True) -> Dict[str, Any]:
+                        include_stats: Optional[bool] = True,
+                        **kwargs) -> Dict[str, Any]:
         """Get detailed information about a file.
         
         Args:
@@ -382,7 +386,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "create_dir",
                 description = "Create a directory.")
-    async def create_dir(self, dir_path: str) -> Dict[str, Any]:
+    async def create_dir(self, dir_path: str, **kwargs) -> Dict[str, Any]:
         """Create a directory.
         
         Args:
@@ -412,7 +416,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "delete_dir",
                 description = "Delete a directory.")
-    async def delete_dir(self, dir_path: str) -> Dict[str, Any]:
+    async def delete_dir(self, dir_path: str, **kwargs) -> Dict[str, Any]:
         """Delete a directory.
         
         Args:
@@ -445,7 +449,8 @@ class FileSystemEnvironment(Environment):
     async def listdir(self, 
                        dir_path: str, 
                        show_hidden: bool = False, 
-                       file_types: Optional[List[str]] = None) -> Dict[str, Any]:
+                       file_types: Optional[List[str]] = None,
+                       **kwargs) -> Dict[str, Any]:
         """List directory contents.
         
         Args:
@@ -508,7 +513,8 @@ class FileSystemEnvironment(Environment):
                     max_depth: Optional[int] = 3, 
                     show_hidden: bool = False, 
                     exclude_patterns: Optional[List[str]] = None, 
-                    file_types: Optional[List[str]] = None) -> Dict[str, Any]:
+                    file_types: Optional[List[str]] = None,
+                    **kwargs) -> Dict[str, Any]:
         """Show directory tree structure.
         
         Args:
@@ -559,7 +565,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "describe",
                 description = "Describe the file system with directory structure and file information.")
-    async def describe(self) -> Dict[str, Any]:
+    async def describe(self, **kwargs) -> Dict[str, Any]:
         """Describe the file system with directory structure and file information.
         
         Args:
@@ -614,7 +620,8 @@ class FileSystemEnvironment(Environment):
                       search_type: str = "name", 
                       file_types: Optional[List[str]] = None,
                       case_sensitive: Optional[bool] = False, 
-                      max_results: Optional[int] = 50) -> Dict[str, Any]:
+                      max_results: Optional[int] = 50,
+                      **kwargs) -> Dict[str, Any]:
         """Search for files by name or content.
         
         Args:
@@ -676,7 +683,7 @@ class FileSystemEnvironment(Environment):
     
     @ecp.action(name = "change_permissions",
                 description = "Change file or directory permissions.")
-    async def change_permissions(self, file_path: str, permissions: str) -> Dict[str, Any]:
+    async def change_permissions(self, file_path: str, permissions: str, **kwargs) -> Dict[str, Any]:
         """Change file or directory permissions.
         
         Args:

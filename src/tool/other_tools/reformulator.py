@@ -38,6 +38,7 @@ class ReformulatorTool(Tool):
         self, 
         task: str, 
         messages: List[Dict[str, Any]], 
+        **kwargs
     ) -> ToolResponse:
         """
         Reformulate the final answer from a conversation transcript.

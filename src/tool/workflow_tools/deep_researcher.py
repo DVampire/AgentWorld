@@ -95,7 +95,8 @@ class DeepResearcherTool(Tool):
     async def __call__(self, 
                        task: str, 
                        image: Optional[str] = None, 
-                       filter_year: Optional[int] = None) -> ToolResponse:
+                       filter_year: Optional[int] = None,
+                       **kwargs) -> ToolResponse:
         """
         Execute deep research workflow.
         

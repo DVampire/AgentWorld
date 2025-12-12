@@ -103,7 +103,7 @@ class Tool(BaseModel):
         schema = self._build_parameter_schema()
         return deepcopy(schema)
 
-    async def __call__(self, input: Dict[str, Any]) -> ToolResponse:
+    async def __call__(self, input: Dict[str, Any], **kwargs) -> ToolResponse:
         """
         Execute the tool asynchronously.
         
@@ -334,6 +334,10 @@ class Tool(BaseModel):
             
             # Skip generic "input" parameter
             if name == "input" and len(signature.parameters) == 2:  # self + input
+                continue
+            
+            # Skip VAR_KEYWORD (**kwargs) and VAR_POSITIONAL (*args) parameters
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
                 continue
             
             # Get type annotation

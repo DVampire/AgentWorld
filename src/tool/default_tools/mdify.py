@@ -52,7 +52,7 @@ class MdifyTool(Tool):
         if self.converter is None:
             self.converter = MarkitdownConverter(timeout=self.timeout)
 
-    async def __call__(self, file_path: str, output_format: str = "markdown") -> ToolResponse:
+    async def __call__(self, file_path: str, output_format: str = "markdown", **kwargs) -> ToolResponse:
         """
         Convert a file to markdown asynchronously.
 

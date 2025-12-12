@@ -20,7 +20,7 @@ class WebFetcherTool(Tool):
         """A tool for fetching web content asynchronously."""
         super().__init__(**kwargs)
 
-    async def __call__(self, url: str) -> ToolResponse:
+    async def __call__(self, url: str, **kwargs) -> ToolResponse:
         """
         Fetch content from a given URL asynchronously.
 

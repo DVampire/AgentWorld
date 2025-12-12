@@ -383,7 +383,7 @@ class DeepAnalyzerTool(Tool):
         
         return result
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None) -> ToolResponse:
+    async def __call__(self, task: str, files: Optional[List[str]] = None, **kwargs) -> ToolResponse:
         """Execute deep analysis workflow.
 
         Args:

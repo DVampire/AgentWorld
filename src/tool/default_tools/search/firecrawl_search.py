@@ -175,6 +175,7 @@ class FirecrawlSearch(Tool):
         country: Optional[str] = "us",
         lang: Optional[str] = "en",
         filter_year: Optional[int] = 2025,
+        **kwargs
     ) -> ToolResponse:
         """
         Firecrawl search tool.

@@ -25,7 +25,7 @@ class LeetCodeTool(Tool):
         """Initialize the LeetCode tool."""
         super().__init__(**kwargs)
 
-    async def __call__(self, slug: Optional[str] = None, problem_id: Optional[int] = None) -> ToolResponse:
+    async def __call__(self, slug: Optional[str] = None, problem_id: Optional[int] = None, **kwargs) -> ToolResponse:
         """
         Fetch LeetCode problem information by slug or problem ID.
 

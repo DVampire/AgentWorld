@@ -58,6 +58,7 @@ class WebSearcherTool(Tool):
         lang: Optional[str] = "en",
         country: Optional[str] = "us",
         filter_year: Optional[int] = None,
+        **kwargs
     ) -> ToolResponse:
         """
         Execute a Web search and return detailed search results with deep research.

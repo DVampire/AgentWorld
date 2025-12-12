@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from src.logger import logger
 from src.tool.server import tcp
-from src.tool.types import Tool, ToolResponse, ToolConfig
+from src.tool.types import Tool, ToolResponse
 from src.environment.server import ecp
 from src.transformation.types import E2TRequest, E2TResponse
 
@@ -54,20 +54,16 @@ class E2TTransformer:
                                 self._action_config = action_cfg
                                 self._env_config = env_cfg
                             
-                            async def __call__(self, input: Dict[str, Any]) -> ToolResponse:
+                            async def __call__(self, input: Dict[str, Any], **kwargs) -> ToolResponse:
                                 """Execute the wrapped action."""
                                 try:
-                                    # Filter out non-action parameters that LLM might include
-                                    # These are typically from agent's ThinkOutput structure
-                                    filtered_input = {k: v for k, v in input.items() 
-                                                     if k not in ['action', 'task', 'step_id', 'status', 'result', 
-                                                                  'priority', 'category', 'parameters', 'after_step_id', 
-                                                                  'export_path']}
+                                    # Merge input dict with kwargs - all action methods now support **kwargs
+                                    merged_input = {**input, **kwargs}
                                     
                                     if asyncio.iscoroutinefunction(self._action_config.function):
-                                        result = await self._action_config.function(self._env_config.instance, **filtered_input)
+                                        result = await self._action_config.function(self._env_config.instance, **merged_input)
                                     else:
-                                        result = self._action_config.function(self._env_config.instance, **filtered_input)
+                                        result = self._action_config.function(self._env_config.instance, **merged_input)
                                     
                                     # Convert result to ToolResponse if needed
                                     if isinstance(result, ToolResponse):

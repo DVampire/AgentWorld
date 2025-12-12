@@ -17,7 +17,7 @@ class DoneTool(Tool):
         """A tool for indicating that the task has been completed."""
         super().__init__(**kwargs)
 
-    async def __call__(self, result: str) -> ToolResponse:
+    async def __call__(self, result: str, **kwargs) -> ToolResponse:
         """
         Indicate that the task has been completed.
 

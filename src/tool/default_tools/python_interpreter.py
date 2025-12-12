@@ -58,7 +58,7 @@ class PythonInterpreterTool(Tool):
             )
             self.python_evaluator.send_tools(self.base_python_tools)
 
-    async def __call__(self, code: str) -> ToolResponse:
+    async def __call__(self, code: str, **kwargs) -> ToolResponse:
         """
         Execute the provided Python code.
 

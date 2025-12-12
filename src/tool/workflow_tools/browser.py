@@ -43,7 +43,7 @@ class BrowserTool(Tool):
             os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| Browser tool base directory: {self.base_dir}")
                 
-    async def __call__(self, task: str) -> ToolResponse:
+    async def __call__(self, task: str, **kwargs) -> ToolResponse:
         """Use the browser to interact with the internet to complete the task.
 
         Args:

@@ -88,6 +88,7 @@ class TodoTool(Tool):
         parameters: Optional[Dict[str, Any]] = None,
         after_step_id: Optional[str] = None,
         export_path: Optional[str] = None,
+        **kwargs
     ) -> ToolResponse:
         """
         Execute a todo action asynchronously.

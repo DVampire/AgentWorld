@@ -89,6 +89,7 @@ BASE_BUILTIN_MODULES = [
 ]
 
 BASE_PYTHON_TOOLS = {
+    "open": open,
     "print": custom_print,
     "isinstance": isinstance,
     "range": range,

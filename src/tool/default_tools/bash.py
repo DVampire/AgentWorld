@@ -25,7 +25,7 @@ class BashTool(Tool):
         """A tool for executing bash commands asynchronously."""
         super().__init__(**kwargs)
     
-    async def __call__(self, command: str) -> ToolResponse:
+    async def __call__(self, command: str, **kwargs) -> ToolResponse:
         """Execute a bash command asynchronously.
         
         Args:
