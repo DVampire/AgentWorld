@@ -141,7 +141,7 @@ class MobileAgent(Agent):
         model_response = await model_manager(
             model=self.model_name,
             messages=messages,
-            structured_output=SessionInfo
+            response_format=SessionInfo
         )
         result = model_response.extra["parsed_model"]
         

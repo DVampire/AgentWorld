@@ -212,7 +212,10 @@ class Tracer:
         Raises:
             IOError: If the file cannot be written.
         """
-        with file_lock(file_path):
+        # Ensure file_path is a string
+        file_path = str(file_path)
+        
+        async with file_lock(file_path):
         
             # Prepare metadata
             metadata = {
@@ -241,7 +244,10 @@ class Tracer:
                 "sessions": sessions
             }
             
-            file_path.parent.mkdir(parents=True, exist_ok=True)
+            # Create parent directories if they don't exist
+            parent_dir = os.path.dirname(file_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(save_data, f, indent=4, ensure_ascii=False)
     
@@ -277,7 +283,10 @@ class Tracer:
             FileNotFoundError: If the file does not exist.
             json.JSONDecodeError: If the file contains invalid JSON.
         """
-        with file_lock(file_path):
+        # Ensure file_path is a string
+        file_path = str(file_path)
+        
+        async with file_lock(file_path):
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"JSON file not found: {file_path}")
             

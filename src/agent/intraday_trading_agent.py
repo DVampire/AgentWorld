@@ -181,7 +181,7 @@ class IntradayDayAnalysisAgent(Agent):
             model_response = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                structured_output=self.day_analysis_output_schema
+                response_format=self.day_analysis_output_schema
             )
             response = model_response.extra["parsed_model"]
             
@@ -453,7 +453,7 @@ class IntradayMinuteTradingAgent(Agent):
             model_response = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                structured_output=self.MinuteTradingOutput
+                response_format=self.MinuteTradingOutput
             )
             minute_trading_output = model_response.extra["parsed_model"]
             
@@ -603,7 +603,7 @@ class IntradayTradingAgent(Agent):
         model_response = await model_manager(
             model=self.model_name,
             messages=messages,
-            structured_output=SessionInfo
+            response_format=SessionInfo
         )
         result = model_response.extra["parsed_model"]
         

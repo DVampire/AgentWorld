@@ -344,7 +344,7 @@ class OfflineTradingAgent(Agent):
             model_response = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                structured_output=self.ThinkOutput
+                response_format=self.ThinkOutput
             )
             think_output = model_response.extra["parsed_model"]
             

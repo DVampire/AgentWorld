@@ -153,7 +153,7 @@ class ToolCallingAgent(Agent):
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                structured_output=self.ThinkOutput
+                response_format=self.ThinkOutput
             )
             think_output = think_output.extra["parsed_model"]
             

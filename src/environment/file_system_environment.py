@@ -709,15 +709,15 @@ class FileSystemEnvironment(Environment):
     async def get_state(self) -> Dict[str, Any]:
         """Get the state of the file system environment."""
         try:
-            state = await self.describe()
-            state = dedent(f"""
+            describe_result = await self.describe()
+            state_str = dedent(f"""
                 <info>
-                {state["message"]}
+                {describe_result["message"]}
                 </info>
             """)
-            extra = state["extra"]
+            extra = describe_result["extra"]
             return {
-                "state": state,
+                "state": state_str,
                 "extra": extra
             }
         except Exception as e:

@@ -132,29 +132,30 @@ class TodoTool(Tool):
     def _load_steps(self) -> None:
         """Load steps from JSON file."""
         try:
-            with file_lock(self.steps_file):
-                if os.path.exists(self.steps_file):
-                    with open(self.steps_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        self.steps = [Step(**step_data) for step_data in data]
-                else:
-                    self.steps = []
+            # Note: Not using file_lock here since __init__ cannot be async
+            # This is safe during initialization as there's no concurrency
+            if os.path.exists(self.steps_file):
+                with open(self.steps_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.steps = [Step(**step_data) for step_data in data]
+            else:
+                self.steps = []
         except Exception:
             self.steps = []
     
-    def _save_steps(self) -> None:
+    async def _save_steps(self) -> None:
         """Save steps to JSON file."""
         try:
-            with file_lock(self.steps_file):
+            async with file_lock(self.steps_file):
                 with open(self.steps_file, 'w', encoding='utf-8') as f:
                     json.dump([step.model_dump() for step in self.steps], f, indent=2, ensure_ascii=False)
         except Exception:
             pass
     
-    def _sync_to_markdown(self) -> None:
+    async def _sync_to_markdown(self) -> None:
         """Sync steps list to markdown file."""
         try:
-            with file_lock(self.todo_file):
+            async with file_lock(self.todo_file):
                 content = "# Todo List\n\n"
                 
                 for step in self.steps:
@@ -249,8 +250,8 @@ class TodoTool(Tool):
             self.steps.append(new_step)
         
         # Save and sync
-        self._save_steps()
-        self._sync_to_markdown()
+        await self._save_steps()
+        await self._sync_to_markdown()
         
         if after_step_id:
             return ToolResponse(success=True, message=f"✅ Added step {step_id} after {after_step_id}: {task} (priority: {priority})")
@@ -284,8 +285,8 @@ class TodoTool(Tool):
         step.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         
         # Save and sync
-        self._save_steps()
-        self._sync_to_markdown()
+        await self._save_steps()
+        await self._sync_to_markdown()
         
         return ToolResponse(success=True, message=f"✅ Completed step {step_id} with status: {status}")
     
@@ -313,8 +314,8 @@ class TodoTool(Tool):
         step.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
         
         # Save and sync
-        self._save_steps()
-        self._sync_to_markdown()
+        await self._save_steps()
+        await self._sync_to_markdown()
         
         return ToolResponse(success=True, message=f"✅ Updated step {step_id}")
     
@@ -364,8 +365,8 @@ class TodoTool(Tool):
         self.steps = [step for step in self.steps if step.status == "pending"]
         
         # Save and sync
-        self._save_steps()
-        self._sync_to_markdown()
+        await self._save_steps()
+        await self._sync_to_markdown()
         
         return ToolResponse(success=True, message=f"✅ Removed {len(completed_steps)} completed step(s)")
     
@@ -385,7 +386,7 @@ class TodoTool(Tool):
         
         try:
             # Ensure the todo.md file is up to date
-            self._sync_to_markdown()
+            await self._sync_to_markdown()
             
             if not os.path.exists(self.todo_file):
                 return ToolResponse(success=False, message="No todo file found. Use 'add' action to create your first step.")
@@ -420,7 +421,7 @@ class TodoTool(Tool):
             return
         try:
             # Ensure the todo.md file is up to date
-            self._sync_to_markdown()
+            await self._sync_to_markdown()
             
             if not os.path.exists(self.todo_file):
                 return

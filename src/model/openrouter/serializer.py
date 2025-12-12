@@ -439,7 +439,22 @@ class OpenRouterChatSerializer:
                         continue
                     
                     # Recursively process nested structures
-                    if key in ["properties", "items"]:
+                    if key == "items":
+                        # Process items and ensure it has type if it's a dict
+                        processed_items = optimize_schema(value, defs)
+                        if isinstance(processed_items, dict) and "type" not in processed_items:
+                            # If items is a dict without type, infer it from context
+                            # Check if it has properties (object) or other indicators
+                            if "properties" in processed_items:
+                                processed_items = {**processed_items, "type": "object"}
+                            elif "$ref" in processed_items:
+                                # Keep $ref as is, it will be resolved
+                                pass
+                            else:
+                                # Default to "string" for simple types
+                                processed_items = {**processed_items, "type": "string"}
+                        optimized[key] = processed_items
+                    elif key in ["properties"]:
                         optimized[key] = optimize_schema(value, defs)
                     elif key == "anyOf" or key == "oneOf" or key == "allOf":
                         # Handle union types
@@ -448,6 +463,16 @@ class OpenRouterChatSerializer:
                         optimized[key] = optimize_schema(value, defs)
                     else:
                         optimized[key] = value
+                
+                # CRITICAL: Ensure array items have type key (double-check after processing)
+                if optimized.get("type") == "array" and "items" in optimized:
+                    items = optimized["items"]
+                    if isinstance(items, dict) and "type" not in items and "$ref" not in items:
+                        # If items is a dict without type and no $ref, add default type
+                        if "properties" in items:
+                            optimized["items"] = {**items, "type": "object"}
+                        else:
+                            optimized["items"] = {**items, "type": "string"}
                 
                 # CRITICAL: Add additionalProperties: false to ALL objects for OpenRouter
                 if optimized.get("type") == "object":
