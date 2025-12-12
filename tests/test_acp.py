@@ -20,6 +20,7 @@ from src.memory import memory_manager
 from src.tool import tcp
 from src.environment import ecp
 from src.agent import acp
+from src.transformation import transformation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -74,6 +75,11 @@ async def main():
     logger.info("| 🤖 Initializing agents...")
     await acp.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents initialized: {await acp.list()}")
+    
+    # Transformation ECP to TCP
+    logger.info("| 🔄 Transformation start...")
+    await transformation.transform(type="e2t", env_names=config.env_names)
+    logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
