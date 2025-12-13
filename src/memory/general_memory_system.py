@@ -8,20 +8,16 @@ Architecture:
 
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
-from enum import Enum
 from pydantic import BaseModel, Field
 import json
-from pathlib import Path
-
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_community.chat_message_histories import ChatMessageHistory
-from pydantic import BaseModel, Field
+import os
 
 from src.logger import logger
-from src.models import model_manager
+from src.model import model_manager
 from src.utils import dedent
-from src.memory.registry import MEMORY_SYSTEM
-from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo
+from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
+from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo, Memory
+from src.utils import file_lock
 
 class CombinedMemoryOutput(BaseModel):
     """Structured output for combined summary and insight generation"""
@@ -34,7 +30,6 @@ class ProcessDecision(BaseModel):
 
 class CombinedMemory:
     """Combined memory that handles both summaries and insights using structured output"""
-    
     def __init__(self, 
                  model_name: str = "gpt-4.1", 
                  max_summaries: int = 20,
@@ -45,27 +40,14 @@ class CombinedMemory:
         self.max_summaries = max_summaries
         self.max_insights = max_insights
         
-        self.llm = None
         self.events: List[ChatEvent] = []
         # Store the candidate chat history that not been processed yet
-        self.candidate_chat_history = ChatMessageHistory()
+        self.candidate_chat_history: List[Message] = []
         self.summaries: List[Summary] = []
         self.insights: List[Insight] = []
-        self._init_llm()
-    
-    def _init_llm(self):
-        """Initialize LLM for combined memory processing"""
-        try:
-            self.llm = model_manager.get(self.model_name)
-        except Exception as e:
-            logger.warning(f"Could not initialize LLM for combined memory: {e}")
-            self.llm = None
     
     async def add_event(self, event: Union[ChatEvent, List[ChatEvent]]):
         """Process conversation events and extract both summaries and insights"""
-        if not self.llm:
-            return
-        
         # Add events to chat history
         if isinstance(event, ChatEvent):
             events = [event]
@@ -74,14 +56,14 @@ class CombinedMemory:
             
         for event in events:
             self.events.append(event)
-            if event.event_type == EventType.ACTION_STEP or event.event_type == EventType.TASK_END:
+            if event.event_type == EventType.TOOL_STEP or event.event_type == EventType.TASK_END:
                 content = str(event)
                 if event.agent_name:
                     # AI output
-                    self.candidate_chat_history.add_ai_message(content)
+                    self.candidate_chat_history.append(AssistantMessage(content=content))
                 else:
                     # User input
-                    self.candidate_chat_history.add_user_message(content)
+                    self.candidate_chat_history.append(HumanMessage(content=content))
         
         # Let LLM decide if we need to process and generate summaries/insights
         should_process = await self._check_should_process_memory()
@@ -91,7 +73,7 @@ class CombinedMemory:
     async def _get_new_lines_text(self) -> str:
         """Get new lines from chat history"""
         new_lines = []
-        for msg in self.candidate_chat_history.messages:
+        for msg in self.candidate_chat_history:
             if isinstance(msg, HumanMessage):
                 new_lines.append(
                 dedent(f"""
@@ -100,12 +82,12 @@ class CombinedMemory:
                 </human>
                 """)
                 )
-            elif isinstance(msg, AIMessage):
+            elif isinstance(msg, AssistantMessage):
                 new_lines.append(
                 dedent(f"""
-                <ai>
+                <assistant>
                 {msg.content}
-                </ai>
+                </assistant>
                 """)
                 )
         new_lines_text = chr(10).join(new_lines)
@@ -124,7 +106,7 @@ class CombinedMemory:
 
     async def _check_should_process_memory(self) -> bool:
         """Check if we should process memory based on conversation content"""
-        if not self.llm or len(self.candidate_chat_history.messages) <= 3: # If there are fewer than 3 events, do not process the memory.
+        if len(self.candidate_chat_history) <= 3:  # If there are fewer than 3 events, do not process the memory.
             return False
             
         new_lines = await self._get_new_lines_text()
@@ -132,7 +114,6 @@ class CombinedMemory:
         
         # Create decision prompt
         decision_prompt = dedent(f"""You are analyzing a conversation to decide whether to process it and generate summaries and insights.
-
         Current conversation has {self.size()} events.
 
         Decision criteria:
@@ -150,11 +131,24 @@ class CombinedMemory:
         Decide if you should process the memory.""")
                 
         try:
-            # Use structured LLM for reliable JSON output
-            structured_llm = self.llm.with_structured_output(ProcessDecision)
-            decision_response = await structured_llm.ainvoke(decision_prompt)
-            logger.info(f"| Memory processing decision: {decision_response.should_process} - {decision_response.reason}")
-            return decision_response.should_process
+            # Build messages
+            messages = [
+                SystemMessage(content="You are a memory processing decision system. Always respond with valid JSON."),
+                HumanMessage(content=decision_prompt)
+            ]
+            
+            # Call model manager with BaseModel response_format
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                response_format=ProcessDecision
+            )
+            processed_decision_response = response.extra["parsed_model"]
+            should_process = processed_decision_response.should_process
+            reason = processed_decision_response.reason
+            
+            logger.info(f"| Memory processing decision: {should_process} - {reason}")
+            return should_process
                 
         except Exception as e:
             logger.warning(f"Failed to check if should process memory: {e}")
@@ -162,7 +156,7 @@ class CombinedMemory:
     
     async def _process_memory(self):
         """Process memory and generate summaries and insights"""
-        if not self.llm or not self.candidate_chat_history.messages:
+        if not self.candidate_chat_history:
             return
             
         new_lines = await self._get_new_lines_text()
@@ -170,13 +164,11 @@ class CombinedMemory:
         
         # Create processing prompt using the combined template
         prompt = dedent(f"""Analyze the conversation events and extract both summaries and insights.
-
         <intro>
         For summaries, focus on:
-        1. Key decisions and actions taken
+        1. Key decisions and tools taken
         2. Important information exchanged
         3. Task progress and outcomes
-
         For insights, look for:
         1. Successful strategies and patterns
         2. Mistakes or failures to avoid
@@ -211,11 +203,30 @@ class CombinedMemory:
         """)
         
         try:
-            structured_llm = self.llm.with_structured_output(CombinedMemoryOutput)
-            response = await structured_llm.ainvoke(prompt)
+            # Build messages
+            messages = [
+                SystemMessage(content="You are a memory processing system. Always respond with valid JSON."),
+                HumanMessage(content=prompt)
+            ]
             
-            new_summaries = response.summaries
-            new_insights = response.insights
+            # Call model manager with BaseModel response_format
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                response_format=CombinedMemoryOutput
+            )
+            
+            # Check if response was successful and contains parsed model
+            if not response.success:
+                raise ValueError(f"Model call failed: {response.message}")
+            
+            if not response.extra or "parsed_model" not in response.extra:
+                raise ValueError(f"Response does not contain parsed_model. Response: {response.message}")
+            
+            combined_memory_output_response = response.extra["parsed_model"]
+            
+            new_summaries = combined_memory_output_response.summaries
+            new_insights = combined_memory_output_response.insights
             
             # Update summaries and insights
             self.summaries.extend(new_summaries)
@@ -277,16 +288,26 @@ class CombinedMemory:
             return self.insights
         return self.insights[-n:] if len(self.insights) > n else self.insights
 
-@MEMORY_SYSTEM.register_module(name="general_memory_system", force=True)
-class GeneralMemorySystem:
+class GeneralMemorySystem(Memory):
     """Memory system that combines different types of memory for comprehensive agent memory management."""
     
     def __init__(self, 
+                 base_dir: Optional[str] = None,
                  model_name: str = "gpt-4.1",
-                 max_summaries: int = 20,
-                 max_insights: int = 100
+                 max_summaries: int = 10,
+                 max_insights: int = 10,
+                 **kwargs
                  ):
+        super().__init__(**kwargs)
         
+        if base_dir is not None:
+            self.base_dir = base_dir
+        
+        if self.base_dir is not None:
+            os.makedirs(self.base_dir, exist_ok=True)
+        logger.info(f"| General memory system base directory: {self.base_dir}")
+        self.save_path = os.path.join(self.base_dir, "memory_system.json")
+            
         self.model_name = model_name
         self.max_summaries = max_summaries
         self.max_insights = max_insights
@@ -306,7 +327,13 @@ class GeneralMemorySystem:
                             task_id: Optional[str] = None, 
                             description: Optional[str] = None
                             ) -> str:
-        """Start new session with MemorySystem"""
+        """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
+        # Auto-load from JSON if file exists and save_path is set
+        if self.save_path and os.path.exists(self.save_path):
+            logger.info(f"| 📂 Loading memory from JSON: {self.save_path}")
+            await self.load_from_json(self.save_path)
+            logger.info(f"| ✅ Memory loaded from JSON")
+        
         session_info = SessionInfo(
             session_id=session_id,
             agent_name=agent_name,
@@ -316,17 +343,18 @@ class GeneralMemorySystem:
         self.session_info[session_id] = session_info
         self.current_session_id = session_id
         
-        # Initialize CombinedMemory for this session
-        self.session_memory[session_id] = CombinedMemory(
-            model_name=self.model_name, 
-            max_summaries=self.max_summaries,
-            max_insights=self.max_insights
-        )
+        # Initialize CombinedMemory for this session if it doesn't exist
+        if session_id not in self.session_memory:
+            self.session_memory[session_id] = CombinedMemory(
+                model_name=self.model_name, 
+                max_summaries=self.max_summaries,
+                max_insights=self.max_insights
+            )
         
         return session_id
     
     async def end_session(self, session_id: Optional[str] = None):
-        """End session"""
+        """End session. Automatically saves to JSON if save_path is set."""
         session_id = await self._check_session_id(session_id)
             
         if session_id and session_id in self.session_info:
@@ -334,6 +362,10 @@ class GeneralMemorySystem:
             
             if session_id == self.current_session_id:
                 self.current_session_id = None
+            
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
     async def add_event(self,
                         step_number: int,
@@ -373,6 +405,10 @@ class GeneralMemorySystem:
     
         if session_id in self.session_memory:
             await self.session_memory[session_id].add_event(event)
+            
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
     async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
         session_id = await self._check_session_id(session_id)
@@ -474,55 +510,55 @@ class GeneralMemorySystem:
         Returns:
             Path to the saved file
         """
-        file_path = Path(file_path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Prepare metadata
-        metadata = {
-            "memory_system_type": "general_memory_system",
-            "current_session_id": self.current_session_id,
-            "session_ids": list(self.session_info.keys())
-        }
-        
-        # Prepare sessions data
-        sessions = {}
-        for session_id in self.session_info.keys():
-            session_data = {
-                "session_info": None,
-                "session_memory": {
-                    "events": [],
-                    "summaries": [],
-                    "insights": []
-                }
+        async with file_lock(file_path):
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Prepare metadata
+            metadata = {
+                "memory_system_type": "general_memory_system",
+                "current_session_id": self.current_session_id,
+                "session_ids": list(self.session_info.keys())
             }
             
-            # Save session info
-            if session_id in self.session_info:
-                session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
-            
-            # Save session memory
-            if session_id in self.session_memory:
-                session_memory = self.session_memory[session_id]
-                session_data["session_memory"] = {
-                    "events": [event.model_dump(mode="json") for event in session_memory.events],
-                    "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
-                    "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+            # Prepare sessions data
+            sessions = {}
+            for session_id in self.session_info.keys():
+                session_data = {
+                    "session_info": None,
+                    "session_memory": {
+                        "events": [],
+                        "summaries": [],
+                        "insights": []
+                    }
                 }
+                
+                # Save session info
+                if session_id in self.session_info:
+                    session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
+                
+                # Save session memory
+                if session_id in self.session_memory:
+                    session_memory = self.session_memory[session_id]
+                    session_data["session_memory"] = {
+                        "events": [event.model_dump(mode="json") for event in session_memory.events],
+                        "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                        "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                    }
+                
+                sessions[session_id] = session_data
             
-            sessions[session_id] = session_data
-        
-        # Prepare save data
-        save_data = {
-            "metadata": metadata,
-            "sessions": sessions
-        }
-        
-        # Save to file
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(save_data, f, indent=2, ensure_ascii=False, default=str)
-        
-        logger.info(f"| 💾 Memory saved to {file_path}")
-        return str(file_path)
+            # Prepare save data
+            save_data = {
+                "metadata": metadata,
+                "sessions": sessions
+            }
+            
+            # Save to file
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(save_data, f, indent=4, ensure_ascii=False)
+            
+            logger.info(f"| 💾 Memory saved to {file_path}")
+            return str(file_path)
     
     async def load_from_json(self, file_path: str) -> bool:
         """Load memory system state from JSON file.
@@ -553,86 +589,91 @@ class GeneralMemorySystem:
         Returns:
             True if loaded successfully, False otherwise
         """
-        file_path = Path(file_path)
-        
-        if not file_path.exists():
-            logger.warning(f"| ⚠️  Memory file not found: {file_path}")
-            return False
-        
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                load_data = json.load(f)
+        logger.debug(f"| 🔒 Acquiring file lock for: {file_path}")
+        async with file_lock(file_path):
+            logger.debug(f"| 🔓 File lock acquired for: {file_path}")
+            if not os.path.exists(file_path):
+                logger.warning(f"| ⚠️  Memory file not found: {file_path}")
+                return False
             
-            # Validate format
-            if "metadata" not in load_data or "sessions" not in load_data:
-                raise ValueError(
-                    f"Invalid memory format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
-                    f"got keys: {list(load_data.keys())}"
-                )
-            
-            # Restore metadata
-            metadata = load_data.get("metadata", {})
-            self.current_session_id = metadata.get("current_session_id")
-            
-            # Restore sessions
-            sessions_data = load_data.get("sessions", {})
-            
-            for session_id, session_data in sessions_data.items():
-                # Restore session info
-                session_info_data = session_data.get("session_info")
-                if session_info_data:
-                    # Parse datetime strings
-                    if session_info_data.get("start_time"):
-                        session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
-                    if session_info_data.get("end_time"):
-                        session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
-                    
-                    self.session_info[session_id] = SessionInfo(**session_info_data)
+            try:
+                logger.debug(f"| 📖 Reading JSON file: {file_path}")
+                with open(file_path, "r", encoding="utf-8") as f:
+                    load_data = json.load(f)
+                logger.debug(f"| ✅ JSON file read successfully")
                 
-                # Ensure session memory exists
-                if session_id not in self.session_memory:
-                    await self.start_session(
-                        session_id=session_id,
-                        agent_name=self.session_info.get(session_id).agent_name if session_id in self.session_info else None,
-                        task_id=self.session_info.get(session_id).task_id if session_id in self.session_info else None,
-                        description=self.session_info.get(session_id).description if session_id in self.session_info else None,
+                # Validate format
+                if "metadata" not in load_data or "sessions" not in load_data:
+                    raise ValueError(
+                        f"Invalid memory format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
+                        f"got keys: {list(load_data.keys())}"
                     )
                 
-                session_memory = self.session_memory[session_id]
-                session_memory_data = session_data.get("session_memory", {})
+                # Restore metadata
+                metadata = load_data.get("metadata", {})
+                self.current_session_id = metadata.get("current_session_id")
                 
-                # Restore events
-                if "events" in session_memory_data:
-                    events = []
-                    for event_data in session_memory_data["events"]:
-                        if event_data.get("timestamp"):
-                            event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
-                        if event_data.get("event_type"):
-                            event_data["event_type"] = EventType(event_data["event_type"])
-                        events.append(ChatEvent(**event_data))
-                    session_memory.events = events
+                # Restore sessions
+                sessions_data = load_data.get("sessions", {})
+                logger.debug(f"| 📊 Restoring {len(sessions_data)} sessions from JSON")
                 
-                # Restore summaries
-                if "summaries" in session_memory_data:
-                    summaries = []
-                    for summary_data in session_memory_data["summaries"]:
-                        if summary_data.get("importance"):
-                            summary_data["importance"] = Importance(summary_data["importance"])
-                        summaries.append(Summary(**summary_data))
-                    session_memory.summaries = summaries
+                for session_id, session_data in sessions_data.items():
+                    logger.debug(f"| 🔄 Restoring session: {session_id}")
+                    # Restore session info
+                    session_info_data = session_data.get("session_info")
+                    if session_info_data:
+                        # Parse datetime strings
+                        if session_info_data.get("start_time"):
+                            session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
+                        if session_info_data.get("end_time"):
+                            session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                        
+                        self.session_info[session_id] = SessionInfo(**session_info_data)
+                    
+                    # Ensure session memory exists (skip auto-load to avoid recursion)
+                    if session_id not in self.session_memory:
+                        # Create CombinedMemory directly without calling start_session to avoid recursion
+                        self.session_memory[session_id] = CombinedMemory(
+                            model_name=self.model_name, 
+                            max_summaries=self.max_summaries,
+                            max_insights=self.max_insights
+                        )
+                    
+                    session_memory = self.session_memory[session_id]
+                    session_memory_data = session_data.get("session_memory", {})
+                    
+                    # Restore events
+                    if "events" in session_memory_data:
+                        events = []
+                        for event_data in session_memory_data["events"]:
+                            if event_data.get("timestamp"):
+                                event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
+                            if event_data.get("event_type"):
+                                event_data["event_type"] = EventType(event_data["event_type"])
+                            events.append(ChatEvent(**event_data))
+                        session_memory.events = events
+                    
+                    # Restore summaries
+                    if "summaries" in session_memory_data:
+                        summaries = []
+                        for summary_data in session_memory_data["summaries"]:
+                            if summary_data.get("importance"):
+                                summary_data["importance"] = Importance(summary_data["importance"])
+                            summaries.append(Summary(**summary_data))
+                        session_memory.summaries = summaries
+                    
+                    # Restore insights
+                    if "insights" in session_memory_data:
+                        insights = []
+                        for insight_data in session_memory_data["insights"]:
+                            if insight_data.get("importance"):
+                                insight_data["importance"] = Importance(insight_data["importance"])
+                            insights.append(Insight(**insight_data))
+                        session_memory.insights = insights
                 
-                # Restore insights
-                if "insights" in session_memory_data:
-                    insights = []
-                    for insight_data in session_memory_data["insights"]:
-                        if insight_data.get("importance"):
-                            insight_data["importance"] = Importance(insight_data["importance"])
-                        insights.append(Insight(**insight_data))
-                    session_memory.insights = insights
-            
-            logger.info(f"| 📂 Memory loaded from {file_path}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"| ❌ Failed to load memory from {file_path}: {e}", exc_info=True)
-            return False
+                logger.info(f"| 📂 Memory loaded from {file_path}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"| ❌ Failed to load memory from {file_path}: {e}", exc_info=True)
+                return False

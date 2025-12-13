@@ -19,19 +19,17 @@ import base64
 import importlib.metadata
 import importlib.util
 import inspect
+import mimetypes
 import json
 import json5
 import keyword
 import os
 import re
-import io
 import types
 from functools import lru_cache
-from io import BytesIO
 from pathlib import Path
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Optional, Union
-from PIL import Image
+from typing import Any, Dict, Tuple, Optional, Union
 
 @lru_cache
 def _is_package_available(package_name: str) -> bool:
@@ -173,7 +171,7 @@ def parse_code_blobs(text: str) -> str:
     )
 
 
-MAX_LENGTH_TRUNCATE_CONTENT = 20000
+MAX_LENGTH_TRUNCATE_CONTENT = 128
 
 
 def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT) -> str:
@@ -185,6 +183,42 @@ def truncate_content(content: str, max_length: int = MAX_LENGTH_TRUNCATE_CONTENT
             + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
             + content[-max_length // 2 :]
         )
+
+def truncate_dict(value, max_len=128):
+    """
+    Recursively create a new structure where all long strings
+    are truncated. The original input is NOT modified.
+
+    :param value: any Python object (dict, list, tuple, str, etc.)
+    :param max_len: max length before truncation
+    :return: new structure with truncated strings
+    """
+
+    # If it's a string → apply truncation
+    if isinstance(value, str):
+        return value if len(value) <= max_len else value[:max_len] + "..."
+
+    # If it's a dict → recursively process each key/value
+    if isinstance(value, dict):
+        return {k: truncate_dict(v, max_len) for k, v in value.items()}
+
+    # If it's a list → return a new list
+    if isinstance(value, list):
+        return [truncate_dict(item, max_len) for item in value]
+
+    # If it's a tuple → return a new tuple
+    if isinstance(value, tuple):
+        return tuple(truncate_dict(item, max_len) for item in value)
+
+    # Otherwise return the value unchanged (int, bool, None, etc.)
+    return value
+
+def truncate_file_url(url: str, max_length: int = 50) -> str:
+    if url.startswith('data:'):
+        media_type = url.split(';')[0].split(':')[1] if ';' in url else 'image'
+        return f'<base64 {media_type}>'
+    else:
+        return truncate_content(url, max_length)
 
 
 class ImportFinder(ast.NodeVisitor):
@@ -378,21 +412,17 @@ def get_source(obj) -> str:
         raise e from inspect_error
 
 
-def encode_image_base64(image: Image.Image):
-    if isinstance(image, Image.Image):
-        buffered = BytesIO()
-        image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode("utf-8")
-    
-    else:
-        raise ValueError(f"Invalid image type: {type(image)}")
-    
-def decode_image_base64(image_b64: str) -> Image.Image:
-    """Decode a base64 encoded image string to a PIL Image."""
-    return Image.open(io.BytesIO(base64.b64decode(image_b64)))
+def encode_file_base64(file_path: str) -> str:
+    with open(file_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode("utf-8")
 
-def make_image_url(base64_image):
-    return f"data:image/png;base64,{base64_image}"
+def decode_file_base64(data_base64: str) -> bytes:
+    return base64.b64decode(data_base64)
+
+def make_file_url(file_path: str) -> str:
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return f"data:{mime_type.lower()};base64,{encode_file_base64(file_path)}"
 
 
 def make_init_file(folder: Union[str, Path]):

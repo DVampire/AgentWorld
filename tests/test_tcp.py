@@ -3,6 +3,7 @@
 import asyncio
 import sys
 import os
+import json
 from pathlib import Path
 import argparse
 from mmengine import DictAction
@@ -14,8 +15,12 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager
-from src.tools import tcp
+from src.memory import memory_manager
+from src.prompt import prompt_manager
+from src.model import model_manager
+from src.version import version_manager
+from src.environment import ecp
+from src.tool import tcp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -55,7 +60,7 @@ async def test_browser_tool():
             }
         }
         
-        result = await tcp.ainvoke(**input)
+        result = await tcp(**input)
         
         print("\n📋 Browser tool result:")
         print("=" * 50)
@@ -71,26 +76,95 @@ async def test_browser_tool():
         print(f"❌ Error testing browser tool: {e}")
         import traceback
         traceback.print_exc()
+        
+        
+async def test_deep_researcher_tool():
+    """Test the deep researcher tool directly."""
+    
+    # Test parameters
+    task = "Search for the latest news about Apple on Google."
+    
+    print("🧪 Testing deep researcher tool...")
+    print(f"Task: {task}")
+    
+    try:
+        # Invoke the deep researcher tool
+        input = {
+            "name": "deep_researcher",
+            "input": {
+                "task": task,
+            }
+        }
+        
+        tool_info = await tcp.get_info("deep_researcher")
+        
+        print("=" * 50)
+        print("Function_calling:")
+        print(tool_info.function_calling)
+        print("=" * 50)
+        print("Args schema:")
+        print(tool_info.args_schema)
+        print("=" * 50)
+        print("Text:")
+        print(tool_info.text)
+        print("=" * 50)
+        
+        result = await tcp(**input)
+        
+        print("\n📋 Deep researcher tool result:")
+        print("=" * 50)
+        print(result)
+        print("=" * 50)
+        
+        if result and "Error" not in str(result):
+            print("✅ Deep researcher tool test successful!")
+        else:
+            print("❌ Deep researcher tool test failed!")
             
+    except Exception as e:
+        print(f"❌ Error testing deep researcher tool: {e}")
+        import traceback
+        traceback.print_exc()
+        
 async def main():
     args = parse_args()
     
-    config.init_config(args.config, args)
-    logger.init_logger(config)
+    config.initialize(config_path = args.config, args = args)
+    logger.initialize(config = config)
     logger.info(f"| Config: {config.pretty_text}")
     
-    # Initialize model managerxx
+    # Initialize model manager
     logger.info("| 🧠 Initializing model manager...")
-    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
+    await model_manager.initialize()
+    logger.info(f"| ✅ Model manager initialized: {await model_manager.list()}")
+    
+    # Initialize prompt manager
+    logger.info("| 📁 Initializing prompt manager...")
+    await prompt_manager.initialize()
+    logger.info(f"| ✅ Prompt manager initialized: {await prompt_manager.list()}")
+    
+    # Initialize memory manager
+    logger.info("| 📁 Initializing memory manager...")
+    await memory_manager.initialize(memory_names=config.memory_names)
+    logger.info(f"| ✅ Memory manager initialized: {await memory_manager.list()}")
     
     # Initialize tools
     logger.info("| 🛠️ Initializing tools...")
-    await tcp.initialize(config.tool_names)
-    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
+    await tcp.initialize(tool_names=config.tool_names)
+    logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
-    await test_browser_tool()
-
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    await ecp.initialize(config.env_names)
+    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    
+    # Initialize version manager, must after tool, agent, environment initialized
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
+    
+    # await test_browser_tool()
+    await test_deep_researcher_tool()
     logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":

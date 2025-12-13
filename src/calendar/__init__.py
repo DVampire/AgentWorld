@@ -1,5 +1,5 @@
-from .manager import codemapper
-from .manager import calendar_manager
+from .calendar_manager import codemapper
+from .calendar_manager import calendar_manager
 
 __all__ = [
     "codemapper",

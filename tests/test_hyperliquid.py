@@ -21,9 +21,9 @@ sys.path.append(root)
 
 load_dotenv()
 
-from src.environments.hyperliquidentry.service import OnlineHyperliquidService
-from src.environments.hyperliquidentry.service import OfflineHyperliquidService
-from src.environments.hyperliquidentry.types import (
+from src.environment.hyperliquidentry.service import OnlineHyperliquidService
+from src.environment.hyperliquidentry.service import OfflineHyperliquidService
+from src.environment.hyperliquidentry.types import (
     GetDataRequest, 
     CreateOrderRequest, 
     OrderType, 
@@ -37,10 +37,10 @@ from src.logger import logger
 from src.config import config
 from src.utils import get_env
 from src.utils import dedent
-from src.environments import ecp
+from src.environment import ecp
 from src.utils import get_standard_timestamp
-from src.environments.database.service import DatabaseService
-from src.environments.database.types import QueryRequest, SelectRequest
+from src.environment.database.service import DatabaseService
+from src.environment.database.types import QueryRequest, SelectRequest
 
 async def test_online_hyperliquid():
     

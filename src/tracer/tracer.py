@@ -1,10 +1,12 @@
 """Tracer module for recording agent execution records."""
 
 import json
+import asyncio
+import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from pathlib import Path
 from pydantic import BaseModel, Field
+from src.utils import file_lock
 
 
 class Record(BaseModel):
@@ -14,14 +16,14 @@ class Record(BaseModel):
     session_id: Optional[str] = Field(default=None, description="Session ID for this record")
     task_id: Optional[str] = Field(default=None, description="Task ID for this record")
     observation: Optional[Any] = Field(default=None, description="Observation data for this execution step")
-    action: Optional[Any] = Field(default=None, description="Action taken in this execution step")
+    tool: Optional[Any] = Field(default=None, description="Tool calls taken in this execution step")
     timestamp: Optional[str] = Field(default=None, description="Timestamp of the record in ISO format")
 
 class Tracer:
     """Tracer class for recording agent execution records.
     
     This class maintains execution records organized by session_id, where each record
-    is a Record model containing observation, action, id, session_id, task_id, and timestamp information.
+    is a Record model containing observation, tool, id, session_id, task_id, and timestamp information.
     """
     
     def __init__(self):
@@ -31,10 +33,10 @@ class Tracer:
         self.current_session_id: Optional[str] = None
         self._next_id: int = 1
     
-    def add_record(
+    async def add_record(
         self,
         observation: Any,
-        action: Any,
+        tool: Any = None,
         session_id: Optional[str] = None,
         task_id: Optional[str] = None,
         timestamp: Optional[datetime] = None
@@ -43,7 +45,7 @@ class Tracer:
         
         Args:
             observation: The observation data for this execution step
-            action: The action taken in this execution step
+            tool: The tool calls taken in this execution step
             session_id: Optional session ID for this record. If None, records are stored without session grouping.
             task_id: Optional task ID for this record.
             timestamp: Optional timestamp for the record. If None, uses current time.
@@ -56,7 +58,7 @@ class Tracer:
             session_id=session_id,
             task_id=task_id,
             observation=observation,
-            action=action,
+            tool=tool,
             timestamp=timestamp.isoformat()
         )
         
@@ -78,7 +80,7 @@ class Tracer:
                 self.session_records[default_session] = []
             self.session_records[default_session].append(record)
     
-    def get_records(self, session_id: Optional[str] = None) -> List[Record]:
+    async def get_records(self, session_id: Optional[str] = None) -> List[Record]:
         """Get execution records.
         
         Args:
@@ -96,7 +98,7 @@ class Tracer:
             all_records.extend(records)
         return all_records
     
-    def get_record(self, index: int, session_id: Optional[str] = None) -> Optional[Record]:
+    async def get_record(self, index: int, session_id: Optional[str] = None) -> Optional[Record]:
         """Get a specific execution record by index.
         
         Args:
@@ -110,12 +112,12 @@ class Tracer:
         if session_id is None:
             session_id = self.current_session_id
         
-        records = self.get_records(session_id=session_id)
+        records = await self.get_records(session_id=session_id)
         if 0 <= index < len(records):
             return records[index]
         return None
     
-    def get_last_record(self, session_id: Optional[str] = None) -> Optional[Record]:
+    async def get_last_record(self, session_id: Optional[str] = None) -> Optional[Record]:
         """Get the last record for a session.
         
         Args:
@@ -128,12 +130,12 @@ class Tracer:
         if session_id is None:
             session_id = self.current_session_id
         
-        records = self.get_records(session_id=session_id)
+        records = await self.get_records(session_id=session_id)
         if len(records) > 0:
             return records[-1]
         return None
     
-    def get_record_by_id(self, record_id: int, session_id: Optional[str] = None) -> Optional[Record]:
+    async def get_record_by_id(self, record_id: int, session_id: Optional[str] = None) -> Optional[Record]:
         """Get a specific execution record by ID.
         
         Args:
@@ -143,13 +145,13 @@ class Tracer:
         Returns:
             The record with the specified ID, or None if not found.
         """
-        records = self.get_records(session_id=session_id)
+        records = await self.get_records(session_id=session_id)
         for record in records:
             if record.id == record_id:
                 return record
         return None
     
-    def get_records_by_task_id(self, task_id: str, session_id: Optional[str] = None) -> List[Record]:
+    async def get_records_by_task_id(self, task_id: str, session_id: Optional[str] = None) -> List[Record]:
         """Get all records for a specific task ID.
         
         Args:
@@ -159,10 +161,10 @@ class Tracer:
         Returns:
             A list of records matching the task ID.
         """
-        records = self.get_records(session_id=session_id)
+        records = await self.get_records(session_id=session_id)
         return [record for record in records if record.task_id == task_id]
     
-    def clear(self, session_id: Optional[str] = None) -> None:
+    async def clear(self, session_id: Optional[str] = None) -> None:
         """Clear execution records.
         
         Args:
@@ -179,7 +181,7 @@ class Tracer:
             self.current_session_id = None
             self._next_id = 1
     
-    def save_to_json(self, file_path: str) -> None:
+    async def save_to_json(self, file_path: str) -> None:
         """Save all records to a JSON file.
         
         Structure:
@@ -195,7 +197,7 @@ class Tracer:
                         "id": int,
                         "task_id": str,
                         "observation": Any,
-                        "action": Any,
+                        "tool": Any,
                         "timestamp": str
                     },
                     ...
@@ -210,43 +212,46 @@ class Tracer:
         Raises:
             IOError: If the file cannot be written.
         """
-        file_path = Path(file_path)
+        # Ensure file_path is a string
+        file_path = str(file_path)
         
-        # Create directory if it doesn't exist
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        async with file_lock(file_path):
         
-        # Prepare metadata
-        metadata = {
-            "current_session_id": self.current_session_id,
-            "next_id": self._next_id,
-            "session_ids": list(self.session_records.keys())
-        }
-        
-        # Prepare sessions data
-        sessions = {}
-        for session_id, records in self.session_records.items():
-            sessions[session_id] = []
-            for record in records:
-                json_record = {
-                    "id": record.id,
-                    "task_id": record.task_id,
-                    "observation": self._serialize_for_json(record.observation),
-                    "action": self._serialize_for_json(record.action),
-                    "timestamp": record.timestamp
-                }
-                sessions[session_id].append(json_record)
-        
-        # Prepare save data
-        save_data = {
-            "metadata": metadata,
-            "sessions": sessions
-        }
-        
-        # Write to JSON file
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(save_data, f, indent=4, ensure_ascii=False)
+            # Prepare metadata
+            metadata = {
+                "current_session_id": self.current_session_id,
+                "next_id": self._next_id,
+                "session_ids": list(self.session_records.keys())
+            }
+            
+            # Prepare sessions data
+            sessions = {}
+            for session_id, records in self.session_records.items():
+                sessions[session_id] = []
+                for record in records:
+                    json_record = {
+                        "id": record.id,
+                        "task_id": record.task_id,
+                        "observation": self._serialize_for_json(record.observation),
+                        "tool": self._serialize_for_json(record.tool),
+                        "timestamp": record.timestamp
+                    }
+                    sessions[session_id].append(json_record)
+            
+            # Prepare save data
+            save_data = {
+                "metadata": metadata,
+                "sessions": sessions
+            }
+            
+            # Create parent directories if they don't exist
+            parent_dir = os.path.dirname(file_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, indent=4, ensure_ascii=False)
     
-    def load_from_json(self, file_path: str) -> None:
+    async def load_from_json(self, file_path: str) -> None:
         """Load records from a JSON file.
         
         Expected format:
@@ -262,7 +267,7 @@ class Tracer:
                         "id": int,
                         "task_id": str,
                         "observation": Any,
-                        "action": Any,
+                        "tool": Any,
                         "timestamp": str
                     },
                     ...
@@ -278,43 +283,45 @@ class Tracer:
             FileNotFoundError: If the file does not exist.
             json.JSONDecodeError: If the file contains invalid JSON.
         """
-        file_path = Path(file_path)
+        # Ensure file_path is a string
+        file_path = str(file_path)
         
-        if not file_path.exists():
-            raise FileNotFoundError(f"JSON file not found: {file_path}")
-        
-        # Read from JSON file
-        with open(file_path, 'r', encoding='utf-8') as f:
-            load_data = json.load(f)
-        
-        # Validate format
-        if not isinstance(load_data, dict) or "metadata" not in load_data or "sessions" not in load_data:
-            raise ValueError(
-                f"Invalid tracer format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
-                f"got: {type(load_data).__name__}"
-            )
-        
-        # Restore metadata
-        metadata = load_data.get("metadata", {})
-        self.current_session_id = metadata.get("current_session_id")
-        self._next_id = metadata.get("next_id", 1)
-        
-        # Restore sessions
-        self.session_records = {}
-        sessions_data = load_data.get("sessions", {})
-        
-        for session_id, records_data in sessions_data.items():
-            self.session_records[session_id] = []
-            for json_record in records_data:
-                record = Record(
-                    id=json_record.get("id"),
-                    session_id=session_id,
-                    task_id=json_record.get("task_id"),
-                    observation=json_record.get("observation"),
-                    action=json_record.get("action"),
-                    timestamp=json_record.get("timestamp")
-                )
-                self.session_records[session_id].append(record)
+        async with file_lock(file_path):
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"JSON file not found: {file_path}")
+            
+            # Read from JSON file with file lock
+            with open(file_path, 'r', encoding='utf-8') as f:
+                load_data = json.load(f)
+                
+                # Validate format
+                if not isinstance(load_data, dict) or "metadata" not in load_data or "sessions" not in load_data:
+                    raise ValueError(
+                        f"Invalid tracer format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
+                        f"got: {type(load_data).__name__}"
+                    )
+                
+                # Restore metadata
+                metadata = load_data.get("metadata", {})
+                self.current_session_id = metadata.get("current_session_id")
+                self._next_id = metadata.get("next_id", 1)
+                
+                # Restore sessions
+                self.session_records = {}
+                sessions_data = load_data.get("sessions", {})
+                
+                for session_id, records_data in sessions_data.items():
+                    self.session_records[session_id] = []
+                    for json_record in records_data:
+                        record = Record(
+                            id=json_record.get("id"),
+                            session_id=session_id,
+                            task_id=json_record.get("task_id"),
+                            observation=json_record.get("observation"),
+                            tool=json_record.get("tool"),
+                            timestamp=json_record.get("timestamp")
+                        )
+                        self.session_records[session_id].append(record)
     
     def _serialize_for_json(self, obj: Any) -> Any:
         """Serialize an object for JSON encoding.
@@ -341,7 +348,7 @@ class Tracer:
         """Return the total number of records across all sessions."""
         return sum(len(records) for records in self.session_records.values())
     
-    def get_count(self, session_id: Optional[str] = None) -> int:
+    async def get_count(self, session_id: Optional[str] = None) -> int:
         """Get the number of records.
         
         Args:
@@ -354,7 +361,7 @@ class Tracer:
             return len(self.session_records.get(session_id, []))
         return sum(len(records) for records in self.session_records.values())
     
-    def get_session_ids(self) -> List[str]:
+    async def get_session_ids(self) -> List[str]:
         """Get all session IDs that have records.
         
         Returns:

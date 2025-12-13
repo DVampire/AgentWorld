@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, List, Type
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 import json
 
@@ -8,7 +8,7 @@ from src.utils import dedent
 
 class EventType(Enum):
     TASK_START = "task_start"
-    ACTION_STEP = "action_step"
+    TOOL_STEP = "tool_step"
     TASK_END = "task_end"
 
 class ChatEvent(BaseModel):
@@ -82,6 +82,51 @@ class Summary(BaseModel):
             Content: {self.content}
             </summary>""")
         return string
+    
+    def __repr__(self):
+        return self.__str__()
+
+
+# Memory Context Protocol (MCP) Types
+
+class Memory(BaseModel):
+    """Base class for all memory systems"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="", description="The name of the memory system")
+    description: str = Field(default="", description="The description of the memory system")
+    save_path: Optional[str] = Field(default=None, description="Path to save/load memory JSON file")
+    
+    def __init__(self, **kwargs):
+        """Initialize memory system."""
+        super().__init__(**kwargs)
+        # Auto-set name from class name if not provided
+        if not self.name:
+            import inflection
+            self.name = inflection.underscore(self.__class__.__name__)
+        # Auto-set description from docstring if not provided
+        if not self.description and self.__class__.__doc__:
+            self.description = self.__class__.__doc__.strip().split('\n')[0]
+    
+    def __str__(self):
+        return f"Memory(name={self.name}, description={self.description})"
+    
+    def __repr__(self):
+        return self.__str__()
+
+
+class MemoryConfig(BaseModel):
+    """Memory configuration for registration"""
+    name: str = Field(description="The name of the memory system")
+    description: str = Field(description="The description of the memory system")
+    version: str = Field(default="1.0.0", description="Version of the memory system")
+    cls: Optional[Type[Memory]] = Field(default=None, description="The class of the memory system")
+    instance: Optional[Any] = Field(default=None, description="The instance of the memory system")
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the memory system")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the memory system")
+    
+    def __str__(self):
+        return f"MemoryConfig(name={self.name}, description={self.description}, version={self.version})"
     
     def __repr__(self):
         return self.__str__()
