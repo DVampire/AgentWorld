@@ -39,6 +39,7 @@ class PythonInterpreterTool(Tool):
 
         # Add additional common libraries if not already in authorized_imports
         additional_imports = [
+            "subprocess",
             "pandas",
             "numpy",
             "matplotlib",

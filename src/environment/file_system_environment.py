@@ -121,10 +121,10 @@ class FileSystemEnvironment(Environment):
     @ecp.action(name = "write", 
                 description = "Write content to a file.")
     async def write(self, 
-                     file_path: str, 
-                     content: str, 
-                     mode: str = "w",
-                     **kwargs) -> Dict[str, Any]:
+                    file_path: str, 
+                    content: str, 
+                    mode: str = "w",
+                    **kwargs) -> Dict[str, Any]:
         """Write content to a file.
         
         Args:

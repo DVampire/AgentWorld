@@ -363,11 +363,6 @@ class ActionConfig(BaseModel):
     
     cls: Optional[Any] = Field(default=None, description="The class of the action")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the action")
-    instance: Optional[Any] = Field(default=None, description="The instance of the action")
-   
-    function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")
-    text: Optional[str] = Field(default=None, description="Default text representation")
-    args_schema: Optional[Type[BaseModel]] = Field(default=None, description="Default args schema (BaseModel type)")
     
     @property
     def parameter_schema(self) -> Dict[str, Any]:

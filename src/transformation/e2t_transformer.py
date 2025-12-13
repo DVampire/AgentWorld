@@ -4,7 +4,8 @@ Converts ECP environments to TCP tools.
 """
 
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Type
+from pydantic import BaseModel
 
 from src.logger import logger
 from src.tool.server import tcp
@@ -54,16 +55,33 @@ class E2TTransformer:
                                 self._action_config = action_cfg
                                 self._env_config = env_cfg
                             
-                            async def __call__(self, input: Dict[str, Any], **kwargs) -> ToolResponse:
-                                """Execute the wrapped action."""
+                            @property
+                            def args_schema(self) -> Type[BaseModel]:
+                                """Return the BaseModel type from action config's args_schema."""
+                                if self._action_config:
+                                    schema = self._action_config.args_schema
+                                    # Ensure it's a valid BaseModel subclass
+                                    if schema is not None and isinstance(schema, type) and issubclass(schema, BaseModel):
+                                        return schema
+                                    # If invalid, fall back to building from parameter_schema
+                                    return super().args_schema
+                                # Fallback to default if no action config
+                                return super().args_schema
+                            
+                            async def __call__(self, **kwargs) -> ToolResponse:
+                                """Execute the wrapped action.
+                                
+                                Args are passed as keyword arguments, matching the action function's signature.
+                                The tool_context_manager calls tool(**input), which unpacks the input dict as kwargs.
+                                """
                                 try:
-                                    # Merge input dict with kwargs - all action methods now support **kwargs
-                                    merged_input = {**input, **kwargs}
-                                    
-                                    if asyncio.iscoroutinefunction(self._action_config.function):
-                                        result = await self._action_config.function(self._env_config.instance, **merged_input)
+                                    action_function = self._action_config.function
+                                    if hasattr(action_function, '__self__'):
+                                        # Bound method: call directly without passing instance
+                                        result = await action_function(**kwargs)
                                     else:
-                                        result = self._action_config.function(self._env_config.instance, **merged_input)
+                                        # Unbound method: pass instance as first argument
+                                        result = await action_function(self._env_config.instance, **kwargs)
                                     
                                     # Convert result to ToolResponse if needed
                                     if isinstance(result, ToolResponse):

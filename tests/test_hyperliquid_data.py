@@ -651,8 +651,8 @@ async def main():
     args = parse_args()
     
     # Initialize configuration
-    config.init_config(args.config, args)
-    logger.init_logger(config)
+    config.initialize(args.config, args)
+    logger.initialize(config)
     logger.info(f"| Config: {config.pretty_text}")
     
     """Main function."""
