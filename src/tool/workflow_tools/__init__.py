@@ -7,9 +7,11 @@ including browser automation and deep research capabilities.
 from .browser import BrowserTool
 from .deep_researcher import DeepResearcherTool
 from .deep_analyzer import DeepAnalyzerTool
+from .plotter import PlotterTool
 
 __all__ = [
     "BrowserTool",
     "DeepResearcherTool",
     "DeepAnalyzerTool",
+    "PlotterTool",
 ]
