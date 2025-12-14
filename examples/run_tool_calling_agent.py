@@ -104,7 +104,7 @@ async def main():
             "files": files
         }
     }
-    await acp.ainvoke(**input)
+    await acp(**input)
     
 if __name__ == "__main__":
     asyncio.run(main())
