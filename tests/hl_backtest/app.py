@@ -15,6 +15,8 @@ from regime_based import (
     zscore_mr_baseline,
     tsmom_baseline,
     livetrading_baseline,
+    funding_arb_baseline,
+    carry_momentum_baseline,
 )
 
 # ========= Streamlit 基本设置 =========
@@ -44,7 +46,7 @@ coin = st.sidebar.text_input("合约标的 (COIN)", "BTC")
 interval = st.sidebar.selectbox("K线周期", ["1m"], index=0)
 lookback = st.sidebar.slider("Lookback candles", 1000, 20000, 5000, step=1000)
 
-initial_equity = st.sidebar.number_input("初始资金", value=1000.0, min_value=10.0, step=100.0)
+initial_equity = st.sidebar.number_input("初始资金", value=500.0, min_value=10.0, step=100.0)
 taker_fee = st.sidebar.number_input("Taker 手续费", value=0.00045, format="%.5f")
 slippage_bps = st.sidebar.number_input("滑点 (bps)", value=1.0, step=0.5)
 
@@ -59,6 +61,8 @@ ma_min_hold = st.sidebar.number_input("MA min hold", min_value=0, value=0, step=
 zs_min_hold = st.sidebar.number_input("ZScoreMR min hold", min_value=0, value=0, step=1)
 ts_min_hold = st.sidebar.number_input("TSMOM min hold", min_value=0, value=0, step=1)
 lt_gpt5_min_hold = st.sidebar.number_input("LiveTrading min hold", min_value=0, value=0, step=1)
+fa_min_hold = st.sidebar.number_input("FundingArb min hold", min_value=0, value=0, step=1)
+cm_min_hold = st.sidebar.number_input("CarryMomentum min hold", min_value=0, value=0, step=1)
 
 run_button = st.sidebar.button("🚀 运行回测")
 
@@ -76,7 +80,7 @@ def load_data(coin: str, interval: str, lookback: int, use_testnet: bool, local:
     #     local=local,
     # )
     df = load_klines_from_sqlite(
-    db_path="database_0002.db",
+    db_path="database_0004.db",
     table_name="data_BTC_candle"
 ) 
     return df
@@ -190,12 +194,24 @@ else:
             return livetrading_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
         return strat
 
+    def make_fa_strat(min_hold: int):
+        def strat(df_, pos_, eq_):
+            return funding_arb_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+        return strat
+
+    def make_cm_strat(min_hold: int):
+        def strat(df_, pos_, eq_):
+            return carry_momentum_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+        return strat
+
     strategies: Dict[str, Callable[[pd.DataFrame, float, float], float]] = {
         "BH": make_bh_strat(bh_min_hold),
         "MA": make_ma_strat(ma_min_hold),
         "ZScoreMR": make_zs_strat(zs_min_hold),
         "TSMOM": make_ts_strat(ts_min_hold),
         "livetrading": make_lt_strat(lt_gpt5_min_hold),
+        "FundingArb": make_fa_strat(fa_min_hold),
+        "CarryMomentum": make_cm_strat(cm_min_hold),
     }
 
     # 3) 跑所有策略
