@@ -12,6 +12,7 @@ from src.model import model_manager
 from src.tool.default_tools.python_interpreter import PythonInterpreterTool
 from src.message import HumanMessage, SystemMessage
 from src.utils import assemble_project_path
+from src.registry import TOOL
 
 
 class CodeGeneration(BaseModel):
@@ -42,6 +43,7 @@ This tool will:
 """
 
 
+@TOOL.register_module(force=True)
 class PlotterTool(Tool):
     """A tool that generates plots from text, markdown tables, or CSV files."""
 
@@ -247,12 +249,8 @@ class PlotterTool(Tool):
         """Execute plotter workflow.
 
         Args:
-            input_data (str): The input data - can be:
-                - Plain text data
-                - Markdown table string
-                - Path to a CSV file
-            output_filename (Optional[str]): Optional custom filename for the output PNG.
-                                            If not provided, a default name will be generated.
+            input_data (str): The input data - can be: Plain text data, Markdown table string, or Path to a CSV file
+            output_filename (Optional[str]): Optional custom filename for the output PNG. If not provided, a default name will be generated.
         """
         try:
             logger.info(f"| 🚀 Starting PlotterTool with input: {input_data[:100]}...")

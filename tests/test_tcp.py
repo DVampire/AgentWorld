@@ -126,6 +126,42 @@ async def test_deep_researcher_tool():
         import traceback
         traceback.print_exc()
         
+        
+async def test_bash_tool():
+    """Test the bash tool directly."""
+    
+    # Test parameters
+    command = "ls -l"
+    
+    print("🧪 Testing bash tool...")
+    print(f"Command: {command}")
+    
+    try:
+        # Invoke the bash tool
+        input = {
+            "name": "bash",
+            "input": {
+                "command": command,
+            }
+        }
+        
+        result = await tcp(**input)
+        
+        print("\n📋 Bash tool result:")
+        print("=" * 50)
+        print(result)
+        print("=" * 50)
+        
+        if result and "Error" not in str(result):
+            print("✅ Bash tool test successful!")
+        else:
+            print("❌ Bash tool test failed!")
+            
+    except Exception as e:
+        print(f"❌ Error testing bash tool: {e}")
+        import traceback
+        traceback.print_exc()
+        
 async def main():
     args = parse_args()
     
@@ -164,7 +200,8 @@ async def main():
     logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
     # await test_browser_tool()
-    await test_deep_researcher_tool()
+    # await test_deep_researcher_tool()
+    await test_bash_tool()
     logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":

@@ -269,8 +269,10 @@ class VersionManager(BaseModel):
             logger.warning(f"| ⚠️ Failed to parse version {current_version} for {component_type}/{name}, starting fresh")
             return "1.0.0"
     
-    async def get_version(self, component_type: str, name: str, 
-                         provided_version: Optional[str] = None) -> str:
+    async def get_version(self, 
+                          component_type: str, 
+                          name: str, 
+                          provided_version: Optional[str] = None) -> str:
         """Get version from version_manager or generate new one
         
         Args:

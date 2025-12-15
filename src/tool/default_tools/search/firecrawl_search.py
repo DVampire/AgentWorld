@@ -10,7 +10,9 @@ load_dotenv()
 from src.tool.default_tools.search.types import SearchItem, SearchToolArgs
 from src.tool.types import Tool, ToolResponse
 from src.logger import logger
+from src.registry import TOOL
 
+@TOOL.register_module(force=True)
 class FirecrawlSearch(Tool):
     """Tool that queries the Firecrawl search engine.
 

@@ -9,12 +9,14 @@ from src.tool.default_tools.executor import (
     BASE_PYTHON_TOOLS,
 )
 from src.tool.types import Tool, ToolResponse
+from src.registry import TOOL
 
 _PYTHON_INTERPRETER_TOOL_DESCRIPTION = """Execute Python code and return the output.
 Use this tool to run Python scripts, perform calculations, or execute any Python code.
 The tool provides a safe execution environment with access to standard Python libraries.
 """
 
+@TOOL.register_module(force=True)
 class PythonInterpreterTool(Tool):
     """A tool that can execute Python code."""
     name: str = "python_interpreter"

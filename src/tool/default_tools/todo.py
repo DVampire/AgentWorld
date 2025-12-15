@@ -11,6 +11,7 @@ import tempfile
 from src.tool.types import Tool, ToolResponse
 from src.utils import assemble_project_path
 from src.utils import file_lock
+from src.registry import TOOL
 
 class Step(BaseModel):
     """Step model for todo management."""
@@ -56,6 +57,7 @@ The todo.md file is maintained in the current working directory and follows a st
 """
 
 
+@TOOL.register_module(force=True)
 class TodoTool(Tool):
     """A tool for managing a todo.md file with task decomposition and step tracking."""
     

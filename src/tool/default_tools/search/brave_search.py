@@ -10,7 +10,9 @@ load_dotenv()
 from src.tool.default_tools.search.types import SearchItem, SearchToolArgs
 from src.tool.types import Tool, ToolResponse
 from src.logger import logger
+from src.registry import TOOL
 
+@TOOL.register_module(force=True)
 class BraveSearch(Tool):
     """Tool that queries the Brave search engine.
 

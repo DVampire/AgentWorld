@@ -42,71 +42,35 @@ class TCPServer(BaseModel):
         self.tool_context_manager = ToolContextManager(
             base_dir=self.base_dir,
             save_path=self.save_path,
-            auto_discover=True,
-            model_name="openrouter/text-embedding-3-large",
+            model_name="openrouter/gpt-4.1",
+            embedding_model_name="openrouter/text-embedding-3-large",
         )
         await self.tool_context_manager.initialize()
         
-        # Auto-discover tools if needed
-        if self.tool_context_manager.auto_discover:
-            await self.tool_context_manager.discover()
-            self.tool_context_manager.auto_discover = False
-        
-        tools_to_init = tool_names if tool_names is not None else list(self.tool_context_manager._tool_configs.keys())
-        
-        logger.info(f"| 🛠️ Initializing {len(tools_to_init)} tools with context manager...")
-        
-        # Prepare initialization tasks for concurrent execution
-        async def init_tool(tool_name: str):
-            # Get tool config from context manager (discover() registers tools here)
-            tool_config = self.tool_context_manager._tool_configs.get(tool_name)
-            if tool_config is None:
-                # Also check registered_configs for manually registered tools
-                tool_config = self._registered_configs.get(tool_name)
-                if tool_config is None:
-                    logger.warning(f"| ⚠️ Tool {tool_name} not found in registered configs")
-                    return
-            
-            # Skip if already initialized
-            if tool_config.instance is not None:
-                logger.debug(f"| ⏭️ Tool {tool_name} already initialized")
-                return
-            
-            logger.debug(f"| 🔧 Initializing tool: {tool_name}")
-            
-            # Get tool config from global config if available
-            global_config = config.get(f"{tool_name}_tool", {})
-            if global_config:
-                # Merge with existing config
-                tool_config.config = {**tool_config.config, **global_config}
-            
-            # Create tool instance and store it in context manager
-            try:
-                await self.tool_context_manager.build(tool_config)
-                # Sync to registered_configs for consistency
-                self._registered_configs[tool_name] = tool_config
-                logger.debug(f"| ✅ Tool {tool_name} initialized")
-            except Exception as e:
-                logger.error(f"| ❌ Failed to initialize tool {tool_name}: {e}")
-        
-        # Initialize tools concurrently
-        init_tasks = [init_tool(tool_name) for tool_name in tools_to_init]
-        await asyncio.gather(*init_tasks, return_exceptions=True)
-        
         logger.info("| ✅ Tools initialization completed")
     
-    async def register(self, tool: Union[Tool, Type[Tool]], *, override: bool = False, **kwargs: Any) -> ToolConfig:
+    async def register(self, 
+                       tool: Union[Tool, Type[Tool]],
+                       config: Optional[Dict[str, Any]] = None,
+                       override: bool = False,
+                       version: Optional[str] = None) -> ToolConfig:
         """Register a tool class or instance asynchronously.
         
         Args:
             tool: Tool class or instance to register
+            config: Configuration dict for tool initialization (required when tool is a class)
             override: Whether to override existing registration
-            **kwargs: Configuration for tool initialization
+            version: Optional version string
             
         Returns:
             ToolConfig: Tool configuration
         """
-        tool_config = await self.tool_context_manager.register(tool, override=override, **kwargs)
+        tool_config = await self.tool_context_manager.register(
+            tool, 
+            tool_config_dict=config, 
+            override=override,
+            version=version
+        )
         self._registered_configs[tool_config.name] = tool_config
         return tool_config
     
@@ -150,23 +114,25 @@ class TCPServer(BaseModel):
         await self.tool_context_manager.cleanup()
         self._registered_configs.clear()
     
-    async def update(self, tool_name: str, tool: Union[Tool, Type[Tool]], 
-                    new_version: Optional[str] = None, description: Optional[str] = None,
-                    **kwargs: Any) -> ToolConfig:
+    async def update(self, 
+                     tool_name: str, tool: Union[Tool, Type[Tool]], 
+                     config: Optional[Dict[str, Any]] = None,
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None) -> ToolConfig:
         """Update an existing tool with new configuration and create a new version
         
         Args:
             tool_name: Name of the tool to update
             tool: New tool class or instance with updated implementation
+            config: Configuration dict for tool initialization (required when tool is a class)
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
-            **kwargs: Configuration for tool initialization
             
         Returns:
             ToolConfig: Updated tool configuration
         """
         tool_config = await self.tool_context_manager.update(
-            tool_name, tool, new_version, description, **kwargs
+            tool_name, tool, tool_config_dict=config, new_version=new_version, description=description
         )
         self._registered_configs[tool_config.name] = tool_config
         return tool_config
@@ -204,39 +170,7 @@ class TCPServer(BaseModel):
             del self._registered_configs[tool_name]
         return success
     
-    async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all tool configurations to JSON
-        
-        Args:
-            file_path: File path to save to
-            
-        Returns:
-            Path to saved file
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        return await self.tool_context_manager.save_to_json(file_path)
-    
-    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
-        """Load tool configurations from JSON
-        
-        Args:
-            file_path: File path to load from
-            auto_initialize: Whether to automatically initialize tools after loading
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
-        file_path = file_path if file_path is not None else self.save_path
-        success = await self.tool_context_manager.load_from_json(file_path, auto_initialize)
-        if success:
-            # Sync registered_configs
-            for tool_name in await self.tool_context_manager.list(include_disabled=True):
-                tool_config = self.tool_context_manager._tool_configs.get(tool_name)
-                if tool_config:
-                    self._registered_configs[tool_name] = tool_config
-        return success
-    
-    async def restore_version(self, tool_name: str, version: str, auto_initialize: bool = True) -> Optional[ToolConfig]:
+    async def restore(self, tool_name: str, version: str, auto_initialize: bool = True) -> Optional[ToolConfig]:
         """Restore a specific version of a tool from history
         
         Args:
@@ -247,7 +181,7 @@ class TCPServer(BaseModel):
         Returns:
             ToolConfig of the restored version, or None if not found
         """
-        tool_config = await self.tool_context_manager.restore_version(tool_name, version, auto_initialize)
+        tool_config = await self.tool_context_manager.restore(tool_name, version, auto_initialize)
         if tool_config:
             self._registered_configs[tool_config.name] = tool_config
         return tool_config

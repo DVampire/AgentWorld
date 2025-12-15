@@ -4,12 +4,14 @@ import aiohttp
 from typing import Optional, Dict, Any, ClassVar
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse
+from src.registry import TOOL
 
 _LEETCODE_DESCRIPTION = """Fetch LeetCode problem information by problem slug or ID.
 Use this tool to get problem details including title, content, difficulty, tags, and more.
 You can search by problem slug (e.g., 'two-sum') or by problem ID.
 """
 
+@TOOL.register_module(force=True)
 class LeetCodeTool(Tool):
     """A tool for fetching LeetCode problem information asynchronously."""
 

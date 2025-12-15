@@ -447,7 +447,6 @@ class ToolConfig(BaseModel):
     """Tool configuration"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    id: int = Field(description="Unique identifier for the tool")
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
     enabled: bool = Field(default=True, description="Whether the tool is enabled")
@@ -457,6 +456,7 @@ class ToolConfig(BaseModel):
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the tool")
     instance: Optional[Tool] = Field(default=None, description="The instance of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
+    code: Optional[str] = Field(default=None, description="Source code for dynamically generated tool classes (used when cls cannot be imported from a module)")
     
     # Default representations
     function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")

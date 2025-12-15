@@ -8,9 +8,11 @@ from browser_use import Agent, ChatOpenAI
 from src.utils import assemble_project_path
 from src.tool.types import Tool, ToolResponse
 from src.logger import logger
+from src.registry import TOOL
 
 _BROWSER_TOOL_DESCRIPTION = """Use the browser to interact with the internet to complete the task."""
 
+@TOOL.register_module(force=True)
 class BrowserTool(Tool):
     """A tool for interacting with the browser asynchronously."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

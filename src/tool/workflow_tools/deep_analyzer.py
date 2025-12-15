@@ -20,7 +20,7 @@ from src.logger import logger
 from src.model import model_manager
 from src.tool.default_tools.mdify import MdifyTool
 from src.message import HumanMessage, SystemMessage
-
+from src.registry import TOOL
 
 class FileTypeInfo(BaseModel):
     """File type information for a single file."""
@@ -83,6 +83,7 @@ For images, audio, video, preserves visual information by analyzing them directl
 - Complex problem solving requiring multiple perspectives
 """
 
+@TOOL.register_module(force=True)
 class DeepAnalyzerTool(Tool):
     """A deep analysis tool that performs multi-step analysis of tasks with files."""
 

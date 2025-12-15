@@ -14,6 +14,7 @@ from src.utils import dedent
 from src.message.types import HumanMessage, SystemMessage
 from src.tool.types import Tool, ToolResponse
 from src.tool.default_tools.web_searcher import WebSearcherTool
+from src.registry import TOOL
 
 
 _DEEP_RESEARCHER_DESCRIPTION = """Deep research tool that performs multi-round web search and content analysis.
@@ -36,6 +37,7 @@ class ResearchSummary(BaseModel):
     answer_found: bool = Field(description="Whether a complete answer was found to the research task")
     answer_status: str = Field(description="Clear statement about whether the answer was found or not found")
 
+@TOOL.register_module(force=True)
 class DeepResearcherTool(Tool):
     """A deep research tool that performs multi-round web search and content analysis."""
 

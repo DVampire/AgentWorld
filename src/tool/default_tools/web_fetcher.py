@@ -3,12 +3,14 @@
 from src.utils import fetch_url
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse
+from src.registry import TOOL
 
 _WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text content.
 Use this tool to fetch and read content from web pages.
 The tool will return the page title and markdown-formatted content.
 """
 
+@TOOL.register_module(force=True)
 class WebFetcherTool(Tool):
     """A tool for fetching web content asynchronously."""
 

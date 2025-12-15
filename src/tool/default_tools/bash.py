@@ -1,8 +1,10 @@
 """Bash tool for executing shell commands."""
 import asyncio
+from re import T
 from pydantic import Field
 
 from src.tool.types import Tool, ToolResponse
+from src.registry import TOOL
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
 
@@ -13,6 +15,7 @@ IMPORTANT:
 - Input should be a VALID bash command string.
 """
 
+@TOOL.register_module(force=True)
 class BashTool(Tool):
     """A tool for executing bash commands asynchronously."""
     name: str = "bash"

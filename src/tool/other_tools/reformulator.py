@@ -7,6 +7,7 @@ from src.message.types import SystemMessage, HumanMessage
 from src.model import model_manager
 from src.logger import logger
 from src.utils import dedent
+from src.registry import TOOL
 
 
 _REFORMULATOR_TOOL_DESCRIPTION = """Reformulator tool for reformulating final answers from agent conversations.
@@ -14,6 +15,7 @@ This tool takes the original task and the conversation history, then uses an LLM
 Use this tool when you need to produce a clean, formatted final answer from a conversation transcript.
 """
 
+@TOOL.register_module(force=True)
 class ReformulatorTool(Tool):
     """A tool for reformulating final answers from agent conversations."""
     

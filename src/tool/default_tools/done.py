@@ -1,11 +1,13 @@
 """Done tool for indicating that the task has been completed."""
 from src.tool.types import Tool, ToolResponse
+from src.registry import TOOL
 
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
 Use this tool to signal that a task or subtask has been finished.
 Provide a brief summary of what was accomplished.
 """
 
+@TOOL.register_module(force=True)
 class DoneTool(Tool):
     """A tool for indicating that the task has been completed."""
 

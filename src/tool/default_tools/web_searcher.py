@@ -10,6 +10,7 @@ from src.tool.types import Tool, ToolResponse
 from src.model import model_manager
 from src.message.types import HumanMessage, SystemMessage
 from src.utils import dedent
+from src.registry import TOOL
 
 _WEB_SEARCHER_DESCRIPTION = """Search the web for real-time information about any topic.
 This tool performs deep research by:
@@ -19,6 +20,7 @@ This tool performs deep research by:
 4. Merging all summaries into a comprehensive report with citations.
 If the primary search engine fails, it automatically falls back to alternative engines."""
 
+@TOOL.register_module(force=True)
 class WebSearcherTool(Tool):
     """Search the web for information using various search engines."""
 

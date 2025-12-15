@@ -8,6 +8,7 @@ from pydantic import Field
 from src.tool.types import Tool, ToolResponse
 from src.tool.default_tools.markdown.mdconvert import MarkitdownConverter
 from src.logger import logger
+from src.registry import TOOL
 
 _MDIFY_TOOL_DESCRIPTION = """Convert various file formats to markdown text using markitdown and save to base_dir folder.
 This tool converts files to markdown format and saves the converted markdown text to the base_dir folder for easy text processing and analysis.
@@ -26,6 +27,7 @@ Supported file formats:
 The tool will extract text content, tables, metadata, and other structured information from these files, convert them into readable markdown format, and save the result as a .md file in the base_dir folder.
 """
 
+@TOOL.register_module(force=True)
 class MdifyTool(Tool):
     """A tool for converting various file formats to markdown text asynchronously."""
 
