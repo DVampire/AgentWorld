@@ -19,7 +19,9 @@ from src.logger import logger
 from src.environment.types import Environment, ScreenshotInfo
 from src.utils import dedent, ScreenshotService, encode_file_base64, decode_file_base64, make_file_url
 from src.environment.server import ecp
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class MobileEnvironment(Environment):
     """Mobile Environment that provides mobile device automation operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

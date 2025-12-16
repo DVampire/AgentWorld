@@ -23,7 +23,9 @@ from src.utils import assemble_project_path, encode_file_base64, decode_file_bas
 from src.utils import dedent, ScreenshotService
 from src.environment.types import Environment, ScreenshotInfo
 from src.environment.server import ecp
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class OperatorBrowserEnvironment(Environment):
     """Operator Browser Environment that provides browser automation as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

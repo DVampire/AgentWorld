@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Type
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from src.logger import logger
+from src.utils.parameter_utils import parse_type_string
 
 
 def serialize_args_schema(args_schema: Type[BaseModel]) -> Optional[Dict[str, Any]]:
@@ -52,53 +53,6 @@ def serialize_args_schema(args_schema: Type[BaseModel]) -> Optional[Dict[str, An
         return None
 
 
-def parse_type_string_for_schema(type_str: str) -> Any:
-    """Parse a type string to Python type.
-    
-    Args:
-        type_str: Type string like "str", "Optional[str]", "List[str]", etc.
-        
-    Returns:
-        Python type
-    """
-    from typing import Optional, List, Dict, Union, Any as TypingAny
-    
-    # Remove typing. prefix if present
-    type_str = type_str.replace("typing.", "").strip()
-    
-    # Handle common types
-    if type_str == "str" or type_str == "string":
-        return str
-    elif type_str == "int" or type_str == "integer":
-        return int
-    elif type_str == "float" or type_str == "number":
-        return float
-    elif type_str == "bool" or type_str == "boolean":
-        return bool
-    elif type_str == "Any":
-        return TypingAny
-    elif type_str.startswith("Optional["):
-        # Extract inner type
-        inner = type_str[9:-1].strip()
-        inner_type = parse_type_string_for_schema(inner)
-        return Optional[inner_type]
-    elif type_str.startswith("List["):
-        inner = type_str[5:-1].strip()
-        inner_type = parse_type_string_for_schema(inner)
-        return List[inner_type]
-    elif type_str.startswith("Dict["):
-        # Dict[str, Any] format
-        parts = type_str[5:-1].split(",")
-        if len(parts) == 2:
-            key_type = parse_type_string_for_schema(parts[0].strip())
-            value_type = parse_type_string_for_schema(parts[1].strip())
-            return Dict[key_type, value_type]
-        return Dict[str, TypingAny]
-    else:
-        # Fallback to Any for unknown types
-        return TypingAny
-
-
 def deserialize_args_schema(schema_info: Dict[str, Any]) -> Optional[Type[BaseModel]]:
     """Deserialize a BaseModel type from saved schema information.
     
@@ -122,7 +76,7 @@ def deserialize_args_schema(schema_info: Dict[str, Any]) -> Optional[Type[BaseMo
         for field_name, field_data in fields_info.items():
             # Parse type string (e.g., "str", "Optional[str]", "List[str]")
             type_str = field_data.get("type", "Any")
-            python_type = parse_type_string_for_schema(type_str)
+            python_type = parse_type_string(type_str)
             
             # Get default value
             default_value = field_data.get("default")

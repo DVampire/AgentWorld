@@ -9,3 +9,4 @@ INDICATOR = Registry("indicator", locations=["src.indicator"])
 
 MEMORY_SYSTEM = Registry("memory_system", locations=["src.memory"])
 TOOL = Registry("tool", locations=["src.tool"])
+ENVIRONMENT = Registry("environment", locations=["src.environment"])

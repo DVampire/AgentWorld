@@ -18,6 +18,7 @@ from src.environment.server import ecp
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 from src.registry import DATASET
 from src.utils import get_token_count
+from src.registry import ENVIRONMENT
 
 _STATE_RULES = """The state of the intraday trading environment will be provided with the following information:
 1. Info: Information of the intraday trading environment.
@@ -57,6 +58,7 @@ _INTERACTION_RULES = """Interaction guidelines for intraday trading:
 4. All positions must be closed by the end of trading day (automatic liquidation if not closed).
 """
 
+@ENVIRONMENT.register_module(force=True)
 class IntradayTradingEnvironment(Environment):
     """Intraday Trading Environment that provides minute-level trading operations."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

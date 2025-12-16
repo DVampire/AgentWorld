@@ -378,6 +378,36 @@ class VersionManager(BaseModel):
                 logger.error(f"| ❌ Failed to load version data from {file_path}: {e}")
                 return False
 
+    @staticmethod
+    def compare_versions(v1: str, v2: str) -> int:
+        """Compare two version strings. Returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal.
+        
+        Args:
+            v1: First version string (e.g., "1.0.0")
+            v2: Second version string (e.g., "1.0.1")
+            
+        Returns:
+            1 if v1 > v2, -1 if v1 < v2, 0 if equal
+        """
+        try:
+            parts1 = [int(x) for x in v1.split(".")]
+            parts2 = [int(x) for x in v2.split(".")]
+            
+            # Pad with zeros to same length
+            max_len = max(len(parts1), len(parts2))
+            parts1.extend([0] * (max_len - len(parts1)))
+            parts2.extend([0] * (max_len - len(parts2)))
+            
+            for p1, p2 in zip(parts1, parts2):
+                if p1 > p2:
+                    return 1
+                elif p1 < p2:
+                    return -1
+            return 0
+        except:
+            # Fallback: string comparison
+            return 1 if v1 > v2 else (-1 if v1 < v2 else 0)
+
 
 # Global version manager instance
 version_manager = VersionManager()

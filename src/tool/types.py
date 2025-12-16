@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 import inspect
-import re
 import json
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple, get_type_hints, Type, Union
-import inflection
+from typing import Any, Dict, List, Optional, Type, get_type_hints
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field
 
-PYTHON_TYPE_FIELD = "x-python-type"
-JSON_TO_PYTHON_TYPE = {
-    "integer": "int",
-    "number": "float",
-    "string": "str",
-    "boolean": "bool",
-    "object": "dict",
-    "array": "list",
-}
+
+from src.utils import (
+    PYTHON_TYPE_FIELD,
+    default_parameters_schema,
+    parse_docstring_descriptions,
+    annotation_to_types,
+    build_args_schema,
+    build_function_calling,
+    build_text_representation,
+)
 
 class ToolResponse(BaseModel):
     """Response for a tool call."""
@@ -68,11 +67,7 @@ class Tool(BaseModel):
 
     @staticmethod
     def default_parameters_schema() -> Dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-        }
+        return default_parameters_schema()
         
     @property
     def name(self) -> str:
@@ -118,18 +113,8 @@ class Tool(BaseModel):
     @property
     def function_calling(self) -> Dict[str, Any]:
         """Return the OpenAI-compatible function-calling representation."""
-        # Remove x-python-type field from schema as it's only for internal use
         schema = self.parameter_schema
-        cleaned_schema = self._remove_python_type_field(schema)
-        
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": cleaned_schema,
-            },
-        }
+        return build_function_calling(self.name, self.description, schema)
         
     @property
     def args_schema(self) -> Type[BaseModel]:
@@ -140,129 +125,9 @@ class Tool(BaseModel):
         Returns:
             Type[BaseModel]: A Pydantic BaseModel class for the tool's input parameters
         """
-        import inflection
-        
         schema = self.parameter_schema
-        properties = schema.get("properties", {})
-        required = set(schema.get("required", []))
-        
-        # Generate model name: {tool_name}Input (PascalCase)
-        model_name = inflection.camelize(self.name) + "Input"
-        
-        # If no properties, return a simple empty model
-        if not properties:
-            return create_model(
-                model_name,
-                __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow")
-            )
-        
-        # Build field definitions for create_model
-        field_definitions = {}
-        for param_name, param_info in properties.items():
-            # Get Python type from x-python-type or convert from JSON type
-            python_type_str = param_info.get(PYTHON_TYPE_FIELD)
-            if python_type_str:
-                # Parse type string (e.g., "str", "Optional[str]", "List[str]")
-                python_type = self._parse_type_string(python_type_str)
-            else:
-                json_type = param_info.get("type", "string")
-                python_type = self._json_type_to_python_type(json_type)
-            
-            # Check if field is required
-            is_required = param_name in required
-            
-            # Get default value if exists
-            if "default" in param_info:
-                default_value = param_info["default"]
-            elif is_required:
-                default_value = ...  # Required field, no default
-            else:
-                default_value = None  # Optional field, default to None
-            
-            # Create Field with description
-            description = param_info.get("description", "")
-            if is_required and default_value is ...:
-                # Required field without default
-                field_definitions[param_name] = (
-                    python_type,
-                    Field(description=description)
-                )
-            else:
-                # Optional field or field with default
-                field_definitions[param_name] = (
-                    Optional[python_type] if not is_required else python_type,
-                    Field(default=default_value, description=description)
-                )
-        
-        # Create the model
-        return create_model(
-            model_name,
-            __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow"),
-            **field_definitions
-        )
+        return build_args_schema(self.name, schema)
     
-    def _parse_type_string(self, type_str: str) -> Type:
-        """Parse a type string (e.g., "str", "Optional[str]", "List[str]") to Python type.
-        
-        Args:
-            type_str: Type string to parse
-            
-        Returns:
-            Python type
-        """
-        # Handle common type strings
-        type_mapping = {
-            "str": str,
-            "int": int,
-            "float": float,
-            "bool": bool,
-            "dict": dict,
-            "list": list,
-            "Any": Any,
-        }
-        
-        # Check if it's a direct mapping
-        if type_str in type_mapping:
-            return type_mapping[type_str]
-        
-        # Handle Optional[Type]
-        if type_str.startswith("Optional[") and type_str.endswith("]"):
-            inner_type_str = type_str[9:-1]
-            inner_type = self._parse_type_string(inner_type_str)
-            return Optional[inner_type]
-        
-        # Handle List[Type]
-        if type_str.startswith("List[") and type_str.endswith("]"):
-            inner_type_str = type_str[5:-1]
-            inner_type = self._parse_type_string(inner_type_str)
-            return List[inner_type]
-        
-        # Handle Dict[K, V]
-        if type_str.startswith("Dict[") and type_str.endswith("]"):
-            return dict
-        
-        # Default to Any if can't parse
-        return Any
-    
-    def _json_type_to_python_type(self, json_type: str) -> Type:
-        """Convert JSON schema type to Python type.
-        
-        Args:
-            json_type: JSON schema type (e.g., "string", "integer", "number")
-            
-        Returns:
-            Python type
-        """
-        type_mapping = {
-            "integer": int,
-            "number": float,
-            "string": str,
-            "boolean": bool,
-            "object": dict,
-            "array": list,
-        }
-        return type_mapping.get(json_type, str)
-        
     @property
     def text(self) -> str:
         """
@@ -277,36 +142,7 @@ class Tool(BaseModel):
         ```
         """
         schema = self.parameter_schema
-        properties = schema.get("properties", {})
-        if not properties:
-            return f"Tool: {self.name}\nDescription: {self.description}\nParameters: None"
-
-        required = set(schema.get("required", []))
-        text = f"Tool: {self.name}\nDescription: {self.description}\nParameters:\n"
-        for param, info in properties.items():
-            raw_type = info.get("type", "string")
-            type_label = info.get(PYTHON_TYPE_FIELD) or JSON_TO_PYTHON_TYPE.get(raw_type, raw_type)
-            if param not in required and not str(type_label).startswith("Optional["):
-                type_label = f"Optional[{type_label}]"
-            default = info.get("default", "N/A")
-            text += f"    - {param} ({type_label}): {info.get('description', '')} (default: {default})\n"
-        return text
-
-    def _remove_python_type_field(self, schema: Dict[str, Any]) -> Dict[str, Any]:
-        """Remove x-python-type field from schema recursively."""
-        from copy import deepcopy
-        cleaned = deepcopy(schema)
-        
-        # Remove from top level if present
-        cleaned.pop(PYTHON_TYPE_FIELD, None)
-        
-        # Remove from properties
-        if "properties" in cleaned:
-            for prop_name, prop_info in cleaned["properties"].items():
-                if isinstance(prop_info, dict):
-                    prop_info.pop(PYTHON_TYPE_FIELD, None)
-        
-        return cleaned
+        return build_text_representation(self.name, self.description, schema, entity_type="Tool")
 
     def _build_parameter_schema(self) -> Dict[str, Any]:
         """Build parameter schema from function signature and docstring."""
@@ -323,7 +159,7 @@ class Tool(BaseModel):
 
         # Get docstring for descriptions
         docstring = inspect.getdoc(self.__class__.__call__) or ""
-        doc_descriptions = self._parse_docstring_descriptions(docstring)
+        doc_descriptions = parse_docstring_descriptions(docstring)
 
         properties = {}
         required = []
@@ -342,7 +178,7 @@ class Tool(BaseModel):
             
             # Get type annotation
             annotation = hints.get(name, param.annotation)
-            json_type, python_type = self._annotation_to_types(annotation)
+            json_type, python_type = annotation_to_types(annotation)
             
             # Determine if required
             is_required = param.default is inspect._empty
@@ -372,76 +208,6 @@ class Tool(BaseModel):
         if required:
             result["required"] = required
         return result
-
-    def _parse_docstring_descriptions(self, docstring: str) -> Dict[str, str]:
-        """Parse parameter descriptions from Google-style docstring."""
-        if not docstring:
-            return {}
-        
-        descriptions = {}
-        lines = inspect.cleandoc(docstring).splitlines()
-        in_args = False
-        
-        for line in lines:
-            stripped = line.strip()
-            if not in_args:
-                if stripped.lower().startswith("args"):
-                    in_args = True
-                continue
-            
-            # Stop at other sections
-            if stripped.lower().startswith(("returns:", "yields:", "raises:", "examples:")):
-                break
-            
-            # Parse parameter line: "param_name (type): description"
-            match = re.match(r"^\s*(\w+)\s*(?:\([^)]*\))?\s*:\s*(.+)$", stripped)
-            if match:
-                param_name = match.group(1)
-                description = match.group(2).strip()
-                descriptions[param_name] = description
-        
-        return descriptions
-
-    def _annotation_to_types(self, annotation: Any) -> Tuple[str, str]:
-        """Convert Python type annotation to JSON type and Python type string."""
-        if annotation is inspect._empty or annotation is None:
-            return "string", "Any"
-        
-        # Handle basic types
-        if annotation is str or annotation == str:
-            return "string", "str"
-        if annotation is int or annotation == int:
-            return "integer", "int"
-        if annotation is float or annotation == float:
-            return "number", "float"
-        if annotation is bool or annotation == bool:
-            return "boolean", "bool"
-        if annotation is dict or annotation == dict:
-            return "object", "dict"
-        if annotation is list or annotation == list:
-            return "array", "list"
-        
-        # Handle typing types
-        origin = getattr(annotation, "__origin__", None)
-        args = getattr(annotation, "__args__", ())
-        
-        # Optional[Type] or Union[Type, None]
-        if origin is Union and len(args) == 2 and type(None) in args:
-            inner_type = args[0] if args[1] is type(None) else args[1]
-            json_type, python_type = self._annotation_to_types(inner_type)
-            return json_type, f"Optional[{python_type}]"
-        
-        # List[Type]
-        if origin is list or (hasattr(annotation, "__origin__") and "List" in str(annotation)):
-            return "array", "list"
-        
-        # Dict[K, V]
-        if origin is dict or (hasattr(annotation, "__origin__") and "Dict" in str(annotation)):
-            return "object", "dict"
-        
-        # Default fallback
-        type_str = str(annotation).replace("typing.", "")
-        return "string", type_str
 
 class ToolConfig(BaseModel):
     """Tool configuration"""

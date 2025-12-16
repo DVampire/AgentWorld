@@ -31,7 +31,9 @@ from src.environment.hyperliquidentry.types import (
     TradeType
 )
 from src.utils import dedent, assemble_project_path
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class OnlineHyperliquidEnvironment(Environment):
     """Hyperliquid Trading Environment that provides Hyperliquid trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

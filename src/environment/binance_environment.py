@@ -29,7 +29,9 @@ from src.environment.binanceentry.types import (
     TradeType,
 )
 from src.utils import dedent, assemble_project_path
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class BinanceEnvironment(Environment):
     """Binance Trading Environment that provides Binance trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

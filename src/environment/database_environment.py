@@ -19,7 +19,9 @@ from src.utils import assemble_project_path
 from src.environment.server import ecp
 from src.environment.types import Environment
 from src.utils import dedent
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class DatabaseEnvironment(Environment):
     """Database Environment that provides database operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

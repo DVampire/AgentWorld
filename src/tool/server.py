@@ -45,7 +45,7 @@ class TCPServer(BaseModel):
             model_name="openrouter/gpt-4.1",
             embedding_model_name="openrouter/text-embedding-3-large",
         )
-        await self.tool_context_manager.initialize()
+        await self.tool_context_manager.initialize(tool_names=tool_names)
         
         logger.info("| ✅ Tools initialization completed")
     

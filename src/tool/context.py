@@ -16,7 +16,7 @@ from src.config import config
 from src.environment.faiss.service import FaissService
 from src.environment.faiss.types import FaissAddRequest
 from src.utils import assemble_project_path, gather_with_concurrency
-from src.utils.serialization import serialize_args_schema, deserialize_args_schema
+from src.utils import serialize_args_schema, deserialize_args_schema
 from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.version import version_manager
 from src.dynamic import dynamic_manager
@@ -67,7 +67,7 @@ class ToolContextManager(BaseModel):
         self._cleanup_registered = False
         self._faiss_service = None
         
-    async def initialize(self):
+    async def initialize(self, tool_names: Optional[List[str]] = None):
         """Initialize the tool context manager."""
         
         # Register tool-related symbols for auto-injection in dynamic code
@@ -95,9 +95,27 @@ class ToolContextManager(BaseModel):
         tool_configs = {}
         registry_tool_configs: Dict[str, ToolConfig] = await self._load_from_registry()
         tool_configs.update(registry_tool_configs)
+        
         # Load tools from code
         code_tool_configs: Dict[str, ToolConfig] = await self._load_from_code()
-        tool_configs.update(code_tool_configs)
+        
+        # Merge code configs with registry configs, only override if code version is strictly greater
+        for tool_name, code_config in code_tool_configs.items():
+            if tool_name in tool_configs:
+                registry_config = tool_configs[tool_name]
+                # Compare versions: only override if code version is strictly greater
+                if version_manager.compare_versions(code_config.version, registry_config.version) > 0:
+                    logger.info(f"| 🔄 Overriding tool {tool_name} from registry (v{registry_config.version}) with code version (v{code_config.version})")
+                    tool_configs[tool_name] = code_config
+                else:
+                    logger.info(f"| 📌 Keeping tool {tool_name} from registry (v{registry_config.version}), code version (v{code_config.version}) is not greater")
+            else:
+                # New tool from code, add it
+                tool_configs[tool_name] = code_config
+        
+        # Filter tools by names if provided
+        if tool_names is not None:
+            tool_configs = {name: tool_configs[name] for name in tool_names}
         
         # Build all tools concurrently with a concurrency limit
         tool_names = list(tool_configs.keys())
@@ -876,9 +894,28 @@ class ToolContextManager(BaseModel):
                         # Use version string as key
                         versions_data[tool_config.version] = config_dict
                     
+                    # Get current_version from active config if it exists
+                    # If not in active configs, use the latest version from history
+                    current_version = None
+                    if tool_name in self._tool_configs:
+                        current_config = self._tool_configs[tool_name]
+                        if current_config is not None:
+                            current_version = current_config.version
+                    
+                    # If not found in active configs, use latest version from history
+                    if current_version is None and version_map:
+                        # Find latest version by comparing version strings
+                        latest_version_str = None
+                        for version_str in version_map.keys():
+                            if latest_version_str is None:
+                                latest_version_str = version_str
+                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
+                                latest_version_str = version_str
+                        current_version = latest_version_str
+                    
                     save_data["tools"][tool_name] = {
                         "versions": versions_data,
-                        "current_version": self._tool_configs.get(tool_name).version if tool_name in self._tool_configs else None
+                        "current_version": current_version
                     }
                 except Exception as e:
                     logger.warning(f"| ⚠️ Failed to serialize tool {tool_name}: {e}")
@@ -1000,7 +1037,7 @@ class ToolContextManager(BaseModel):
                             ) or (
                                 not current_version_str and (
                                     latest_version is None or 
-                                    self._compare_versions(tool_config.version, latest_version) > 0
+                                    version_manager.compare_versions(tool_config.version, latest_version) > 0
                                 )
                             ):
                                 latest_config = tool_config
@@ -1069,27 +1106,6 @@ class ToolContextManager(BaseModel):
             except Exception:
                 logger.warning(f"| ⚠️ Failed to get source code for {cls.__name__}")
                 return ""
-    
-    def _compare_versions(self, v1: str, v2: str) -> int:
-        """Compare two version strings. Returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal."""
-        try:
-            parts1 = [int(x) for x in v1.split(".")]
-            parts2 = [int(x) for x in v2.split(".")]
-            
-            # Pad with zeros to same length
-            max_len = max(len(parts1), len(parts2))
-            parts1.extend([0] * (max_len - len(parts1)))
-            parts2.extend([0] * (max_len - len(parts2)))
-            
-            for p1, p2 in zip(parts1, parts2):
-                if p1 > p2:
-                    return 1
-                elif p1 < p2:
-                    return -1
-            return 0
-        except:
-            # Fallback: string comparison
-            return 1 if v1 > v2 else (-1 if v1 < v2 else 0)
     
     async def restore(self, tool_name: str, version: str, auto_initialize: bool = True) -> Optional[ToolConfig]:
         """Restore a specific version of a tool from history

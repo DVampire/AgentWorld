@@ -34,7 +34,9 @@ from src.environment.github.types import (
 )
 from src.utils import dedent, get_env, assemble_project_path
 from src.environment.server import ecp
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class GitHubEnvironment(Environment):
     """GitHub Environment that provides GitHub operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

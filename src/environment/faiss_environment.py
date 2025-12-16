@@ -15,7 +15,9 @@ from src.logger import logger
 from src.utils import assemble_project_path
 from src.environment.server import ecp
 from src.environment.types import Environment
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class FaissEnvironment(Environment):
     """FAISS Vector Store Environment that provides vector operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

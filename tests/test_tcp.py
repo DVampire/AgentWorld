@@ -192,7 +192,7 @@ async def main():
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     await ecp.initialize(config.env_names)
-    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    logger.info(f"| ✅ Environments initialized: {await ecp.list()}")
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")

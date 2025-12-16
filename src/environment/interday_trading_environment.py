@@ -18,6 +18,7 @@ from src.environment.server import ecp
 from src.metric import ARR, SR, MDD, SOR, CR, VOL
 from src.registry import DATASET
 from src.utils import get_token_count
+from src.registry import ENVIRONMENT
 
 _STATE_RULES = """The state of the trading environment will be provided with the following information:
 1. Info: Information of the trading environment.
@@ -55,6 +56,8 @@ _INTERACTION_RULES = """Interaction guidelines:
 2. If you DO NOT have enough current position, you CAN NOT execute the `SELL` action.
 """
 
+
+@ENVIRONMENT.register_module(force=True)
 class InterdayTradingEnvironment(Environment):
     """Trading Offline Environment that provides trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")

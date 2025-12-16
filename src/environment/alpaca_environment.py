@@ -28,7 +28,9 @@ from src.environment.alpacaentry.types import (
     CancelAllOrdersRequest,
 )
 from src.utils import dedent, assemble_project_path
+from src.registry import ENVIRONMENT
 
+@ENVIRONMENT.register_module(force=True)
 class AlpacaEnvironment(Environment):
     """Alpaca Trading Environment that provides Alpaca trading operations as an environment interface."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
