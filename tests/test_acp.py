@@ -80,7 +80,6 @@ async def main():
     logger.info("| 🔧 Initializing transformation server...")
     await transformation.transform(type="e2t", env_names=config.env_names)
     logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
-    exit()
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")

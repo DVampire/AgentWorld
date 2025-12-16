@@ -314,8 +314,8 @@ def parse_args():
 async def main():
     args = parse_args()
     
-    config.init_config(args.config, args)
-    logger.init_logger(config)
+    config.initialize(config_path=args.config, args=args)
+    logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
     
     # Initialize model manager

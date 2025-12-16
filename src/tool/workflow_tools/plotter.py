@@ -46,7 +46,6 @@ This tool will:
 @TOOL.register_module(force=True)
 class PlotterTool(Tool):
     """A tool that generates plots from text, markdown tables, or CSV files."""
-
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
     name: str = "plotter"
@@ -240,12 +239,7 @@ class PlotterTool(Tool):
             code = re.sub(r'```\n?', '', code)
             return code.strip()
 
-    async def __call__(
-        self,
-        input_data: str,
-        output_filename: Optional[str] = None,
-        **kwargs
-    ) -> ToolResponse:
+    async def __call__(self, input_data: str, output_filename: Optional[str] = None, **kwargs) -> ToolResponse:
         """Execute plotter workflow.
 
         Args:

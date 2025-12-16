@@ -507,9 +507,39 @@ class ToolContextManager(BaseModel):
                 tool_name = tool_instance.name
                 tool_description = tool_instance.description
                 tool_enabled = tool_instance.enabled
-                function_calling = tool_instance.function_calling
-                text = tool_instance.text
-                args_schema = tool_instance.args_schema
+                
+                # Get properties with validation and error handling
+                try:
+                    function_calling = tool_instance.function_calling
+                    # Ensure it's a dict or None
+                    if function_calling is not None and not isinstance(function_calling, dict):
+                        logger.warning(f"| ⚠️ Tool {tool_name} function_calling is not a dict: {type(function_calling)}, value: {function_calling}")
+                        function_calling = None
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to get function_calling for {tool_name}: {e}")
+                    function_calling = None
+                
+                try:
+                    text = tool_instance.text
+                    # Ensure it's a string or None
+                    if text is not None and not isinstance(text, str):
+                        logger.warning(f"| ⚠️ Tool {tool_name} text is not a string: {type(text)}, value: {text}")
+                        text = None
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to get text for {tool_name}: {e}")
+                    text = None
+                
+                try:
+                    args_schema = tool_instance.args_schema
+                    # Ensure it's a BaseModel type or None
+                    if args_schema is not None:
+                        if not isinstance(args_schema, type) or not issubclass(args_schema, BaseModel):
+                            logger.warning(f"| ⚠️ Tool {tool_name} args_schema is not a BaseModel type: {type(args_schema)}, value: {args_schema}")
+                            args_schema = None
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to get args_schema for {tool_name}: {e}")
+                    args_schema = None
+                
                 metadata = getattr(tool_instance, "metadata", {})
                 
                 # Version: ask version_manager if not provided

@@ -326,11 +326,33 @@ class AgentContextManager(BaseModel):
                     config_dict = version_data.get("config", {}) or {}
 
                     # Dynamic class handling
+                    cls = None
                     if code:
-                        cls = dynamic_manager.load_class(
-                                code,
-                                base_class=Agent,
-                                context="agent",
+                        try:
+                            # First try to get class name from saved metadata
+                            class_name = version_data.get("class_name")
+                            
+                            # Fallback to config.type (for backward compatibility)
+                            if not class_name:
+                                class_name = config_dict.get("type")
+                            
+                            if class_name:
+                                cls = dynamic_manager.load_class(
+                                    code,
+                                    class_name=class_name,
+                                    base_class=Agent,
+                                    context="agent",
+                                )
+                            else:
+                                # Last resort: let load_class find Agent subclass automatically
+                                cls = dynamic_manager.load_class(
+                                    code,
+                                    base_class=Agent,
+                                    context="agent",
+                                )
+                        except Exception as e:
+                            logger.error(
+                                f"| ❌ Failed to load agent class from code for {agent_name}@{version_str}: {e}"
                             )
 
                     instance = version_data.get("instance", None)
@@ -819,6 +841,10 @@ class AgentContextManager(BaseModel):
                         config_dict = agent_config.model_dump(
                             mode="json", exclude={"cls", "instance", "args_schema"}
                         )
+
+                        # Save class name for loading from code
+                        if agent_config.cls is not None:
+                            config_dict["class_name"] = agent_config.cls.__name__
 
                         if agent_config.args_schema is not None:
                             args_schema_info = serialize_args_schema(

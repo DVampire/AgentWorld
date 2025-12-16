@@ -6,6 +6,7 @@ with read_base():
     from .tools.deep_researcher import deep_researcher_tool
     from .tools.deep_analyzer import deep_analyzer_tool
     from .tools.mdify import mdify_tool
+    from .tools.plotter import plotter_tool
     from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
 
@@ -35,6 +36,7 @@ tool_names = [
     "deep_analyzer",
     "deep_researcher",
     "browser",
+    "plotter",
 ]
 
 #-----------------MDIFY TOOL CONFIG-----------------
@@ -55,6 +57,12 @@ deep_researcher_tool.update(
 deep_analyzer_tool.update(
     model_name="openrouter/o3",
     base_dir=f"{workdir}/tool/deep_analyzer",
+)
+
+#-----------------PLOTTER TOOL CONFIG-----------------
+plotter_tool.update(
+    model_name="openrouter/o3",
+    base_dir=f"{workdir}/tool/plotter",
 )
 
 #-----------------GENERAL MEMORY SYSTEM CONFIG-----------------

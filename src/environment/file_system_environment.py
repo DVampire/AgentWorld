@@ -589,7 +589,7 @@ class FileSystemEnvironment(Environment):
             extra["base_dir"] = str(self.base_dir)
             
             if result.success:
-                description = f"File System Environment at: {self.base_dir}\n"
+                description = f"File System Environment at: {self.base_dir}. All `file_path` in the actions should be absolute paths based on this directory.\n"
                 description += f"Total: {extra.get('total_files', 0)} files, {extra.get('total_directories', 0)} directories\n\n"
                 
                 if extra.get("tree_lines"):

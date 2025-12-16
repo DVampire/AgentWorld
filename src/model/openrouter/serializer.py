@@ -458,7 +458,17 @@ class OpenRouterChatSerializer:
                         optimized[key] = optimize_schema(value, defs)
                     elif key == "anyOf" or key == "oneOf" or key == "allOf":
                         # Handle union types
-                        optimized[key] = [optimize_schema(item, defs) for item in value] if isinstance(value, list) else value
+                        processed_items = [optimize_schema(item, defs) for item in value] if isinstance(value, list) else value
+                        # Fix required fields in oneOf/anyOf items - ensure required only contains keys that exist in properties
+                        if isinstance(processed_items, list):
+                            for item in processed_items:
+                                if isinstance(item, dict):
+                                    properties = item.get("properties", {})
+                                    required = item.get("required", [])
+                                    if required and properties:
+                                        # Filter required to only include keys that exist in properties
+                                        item["required"] = [r for r in required if r in properties]
+                        optimized[key] = processed_items
                     elif isinstance(value, (dict, list)):
                         optimized[key] = optimize_schema(value, defs)
                     else:
@@ -473,6 +483,14 @@ class OpenRouterChatSerializer:
                             optimized["items"] = {**items, "type": "object"}
                         else:
                             optimized["items"] = {**items, "type": "string"}
+                
+                # CRITICAL: Fix required fields - ensure required only contains keys that exist in properties
+                if "required" in optimized and "properties" in optimized:
+                    properties = optimized["properties"]
+                    required = optimized["required"]
+                    if isinstance(required, list) and isinstance(properties, dict):
+                        # Filter required to only include keys that exist in properties
+                        optimized["required"] = [r for r in required if r in properties]
                 
                 # CRITICAL: Add additionalProperties: false to ALL objects for OpenRouter
                 if optimized.get("type") == "object":
@@ -490,6 +508,14 @@ class OpenRouterChatSerializer:
         
         # Optimize the entire schema
         optimized_schema = optimize_schema(schema)
+        
+        # CRITICAL: Fix required fields at root level - ensure required only contains keys that exist in properties
+        if "required" in optimized_schema and "properties" in optimized_schema:
+            properties = optimized_schema["properties"]
+            required = optimized_schema["required"]
+            if isinstance(required, list) and isinstance(properties, dict):
+                # Filter required to only include keys that exist in properties
+                optimized_schema["required"] = [r for r in required if r in properties]
         
         # Ensure root schema has additionalProperties: false if it's an object
         if optimized_schema.get("type") == "object" and "additionalProperties" not in optimized_schema:

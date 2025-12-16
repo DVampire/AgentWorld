@@ -2,9 +2,7 @@
 
 Converts ECP environments to TCP tools.
 """
-
-import asyncio
-from typing import Any, Dict, Type
+from typing import Any, Dict, Optional, Type
 from pydantic import BaseModel
 
 from src.logger import logger
@@ -25,68 +23,96 @@ def create_wrapped_tool_class(action_config, env_config):
         enabled: bool = True
         
         def __init__(self, **kwargs):
-            # Ensure name is set if not provided
-            if 'name' not in kwargs:
-                kwargs['name'] = tool_name
             super().__init__(**kwargs)
-            # Get action config and env config from config if available
-            # This allows the tool to work when instantiated from the registered class
-            init_config = kwargs.get('config', {}) or {}
-            self._action_config = init_config.get('action_config', action_config)
-            self._env_config = init_config.get('env_config', env_config)
         
         @property
         def args_schema(self) -> Type[BaseModel]:
             """Return the BaseModel type from action config's args_schema."""
-            if self._action_config:
-                schema = self._action_config.args_schema
-                # Ensure it's a valid BaseModel subclass
-                if schema is not None and isinstance(schema, type) and issubclass(schema, BaseModel):
-                    return schema
-                # If invalid, fall back to building from parameter_schema
-                return super().args_schema
-            # Fallback to default if no action config
+            if action_config:
+                try:
+                    # Access the property which will compute if needed
+                    schema = action_config.args_schema
+                    # Ensure it's a valid BaseModel subclass
+                    if schema is not None and isinstance(schema, type) and issubclass(schema, BaseModel):
+                        return schema
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to get args_schema from action_config for {tool_name}: {e}")
+                    import traceback
+                    logger.debug(f"| Traceback: {traceback.format_exc()}")
+            # Fallback to building from parameter_schema (which will parse __call__ signature)
+            # But WrappedTool.__call__ has **kwargs, so it will return empty schema
+            # So we should use action_config's schema instead
+            try:
+                if action_config:
+                    # Try to compute from action_config's parameter_schema directly
+                    from src.utils.parameter_utils import build_args_schema
+                    schema = action_config.parameter_schema
+                    computed_schema = build_args_schema(action_config.name, schema)
+                    if computed_schema is not None:
+                        return computed_schema
+            except Exception as e:
+                logger.debug(f"| ⚠️ Failed to compute args_schema from action_config parameter_schema: {e}")
+            # Final fallback
             return super().args_schema
         
-        async def __call__(self, input: Dict[str, Any], **kwargs) -> ToolResponse:
+        @property
+        def function_calling(self) -> Dict[str, Any]:
+            """Return the function calling representation from action config."""
+            if action_config:
+                try:
+                    # Access the property which will compute if needed
+                    fc = action_config.function_calling
+                    # Ensure it's a valid dict
+                    if fc is not None and isinstance(fc, dict):
+                        return fc
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to get function_calling from action_config for {tool_name}: {e}")
+                    import traceback
+                    logger.debug(f"| Traceback: {traceback.format_exc()}")
+            # Fallback to building from parameter_schema
+            return super().function_calling
+        
+        @property
+        def text(self) -> str:
+            """Return the text representation from action config."""
+            if action_config:
+                try:
+                    # Access the property which will compute if needed
+                    txt = action_config.text
+                    # Ensure it's a valid string
+                    if txt is not None and isinstance(txt, str):
+                        return txt
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to get text from action_config for {tool_name}: {e}")
+                    import traceback
+                    logger.debug(f"| Traceback: {traceback.format_exc()}")
+            # Fallback to building from parameter_schema
+            return super().text
+        
+        async def __call__(self, **kwargs) -> ToolResponse:
             """Execute the wrapped action.
             
             Args are passed as keyword arguments, matching the action function's signature.
             The tool_context_manager calls tool(**input), which unpacks the input dict as kwargs.
             """
             try:
-                action_function = self._action_config.function
+                action_function = action_config.function if action_config else None
                 if action_function is None:
                     return ToolResponse(
                         success=False,
-                        message=f"Action {self._action_config.name} has no function"
+                        message=f"Action {action_config.name} has no function"
                     )
-                
-                # Get environment instance if needed
-                env_instance = self._env_config.instance
-                if env_instance is None:
-                    # Try to get instance from ECP
-                    env_instance = await ecp.get(self._env_config.name)
                 
                 # Check if function is bound or unbound
                 if hasattr(action_function, '__self__'):
-                    # Bound method: call directly
-                    if asyncio.iscoroutinefunction(action_function):
-                        result = await action_function(**kwargs)
-                    else:
-                        result = action_function(**kwargs)
+                    # Bound method: call directly without passing instance
+                    result = await action_function(**kwargs)
                 else:
-                    # Unbound method: pass instance as first argument if needed
-                    if env_instance is not None:
-                        if asyncio.iscoroutinefunction(action_function):
-                            result = await action_function(env_instance, **kwargs)
-                        else:
-                            result = action_function(env_instance, **kwargs)
-                    else:
-                        if asyncio.iscoroutinefunction(action_function):
-                            result = await action_function(**kwargs)
-                        else:
-                            result = action_function(**kwargs)
+                    # Unbound method: get instance and pass as first argument
+                    env_instance = env_config.instance
+                    if env_instance is None:
+                        env_instance = await ecp.get(env_config.name)
+                    result = await action_function(env_instance, **kwargs)
                 
                 # Convert result to ToolResponse if needed
                 if isinstance(result, ToolResponse):
@@ -133,6 +159,10 @@ class E2TTransformer:
                     
                     WrappedToolClass = create_wrapped_tool_class(action_config, env_config)
                     
+                    # Don't pass action_config and env_config in config - they contain non-serializable functions
+                    # WrappedTool.__init__ will get them from closure if not in config
+                    # The args_schema, function_calling, and text will be correctly retrieved from action_config
+                    # when the tool instance is created, and saved in ToolConfig
                     await tcp.register(WrappedToolClass, config={}, override=True)
                     logger.info(f"| ✅ E2T: Tool {action_name} added to TCP")
                         

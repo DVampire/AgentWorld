@@ -32,7 +32,7 @@ class BashTool(Tool):
         """Execute a bash command asynchronously.
         
         Args:
-            command (str): The command to execute.
+            command (str): The command to execute. If file path is necessary, it should be an absolute path.
         """
         try:
             # Sanitize the command
