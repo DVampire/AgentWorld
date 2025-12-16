@@ -227,6 +227,7 @@ class EnvironmentConfig(BaseModel):
     rules: str = Field(description="The rules of the environment")
     description: str = Field(description="The description of the environment")
     version: str = Field(default="1.0.0", description="Version of the environment")
+    
     actions: Dict[str, ActionConfig] = Field(default_factory=dict, description="Dictionary of actions available in this environment")
     cls: Optional[Type[Environment]] = Field(default=None, description="The class of the environment")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the environment")

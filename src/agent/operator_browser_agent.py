@@ -17,19 +17,15 @@ from src.memory import memory_manager, SessionInfo, EventType
 from src.tool.types import ToolResponse
 from src.prompt import prompt_manager
 from src.model import model_manager
+from src.registry import AGENT
 
-class OperatorBrowserAgentInputArgs(BaseModel):
-    task: str = Field(description="The web browsing task to complete.")
-
-
+@AGENT.register_module(force=True)
 class OperatorBrowserAgent(Agent):
     """Operator Browser Agent implementation with visual understanding capabilities."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="operator_browser", description="The name of the operator browser agent.")
-    type: str = Field(default="Agent", description="The type of the operator browser agent.")
     description: str = Field(default="A browser operator agent that can see and control web browsers using vision-enabled LLM.", description="The description of the operator browser agent.")
-    args_schema: Type[OperatorBrowserAgentInputArgs] = Field(default=OperatorBrowserAgentInputArgs, description="The args schema of the operator browser agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the operator browser agent.")
     
     def __init__(
@@ -394,11 +390,20 @@ class OperatorBrowserAgent(Agent):
         
         return done, final_result
     
-    async def ainvoke(self, 
+    async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None,
-                  ):
-        """Run the tool calling agent with loop."""
+                  files: Optional[List[str]] = None
+                  ) -> Any:
+        """
+        Main entry point for operator browser agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting OperatorBrowserAgent: {task}")
         
         if files:

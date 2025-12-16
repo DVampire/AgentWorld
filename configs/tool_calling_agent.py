@@ -18,10 +18,10 @@ version = "0.1.0"
 model_name = "openrouter/gpt-4.1"
 
 env_names = [
-    "file_system",
+    "file_system"
 ]
 memory_names = [
-    "general_memory_system",
+    "general_memory_system"
 ]
 agent_names = [
     "tool_calling"

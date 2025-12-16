@@ -5,13 +5,65 @@ Converts ACP agents to TCP tools.
 
 import asyncio
 from typing import Any, Dict
+from typing import Optional, List
 
 from src.logger import logger
 from src.tool.server import tcp
-from src.tool.types import Tool, ToolResponse, ToolConfig
+from src.tool.types import Tool, ToolResponse
 from src.agent.server import acp
 from src.transformation.types import A2TRequest, A2TResponse
 
+
+def create_wrapped_tool_class(agent_info, agent_instance):
+    class WrappedTool(Tool):
+        name: str = agent_info.name
+        description: str = agent_info.description
+        enabled: bool = True
+        
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            # Get agent info and instance from config if available
+            # This allows the tool to work when instantiated from the registered class
+            config = kwargs.get('config', {}) or {}
+            self._agent_info = config.get('agent_info', agent_info)
+            self._agent_instance = config.get('agent_instance', agent_instance)
+        
+        async def __call__(self, task: str, files: Optional[List[str]] = None, **kwargs) -> ToolResponse:
+            """Wrapper function to call agent.
+            
+            Args:
+                task (str): The task to complete
+                files (Optional[List[str]]): The files to attach to the task
+                
+            Returns:
+                ToolResponse: The response from the tool call
+            """
+            try:
+                # Extract task and files from input
+                # Call agent directly using __call__ method
+                result = await self._agent_instance(task=task, files=files, **kwargs)
+                
+                # Convert result to ToolResponse if needed
+                if isinstance(result, ToolResponse):
+                    return result
+                elif isinstance(result, dict):
+                    return ToolResponse(
+                        success=result.get("success", True),
+                        message=result.get("message", str(result)),
+                        extra=result.get("extra")
+                    )
+                else:
+                    return ToolResponse(
+                        success=True,
+                        message=str(result)
+                    )
+            except Exception as e:
+                return ToolResponse(
+                    success=False,
+                    message=f"Error executing agent: {str(e)}"
+                )
+    
+    return WrappedTool
 
 class A2TTransformer:
     """Transformer for converting ACP agents to TCP tools."""
@@ -45,77 +97,15 @@ class A2TTransformer:
                 )
                 
             for agent_info in selected_agent_infos:
-                # Create a dynamic Tool class for this agent
-                # Use default arguments to capture loop variables correctly
-                def create_wrapped_tool_class(info=agent_info):
-                    class WrappedTool(Tool):
-                        name: str = info.name
-                        description: str = info.description
-                        enabled: bool = True
-                        
-                        def __init__(self, **kwargs):
-                            super().__init__(**kwargs)
-                            self._agent_info = info
-                        
-                        async def __call__(self, input: Dict[str, Any]) -> ToolResponse:
-                            """Execute the wrapped agent."""
-                            try:
-                                # Extract task and files from input
-                                task = input.get("task", "")
-                                files = input.get("files", None)
-                                
-                                if asyncio.iscoroutinefunction(self._agent_info.instance.ainvoke):
-                                    result = await self._agent_info.instance.ainvoke(task=task, files=files)
-                                else:
-                                    result = self._agent_info.instance.invoke(task=task, files=files)
-                                
-                                # Convert result to ToolResponse if needed
-                                if isinstance(result, ToolResponse):
-                                    return result
-                                elif isinstance(result, dict):
-                                    return ToolResponse(
-                                        success=result.get("success", True),
-                                        message=result.get("message", str(result)),
-                                        extra=result.get("extra")
-                                    )
-                                else:
-                                    return ToolResponse(
-                                        success=True,
-                                        message=str(result)
-                                    )
-                            except Exception as e:
-                                return ToolResponse(
-                                    success=False,
-                                    message=f"Error executing agent: {str(e)}"
-                                )
-                    
-                    return WrappedTool
+                # Get agent instance
+                agent_instance = agent_info.instance
+                if agent_instance is None:
+                    logger.warning(f"| ⚠️ Agent {agent_info.name} has no instance")
+                    continue
                 
-                WrappedToolClass = create_wrapped_tool_class()
-                wrapped_tool = WrappedToolClass()
-                
-                # Get function_calling, text, and args_schema from Tool instance properties
-                # These are computed on-demand, so we access them directly
-                function_calling = wrapped_tool.function_calling
-                text = wrapped_tool.text
-                args_schema = wrapped_tool.args_schema
-                
-                tool_info = ToolConfig(
-                    id=0,  # Will be assigned by TCP
-                    name=agent_info.name,
-                    description=agent_info.description,
-                    enabled=True,
-                    version="1.0.0",
-                    cls=WrappedToolClass,
-                    config={},
-                    instance=wrapped_tool,
-                    metadata=agent_info.metadata or {},
-                    function_calling=function_calling,
-                    text=text,
-                    args_schema=args_schema
-                )
-                
-                await tcp.register(tool_info)
+                WrappedToolClass = create_wrapped_tool_class(agent_info, agent_instance)
+
+                await tcp.register(WrappedToolClass, config={}, override=True)
                 logger.info(f"| ✅ ACP to TCP transformation completed: {agent_info.name}")
                 
             logger.info(f"| ✅ ACP to TCP transformation completed: {len(selected_agent_infos)} tools")

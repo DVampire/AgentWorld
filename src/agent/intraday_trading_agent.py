@@ -22,6 +22,7 @@ from src.memory import memory_manager, SessionInfo, EventType
 from src.tool.types import ToolResponse
 from src.model import model_manager
 from src.prompt import prompt_manager
+from src.registry import AGENT
 
 class DayAnalysisOutput(BaseModel):
     """Output schema for day analysis."""
@@ -29,19 +30,13 @@ class DayAnalysisOutput(BaseModel):
     confidence: str = Field(description="Confidence level: high/medium/low")
     reasoning: str = Field(description="5-8 sentences explaining the forecast and why this pattern is expected")
 
-class IntradayDayAnalysisAgentInputArgs(BaseModel):
-    """Input args for day analysis agent."""
-    data: str = Field(description="The data for the day analysis agent.")
-
-
+@AGENT.register_module(force=True)
 class IntradayDayAnalysisAgent(Agent):
     """Intraday day analysis agent - performs deep daily trend analysis."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="intraday_day_analysis", description="The name of the day analysis agent.")
-    type: str = Field(default="Agent", description="The type of the day analysis agent.")
     description: str = Field(default="An agent that performs deep daily trend analysis for intraday trading.", description="The description of the day analysis agent.")
-    args_schema: Type[IntradayDayAnalysisAgentInputArgs] = Field(default=IntradayDayAnalysisAgentInputArgs, description="The args schema.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
     
     def __init__(
@@ -172,8 +167,17 @@ class IntradayDayAnalysisAgent(Agent):
         
         return messages
         
-    async def ainvoke(self, data: Dict[str, Any], task_id: str):
-        """Invoke the day analysis agent."""
+    async def __call__(self, data: Dict[str, Any], task_id: str) -> Any:
+        """
+        Main entry point for intraday day analysis agent.
+        
+        Args:
+            data (Dict[str, Any]): The data for the day analysis.
+            task_id (str): The task ID.
+            
+        Returns:
+            Any: The day analysis result.
+        """
         
         messages = await self._get_messages(data)
         
@@ -271,19 +275,13 @@ class MinuteTradingOutputBuilder:
         return MinuteTradingOutput
 
 
-class IntradayMinuteTradingAgentInputArgs(BaseModel):
-    """Input args for minute trading agent."""
-    data: str = Field(description="The data for the minute trading agent.")
-
-
+@AGENT.register_module(force=True)
 class IntradayMinuteTradingAgent(Agent):
     """Intraday minute trading agent - fast execution based on day analysis."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="intraday_minute_trading", description="The name of the minute trading agent.")
-    type: str = Field(default="Agent", description="The type of the minute trading agent.")
     description: str = Field(default="An agent that makes fast trading decisions based on daily forecast.", description="The description.")
-    args_schema: Type[IntradayMinuteTradingAgentInputArgs] = Field(default=IntradayMinuteTradingAgentInputArgs, description="The args schema.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
     
     def __init__(
@@ -433,8 +431,18 @@ class IntradayMinuteTradingAgent(Agent):
         
         return messages
     
-    async def ainvoke(self, data: Dict[str, Any], task_id: str, daily_trend_forecast: str):
-        """Invoke the minute trading agent."""
+    async def __call__(self, data: Dict[str, Any], task_id: str, daily_trend_forecast: str) -> Tuple[bool, Any]:
+        """
+        Main entry point for intraday minute trading agent.
+        
+        Args:
+            data (Dict[str, Any]): The data for the minute trading.
+            task_id (str): The task ID.
+            daily_trend_forecast (str): The daily trend forecast from day analysis.
+            
+        Returns:
+            Tuple[bool, Any]: A tuple of (done, final_result).
+        """
         messages = await self._get_messages(data, daily_trend_forecast)
         
         done = False
@@ -534,9 +542,7 @@ class IntradayTradingAgent(Agent):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="intraday_trading", description="The name of the intraday trading agent.")
-    type: str = Field(default="Agent", description="The type of the intraday trading agent.")
     description: str = Field(default="An intraday trading agent with two-stage decision making.", description="The description.")
-    args_schema: Type[IntradayTradingAgentInputArgs] = Field(default=IntradayTradingAgentInputArgs, description="The args schema.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
     
     def __init__(
@@ -622,7 +628,7 @@ class IntradayTradingAgent(Agent):
         
         if has_news:
             # Get daily trend forecast
-            response = await self.day_analysis_agent.ainvoke(data, task_id)
+            response = await self.day_analysis_agent(data, task_id)
             daily_trend_forecast = dedent(f"""
                 Trend Type: {response.trend_type}
                 Confidence: {response.confidence}
@@ -633,17 +639,26 @@ class IntradayTradingAgent(Agent):
             self.daily_trend_forecast = daily_trend_forecast
             
         # Get minute trading decision
-        done, final_result = await self.minute_trading_agent.ainvoke(data, task_id, self.daily_trend_forecast)
+        done, final_result = await self.minute_trading_agent(data, task_id, self.daily_trend_forecast)
         
         return done, final_result
         
     
-    async def ainvoke(
+    async def __call__(
         self, 
         task: str, 
-        files: Optional[List[str]] = None,
-    ):
-        """Run the intraday trading agent with loop."""
+        files: Optional[List[str]] = None
+    ) -> Any:
+        """
+        Main entry point for intraday trading agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting IntradayTradingAgent: {task}")
         
         session_info = await self._generate_session_info(task)

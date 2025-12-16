@@ -280,12 +280,6 @@ class DynamicModuleManager:
         Raises:
             ValueError: If the class cannot be found or loaded, or doesn't inherit from base_class
         """
-        # Extract class name if not provided
-        if class_name is None:
-            class_name = self.extract_class_name_from_code(code)
-            if not class_name:
-                raise ValueError("Cannot determine class name from code. Please provide class_name.")
-        
         # Determine context from base_class if not provided
         if context is None and base_class is not None:
             # Try to infer context from base class name
@@ -295,7 +289,7 @@ class DynamicModuleManager:
             elif 'agent' in base_name:
                 context = "agent"
         
-        # Load code into module
+        # Load code into module first (needed to find classes)
         if module_name is None:
             module_name = self.load_code(code, context=context, inject_imports=inject_imports)
         else:
@@ -304,6 +298,45 @@ class DynamicModuleManager:
         
         # Get module
         module = self._loaded_modules[module_name]
+        
+        # Extract class name if not provided
+        if class_name is None:
+            if base_class is not None:
+                # Find all classes that inherit from base_class
+                candidate_classes = []
+                for attr_name in dir(module):
+                    attr = getattr(module, attr_name)
+                    if (isinstance(attr, type) and 
+                        issubclass(attr, base_class) and 
+                        attr is not base_class):
+                        candidate_classes.append((attr_name, attr))
+                
+                if len(candidate_classes) == 0:
+                    raise ValueError(f"No class found in code that inherits from {base_class.__name__}")
+                elif len(candidate_classes) == 1:
+                    class_name = candidate_classes[0][0]
+                else:
+                    # Multiple candidates - prefer classes with @AGENT/@TOOL decorator or matching naming patterns
+                    preferred = []
+                    for name, cls in candidate_classes:
+                        try:
+                            source = inspect.getsource(cls)
+                            if '@AGENT' in source or '@TOOL' in source or name.endswith('Agent') or name.endswith('Tool'):
+                                preferred.append((name, cls))
+                        except:
+                            if name.endswith('Agent') or name.endswith('Tool'):
+                                preferred.append((name, cls))
+                    
+                    if preferred:
+                        class_name = preferred[0][0]
+                    else:
+                        # Fall back to first candidate
+                        class_name = candidate_classes[0][0]
+            else:
+                # No base_class provided, extract first class from code
+                class_name = self.extract_class_name_from_code(code)
+                if not class_name:
+                    raise ValueError("Cannot determine class name from code. Please provide class_name or base_class.")
         
         # Extract the class
         if not hasattr(module, class_name):

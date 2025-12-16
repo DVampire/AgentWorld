@@ -69,17 +69,18 @@ async def main():
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     await ecp.initialize(config.env_names)
-    logger.info(f"| ✅ Environments initialized: {ecp.list()}")
+    logger.info(f"| ✅ Environments initialized: {await ecp.list()}")
     
     # Initialize agents
     logger.info("| 🤖 Initializing agents...")
     await acp.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents initialized: {await acp.list()}")
     
-    # Transformation ECP to TCP
-    logger.info("| 🔄 Transformation start...")
+    # Initialize transformation server
+    logger.info("| 🔧 Initializing transformation server...")
     await transformation.transform(type="e2t", env_names=config.env_names)
     logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
+    exit()
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")

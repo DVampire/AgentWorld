@@ -16,19 +16,15 @@ from src.memory import memory_manager, SessionInfo, EventType
 from src.tool.types import ToolResponse
 from src.prompt import prompt_manager
 from src.model import model_manager
+from src.registry import AGENT
 
-class AnthropicMobileAgentInputArgs(BaseModel):
-    task: str = Field(description="The mobile device automation task to complete.")
-
-
+@AGENT.register_module(force=True)
 class AnthropicMobileAgent(Agent):
     """Anthropic Mobile Agent implementation with visual understanding capabilities for mobile device control."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="anthropic_mobile", description="The name of the anthropic mobile agent.")
-    type: str = Field(default="Agent", description="The type of the mobile agent.")
     description: str = Field(default="A anthropic mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
-    args_schema: Type[AnthropicMobileAgentInputArgs] = Field(default=AnthropicMobileAgentInputArgs, description="The args schema of the mobile agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the anthropic mobile agent.")
     
     def __init__(
@@ -364,11 +360,20 @@ class AnthropicMobileAgent(Agent):
         
         return done, final_result
     
-    async def ainvoke(self, 
+    async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None,
-                  ):
-        """Run the mobile agent with loop."""
+                  files: Optional[List[str]] = None
+                  ) -> Any:
+        """
+        Main entry point for anthropic mobile agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting Anthropic MobileAgent: {task}")
         
         if files:

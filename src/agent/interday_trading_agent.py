@@ -16,18 +16,15 @@ from src.memory import memory_manager, SessionInfo, EventType
 from src.tool.types import ToolResponse
 from src.model import model_manager
 from src.prompt import prompt_manager
+from src.registry import AGENT
 
-class InterdayTradingAgentInputArgs(BaseModel):
-    task: str = Field(description="The trading task to complete.")
-
+@AGENT.register_module(force=True)
 class InterdayTradingAgent(Agent):
     """Interday trading agent implementation for single stock trading tasks."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="interday_trading", description="The name of the interday trading agent.")
-    type: str = Field(default="Agent", description="The type of the interday trading agent.")
     description: str = Field(default="A interday trading agent that can perform single stock trading tasks.", description="The description of the interday trading agent.")
-    args_schema: Type[InterdayTradingAgentInputArgs] = Field(default=InterdayTradingAgentInputArgs, description="The args schema of the interday trading agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the interday trading agent.")
     
     def __init__(
@@ -321,11 +318,20 @@ class InterdayTradingAgent(Agent):
         
         return messages
         
-    async def ainvoke(self, 
+    async def __call__(self, 
                   task: str, 
-                  files: List[str] = [],
-                  ):
-        """Run the interday trading agent with loop."""
+                  files: Optional[List[str]] = None
+                  ) -> Any:
+        """
+        Main entry point for interday trading agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting InterdayTradingAgent: {task}")
         
         session_info = await self._generate_session_info(task)

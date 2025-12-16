@@ -49,13 +49,13 @@ class EnvironmentContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.workdir, "environments"))
+            self.base_dir = assemble_project_path(os.path.join(config.workdir, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         
         if save_path is not None:
             self.save_path = assemble_project_path(save_path)
         else:
-            self.save_path = os.path.join(self.base_dir, "environments.json")
+            self.save_path = os.path.join(self.base_dir, "environment.json")
         
         logger.info(f"| 📁 Environment context manager base directory: {self.base_dir} and save path: {self.save_path}")
 

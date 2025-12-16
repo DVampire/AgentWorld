@@ -19,6 +19,7 @@ from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.prompt import prompt_manager
+from src.registry import AGENT
 
 def format_actions(actions: List[BaseModel]) -> str:
     """Format actions as a Markdown table using pandas."""
@@ -91,6 +92,7 @@ class ThinkOutputBuilder:
 
         return ThinkOutput
 
+@AGENT.register_module(force=True)
 class OfflineTradingAgent(Agent):
     """Offline trading agent implementation for backtesting with historical data.
     
@@ -100,18 +102,14 @@ class OfflineTradingAgent(Agent):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="offline_trading", description="The name of the offline trading agent.")
-    type: str = Field(default="Agent", description="The type of the offline trading agent.")
     description: str = Field(default="An offline trading agent for backtesting with historical data.", description="The description of the offline trading agent.")
-    args_schema: Type[InputArgs] = Field(default=InputArgs, description="The args schema of the offline trading agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the offline trading agent.")
     
     def __init__(
         self,
         workdir: str,
         name: Optional[str] = None,
-        type: Optional[str] = None,
         description: Optional[str] = None,
-        args_schema: Optional[Type[InputArgs]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
@@ -130,9 +128,7 @@ class OfflineTradingAgent(Agent):
         super().__init__(
             workdir=workdir,
             name=name,
-            type=type,
             description=description,
-            args_schema=args_schema,
             metadata=metadata,
             model_name=model_name,
             prompt_name=prompt_name,
@@ -437,11 +433,20 @@ class OfflineTradingAgent(Agent):
         
         return done, final_result
         
-    async def ainvoke(self, 
+    async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None,
-                  ):
-        """Run the tool calling agent with loop."""
+                  files: Optional[List[str]] = None
+                  ) -> Any:
+        """
+        Main entry point for offline trading agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting OfflineTradingAgent: {task}")
         
         if files:

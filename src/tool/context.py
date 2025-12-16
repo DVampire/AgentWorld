@@ -49,12 +49,12 @@ class ToolContextManager(BaseModel):
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
-            self.base_dir = assemble_project_path(os.path.join(config.workdir, "tools"))
+            self.base_dir = assemble_project_path(os.path.join(config.workdir, "tool"))
         os.makedirs(self.base_dir, exist_ok=True)
         if save_path is not None:
             self.save_path = assemble_project_path(save_path)
         else:
-            self.save_path = os.path.join(self.base_dir, "tools.json")
+            self.save_path = os.path.join(self.base_dir, "tool.json")
         logger.info(f"| 📁 Tool context manager base directory: {self.base_dir} and save path: {self.save_path}")
 
         self._tool_configs: Dict[str, ToolConfig] = {}  # Current active configs (latest version)

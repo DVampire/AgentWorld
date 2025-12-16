@@ -12,18 +12,15 @@ from src.agent.server import acp
 from src.memory import memory_manager, SessionInfo, EventType
 from src.model import model_manager
 from src.prompt import prompt_manager
+from src.registry import AGENT
 
-class SimpleChatAgentInputArgs(BaseModel):
-    message: str = Field(description="The message from the human user.")
-
+@AGENT.register_module(force=True)
 class SimpleChatAgent(Agent):
     """Simple chat agent for human conversation."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="simple_chat", description="The name of the simple chat agent.")
-    type: str = Field(default="Agent", description="The type of the simple chat agent.")
     description: str = Field(default="A simple chat agent that can have conversations with humans.", description="The description of the simple chat agent.")
-    args_schema: Type[SimpleChatAgentInputArgs] = Field(default=SimpleChatAgentInputArgs, description="The args schema of the simple chat agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the simple chat agent.")
     
     def __init__(
@@ -233,8 +230,18 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.error(f"Error getting user input: {e}")
             return None
 
-    async def ainvoke(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None):
-        """Process multi-turn conversation starting with the initial message."""
+    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None) -> str:
+        """
+        Main entry point for simple chat agent through acp.
+        
+        Args:
+            task (str): The conversation task/message to process.
+            files (Optional[List[str]]): The files to attach to the task.
+            global_conversation_history (Optional[List[Dict]]): The global conversation history for multi-agent scenarios.
+            
+        Returns:
+            str: The final conversation result as a string.
+        """
         logger.info(f"| 💬 SimpleChatAgent starting multi-turn conversation: {task[:self.log_max_length]}...")
         
         # Generate session info

@@ -17,7 +17,9 @@ from src.memory import memory_manager
 from src.tool.types import ToolResponse
 from src.tracer import Tracer, Record
 from src.model import model_manager
+from src.registry import AGENT
 
+@AGENT.register_module(force=True)
 class ToolCallingAgent(Agent):
     """Tool calling agent implementation with manual agent logic."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -30,7 +32,6 @@ class ToolCallingAgent(Agent):
         self,
         workdir: str,
         name: Optional[str] = None,
-        type: Optional[str] = None,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
@@ -50,7 +51,6 @@ class ToolCallingAgent(Agent):
         super().__init__(
             workdir=workdir,
             name=name,
-            type=type,
             description=description,
             metadata=metadata,
             model_name=model_name,
@@ -88,7 +88,8 @@ class ToolCallingAgent(Agent):
         
         # Only iterate over environments specified in config, not all registered environments
         for env_name in config.env_names:
-            rule_string = ecp.get_info(env_name).rules
+            agent_info = await ecp.get_info(env_name)
+            rule_string = agent_info.rules
             rule_string = dedent(f"""
                 <rules>
                 {rule_string}
@@ -264,7 +265,16 @@ class ToolCallingAgent(Agent):
                   task: str, 
                   files: Optional[List[str]] = None
                   ) -> Any:
-        """Run the tool calling agent with loop."""
+        """
+        Main entry point for tool calling agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
         if files:

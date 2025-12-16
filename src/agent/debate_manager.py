@@ -9,64 +9,56 @@ from pydantic import BaseModel, Field, ConfigDict
 from src.logger import logger
 from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
 from src.agent.server import acp
+from src.registry import AGENT
 
-
-class DebateManagerInputArgs(BaseModel):
-    topic: str = Field(description="The debate topic.")
-    initial_message: Optional[str] = Field(default=None, description="Optional initial message to start the debate.")
-    max_rounds: Optional[int] = Field(default=10, description="Maximum number of debate rounds.")
-
-
+@AGENT.register_module(force=True)
 class DebateManagerAgent(Agent):
     """Manages multi-agent debate sessions."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="debate_manager", description="The name of the debate manager.")
-    type: str = Field(default="Agent", description="The type of the debate manager.")
     description: str = Field(default="A debate manager that coordinates multiple agents in a debate.", description="The description of the debate manager.")
-    args_schema: Type[DebateManagerInputArgs] = Field(default=DebateManagerInputArgs, description="The args schema of the debate manager.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the debate manager.")
     
     def __init__(
         self,
-        name: str,
-        description: str,
         workdir: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
+        prompt_modules: Optional[Dict[str, Any]] = None,
+        memory_name: Optional[str] = None,
         max_steps: int = 1,
         review_steps: int = 1,
         log_max_length: int = 1000,
         max_rounds: int = 10,
         **kwargs
     ):
+        # Set default prompt name for debate manager
         if not prompt_name:
             prompt_name = "simple_chat"
             
         super().__init__(
+            workdir=workdir,
             name=name,
             description=description,
-            workdir=workdir,
+            metadata=metadata,
             model_name=model_name,
             prompt_name=prompt_name,
+            prompt_modules=prompt_modules,
+            memory_name=memory_name,
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
-            max_rounds=max_rounds,
             **kwargs)
-        
-        self.name = name
-        self.description = description
         
         # Initialize debate-specific attributes
         self.global_conversation_history: List[Dict] = []
         self.current_round = 0
         self.active_agents = []
         self.max_rounds = max_rounds
-        
-        # No tools needed for simple chat
-        self.tools = []
-        self.model = self.model  # Use the base model without tool binding
         
     async def start_debate(self, 
                            topic: str, 
@@ -246,18 +238,28 @@ class DebateManagerAgent(Agent):
         
         return random.choice(follow_up_questions)
     
-    async def ainvoke(self,
-                      topic: str, 
-                      files: Optional[List[str]] = None, 
-                      agents: List[str] = []):
-        """Main entry point for debate manager through acp."""
-        logger.info(f"| 🎯 DebateManagerAgent starting debate: {topic[:100]}...")
+    async def __call__(self,
+                      task: str, 
+                      files: Optional[List[str]] = None,
+                      agents: Optional[List[str]] = None) -> str:
+        """
+        Main entry point for debate manager through acp.
+        
+        Args:
+            task (str): The debate topic/task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            agents (Optional[List[str]]): The list of agent names to participate in the debate.
+            
+        Returns:
+            str: The formatted debate output as a string.
+        """
+        logger.info(f"| 🎯 DebateManagerAgent starting debate: {task[:100]}...")
         
         # Start debate and collect all events
         events = []
         debate_output = []
         
-        async for event in self.start_debate(topic, files, agents):
+        async for event in self.start_debate(task, files, agents or []):
             events.append(event)
             
             # Collect meaningful output for the user

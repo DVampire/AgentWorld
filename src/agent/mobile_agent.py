@@ -17,19 +17,16 @@ from src.memory import memory_manager, SessionInfo, EventType
 from src.tool.types import ToolResponse
 from src.prompt import prompt_manager
 from src.model import model_manager
-
-class MobileAgentInputArgs(BaseModel):
-    task: str = Field(description="The mobile device automation task to complete.")
+from src.registry import AGENT
 
 
+@AGENT.register_module(force=True)
 class MobileAgent(Agent):
     """Mobile Agent implementation with visual understanding capabilities for mobile device control."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="mobile", description="The name of the mobile agent.")
-    type: str = Field(default="Agent", description="The type of the mobile agent.")
     description: str = Field(default="A mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
-    args_schema: Type[MobileAgentInputArgs] = Field(default=MobileAgentInputArgs, description="The args schema of the mobile agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the mobile agent.")
     
     def __init__(
@@ -388,11 +385,20 @@ class MobileAgent(Agent):
         
         return done, final_result
     
-    async def ainvoke(self, 
+    async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None,
-                  ):
-        """Run the mobile agent with loop."""
+                  files: Optional[List[str]] = None
+                  ) -> Any:
+        """
+        Main entry point for mobile agent through acp.
+        
+        Args:
+            task (str): The task to complete.
+            files (Optional[List[str]]): The files to attach to the task.
+            
+        Returns:
+            Any: The final result of the task.
+        """
         logger.info(f"| 🚀 Starting MobileAgent: {task}")
         
         if files:
