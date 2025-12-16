@@ -65,6 +65,9 @@ class FileSystemEnvironment(Environment):
         
     async def initialize(self) -> None:
         """Initialize the file system environment."""
+        
+        self.metadata["additional_rules"]["state"] = f"File System Environment at: {self.base_dir}. All `file_path` in the actions should be absolute paths based on this directory.\n"
+        
         logger.info(f"| 🗂️ File System Environment initialized at: {self.base_dir}")
         
     async def cleanup(self) -> None:
@@ -81,7 +84,7 @@ class FileSystemEnvironment(Environment):
         """Read a file from the file system.
         
         Args:
-            file_path (str): The absolute path of the file to read.
+            file_path (str): The ABSOLUTE path of the file to read. It should be based on the base directory of the file system environment.
             start_line (Optional[int]): Start line number for reading a range.
             end_line (Optional[int]): End line number for reading a range.
             
@@ -130,7 +133,7 @@ class FileSystemEnvironment(Environment):
         """Write content to a file.
         
         Args:
-            file_path (str): The absolute path of the file to write.
+            file_path (str): The ABSOLUTE path of the file to write. It should be based on the base directory of the file system environment.
             content (str): The content to write to the file.
             mode (str): Write mode, 'w' for overwrite (default) or 'a' for append.
         
@@ -172,7 +175,7 @@ class FileSystemEnvironment(Environment):
         """Replace a string in a file.
         
         Args:
-            file_path (str): The absolute path of the file to modify.
+            file_path (str): The ABSOLUTE path of the file to modify. It should be based on the base directory of the file system environment.
             old_string (str): The string to replace.
             new_string (str): The new string to replace with.
             start_line (Optional[int]): Start line number for range replacement.
@@ -212,7 +215,7 @@ class FileSystemEnvironment(Environment):
         """Delete a file from the file system.
         
         Args:
-            file_path (str): The absolute path of the file to delete.
+            file_path (str): The ABSOLUTE path of the file to delete. It should be based on the base directory of the file system environment.
             
         Returns:
             Dict with success, message, and extra fields
@@ -242,8 +245,8 @@ class FileSystemEnvironment(Environment):
         """Copy a file from source to destination.
         
         Args:
-            src_path (str): The absolute path of the source file.
-            dst_path (str): The absolute path of the destination file.
+            src_path (str): The ABSOLUTE path of the source file. It should be based on the base directory of the file system environment.
+            dst_path (str): The ABSOLUTE path of the destination file. It should be based on the base directory of the file system environment.
         
         Returns:
             Dict with success, message, and extra fields
@@ -274,7 +277,7 @@ class FileSystemEnvironment(Environment):
         """Move a file from source to destination.
         
         Args:
-            src_path (str): The absolute path of the source file.
+            src_path (str): The ABSOLUTE path of the source file. It should be based on the base directory of the file system environment.
             dst_path (str): The absolute path of the destination file.
         
         Returns:
@@ -309,8 +312,8 @@ class FileSystemEnvironment(Environment):
         """Rename a file or directory.
         
         Args:
-            old_path (str): The absolute path of the file/directory to rename.
-            new_path (str): The absolute path of the new name.
+            old_path (str): The ABSOLUTE path of the file/directory to rename. It should be based on the base directory of the file system environment.
+            new_path (str): The ABSOLUTE path of the new name. It should be based on the base directory of the file system environment.
         
         Returns:
             Dict with success, message, and extra fields
@@ -346,7 +349,7 @@ class FileSystemEnvironment(Environment):
         """Get detailed information about a file.
         
         Args:
-            file_path (str): The absolute path of the file.
+            file_path (str): The ABSOLUTE path of the file. It should be based on the base directory of the file system environment.
             include_stats (Optional[bool]): Whether to include file statistics.
         
         Returns:
@@ -392,7 +395,7 @@ class FileSystemEnvironment(Environment):
         """Create a directory.
         
         Args:
-            dir_path (str): The absolute path of the directory to create.
+            dir_path (str): The ABSOLUTE path of the directory to create. It should be based on the base directory of the file system environment.
         
         Returns:
             Dict with success, message, and extra fields
@@ -589,7 +592,7 @@ class FileSystemEnvironment(Environment):
             extra["base_dir"] = str(self.base_dir)
             
             if result.success:
-                description = f"File System Environment at: {self.base_dir}. All `file_path` in the actions should be absolute paths based on this directory.\n"
+                description = f"File System Environment at: {self.base_dir}."
                 description += f"Total: {extra.get('total_files', 0)} files, {extra.get('total_directories', 0)} directories\n\n"
                 
                 if extra.get("tree_lines"):
