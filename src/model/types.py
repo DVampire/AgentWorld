@@ -13,7 +13,9 @@ class ModelConfig(BaseModel):
     api_base: Optional[str] = Field(default=None, description="Override API base URL.")
     api_key: Optional[str] = Field(default=None, description="Override API key.")
     temperature: Optional[float] = Field(default=None, description="Temperature parameter for the model.")
-    reasoning_effort: Optional[str] = Field(default=None, description="Reasoning effort level (e.g., 'low', 'high').")
+    reasoning: Optional[Dict[str, Any]] = Field(default={
+        "reasoning_effort": "high"
+    }, description="Reasoning configuration.")
     max_completion_tokens: Optional[int] = Field(default=None, description="Maximum completion tokens for chat/completions models.")
     max_output_tokens: Optional[int] = Field(default=None, description="Maximum output tokens for responses API models.")
     supports_streaming: bool = Field(default=True, description="Whether streaming is supported.")

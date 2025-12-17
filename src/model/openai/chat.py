@@ -50,7 +50,7 @@ class ChatOpenAI(BaseModel):
     # Model params
     temperature: Optional[float] = 0.7
     frequency_penalty: Optional[float] = 0.3
-    reasoning_effort: ReasoningEffort = 'low'
+    reasoning: Optional[Dict[str, Any]] = None
     seed: Optional[int] = None
     service_tier: Optional[Literal['auto', 'default', 'flex', 'priority', 'scale']] = None
     top_p: Optional[float] = None
@@ -223,10 +223,11 @@ class ChatOpenAI(BaseModel):
             params['seed'] = self.seed
         if self.service_tier is not None:
             params['service_tier'] = self.service_tier
+        if self.reasoning is not None:
+            params.update(self.reasoning)
         
         # Handle reasoning models
         if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
-            params['reasoning_effort'] = self.reasoning_effort
             # Remove temperature and frequency_penalty for reasoning models
             params.pop('temperature', None)
             params.pop('frequency_penalty', None)

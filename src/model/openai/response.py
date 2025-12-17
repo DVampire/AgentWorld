@@ -40,7 +40,7 @@ class ResponseOpenAI(BaseModel):
     model: Union[ChatModel, str]
 
     # Model params for responses API
-    reasoning_effort: ReasoningEffort = 'high'
+    reasoning: Optional[Dict[str, Any]] = None
     max_output_tokens: Optional[int] = 16384
     temperature: Optional[float] = None  # Not used for reasoning models, but kept for compatibility
 
@@ -308,9 +308,8 @@ class ResponseOpenAI(BaseModel):
         }
         
         # Add reasoning_effort (required for responses API)
-        params["reasoning"] = {
-            "effort": self.reasoning_effort,
-        }
+        if self.reasoning is not None:
+            params.update(self.reasoning)
         
         # Add max_output_tokens if specified
         if self.max_output_tokens is not None:

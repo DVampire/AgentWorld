@@ -61,6 +61,7 @@ class ChatAnthropic(BaseModel):
     # Client initialization parameters
     api_key: Optional[str] = None
     base_url: Optional[Union[str, httpx.URL]] = None
+    reasoning: Optional[Dict[str, Any]] = None
     timeout: Optional[Union[float, httpx.Timeout]] = None
     max_retries: int = 5
     default_headers: Optional[Dict[str, str]] = None
@@ -171,6 +172,8 @@ class ChatAnthropic(BaseModel):
             params['top_p'] = self.top_p
         if self.max_tokens is not None:
             params['max_tokens'] = self.max_tokens
+        if self.reasoning is not None:
+            params.update(self.reasoning)
         
         # Format tools using serializer
         if tools:

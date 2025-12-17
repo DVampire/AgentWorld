@@ -42,7 +42,9 @@ class ModelManager:
         # Default parameters
         self.max_tokens: int = 16384
         self.default_temperature: float = 0.7
-        self.default_reasoning_effort: str = "high"
+        self.default_reasoning: Dict[str, Any] = {
+            "reasoning_effort": "high"
+        }
     
     async def initialize(self):
         """Initialize the manager and register default models."""
@@ -80,7 +82,7 @@ class ModelManager:
                 "model_name": "openai/gpt-5",
                 "model_type": "responses",
                 "model_id": "gpt-5",
-                "reasoning_effort": self.default_reasoning_effort,
+                "reasoning": self.default_reasoning,
                 "max_output_tokens": self.max_tokens,
                 "fallback_model": "openai/o3",
             },
@@ -88,7 +90,7 @@ class ModelManager:
                 "model_name": "openai/gpt-5.1",
                 "model_type": "responses",
                 "model_id": "gpt-5.1",
-                "reasoning_effort": self.default_reasoning_effort,
+                "reasoning": self.default_reasoning,
                 "max_output_tokens": self.max_tokens,
                 "fallback_model": "openai/gpt-5",
             },
@@ -96,7 +98,7 @@ class ModelManager:
                 "model_name": "openai/o3",
                 "model_type": "responses",
                 "model_id": "o3",
-                "reasoning_effort": self.default_reasoning_effort,
+                "reasoning": self.default_reasoning,
                 "max_output_tokens": self.max_tokens,
                 "fallback_model": "openai/gpt-5.1",
             }
@@ -160,10 +162,10 @@ class ModelManager:
                 model_name=model["model_name"],
                 model_id=model["model_id"],
                 model_type=model["model_type"],
-                provider="openai",
+                provider="openai",  
                 api_base=os.getenv("OPENAI_API_BASE"),
                 api_key=os.getenv("OPENAI_API_KEY"),
-                reasoning_effort=model.get("reasoning_effort"),
+                reasoning=model.get("reasoning"),
                 max_output_tokens=model.get("max_output_tokens"),
                 supports_streaming=False,  # Responses API may not support streaming
                 supports_functions=False,  # Responses API may not support tools
@@ -234,6 +236,11 @@ class ModelManager:
                 "model_name": "openrouter/gpt-5",
                 "model_id": "openai/gpt-5",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -242,6 +249,24 @@ class ModelManager:
                 "model_name": "openrouter/gpt-5.1",
                 "model_id": "openai/gpt-5.1",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/gpt-5.2",
+                "model_id": "openai/gpt-5.2",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -250,6 +275,11 @@ class ModelManager:
                 "model_name": "openrouter/o3",
                 "model_id": "openai/o3",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": 1.0,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -310,6 +340,11 @@ class ModelManager:
                 "model_id": "google/gemini-2.5-flash",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "fallback_model": "openrouter/gemini-2.5-flash",
             },
             {
@@ -318,6 +353,11 @@ class ModelManager:
                 "model_id": "google/gemini-2.5-pro",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "fallback_model": "openrouter/gemini-2.5-flash",
             },
             {
@@ -326,6 +366,24 @@ class ModelManager:
                 "model_id": "google/gemini-3-pro-preview",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "fallback_model": "openrouter/gemini-2.5-flash",
+            },
+            {
+                "model_name": "openrouter/gemini-3-flash-preview",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3-flash-preview",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "fallback_model": "openrouter/gemini-2.5-flash",
             }
         ]
@@ -339,6 +397,7 @@ class ModelManager:
                 provider="openrouter",
                 api_base=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
                 api_key=os.getenv("OPENROUTER_API_KEY"),
+                reasoning=model.get("reasoning"),
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
                 supports_streaming=True,
@@ -431,6 +490,11 @@ class ModelManager:
                 "model_name": "google/gemini-2.5-flash",
                 "model_id": "gemini-2.5-flash",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
             },
@@ -438,6 +502,11 @@ class ModelManager:
                 "model_name": "google/gemini-2.5-pro",
                 "model_id": "gemini-2.5-pro",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
             },
@@ -445,6 +514,11 @@ class ModelManager:
                 "model_name": "google/gemini-3-pro-preview",
                 "model_id": "gemini-3-pro-preview",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
             },
@@ -459,6 +533,7 @@ class ModelManager:
                 provider="google",
                 api_base=None,  # Google Gemini doesn't use custom API base
                 api_key=os.getenv("GOOGLE_API_KEY"),
+                reasoning=model.get("reasoning"),
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
                 supports_streaming=True,
@@ -479,6 +554,7 @@ class ModelManager:
                     model=config.model_id,
                     api_key=config.api_key,
                     base_url=config.api_base,
+                    reasoning=config.reasoning if config.reasoning else None,
                     temperature=config.temperature or self.default_temperature,
                     max_completion_tokens=config.max_completion_tokens or self.max_tokens,
                     http_referer=os.getenv("OPENROUTER_HTTP_REFERER"),
@@ -494,6 +570,7 @@ class ModelManager:
                     model=config.model_id,
                     api_key=config.api_key,
                     base_url=config.api_base,
+                    reasoning=config.reasoning if config.reasoning else None,
                     temperature=config.temperature or self.default_temperature,
                     max_tokens=config.max_completion_tokens or self.max_tokens,
                 )
@@ -506,6 +583,7 @@ class ModelManager:
                 client = ChatGoogle(
                     model=config.model_id,
                     api_key=config.api_key,
+                    reasoning=config.reasoning if config.reasoning else None,
                     temperature=config.temperature or self.default_temperature,
                     max_output_tokens=config.max_completion_tokens or self.max_tokens,
                 )
@@ -518,7 +596,7 @@ class ModelManager:
                 model=config.model_id,
                 api_key=config.api_key,
                 base_url=config.api_base,
-                reasoning_effort=config.reasoning_effort or self.default_reasoning_effort,
+                reasoning=config.reasoning if config.reasoning else None,
                 max_output_tokens=config.max_output_tokens or self.max_tokens,
             )
             logger.info(f"| Created ResponseOpenAI client for {config.model_name}")
@@ -545,7 +623,7 @@ class ModelManager:
                 api_key=config.api_key,
                 base_url=config.api_base,
                 temperature=config.temperature or self.default_temperature,
-                reasoning_effort=config.reasoning_effort or "low",
+                reasoning=config.reasoning if config.reasoning else None,
                 max_completion_tokens=config.max_completion_tokens or self.max_tokens,
             )
             logger.info(f"| Created ChatOpenAI client for {config.model_name}")

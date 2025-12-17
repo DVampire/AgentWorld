@@ -41,11 +41,11 @@ async def test_chat():
     logger.info(f"| Testing chat with different models")
     models = [
         # OpenAI models
-        "openrouter/gpt-4o",
-        "openrouter/gpt-4.1",
-        "openrouter/gpt-5",
-        "openrouter/gpt-5.1",
-        "openrouter/o3",
+        # "openrouter/gpt-4o",
+        # "openrouter/gpt-4.1",
+        # "openrouter/gpt-5",
+        # "openrouter/gpt-5.1",
+        # "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
         # "openai/gpt-5",
@@ -63,9 +63,10 @@ async def test_chat():
         # "anthropic/claude-sonnet-4.5",
         
         # Gemini models
-        # "openrouter/gemini-2.5-flash",
-        # "openrouter/gemini-2.5-pro",
-        # "openrouter/gemini-3-pro-preview",
+        "openrouter/gemini-2.5-flash",
+        "openrouter/gemini-2.5-pro",
+        "openrouter/gemini-3-flash-preview",
+        "openrouter/gemini-3-pro-preview",
         # "google/gemini-2.5-flash",
         # "google/gemini-2.5-pro",
         # "google/gemini-3-pro-preview",
@@ -323,7 +324,7 @@ async def main():
     logger.info(f"| Model manager initialized: {model_manager.list()}")
     
     # Initialize tools
-    await tcp.initialize()
+    await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
     await test_chat()

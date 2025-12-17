@@ -52,7 +52,7 @@ class ChatOpenRouter(BaseModel):
     # Model params
     temperature: Optional[float] = 0.7
     frequency_penalty: Optional[float] = 0.3
-    reasoning_effort: ReasoningEffort = 'low'
+    reasoning: Optional[Dict[str, Any]] = None
     seed: Optional[int] = None
     top_p: Optional[float] = None
     max_completion_tokens: Optional[int] = 16384
@@ -249,10 +249,11 @@ class ChatOpenRouter(BaseModel):
             params['top_p'] = self.top_p
         if self.seed is not None:
             params['seed'] = self.seed
+        if self.reasoning is not None:
+            params['extra_body'] = self.reasoning
         
         # Handle reasoning models (if any)
         if self.reasoning_models and any(str(m).lower() in str(self.model).lower() for m in self.reasoning_models):
-            params['reasoning_effort'] = self.reasoning_effort
             # Remove temperature and frequency_penalty for reasoning models
             params.pop('temperature', None)
             params.pop('frequency_penalty', None)

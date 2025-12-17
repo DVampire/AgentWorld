@@ -44,7 +44,8 @@ class ChatGoogle(BaseModel):
     top_p: Optional[float] = None
     top_k: Optional[int] = None
     max_output_tokens: Optional[int] = 8192
-
+    reasoning: Optional[Dict[str, Any]] = None
+    
     # Client initialization parameters
     api_key: Optional[str] = None
     timeout: Optional[Union[float, httpx.Timeout]] = None
@@ -152,7 +153,8 @@ class ChatGoogle(BaseModel):
             generation_config['top_k'] = self.top_k
         if self.max_output_tokens is not None:
             generation_config['max_output_tokens'] = self.max_output_tokens
-        
+        if self.reasoning is not None:
+            generation_config.update(self.reasoning)
         # Handle response_format (Google Gemini uses response_schema)
         if response_format:
             try:
