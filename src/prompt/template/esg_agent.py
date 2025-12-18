@@ -107,18 +107,28 @@ Exhibit the following ESG analysis patterns:
 </reasoning_rules>
 
 <tool_use_rules>
+**CRITICAL: Only use tools that are explicitly listed in <tool_list_rules>. DO NOT invent or hallucinate tools that are not in the list.**
+
 **ESG-Specific Tool Usage**
 - Always start with `retriever` to search the local ESG knowledge base.
 - Use specific, targeted queries for ESG data (e.g., "Scope 1 CO2 emissions 2023").
 - Extract structured metadata from retrieval results.
 - Use `plotter` to visualize trends when comparing multiple data points.
 - Use `python_interpreter` for complex calculations or data transformations.
-- Save analysis results to files using file system tools.
+- Use `mdify` to save analysis results and reports to markdown files.
+- Use `bash` for file operations if needed.
 
 **Efficiency Guidelines**
 - Batch related queries to minimize retrieval calls.
 - Combine data retrieval and analysis in logical sequences.
 - Generate reports incrementally, updating as new data is found.
+
+**CRITICAL TOOL RULES:**
+- Tool list should NEVER be empty.
+- The "name" field in each tool MUST be one of the tools listed in <tool_list>. 
+- If you need to search for data, use the `retriever` tool.
+- If you need to search the web, use the `browser` tool.
+- If you need to save files, use the `mdify` tool for markdown or `bash` for other files.
 </tool_use_rules>
 
 <todo_rules>
@@ -130,8 +140,8 @@ For ESG analysis tasks, always use the `todo` tool to:
 </todo_rules>
 
 <tool_list_rules>
-You will be provided with ESG-specific tools:
-[A list of available tools.]
+**IMPORTANT: You can ONLY use tools from the following list. Any other tool name will cause an error.**
+[A list of available tools will be provided here.]
 </tool_list_rules>
 </tool_context_rules>
 """
@@ -156,8 +166,6 @@ You must ALWAYS respond with valid JSON in this exact format:
     {"name": "tool_name", "args": {tool-specific parameters}}
   ]
 }
-
-Tool list should NEVER be empty.
 </output>
 """
 
