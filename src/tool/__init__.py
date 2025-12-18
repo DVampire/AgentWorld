@@ -10,6 +10,8 @@ from .default_tools import (WebFetcherTool,
 from .workflow_tools import (BrowserTool,
                             DeepResearcherTool,
                             DeepAnalyzerTool)
+from .esg_tools import (RetrieverTool,
+                        PlotterTool)
 from .server import TCPServer, tcp
 
 
@@ -29,4 +31,6 @@ __all__ = [
     "BrowserTool",
     "DeepResearcherTool",
     "DeepAnalyzerTool",
+    "RetrieverTool",
+    "PlotterTool",
 ]

@@ -10,6 +10,7 @@ from .mobile_agent import MobileAgent
 from .anthropic_mobile_agent import AnthropicMobileAgent
 from .online_trading_agent import OnlineTradingAgent
 from .offline_trading_agent import OfflineTradingAgent
+from .esg_agent import ESGAgent
 from .server import acp
 
 
@@ -24,5 +25,6 @@ __all__ = [
     "AnthropicMobileAgent",
     "OnlineTradingAgent",
     "OfflineTradingAgent",
+    "ESGAgent",
     "acp",
 ]

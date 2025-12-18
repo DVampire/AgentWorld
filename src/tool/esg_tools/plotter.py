@@ -6,14 +6,13 @@ from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import dedent
-from src.tool.types import Tool, ToolResponse
+from src.registry import TOOL
 from src.logger import logger
 from src.model import model_manager
-from src.tool.default_tools.python_interpreter import PythonInterpreterTool
-from src.message import HumanMessage, SystemMessage
 from src.utils import assemble_project_path
-from src.registry import TOOL
-
+from src.tool.types import Tool, ToolResponse
+from src.message import HumanMessage, SystemMessage
+from src.tool.default_tools.python_interpreter import PythonInterpreterTool
 
 class CodeGeneration(BaseModel):
     """Generated Python code for data conversion or plotting."""

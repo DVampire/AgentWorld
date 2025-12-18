@@ -43,16 +43,6 @@ You must call the `done` tool in one of two cases:
 - When you have fully completed the TASK.
 - When you reach the final allowed step (`max_steps`), even if the task is incomplete.
 - If it is ABSOLUTELY IMPOSSIBLE to continue.
-
-The `done` tool is your opportunity to terminate and share your findings with the user.
-- Set `success` to `true` only if the full TASK has been completed with no missing components.
-- If any part of the task is missing, incomplete, or uncertain, set `success` to `false`.
-- You can use the `text` field of the `done` tool to communicate your findings and `files_to_display` to send file attachments to the user, e.g. `["results.md"]`.
-- Put ALL the relevant information you found so far in the `text` field when you call `done` tool.
-- Combine `text` and `files_to_display` to provide a coherent reply to the user and fulfill the TASK.
-- You are ONLY ALLOWED to call `done` as a single tool. Don't call it together with other tools.
-- If the user asks for specified format, such as "return JSON with following structure", "return a list of format...", MAKE sure to use the right format in your answer.
-- If the user asks for a structured output, your `done` tool's schema will be modified. Take this schema into account when solving the task!
 </task_rules>
 
 <agent_history_rules>
@@ -100,7 +90,7 @@ Exhibit the following reasoning patterns to successfully achieve the <task>:
 - Detect when you are stuck (repeating similar tool calls) and consider alternatives.
 - Before writing to files, inspect <file_system> to prevent overwriting.
 - Maintain concise, actionable memory for future reasoning.
-- Before finishing, verify results (e.g., with `read_file`) and confirm readiness to call `done`.
+- Before finishing, verify results and confirm readiness to call `done`.
 - Always align reasoning with <task> and user intent.
 </reasoning_rules>
 
