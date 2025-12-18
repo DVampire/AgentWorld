@@ -6,6 +6,7 @@ with read_base():
     from .tools.retriever import retriever_tool
     from .tools.plotter import plotter_tool
     from .tools.mdify import mdify_tool
+    from .tools.report import report_tool
     from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
 
@@ -34,6 +35,7 @@ tool_names = [
     'mdify',
     'retriever',
     'plotter',
+    'report',
     'browser',
 ]
 
@@ -60,6 +62,11 @@ mdify_tool.update(
 #-----------------BROWSER TOOL CONFIG-----------------
 browser_tool.update(
     base_dir=f"{workdir}/tool/browser",
+)
+
+#-----------------REPORT TOOL CONFIG-----------------
+report_tool.update(
+    base_dir=f"{workdir}/tool/report",
 )
 
 #-----------------GENERAL MEMORY SYSTEM CONFIG-----------------
