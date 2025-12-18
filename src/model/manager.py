@@ -220,6 +220,11 @@ class ModelManager:
                 "model_name": "openrouter/gpt-4o",
                 "model_id": "openai/gpt-4o",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -228,6 +233,11 @@ class ModelManager:
                 "model_name": "openrouter/gpt-4.1",
                 "model_id": "openai/gpt-4.1",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -289,6 +299,11 @@ class ModelManager:
                 "model_name": "openrouter/claude-sonnet-3.5",
                 "model_id": "anthropic/claude-3.5-sonnet",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -297,6 +312,11 @@ class ModelManager:
                 "model_name": "openrouter/claude-sonnet-3.7",
                 "model_id": "anthropic/claude-3.7-sonnet",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -305,6 +325,11 @@ class ModelManager:
                 "model_name": "openrouter/claude-sonnet-4",
                 "model_id": "anthropic/claude-sonnet-4",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -313,6 +338,11 @@ class ModelManager:
                 "model_name": "openrouter/claude-opus-4",
                 "model_id": "anthropic/claude-opus-4",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -321,6 +351,11 @@ class ModelManager:
                 "model_name": "openrouter/claude-sonnet-4.5",
                 "model_id": "anthropic/claude-sonnet-4.5",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -329,6 +364,11 @@ class ModelManager:
                 "model_name": "openrouter/claude-opus-4.5",
                 "model_id": "anthropic/claude-opus-4.5",
                 "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -338,52 +378,52 @@ class ModelManager:
                 "model_name": "openrouter/gemini-2.5-flash",
                 "model_type": "chat/completions",
                 "model_id": "google/gemini-2.5-flash",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
                 "reasoning": {
                     "reasoning": {
                         "enabled": True
                     }
                 },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/gemini-2.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-2.5-pro",
                 "model_type": "chat/completions",
                 "model_id": "google/gemini-2.5-pro",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
                 "reasoning": {
                     "reasoning": {
                         "enabled": True
                     }
                 },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/gemini-2.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3-pro-preview",
                 "model_type": "chat/completions",
                 "model_id": "google/gemini-3-pro-preview",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
                 "reasoning": {
                     "reasoning": {
                         "enabled": True
                     }
                 },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/gemini-2.5-flash",
             },
             {
                 "model_name": "openrouter/gemini-3-flash-preview",
                 "model_type": "chat/completions",
                 "model_id": "google/gemini-3-flash-preview",
-                "temperature": self.default_temperature,
-                "max_completion_tokens": self.max_tokens,
                 "reasoning": {
                     "reasoning": {
                         "enabled": True
                     }
                 },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/gemini-2.5-flash",
             }
         ]
