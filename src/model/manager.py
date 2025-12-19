@@ -220,11 +220,6 @@ class ModelManager:
                 "model_name": "openrouter/gpt-4o",
                 "model_id": "openai/gpt-4o",
                 "model_type": "chat/completions",
-                "reasoning": {
-                    "reasoning": {
-                        "enabled": True
-                    }
-                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -233,11 +228,6 @@ class ModelManager:
                 "model_name": "openrouter/gpt-4.1",
                 "model_id": "openai/gpt-4.1",
                 "model_type": "chat/completions",
-                "reasoning": {
-                    "reasoning": {
-                        "enabled": True
-                    }
-                },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
@@ -437,7 +427,7 @@ class ModelManager:
                 provider="openrouter",
                 api_base=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
                 api_key=os.getenv("OPENROUTER_API_KEY"),
-                reasoning=model.get("reasoning"),
+                reasoning=model.get("reasoning") if model.get("reasoning") else None,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
                 supports_streaming=True,

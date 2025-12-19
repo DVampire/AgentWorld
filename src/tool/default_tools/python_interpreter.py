@@ -51,6 +51,8 @@ class PythonInterpreterTool(Tool):
             "json",
             "csv",
             "os",
+            "matplotlib",
+            "matplotlib.pyplot",
         ]
         # Merge with existing authorized_imports
         final_authorized_imports = list(set(self.authorized_imports) | set(additional_imports))

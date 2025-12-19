@@ -284,7 +284,7 @@ class DeepAnalyzerTool(Tool):
                     HumanMessage(content=prompt)
                 ]
                 
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.model_name,
                     messages=messages,
                     response_format=FileTypeClassification
@@ -546,7 +546,7 @@ class DeepAnalyzerTool(Tool):
                 HumanMessage(content=prompt)
             ]
             
-            response = await model_manager.acompletion(model=self.model_name, messages=messages, response_format=SummaryResponse)
+            response = await model_manager(model=self.model_name, messages=messages, response_format=SummaryResponse)
             summary_response = response.extra["parsed_model"]
             summary = Summary(
                 id=self._get_next_summary_id(),
@@ -594,7 +594,7 @@ class DeepAnalyzerTool(Tool):
                 HumanMessage(content=prompt)
             ]
             
-            response = await model_manager.acompletion(
+            response = await model_manager(
                 model=self.model_name,
                 messages=messages,
                 response_format=SummaryResponse
@@ -655,7 +655,7 @@ class DeepAnalyzerTool(Tool):
                     HumanMessage(content=prompt)
                 ]
                 
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.model_name,
                     messages=messages,
                     response_format=Summary
@@ -791,7 +791,7 @@ class DeepAnalyzerTool(Tool):
             
             # Try LLM direct analysis
             try:
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.file_model_name,
                     messages=messages,
                     response_format=SummaryResponse
@@ -896,7 +896,7 @@ class DeepAnalyzerTool(Tool):
                 HumanMessage(content=prompt)
             ]
             
-            response = await model_manager.acompletion(
+            response = await model_manager(
                 model=self.model_name,
                 messages=messages,
                 response_format=Summary
@@ -971,7 +971,7 @@ class DeepAnalyzerTool(Tool):
             
             # Try LLM direct analysis
             try:
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.model_name,
                     messages=messages,
                     response_format=SummaryResponse
@@ -1029,7 +1029,7 @@ class DeepAnalyzerTool(Tool):
                     HumanMessage(content=message_content)
                 ]
                 
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.model_name,
                     messages=messages,
                     response_format=Summary
@@ -1118,7 +1118,7 @@ class DeepAnalyzerTool(Tool):
             
             # Try LLM direct analysis
             try:
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.file_model_name,
                     messages=messages,
                     response_format=SummaryResponse
@@ -1214,7 +1214,7 @@ class DeepAnalyzerTool(Tool):
             
             # Try LLM direct analysis
             try:
-                response = await model_manager.acompletion(
+                response = await model_manager(
                     model=self.file_model_name,
                     messages=messages,
                     response_format=SummaryResponse

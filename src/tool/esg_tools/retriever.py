@@ -72,7 +72,7 @@ class RetrieverTool(Tool):
 
     # Configuration parameters
     model_name: str = Field(
-        default="gpt-4.1",
+        default="openrouter/gemini-3-flash-preview",
         description="The model to use for metadata extraction."
     )
     base_dir: str = Field(
@@ -359,18 +359,14 @@ class RetrieverTool(Tool):
     async def __call__(
         self, 
         query: str, 
-        mode: Optional[str] = None,
         top_k: Optional[int] = None,
-        extract_metadata: Optional[bool] = None,
         **kwargs
     ) -> ToolResponse:
         """Execute retrieval on the given query.
 
         Args:
             query (str): The query to search for in the vector database.
-            mode (Optional[str]): Override query mode ('naive', 'local', 'global', 'hybrid', 'mix').
             top_k (Optional[int]): Override the number of top results to retrieve.
-            extract_metadata (Optional[bool]): Override whether to extract ESG metadata.
             
         Returns:
             ToolResponse: The retrieval results including context and optional metadata.
@@ -382,9 +378,8 @@ class RetrieverTool(Tool):
             await self._ensure_rag_initialized()
 
             # Use provided parameters or defaults
-            query_mode = mode if mode is not None else self.query_mode
+            query_mode = "naive"
             result_top_k = top_k if top_k is not None else self.top_k
-            should_extract = extract_metadata if extract_metadata is not None else self.extract_metadata
 
             # Create query parameters
             query_param = QueryParam(
@@ -411,19 +406,7 @@ class RetrieverTool(Tool):
             result_parts = []
             result_parts.append("---Document Chunks---")
             result_parts.append(str(context))
-
-            metadata_str = None
-            if should_extract:
-                logger.info(f"| 🔬 Extracting ESG metadata...")
-                metadata_str = await self._extract_metadata(str(context))
-                if metadata_str:
-                    result_parts.insert(0, "---ESG Metadata---")
-                    result_parts.insert(1, metadata_str)
-                    result_parts.insert(2, "")  # Empty line separator
-                    logger.info(f"| ✅ Metadata extracted successfully")
-                else:
-                    logger.info(f"| ⚠️ No metadata could be extracted")
-
+            
             final_result = "\n".join(result_parts)
 
             return ToolResponse(
@@ -432,8 +415,6 @@ class RetrieverTool(Tool):
                 extra={
                     "query": query,
                     "context": str(context),
-                    "metadata": metadata_str,
-                    "mode": query_mode,
                     "top_k": result_top_k
                 }
             )

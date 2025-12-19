@@ -60,8 +60,13 @@ class SystemPrompt:
         if not reload and self.message is not None:
             return self.message
         try:
-            
-            modules = modules if modules is not None else {}
+            # Build modules from variable tree if not provided
+            if modules is None or len(modules) == 0:
+                modules = self.prompt.get_modules()
+            else:
+                # Merge provided modules with variable tree modules
+                variable_modules = self.prompt.get_modules()
+                modules = {**variable_modules, **modules}
             
             prompt_str = self.prompt.render(modules)
             

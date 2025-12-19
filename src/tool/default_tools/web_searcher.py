@@ -282,19 +282,38 @@ class WebSearcherTool(Tool):
         if not results:
             return []
 
-        # Create tasks for each result
+        # Create tasks for each result with timeout protection
+        # Use return_exceptions=True to handle individual failures gracefully
         fetched_results = await asyncio.gather(
-            *[self._fetch_single_result_content(result) for result in results]
+            *[self._fetch_single_result_content(result) for result in results],
+            return_exceptions=True
         )
 
-        return fetched_results
+        # Handle exceptions in results
+        final_results = []
+        for i, result in enumerate(fetched_results):
+            if isinstance(result, Exception):
+                logger.warning(f"Exception fetching content for result {i+1}: {result}")
+                # Keep original result without content
+                if i < len(results):
+                    results[i]["raw_content"] = None
+                    final_results.append(results[i])
+            else:
+                final_results.append(result)
+
+        return final_results
 
     async def _fetch_single_result_content(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Fetch content for a single search result."""
+        """Fetch content for a single search result with timeout protection."""
         url = result.get("url")
         if url:
             try:
-                response = await self.content_fetcher(url=url)
+                # Add timeout protection (20 seconds per URL)
+                # This ensures slow websites don't block the entire process
+                response = await asyncio.wait_for(
+                    self.content_fetcher(url=url),
+                    timeout=20.0
+                )
                 if response.success and response.message:
                     content = response.message
                     if len(content) > self.max_length:
@@ -302,6 +321,9 @@ class WebSearcherTool(Tool):
                     result["raw_content"] = content
                 else:
                     result["raw_content"] = None
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout fetching content from {url} (exceeded 20s)")
+                result["raw_content"] = None
             except Exception as e:
                 logger.warning(f"Error fetching content from {url}: {e}")
                 result["raw_content"] = None

@@ -333,6 +333,7 @@ class ChatOpenRouter(BaseModel):
         # If plugins are needed, use OpenRouterClient
         # Otherwise, use AsyncOpenAI client
         # Both use the same format: client.chat.completions.create()
+        
         if plugins:
             client = self.get_openrouter_client()
             response = await client.chat.completions.create(

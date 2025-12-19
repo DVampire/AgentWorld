@@ -84,7 +84,7 @@ async def main():
     
     
     examples = [
-        "Analyze the CO2 emissions data for all companies in the RAG database. Extract Scope 1 and Scope 2 emissions for each company from 2020 to 2023. Present the data in a structured table and visualize the trends over time. Finally, generate a brief report summarizing your findings and insights.",
+        "Visualize AAPL's ESG ratings during 2015-2023 and analyze its ESG performance.",
     ]
     
     task = args.task or examples[0]

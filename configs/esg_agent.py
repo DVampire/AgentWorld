@@ -2,12 +2,12 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.esg_agent import esg_agent
-    from .tools.browser import browser_tool
     from .tools.retriever import retriever_tool
     from .tools.plotter import plotter_tool
-    from .tools.mdify import mdify_tool
     from .tools.report import report_tool
-    from .environments.file_system import environment as file_system_environment
+    from .tools.browser import browser_tool
+    from .tools.deep_researcher import deep_researcher_tool
+    from .tools.deep_analyzer import deep_analyzer_tool
     from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "esg_agent"
@@ -16,11 +16,9 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "openrouter/gpt-4.1"
+model_name = "openrouter/gemini-3-flash-preview"
 
-env_names = [
-    "file_system"
-]
+env_names = []
 memory_names = [
     "general_memory_system"
 ]
@@ -32,11 +30,12 @@ tool_names = [
     'python_interpreter', 
     'done', 
     'todo',  
-    'mdify',
     'retriever',
     'plotter',
     'report',
     'browser',
+    'deep_researcher',
+    'deep_analyzer',
 ]
 
 #-----------------RETRIEVER TOOL CONFIG-----------------
@@ -47,28 +46,31 @@ retriever_tool.update(
     query_mode="naive",
     extract_metadata=True,
 )
-
 #-----------------PLOTTER TOOL CONFIG-----------------
 plotter_tool.update(
     model_name=model_name,
     base_dir=f"{workdir}/tool/plotter",
 )
-
-#-----------------MDIFY TOOL CONFIG-----------------
-mdify_tool.update(
-    base_dir=f"{workdir}/tool/mdify",
-)
-
 #-----------------BROWSER TOOL CONFIG-----------------
 browser_tool.update(
     base_dir=f"{workdir}/tool/browser",
 )
-
-#-----------------REPORT TOOL CONFIG-----------------
-report_tool.update(
-    base_dir=f"{workdir}/tool/report",
+#-----------------DEEP RESEARCHER TOOL CONFIG-----------------
+deep_researcher_tool.update(
+    model_name="openrouter/gemini-3-flash-preview",
+    base_dir=f"{workdir}/tool/deep_researcher",
 )
 
+#-----------------DEEP ANALYZER TOOL CONFIG-----------------
+deep_analyzer_tool.update(
+    model_name="openrouter/gemini-3-flash-preview",
+    base_dir=f"{workdir}/tool/deep_analyzer",
+)
+#-----------------REPORT TOOL CONFIG-----------------
+report_tool.update(
+    model_name=model_name,
+    base_dir=f"{workdir}/tool/report",
+)
 #-----------------GENERAL MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
     base_dir=f"{workdir}/memory/general_memory_system",
@@ -76,12 +78,6 @@ general_memory_system.update(
     max_summaries=10,
     max_insights=10,
 )
-
-#-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
-file_system_environment.update(
-    base_dir=f"{workdir}/environment/file_system",
-)
-
 #-----------------ESG AGENT CONFIG-----------------
 esg_agent.update(
     workdir=workdir,

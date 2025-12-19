@@ -53,7 +53,7 @@ class PlotterTool(Tool):
 
     # Configuration parameters
     model_name: str = Field(
-        default="openai/gpt-4.1",
+        default="openrouter/gemini-3-flash-preview",
         description="The model to use for code generation."
     )
     base_dir: str = Field(

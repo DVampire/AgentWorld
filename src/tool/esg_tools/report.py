@@ -65,8 +65,8 @@ class ReportTool(Tool):
     enabled: bool = True
     
     model_name: str = Field(
-        default="openrouter/o3",
-        description="The model to use for refinement."
+        default="openrouter/gemini-3-flash-preview",
+        description="The model to use for code generation."
     )
 
     # Configuration parameters
@@ -85,18 +85,21 @@ class ReportTool(Tool):
     def __init__(
         self, 
         base_dir: Optional[str] = None, 
+        model_name: Optional[str] = None,
         title: str = "Analysis Report",
         **kwargs
     ):
         """Initialize the report tool and create necessary files."""
         super().__init__(**kwargs)
         
+        if model_name is not None:
+            self.model_name = model_name
+        
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
-        else:
-            self.base_dir = assemble_project_path("workdir/tool/report")
             
-        os.makedirs(self.base_dir, exist_ok=True)
+        if self.base_dir is not None:
+            os.makedirs(self.base_dir, exist_ok=True)
         
         # Initialize internal tools
         self._file_reader = FileReaderTool()
@@ -136,20 +139,15 @@ class ReportTool(Tool):
 
     async def __call__(
         self,
-        action: Literal["add", "complete"],
+        action: str,
         content: Optional[str] = None,
         **kwargs
     ) -> ToolResponse:
         """Execute report action.
 
         Args:
-            action: The action to perform:
-                - "add": Add new content to the report
-                - "complete": Complete and optimize the entire report
-            content: Content to add (required for add action)
-        
-        Returns:
-            ToolResponse with action results.
+            action (str): The action to perform. action must be one of: add, complete.
+            content (Optional[str]): Content to add, required for add action.
         """
         try:
             logger.info(f"| 📝 ReportTool action: {action}")

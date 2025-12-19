@@ -98,18 +98,18 @@ class TodoTool(Tool):
         Args:
             action (str): One of add, complete, update, list, clear, show, export.
             task (Optional[str]): Step description for add/update.
-            step_id (Optional[str]): Step identifier for complete/update actions.
+            step_id (Optional[str]): Step identifier for complete/update actions. For add action, if provided, will be used as the step ID; otherwise auto-generated.
             status (Optional[str]): Completion status for complete action.
             result (Optional[str]): Result summary for complete action.
             priority (Optional[str]): Priority for add action.
             category (Optional[str]): Category label for add action.
-            parameters (Optional[Dict[str, Any]]): Arbitrary metadata for steps.
-            after_step_id (Optional[str]): Insert new step after the specified ID.
+            parameters (Optional[Dict[str, Any]): Arbitrary metadata for steps.
+            after_step_id (Optional[str]): Insert new step after the specified ID. Can be numeric index (0-based) or step ID.
             export_path (Optional[str]): Target path for export action.
         """
         try:
             if action == "add":
-                return await self._add_step(task, priority, category, parameters, after_step_id)
+                return await self._add_step(task, priority, category, parameters, after_step_id, step_id)
             if action == "complete":
                 return await self._complete_step(step_id, status, result)
             if action == "update":
@@ -214,14 +214,22 @@ class TodoTool(Tool):
                         priority: str = "medium",
                         category: Optional[str] = None, 
                         parameters: Optional[Dict[str, Any]] = None, 
-                        after_step_id: Optional[str] = None
+                        after_step_id: Optional[str] = None,
+                        step_id: Optional[str] = None
                         ) -> ToolResponse:
         """Add a new step to the todo list."""
         if not task:
             return ToolResponse(success=False, message="Error: Step description is required for add action")
         
-        # Create new step
-        step_id = self._generate_step_id()
+        # Use provided step_id or generate a new one
+        if step_id is None:
+            step_id = self._generate_step_id()
+        else:
+            # Check if step_id already exists
+            for step in self.steps:
+                if step.id == step_id:
+                    return ToolResponse(success=False, message=f"Error: Step ID {step_id} already exists.")
+        
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         
         new_step = Step(
@@ -236,15 +244,42 @@ class TodoTool(Tool):
         
         # Insert step at the right position
         if after_step_id:
-            # Find the position to insert after
+            # Try to find by ID first
             insert_index = -1
             for i, step in enumerate(self.steps):
                 if step.id == after_step_id:
                     insert_index = i + 1
                     break
             
+            # If not found by ID, try to find by numeric index (0-based)
             if insert_index == -1:
-                return ToolResponse(success=False, message=f"Error: Step {after_step_id} not found. Adding to end of list.")
+                try:
+                    index = int(after_step_id)
+                    if 0 <= index < len(self.steps):
+                        insert_index = index + 1
+                except ValueError:
+                    pass
+            
+            # If still not found, try to find by position number (1-based, matching step_id format)
+            if insert_index == -1:
+                try:
+                    # If after_step_id is a simple number like "1", "2", try to find step with matching step_id
+                    for i, step in enumerate(self.steps):
+                        if step.id == after_step_id or (step.id.isdigit() and step.id == after_step_id):
+                            insert_index = i + 1
+                            break
+                except:
+                    pass
+            
+            if insert_index == -1:
+                # Still not found, add to end but return warning
+                self.steps.append(new_step)
+                await self._save_steps()
+                await self._sync_to_markdown()
+                return ToolResponse(
+                    success=True, 
+                    message=f"⚠️ Step {after_step_id} not found. Added step {step_id} to end of list: {task} (priority: {priority})"
+                )
             
             # Insert at the found position
             self.steps.insert(insert_index, new_step)

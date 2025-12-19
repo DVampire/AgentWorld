@@ -260,6 +260,14 @@ PROMPT_TEMPLATES = {
                 "require_grad": False,
                 "template": None,
                 "variables": EXAMPLE_RULES
+            },
+            {
+                "name": "output",
+                "type": "system_prompt_module",
+                "description": "Describes the output format of the agent's response.",
+                "require_grad": False,
+                "template": None,
+                "variables": OUTPUT
             }
         ],
     },

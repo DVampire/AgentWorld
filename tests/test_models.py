@@ -55,20 +55,20 @@ async def test_chat():
         # "openai/o3",
         
         # Anthropic models
-        "openrouter/claude-sonnet-3.7",
-        "openrouter/claude-sonnet-4",
-        "openrouter/claude-opus-4",
-        "openrouter/claude-sonnet-4.5",
-        "openrouter/claude-opus-4.5",
+        # "openrouter/claude-sonnet-3.7",
+        # "openrouter/claude-sonnet-4",
+        # "openrouter/claude-opus-4",
+        # "openrouter/claude-sonnet-4.5",
+        # "openrouter/claude-opus-4.5",
         # "anthropic/claude-sonnet-3.7",
         # "anthropic/claude-sonnet-4",
         # "anthropic/claude-sonnet-4.5",
         
         # Gemini models
-        "openrouter/gemini-2.5-flash",
-        "openrouter/gemini-2.5-pro",
-        "openrouter/gemini-3-flash-preview",
-        "openrouter/gemini-3-pro-preview",
+        # "openrouter/gemini-2.5-flash",
+        # "openrouter/gemini-2.5-pro",
+        # "openrouter/gemini-3-flash-preview",
+        # "openrouter/gemini-3-pro-preview",
         # "google/gemini-2.5-flash",
         # "google/gemini-2.5-pro",
         # "google/gemini-3-pro-preview",
@@ -195,6 +195,7 @@ async def test_response_format():
         "openrouter/gpt-4.1",
         "openrouter/gpt-5",
         "openrouter/gpt-5.1",
+        "openrouter/gpt-5.2",
         "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
@@ -250,6 +251,7 @@ async def test_tool_calling():
         "openrouter/gpt-4.1",
         "openrouter/gpt-5",
         "openrouter/gpt-5.1",
+        "openrouter/gpt-5.2",
         "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
@@ -329,8 +331,8 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
-    await test_chat()
-    # await test_response_format()
+    # await test_chat()
+    await test_response_format()
     # await test_tool_calling()
     # await test_transcription()
     # await test_embedding()
