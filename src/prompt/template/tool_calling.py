@@ -1,3 +1,8 @@
+from src.registry import PROMPT
+from src.prompt.types import Prompt
+from typing import Any, Dict
+from pydantic import Field, ConfigDict
+
 AGENT_PROFILE = """
 You are an AI agent that operates in iterative steps and uses registered tools to accomplish the user's task. Your goals are to solve the task accurately, safely, and efficiently.
 """
@@ -5,11 +10,11 @@ You are an AI agent that operates in iterative steps and uses registered tools t
 AGENT_INTRODUCTION = """
 <intro>
 You excel at:
-1. Selecting the right tool for each subtask
-2. Executing multi-step plans reliably
-3. Managing files and data within the provided working directory
-4. Avoiding unnecessary actions and minimizing cost/latency
-5. Providing clear, helpful final answers
+- Selecting the right tool for each subtask
+- Executing multi-step plans reliably
+- Managing files and data within the provided working directory
+- Avoiding unnecessary actions and minimizing cost/latency
+- Providing clear, helpful final answers
 </intro>
 """
 
@@ -23,23 +28,27 @@ LANGUAGE_SETTINGS = """
 # Input = agent context + environment context + tool context
 INPUT = """
 <input>
-1. <agent_context>: Describes your current internal state and identity, including your current task, relevant history, memory, and ongoing plans toward achieving your goals. This context represents what you currently know and intend to do.
-2. <environment_context>: Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.
-3. <tool_context>: Describes the available tools, their purposes, usage conditions, and current operational status.
-4. <examples>: Provides few-shot examples of good or bad reasoning and tool-use patterns. Use them as references for style and structure, but never copy them directly.
+- <agent_context>: Describes your current internal state and identity, including your current task, relevant history, memory, and ongoing plans toward achieving your goals. This context represents what you currently know and intend to do.
+- <environment_context>: Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.
+- <tool_context>: Describes the available tools, their purposes, usage conditions, and current operational status.
+- <examples>: Provides few-shot examples of good or bad reasoning and tool-use patterns. Use them as references for style and structure, but never copy them directly.
 </input>
 """
 
 # Agent context rules = task rules + agent history rules + memory rules + todo rules
-AGENT_CONTEXT_RULES = """
+AGENT_CONTEXT_RULES = f"""
 <agent_context_rules>
+<workdir_rules>
+You are working in the following working directory: {{ workdir }}.
+- When using tools (e.g., `bash` or `python_interpreter`) for file operations, you MUST use absolute paths relative to this workdir (e.g., if workdir is `/path/to/workdir`, use `/path/to/workdir/file.txt` instead of `file.txt`).
+</workdir_rules>
 <task_rules>
 TASK: This is your ultimate objective and always remains visible.
 - This has the highest priority. Make the user happy.
-- If the user task is very specific - then carefully follow each step and dont skip or hallucinate steps.
+- If the user task is very specific, then carefully follow each step and dont skip or hallucinate steps.
 - If the task is open ended you can plan yourself how to get it done.
 
-You must call the `done` tool in one of two cases:
+You must call the `done` tool in one of three cases:
 - When you have fully completed the TASK.
 - When you reach the final allowed step (`max_steps`), even if the task is incomplete.
 - If it is ABSOLUTELY IMPOSSIBLE to continue.
@@ -54,7 +63,6 @@ Memory: Your memory of this step
 Next Goal: Your goal for this step
 Tool Results: Your tool calls and their results
 </step_[step_number]>
-
 </agent_history_rules>
 
 <memory_rules>
@@ -73,27 +81,12 @@ You will be provided with summaries and insights of the agent's memory.
 ENVIRONMENT_CONTEXT_RULES = """
 <environment_context_rules>
 Environments rules will be provided as a list, with each environment rule consisting of three main components: <state>, <vision> (if screenshots of the environment are available), and <interaction>.
-[A list of environments rules.]
 </environment_context_rules>
 """
 
 # Tool context rules = reasoning rules + tool use rules + tool rules
 TOOL_CONTEXT_RULES = """
 <tool_context_rules>
-<reasoning_rules>
-You must reason explicitly and systematically at every step in your `thinking` block.
-
-Exhibit the following reasoning patterns to successfully achieve the <task>:
-- Analyze <agent_history> to track progress toward the goal.
-- Reflect on the most recent "Next Goal" and "Tool Result".
-- Evaluate success/failure/uncertainty of the last step.
-- Detect when you are stuck (repeating similar tool calls) and consider alternatives.
-- Before writing to files, inspect <file_system> to prevent overwriting.
-- Maintain concise, actionable memory for future reasoning.
-- Before finishing, verify results and confirm readiness to call `done`.
-- Always align reasoning with <task> and user intent.
-</reasoning_rules>
-
 <tool_use_rules>
 You must follow these rules when selecting and executing tools to solve the <task>.
 
@@ -109,8 +102,7 @@ You must follow these rules when selecting and executing tools to solve the <tas
 - Think logically about the tool sequence: “What’s the natural, efficient order to achieve the goal?”
 - Avoid unnecessary micro-calls, redundant executions, or repetitive tool use that doesn’t advance progress.
 - Always balance correctness and efficiency — never skip essential reasoning or validation steps for the sake of speed.
-
-Keep your tool planning concise, logical, and efficient while strictly following the above rules.
+- Keep your tool planning concise, logical, and efficient while strictly following the above rules.
 </tool_use_rules>
 
 <todo_rules>
@@ -134,19 +126,28 @@ You have access to a `todo` tool for task planning. Use it strategically based o
 - If any `todo.md` items are finished, mark them as complete in the file.
 </todo_rules>
 
-<tool_list_rules>
-You will be provided with a list of available tools. Use them to solve the <task>.
-[A list of available tools.]
-</tool_list_rules>
-
 </tool_context_rules>
 """
 
 EXAMPLE_RULES = """
-<examples>
+<example_rules>
 You will be provided with few shot examples of good or bad patterns. Use them as reference but never copy them directly.
-[A list of few shot examples.]
-</examples>
+</example_rules>
+"""
+
+REASONING_RULES = """
+<reasoning_rules>
+You must reason explicitly and systematically at every step in your `thinking` block.
+
+Exhibit the following reasoning patterns to successfully achieve the <task>:
+- Analyze <agent_history> to track progress toward the goal.
+- Reflect on the most recent "Next Goal" and "Tool Result".
+- Evaluate success/failure/uncertainty of the last step.
+- Detect when you are stuck (repeating similar tool calls) and consider alternatives.
+- Maintain concise, actionable memory for future reasoning.
+- Before finishing, verify results and confirm readiness to call `done`.
+- Always align reasoning with <task> and user intent.
+</reasoning_rules>
 """
 
 OUTPUT = """
@@ -169,7 +170,7 @@ Tool list should NEVER be empty.
 </output>
 """
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ agent_introduction }}
 {{ language_settings }}
@@ -178,137 +179,161 @@ SYSTEM_PROMPT = """
 {{ environment_context_rules }}
 {{ tool_context_rules }}
 {{ example_rules }}
+{{ reasoning_rules }}
 {{ output }}
 """
 
 # Agent message (dynamic context) - using Jinja2 syntax
-AGENT_MESSAGE_PROMPT = """
+AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ agent_context }}
 {{ environment_context }}
 {{ tool_context }}
 {{ examples }}
 """
 
-# Template configuration for system prompts
-PROMPT_TEMPLATES = {
-    "tool_calling_system_prompt": {
-        "name": "tool_calling_system_prompt",
-        "type": "system_prompt",
-        "description": "System prompt for tool-calling agents - static constitution and protocol",
-        "template": SYSTEM_PROMPT,
-        "variables": [
-            {
-                "name": "agent_profile",
-                "type": "system_prompt_module",
-                "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
-                "require_grad": False,
-                "template": None,
-                "variables": AGENT_PROFILE
-            },
-            {
-                "name": "agent_introduction",
-                "type": "system_prompt_module",
-                "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
-                "require_grad": False,
-                "template": None,
-                "variables": AGENT_INTRODUCTION
-            },
-            {
-                "name": "language_settings",
-                "type": "system_prompt_module",
-                "description": "Specifies the default working language and language response preferences for the agent.",
-                "require_grad": False,
-                "template": None,
-                "variables": LANGUAGE_SETTINGS
-            },
-            {
-                "name": "input",
-                "type": "system_prompt_module",
-                "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
-                "require_grad": False,
-                "template": None,
-                "variables": INPUT
-            },
-            {
-                "name": "agent_context_rules",
-                "type": "system_prompt_module",
-                "description": "Establishes rules for task management, agent history tracking, memory usage, and todo planning strategies.",
-                "require_grad": True,
-                "template": None,
-                "variables": AGENT_CONTEXT_RULES
-            },
-            {
-                "name": "environment_context_rules",
-                "type": "system_prompt_module",
-                "description": "Defines how the agent should interact with and respond to different environmental contexts and conditions.",
-                "require_grad": False,
-                "template": None,
-                "variables": ENVIRONMENT_CONTEXT_RULES
-            },
-            {
-                "name": "tool_context_rules",
-                "type": "system_prompt_module",
-                "description": "Provides guidelines for reasoning patterns, tool selection, usage efficiency, and available tool management.",
-                "require_grad": False,
-                "template": None,
-                "variables": TOOL_CONTEXT_RULES
-            },
-            {
-                "name": "example_rules",
-                "type": "system_prompt_module",
-                "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
-                "require_grad": False,
-                "template": None,
-                "variables": EXAMPLE_RULES
-            },
-            {
-                "name": "output",
-                "type": "system_prompt_module",
-                "description": "Describes the output format of the agent's response.",
-                "require_grad": False,
-                "template": None,
-                "variables": OUTPUT
-            }
-        ],
-    },
-    "tool_calling_agent_message_prompt": {
-        "name": "tool_calling_agent_message_prompt",
-        "description": "Agent message for tool calling agents (dynamic context)",
-        "type": "agent_message_prompt",
-        "template": AGENT_MESSAGE_PROMPT,
-        "variables": [
-            {
-                "name": "agent_context",
-                "type": "agent_message_prompt_module",
-                "description": "Describes the agent's current state, including its current task, history, memory, and plans.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "environment_context",
-                "type": "agent_message_prompt_module",
-                "description": "Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "tool_context",
-                "type": "agent_message_prompt_module",
-                "description": "Describes the available tools, their purposes, usage conditions, and current operational status.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "examples",
-                "type": "agent_message_prompt_module",
-                "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-        ],
-    },
+SYSTEM_PROMPT = {
+    "name": "tool_calling_system_prompt",
+    "type": "system_prompt",
+    "description": "System prompt for tool-calling agents - static constitution and protocol",
+    "template": SYSTEM_PROMPT_TEMPLATE,
+    "variables": [
+        {
+            "name": "agent_profile",
+            "type": "system_prompt_module",
+            "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
+            "require_grad": False,
+            "template": None,
+            "variables": AGENT_PROFILE
+        },
+        {
+            "name": "agent_introduction",
+            "type": "system_prompt_module",
+            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "require_grad": False,
+            "template": None,
+            "variables": AGENT_INTRODUCTION
+        },
+        {
+            "name": "language_settings",
+            "type": "system_prompt_module",
+            "description": "Specifies the default working language and language response preferences for the agent.",
+            "require_grad": False,
+            "template": None,
+            "variables": LANGUAGE_SETTINGS
+        },
+        {
+            "name": "input",
+            "type": "system_prompt_module",
+            "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
+            "require_grad": False,
+            "template": None,
+            "variables": INPUT
+        },
+        {
+            "name": "agent_context_rules",
+            "type": "system_prompt_module",
+            "description": "Establishes rules for task management, agent history tracking, memory usage, and todo planning strategies.",
+            "require_grad": True,
+            "template": None,
+            "variables": AGENT_CONTEXT_RULES
+        },
+        {
+            "name": "environment_context_rules",
+            "type": "system_prompt_module",
+            "description": "Defines how the agent should interact with and respond to different environmental contexts and conditions.",
+            "require_grad": False,
+            "template": None,
+            "variables": ENVIRONMENT_CONTEXT_RULES
+        },
+        {
+            "name": "tool_context_rules",
+            "type": "system_prompt_module",
+            "description": "Provides guidelines for reasoning patterns, tool selection, usage efficiency, and available tool management.",
+            "require_grad": False,
+            "template": None,
+            "variables": TOOL_CONTEXT_RULES
+        },
+        {
+            "name": "example_rules",
+            "type": "system_prompt_module",
+            "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
+            "require_grad": False,
+            "template": None,
+            "variables": EXAMPLE_RULES
+        },
+        {
+            "name": "reasoning_rules",
+            "type": "system_prompt_module",
+            "description": "Describes the reasoning rules for the agent.",
+            "require_grad": True,
+            "template": None,
+            "variables": REASONING_RULES
+        },
+        {
+            "name": "output",
+            "type": "system_prompt_module",
+            "description": "Describes the output format of the agent's response.",
+            "require_grad": False,
+            "template": None,
+            "variables": OUTPUT
+        }
+    ]
 }
+
+AGENT_MESSAGE_PROMPT = {
+    "name": "tool_calling_agent_message_prompt",
+    "type": "agent_message_prompt",
+    "description": "Agent message for tool calling agents (dynamic context)",
+    "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
+    "variables": [
+        {
+            "name": "agent_context",
+            "type": "agent_message_prompt_module",
+            "description": "Describes the agent's current state, including its current task, history, memory, and plans.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        {
+            "name": "environment_context",
+            "type": "agent_message_prompt_module",
+            "description": "Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        {
+            "name": "tool_context",
+            "type": "agent_message_prompt_module",
+            "description": "Describes the available tools, their purposes, usage conditions, and current operational status.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        {
+            "name": "examples",
+            "type": "agent_message_prompt_module",
+            "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+    ],
+}
+
+@PROMPT.register_module(force=True)
+class ToolCallingPrompt(Prompt):
+    """Prompt template for tool-calling agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="tool_calling", description="The name of the prompt")
+    description: str = Field(default="Prompt for tool-calling agents", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    @property
+    def system_prompt(self) -> Dict[str, Any]:
+        return SYSTEM_PROMPT
+    
+    @property
+    def agent_message_prompt(self) -> Dict[str, Any]:
+        return AGENT_MESSAGE_PROMPT

@@ -6,20 +6,17 @@ Core type definitions for the Prompt Context Protocol.
 from typing import Any, Dict, Optional, Type, Union
 from pydantic import BaseModel, Field, ConfigDict
 
-
 class Prompt(BaseModel):
-    """Base class for all prompts"""
+    """Base class for all prompt templates"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(description="The name of the prompt")
-    type: str = Field(description="The type of the prompt (system_prompt, agent_message_prompt)")
     description: str = Field(description="The description of the prompt")
-    template: str = Field(description="The template string for the prompt")
-    variables: Optional[list] = Field(default=None, description="The variables used in the template")
-    
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the prompt")
+
     def __str__(self):
-        return f"Prompt(name={self.name}, type={self.type}, description={self.description})"
-    
+        return f"Prompt(name={self.name}, description={self.description}, metadata={self.metadata})"
+
     def __repr__(self):
         return self.__str__()
 

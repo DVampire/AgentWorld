@@ -1,32 +1,53 @@
 """Agent message prompt management for dynamic task-related prompts."""
 
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from bs4 import BeautifulSoup
 from PIL import Image
 
 from src.logger import logger
-from src.prompt.manager import prompt_manager
 from src.utils import make_file_url, assemble_project_path
 from src.message import HumanMessage, ImageURL, ContentPartImage, ContentPartText
 from src.optimizer.protocol.variable import Variable
+from src.prompt.types import PromptConfig
 
 class AgentMessagePrompt:
     """Agent message prompt manager for dynamic task-related prompts (tool-calling agents)."""
     
     def __init__(
         self,
-        prompt_name: str = "tool_calling_agent_message_prompt",
+        prompt_config: Optional[PromptConfig] = None,
+        prompt_dict: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
-        self.prompt_name = prompt_name
+        """Initialize AgentMessagePrompt with either PromptConfig or prompt dictionary.
+        
+        Args:
+            prompt_config: PromptConfig instance
+            prompt_dict: Prompt dictionary (alternative to prompt_config)
+            **kwargs: Additional arguments (ignored, kept for backward compatibility)
+        """
+        if prompt_config is not None:
+            self.prompt_config = prompt_config
+            # Convert PromptConfig to dict for Variable.from_dict
+            self.prompt_dict = {
+                "name": prompt_config.name,
+                "type": prompt_config.type,
+                "description": prompt_config.description,
+                "template": prompt_config.template,
+                "variables": prompt_config.variables,
+                "metadata": prompt_config.metadata,
+            }
+        elif prompt_dict is not None:
+            self.prompt_config = None
+            self.prompt_dict = prompt_dict
+        else:
+            raise ValueError("Either prompt_config or prompt_dict must be provided")
         
         self._initialize()
     
     def _initialize(self) -> None:
         """Initialize the agent message prompt."""
-        # Note: prompt_manager.get() is async, but we can't use await in __init__
-        # So we'll defer the actual loading until get_message() is called
         self.prompt = None
         self.message = None
     
@@ -36,13 +57,7 @@ class AgentMessagePrompt:
             return
         
         try:
-            # Get prompt template from prompt_manager
-            prompt_dict = await prompt_manager.get(self.prompt_name)
-            if not prompt_dict:
-                available = await prompt_manager.list()
-                raise ValueError(f"Prompt {self.prompt_name} not found. Available prompts: {available}")
-            
-            self.prompt = Variable.from_dict(prompt_dict)
+            self.prompt = Variable.from_dict(self.prompt_dict)
         except Exception as e:
             raise RuntimeError(f"Failed to load agent message prompt: {e}")
     
@@ -56,7 +71,6 @@ class AgentMessagePrompt:
             await self._load_prompt()
         
         try:
-            
             modules = modules if modules is not None else {}
             
             prompt_str = self.prompt.render(modules)

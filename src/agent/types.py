@@ -340,6 +340,7 @@ class Agent(BaseModel):
         self.max_tools = max_tools
         if self.max_tools > 0:
             self.prompt_modules["max_tools"] = self.max_tools
+        self.prompt_modules["workdir"] = self.workdir
         self.review_steps = review_steps
         self.step_number = 0
         self.log_max_length = log_max_length
@@ -444,13 +445,11 @@ class Agent(BaseModel):
         )
         time_str = datetime.now().isoformat()
         step_info_description += f"Current date and time: {time_str}"
-        step_info = dedent(
-            f"""
+        step_info = dedent(f"""
             <step_info>
             {step_info_description}
             </step_info>
-        """
-        )
+        """)
 
         state = await memory_manager.get_state(
             name=self.memory_name,
@@ -469,9 +468,7 @@ class Agent(BaseModel):
             elif event.event_type == EventType.TASK_END:
                 agent_history += f"Task End: {event.data['result']}\n"
             elif event.event_type == EventType.TOOL_STEP:
-                agent_history += (
-                    f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
-                )
+                agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
                 agent_history += f"Memory: {event.data['memory']}\n"
                 agent_history += f"Next Goal: {event.data['next_goal']}\n"
                 agent_history += f"Tool Results: {event.data.get('tool', '')}\n"
@@ -507,8 +504,7 @@ class Agent(BaseModel):
         todo += todo_contents
         todo += "</todo>"
 
-        agent_context = dedent(
-            f"""
+        agent_context = dedent(f"""
             <agent_context>
             {task}
             {step_info}
@@ -516,8 +512,7 @@ class Agent(BaseModel):
             {memory}
             {todo}
             </agent_context>
-        """
-        )
+        """)
 
         return {
             "agent_context": agent_context,
@@ -535,13 +530,11 @@ class Agent(BaseModel):
         # Only iterate over environments specified in config, not all registered environments
         for env_name in config.env_names:
             rule_string = ecp.get_info(env_name).rules
-            rule_string = dedent(
-                f"""
+            rule_string = dedent(f"""
                 <rules>
                 {rule_string}
                 </rules>
-            """
-            )
+            """)
 
             env_state = await ecp.get_state(env_name)
             state_string = "<state>"
@@ -556,14 +549,12 @@ class Agent(BaseModel):
                     )
             state_string += "</state>"
 
-            environment_context += dedent(
-                f"""
+            environment_context += dedent(f"""
                 <{env_name}>
                 {rule_string}
                 {state_string}
                 </{env_name}>
-            """
-            )
+            """)
 
         environment_context += "</environment_context>"
         return {
@@ -585,13 +576,11 @@ class Agent(BaseModel):
         ]
         tool_list_string = "\n".join(tool_list)
 
-        tool_context += dedent(
-            f"""
-        <tool_list>
-        {tool_list_string}
-        </tool_list>
-        """
-        )
+        tool_context += dedent(f"""
+            <available_tools>
+            {tool_list_string}
+            </available_tools>
+        """)
 
         tool_context += "</tool_context>"
         return {

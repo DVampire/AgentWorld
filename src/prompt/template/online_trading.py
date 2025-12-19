@@ -1,3 +1,8 @@
+from src.registry import PROMPT
+from src.prompt.types import Prompt
+from typing import Any, Dict
+from pydantic import Field, ConfigDict
+
 AGENT_PROFILE = """
 You are an AI trading agent specialized in online multi-asset trading operations using perpetual futures contracts. You trade multiple stocks or cryptocurrencies simultaneously using perpetual futures (perpetual contracts). You operate across multiple timeframes, from intraday trading (1min, 5min, 15min) to interday trading (1day), adapting your strategies based on market conditions and trading objectives. Your role is to execute profitable trading strategies across multiple assets while managing portfolio risk effectively through opening and closing positions (LONG, SHORT, CLOSE_LONG, CLOSE_SHORT, HOLD).
 """
@@ -222,10 +227,9 @@ Your thinking should be organized following these reasoning patterns in order, a
 """
 
 EXAMPLE_RULES = """
-<examples>
-You will be provided with few-shot examples of successful trading patterns and strategies. Use them as reference but never copy them directly.
-[A list of few-shot trading examples.]
-</examples>
+<example_rules>
+You will be provided with few shot examples of good or bad trading patterns. Use them as reference but never copy them directly.
+</example_rules>
 """
 
 OUTPUT = """
@@ -246,7 +250,7 @@ Action list should NEVER be empty for active trading operations.
 </output>
 """
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ agent_introduction }}
 {{ language_settings }}
@@ -254,26 +258,24 @@ SYSTEM_PROMPT = """
 {{ agent_context_rules }}
 {{ environment_context_rules }}
 {{ tool_context_rules }}
-{{ reasoning_rules }}
 {{ example_rules }}
+{{ reasoning_rules }}
 {{ output }}
 """
 
 # Agent message (dynamic context) - using Jinja2 syntax
-AGENT_MESSAGE_PROMPT = """
+AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ agent_context }}
 {{ environment_context }}
 {{ tool_context }}
 {{ examples }}
 """
 
-# Template configuration for online trading system prompts
-PROMPT_TEMPLATES = {
-    "online_trading_system_prompt": {
-        "name": "online_trading_system_prompt",
-        "type": "system_prompt",
-        "description": "System prompt for online multi-asset trading agents using perpetual futures - specialized for real-time trading operations with stocks and cryptocurrencies",
-        "template": SYSTEM_PROMPT,
+SYSTEM_PROMPT = {
+    "name": "online_trading_system_prompt",
+    "type": "system_prompt",
+    "description": "System prompt for online multi-asset trading agents using perpetual futures - specialized for real-time trading operations with stocks and cryptocurrencies",
+    "template": SYSTEM_PROMPT_TEMPLATE,
         "variables": [
             {
                 "name": "agent_profile",
@@ -332,28 +334,37 @@ PROMPT_TEMPLATES = {
                 "variables": TOOL_CONTEXT_RULES
             },
             {
+                "name": "example_rules",
+                "type": "system_prompt_module",
+                "description": "Contains few-shot examples and patterns to guide the trading agent's behavior and trading strategies.",
+                "require_grad": False,
+                "template": None,
+                "variables": EXAMPLE_RULES
+            },
+            {
                 "name": "reasoning_rules",
                 "type": "system_prompt_module",
-                "description": "Provides guidelines for trading reasoning patterns, market analysis, portfolio assessment, and trading decision rationale.",
-                "require_grad": False,
+                "description": "Describes the reasoning rules for the trading agent.",
+                "require_grad": True,
                 "template": None,
                 "variables": REASONING_RULES
             },
             {
-                "name": "example_rules",
+                "name": "output",
                 "type": "system_prompt_module",
-                "description": "Contains few-shot examples of successful trading strategies, risk management techniques, and market analysis patterns.",
+                "description": "Describes the output format of the agent's response.",
                 "require_grad": False,
                 "template": None,
-                "variables": EXAMPLE_RULES
+                "variables": OUTPUT
             }
         ],
-    },
-    "online_trading_agent_message_prompt": {
-        "name": "online_trading_agent_message_prompt",
-        "description": "Agent message for online trading agents (dynamic context)",
-        "type": "agent_message_prompt",
-        "template": AGENT_MESSAGE_PROMPT,
+}
+
+AGENT_MESSAGE_PROMPT = {
+    "name": "online_trading_agent_message_prompt",
+    "description": "Agent message for online trading agents (dynamic context)",
+    "type": "agent_message_prompt",
+    "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
         "variables": [
             {
                 "name": "agent_context",
@@ -387,6 +398,22 @@ PROMPT_TEMPLATES = {
                 "template": None,
                 "variables": None
             },
-        ],
-    },
+    ],
 }
+
+@PROMPT.register_module(force=True)
+class OnlineTradingPrompt(Prompt):
+    """Prompt template for online trading agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="online_trading", description="The name of the prompt")
+    description: str = Field(default="Prompt for online trading agents", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    @property
+    def system_prompt(self) -> Dict[str, Any]:
+        return SYSTEM_PROMPT
+    
+    @property
+    def agent_message_prompt(self) -> Dict[str, Any]:
+        return AGENT_MESSAGE_PROMPT

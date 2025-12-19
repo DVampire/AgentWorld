@@ -1,33 +1,53 @@
 """System prompt management for agents."""
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.logger import logger
-from src.prompt.manager import prompt_manager
 from src.message import SystemMessage
 from src.optimizer.protocol.variable import Variable
+from src.prompt.types import PromptConfig
 
 class SystemPrompt:
     """System prompt manager for tool-calling agents (static constitution).
 
     Parameters
-    - prompt_name: selects a template entry from prompt_manager if present (default: "tool_calling_system_prompt")
-    - max_tools: number used to format {{ max_tools }} in the template
+    - prompt_config: PromptConfig or prompt dictionary to use for rendering
     """
 
     def __init__(
         self,
-        prompt_name: str = "tool_calling_system_prompt",
+        prompt_config: Optional[PromptConfig] = None,
+        prompt_dict: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
-        self.prompt_name = prompt_name
+        """Initialize SystemPrompt with either PromptConfig or prompt dictionary.
+        
+        Args:
+            prompt_config: PromptConfig instance
+            prompt_dict: Prompt dictionary (alternative to prompt_config)
+            **kwargs: Additional arguments (ignored, kept for backward compatibility)
+        """
+        if prompt_config is not None:
+            self.prompt_config = prompt_config
+            # Convert PromptConfig to dict for Variable.from_dict
+            self.prompt_dict = {
+                "name": prompt_config.name,
+                "type": prompt_config.type,
+                "description": prompt_config.description,
+                "template": prompt_config.template,
+                "variables": prompt_config.variables,
+                "metadata": prompt_config.metadata,
+            }
+        elif prompt_dict is not None:
+            self.prompt_config = None
+            self.prompt_dict = prompt_dict
+        else:
+            raise ValueError("Either prompt_config or prompt_dict must be provided")
         
         self._initialize()
 
     def _initialize(self) -> None:
         """Initialize the system prompt."""
-        # Note: prompt_manager.get() is async, but we can't use await in __init__
-        # So we'll defer the actual loading until get_message() is called
         self.prompt = None
         self.message = None
     
@@ -37,14 +57,7 @@ class SystemPrompt:
             return
         
         try:
-            # Get prompt template from prompt_manager
-            prompt_dict = await prompt_manager.get(self.prompt_name)
-            if not prompt_dict:
-                available = await prompt_manager.list()
-                raise ValueError(f"Prompt {self.prompt_name} not found. Available prompts: {available}")
-            
-            self.prompt = Variable.from_dict(prompt_dict)
-            
+            self.prompt = Variable.from_dict(self.prompt_dict)
         except Exception as e:
             raise RuntimeError(f"Failed to load system prompt: {e}")
 

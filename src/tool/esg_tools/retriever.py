@@ -17,28 +17,11 @@ from src.logger import logger
 from src.model import model_manager
 from src.tool.types import Tool, ToolResponse
 from src.message import HumanMessage, SystemMessage
+from src.utils import dedent
 
 from src.tool.esg_tools.lightrag import LightRAG, QueryParam
 from src.tool.esg_tools.lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from src.tool.esg_tools.lightrag.kg.shared_storage import initialize_pipeline_status
-
-
-_METADATA_PROMPT = """You are an ESG metadata extractor. You will be given text content retrieved from ESG reports. Please extract structured ESG facts in JSON format according to the following format.
-Given the text, extract structured ESG facts in JSON format:
-
-Fields:
-- Aspect (Environmental/Social/Governance)
-- KPI (e.g., CO2 Emissions, Energy Use, Waste Recycling)
-- Topic (What the statement is about)
-- Quantity: {"value": "...", "unit": "...", "year": "..."}
-- Source: Use a short identifier
-
-Example:
-Input: 
-[{"id": 1, "content": "In 2023, Company A reduced its Scope 1 emissions by 12% compared to 2022.", "file_path": A_2022_42}, {"id":2, "content":"The total Scope 1 emissions in 2022 were 5000 tons CO2.","file_path":A_2022_96}]
-Output:
-[{"Aspect": "Environmental", "KPI": "CO2 Emissions", "Topic": "Scope 1 Reduction", "Quantity": {"value": "12", "unit": "% reduction", "year": "2023"}}, {"Aspect": "Environmental", "KPI": "CO2 Emissions", "Topic": "Scope 1 Emissions", "Quantity": {"value": "value in 2022", "unit": "tons CO2", "year": "2022"}}]
-"""
 
 
 _RETRIEVER_DESCRIPTION = """Retriever tool that retrieves ESG data from a local RAG database.
@@ -311,6 +294,82 @@ class RetrieverTool(Tool):
                 message=f"Error during insert: {str(e)}\n{traceback.format_exc()}"
             )
 
+    async def _generate_report_with_citations(
+        self, 
+        query: str, 
+        content: str
+    ) -> str:
+        """Generate a report with citations from retrieved content.
+        
+        Args:
+            query (str): The original query
+            content (str): The retrieved content
+            
+        Returns:
+            Formatted report with citations
+        """
+        try:
+            system_prompt = dedent("""You are an expert researcher and report writer. Your task is to create a comprehensive, well-structured report based on retrieved content.
+
+                IMPORTANT REQUIREMENTS:
+                1. **Preserve Original Content**: Keep the retrieved content as much as possible. Do not modify facts, numbers, or specific details.
+                2. **Organize Logically**: Structure the content in a clear, logical manner with appropriate sections and headings.
+                3. **Add Citations**: Throughout the report, mark where information comes from using citation numbers [1], [2], [3], etc.
+                4. **Citation Format**: 
+                - In the main content, use [1], [2], [3] to reference sources
+                - At the end, provide a "References" section listing all citations in format:
+                    [1] file_path
+                    [2] file_path
+                    etc.
+                5. **Report Structure**:
+                - Start with a brief introduction addressing the query
+                - Organize content into logical sections
+                - Use markdown formatting (headings, lists, etc.)
+                - End with a References section
+
+                Your goal is to create a clear, well-organized report that preserves the original information while making it easy to read and understand.""")
+            
+            user_prompt = dedent(f"""Based on the following query and retrieved document chunks, generate a comprehensive report.
+
+                Query: {query}
+
+                Retrieved Documents:
+                {content}
+
+                Please generate a well-structured report that:
+                - Directly addresses the query
+                - Preserves all important information from the content (keep facts, numbers, and details unchanged)
+                - Organizes content logically with clear sections and headings
+                - Includes citation markers [1], [2], [3], etc. throughout the text where information comes from the content
+                - Ends with a References section listing all citations in the format:
+                [1] file_path
+                [2] file_path
+                etc.
+
+                IMPORTANT: Use citation numbers [1], [2], [3] etc. corresponding to the content in the order they appear above.
+
+                Report:""")
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            
+            logger.info(f"| 🤖 Generating report with citations using {self.model_name}")
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages
+            )
+            
+            report = response.message.strip()
+            logger.info(f"| ✅ Generated report ({len(report)} chars)")
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error generating report: {e}")
+            return content
+
     async def finalize(self) -> None:
         """Finalize and cleanup the LightRAG storage."""
         if self.rag is not None:
@@ -319,42 +378,6 @@ class RetrieverTool(Tool):
                 logger.info(f"| 🧹 LightRAG storage finalized")
             except Exception as e:
                 logger.warning(f"Error finalizing LightRAG storage: {e}")
-
-    async def _extract_metadata(self, context: str) -> Optional[str]:
-        """Extract structured ESG metadata from the context.
-        
-        Args:
-            context: The raw context retrieved from the database.
-            
-        Returns:
-            JSON string of extracted ESG metadata, or None if extraction fails.
-        """
-        try:
-            messages = [
-                SystemMessage(content=_METADATA_PROMPT),
-                HumanMessage(content=context)
-            ]
-
-            response = await model_manager(
-                model=self.model_name,
-                messages=messages,
-            )
-            
-            # Try to parse the response as JSON to validate it
-            if response.message:
-                try:
-                    # Try to parse JSON from the response
-                    metadata = json.loads(response.message)
-                    return json.dumps(metadata, indent=2, ensure_ascii=False)
-                except json.JSONDecodeError:
-                    # If not valid JSON, return the raw message
-                    return response.message
-            
-            return None
-            
-        except Exception as e:
-            logger.warning(f"Failed to extract ESG metadata: {e}")
-            return None
 
     async def __call__(
         self, 
@@ -391,33 +414,46 @@ class RetrieverTool(Tool):
             logger.info(f"| 📊 Querying with mode={query_mode}, top_k={result_top_k}")
 
             # Execute the query
-            context = await self.rag.aquery(query, param=query_param)
+            content = await self.rag.aquery(query, param=query_param)
 
-            if not context:
+            if not content:
                 return ToolResponse(
                     success=True,
                     message="No relevant documents found for the query.",
                     extra={"query": query, "context": None, "metadata": None}
                 )
 
-            logger.info(f"| ✅ Retrieved context ({len(str(context))} chars)")
+            logger.info(f"| ✅ Retrieved content ({len(str(content))} chars)")
 
-            # Build the result
-            result_parts = []
-            result_parts.append("---Document Chunks---")
-            result_parts.append(str(context))
-            
-            final_result = "\n".join(result_parts)
-
-            return ToolResponse(
-                success=True,
-                message=final_result,
-                extra={
-                    "query": query,
-                    "context": str(context),
-                    "top_k": result_top_k
-                }
-            )
+            # Parse the JSON context
+            try:
+                # Extract JSON from the context string (it may be wrapped in markdown code blocks)
+                content = str(content).strip()
+                
+                # Generate report with citations using LLM
+                report = await self._generate_report_with_citations(query, content)
+                
+                return ToolResponse(
+                    success=True,
+                    message=report,
+                    extra={
+                        "query": query,
+                        "content": str(content) ,
+                        "top_k": result_top_k
+                    }
+                )
+            except json.JSONDecodeError as e:
+                logger.warning(f"| ⚠️ Failed to parse context as JSON: {e}")
+                
+                return ToolResponse(
+                    success=True,
+                    message=str(content),
+                    extra={
+                        "query": query,
+                        "content": content,
+                        "top_k": result_top_k
+                    }
+                )
 
         except Exception as e:
             logger.error(f"| ❌ Error in retriever: {e}")

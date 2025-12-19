@@ -345,69 +345,82 @@ class ReportTool(Tool):
     async def _complete_report(self) -> ToolResponse:
         """Complete and optimize the entire report."""
         try:
-            # Load content list
-            content_list = self._load_content_list()
-            
-            if not content_list:
+            # Read the entire report.md file
+            read_result = await self._file_reader(file_path=self._report_path)
+            if not read_result.success:
                 return ToolResponse(
                     success=False,
-                    message="No content to optimize. Add content first using the 'add' action."
+                    message=f"Failed to read report file: {read_result.message}"
                 )
             
-            # Read summary.md
-            read_summary_result = await self._file_reader(file_path=self._summary_path)
-            if not read_summary_result.success:
+            current_report = read_result.extra.get("content", "") if read_result.extra else ""
+            
+            if not current_report or len(current_report.strip()) < 50:
                 return ToolResponse(
                     success=False,
-                    message=f"Failed to read summary file: {read_summary_result.message}"
+                    message="Report is empty or too short. Add content first using the 'add' action."
                 )
             
-            summaries_text = read_summary_result.extra.get("content", "") if read_summary_result.extra else ""
+            logger.info(f"| 📊 Optimizing entire report ({len(current_report)} chars)...")
             
-            logger.info(f"| 📊 Optimizing {len(content_list)} content items...")
+            # Optimize the entire report using LLM
+            optimized_report = await self._optimize_entire_report(current_report)
             
-            # Optimize each content item using LLM
-            optimized_edits: List[Dict[str, Any]] = []
+            logger.info(f"| ✅ Optimization complete ({len(optimized_report)} chars)")
             
-            for item in content_list:
-                logger.info(f"| ✏️ Optimizing content #{item.id} (lines {item.start_line}-{item.end_line})")
-                
-                optimized_content = await self._optimize_content(
-                    content=item.content,
-                    item_id=item.id,
-                    summary=item.summary,
-                    summaries_context=summaries_text
-                )
-                
-                optimized_edits.append({
-                    "start_line": item.start_line,
-                    "end_line": item.end_line,
-                    "content": optimized_content
-                })
+            # Write the optimized report back to file
+            # Get total lines for replacement
+            total_lines = read_result.extra.get("total_lines", 0) if read_result.extra else 0
+            if total_lines == 0:
+                # If we can't determine lines, count them
+                total_lines = len(current_report.split('\n'))
             
-            # Apply all optimizations to report.md
-            # Sort edits by start_line in descending order to preserve line numbers
-            sorted_edits = sorted(optimized_edits, key=lambda x: -x["start_line"])
-            
+            # Use FileEditorTool to replace entire file content
             edit_result = await self._file_editor(
                 file_path=self._report_path,
-                edits=sorted_edits
+                edits=[{
+                    "start_line": 1,
+                    "end_line": max(total_lines, 1),  # Ensure at least 1
+                    "content": optimized_report
+                }]
             )
             
             if not edit_result.success:
-                return ToolResponse(
-                    success=False,
-                    message=f"Failed to apply optimizations: {edit_result.message}"
-                )
+                # Fallback: try direct file write
+                logger.warning(f"| ⚠️ FileEditorTool failed, trying direct write: {edit_result.message}")
+                try:
+                    with open(self._report_path, 'w', encoding='utf-8') as f:
+                        f.write(optimized_report)
+                    logger.info(f"| ✅ Report written directly to file")
+                except Exception as write_error:
+                    logger.error(f"| ❌ Failed to write report: {write_error}")
+                    return ToolResponse(
+                        success=False,
+                        message=f"Failed to write optimized report to file: {str(write_error)}"
+                    )
+            
+            # Verify the file was written (optional check, don't fail if verification fails)
+            try:
+                verify_result = await self._file_reader(file_path=self._report_path)
+                if verify_result.success:
+                    written_content = verify_result.extra.get("content", "") if verify_result.extra else ""
+                    # More lenient comparison: check if content length is reasonable
+                    if written_content and len(written_content.strip()) > len(optimized_report.strip()) * 0.8:
+                        logger.info(f"| ✅ Report optimization complete and verified: {self._report_path}")
+                    else:
+                        logger.warning(f"| ⚠️ Written content length mismatch, but file was updated")
+            except Exception as verify_error:
+                logger.warning(f"| ⚠️ Could not verify written content: {verify_error}, but file write appeared successful")
             
             logger.info(f"| ✅ Report optimization complete: {self._report_path}")
             
             return ToolResponse(
                 success=True,
-                message=f"📝 Report optimized successfully!\n\nPath: {self._report_path}\nTotal items optimized: {len(content_list)}\n\nThe report has been optimized for coherence, logic flow, and professional formatting.",
+                message=f"📝 Report optimized successfully!\n\nPath: {self._report_path}\n\nThe entire report has been optimized for coherence, logic flow, organization, and proper citations.",
                 extra={
                     "path": self._report_path,
-                    "items_optimized": len(content_list)
+                    "original_length": len(current_report),
+                    "optimized_length": len(optimized_report)
                 }
             )
 
@@ -419,48 +432,39 @@ class ReportTool(Tool):
                 message=f"Error completing report: {str(e)}\n{traceback.format_exc()}"
             )
 
-    async def _optimize_content(
-        self,
-        content: str,
-        item_id: int,
-        summary: str,
-        summaries_context: str
-    ) -> str:
-        """Optimize a single content item using LLM."""
+    async def _optimize_entire_report(self, report_content: str) -> str:
+        """Optimize the entire report file using LLM."""
         try:
-            prompt = dedent(f"""Optimize and refine the following content to make it coherent, logically organized, and well-written.
+            prompt = dedent(f"""Optimize and refine the following ESG analysis report to make it coherent, logically organized, well-structured, and professionally written.
             
-            This is content item #{item_id}.
-            
-            Summary of this content:
-            {summary}
-            
-            Context: All content summaries (for reference):
-            {summaries_context}
-            
-            Original content:
+            Original Report:
             ```markdown
-            {content}
+            {report_content}
             ```
             
-            Please refine this content by:
-            1. Improving logical flow and coherence with other content items
-            2. Enhancing clarity and readability
-            3. Fixing any grammar or style issues
-            4. Ensuring consistent formatting
-            5. Making transitions smooth and logical
-            6. Making the writing more professional and polished
+            Please optimize the entire report by:
+            1. **Improving Logical Structure**: Ensure the report flows logically from introduction to conclusion
+            2. **Organizing Content**: Group related information into clear sections with appropriate headings
+            3. **Enhancing Coherence**: Improve transitions between sections and paragraphs
+            4. **Verifying Citations**: Ensure all citations [1], [2], [3], etc. are correctly placed and referenced
+            5. **Checking References Section**: Verify that the References section at the end lists all citations in order
+            6. **Improving Readability**: Enhance clarity, fix grammar and style issues
+            7. **Consistent Formatting**: Ensure consistent markdown formatting throughout
+            8. **Professional Polish**: Make the writing more professional and polished
             
-            IMPORTANT:
-            - Preserve all factual information, data, and key findings
-            - Keep the same markdown structure (headers, lists, etc.)
-            - Do not add new information that wasn't in the original
-            - Ensure the content flows well with adjacent content items
-            - Return ONLY the refined content, no explanations
+            IMPORTANT REQUIREMENTS:
+            - **Preserve All Facts**: Do not modify facts, numbers, data, or specific details
+            - **Maintain Citations**: Keep all citation markers [1], [2], [3] etc. in their correct positions
+            - **Preserve References**: Keep the References section with all file paths intact
+            - **No New Information**: Do not add new information that wasn't in the original report
+            - **Markdown Format**: Return the complete optimized report in markdown format
+            - **Complete Report**: Return the ENTIRE optimized report, not just parts of it
+            
+            Return ONLY the optimized markdown report content, no explanations or additional text.
             """)
             
             messages = [
-                SystemMessage(content="You are an expert editor specializing in ESG analysis reports. Your task is to refine and polish content while preserving all factual information and ensuring logical flow with other content sections. Return only the refined markdown content."),
+                SystemMessage(content="You are an expert editor specializing in ESG analysis reports. Your task is to optimize entire reports for logical flow, organization, coherence, and proper citation formatting while preserving all factual information. Return only the complete optimized markdown report."),
                 HumanMessage(content=prompt)
             ]
             
@@ -475,9 +479,35 @@ class ReportTool(Tool):
                 return refined.refined_content
             else:
                 # Fallback: use raw response
-                return response.message.strip()
+                optimized = response.message.strip()
+                
+                # Remove markdown code blocks if present (more robust handling)
+                # Check if content is wrapped in code blocks
+                lines = optimized.split('\n')
+                if len(lines) > 2:
+                    first_line = lines[0].strip()
+                    last_line = lines[-1].strip()
+                    
+                    # Remove opening code block marker
+                    if first_line.startswith("```"):
+                        optimized = '\n'.join(lines[1:])
+                    
+                    # Remove closing code block marker
+                    if optimized.strip().endswith("```"):
+                        optimized = optimized.rsplit("```", 1)[0].rstrip()
+                
+                optimized = optimized.strip()
+                
+                # Validate the result
+                if not optimized or len(optimized) < 50:
+                    logger.warning(f"| ⚠️ Optimized content seems invalid, returning original")
+                    return report_content
+                
+                return optimized
                 
         except Exception as e:
-            logger.error(f"| ❌ Error optimizing content #{item_id}: {e}")
+            logger.error(f"| ❌ Error optimizing entire report: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             # Return original content if optimization fails
-            return content
+            return report_content

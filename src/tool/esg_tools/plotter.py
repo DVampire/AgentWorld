@@ -251,7 +251,7 @@ class PlotterTool(Tool):
             # Determine input type
             if self._is_csv_file(input_data):
                 logger.info(f"| 📊 Input detected as CSV file: {input_data}")
-                csv_path = input_data
+                csv_path = os.path.abspath(input_data)
                 needs_conversion = False
             elif self._is_markdown_table(input_data):
                 logger.info(f"| 📋 Input detected as markdown table")
@@ -272,7 +272,7 @@ class PlotterTool(Tool):
                 # Generate output CSV path
                 import uuid
                 csv_filename = f"plotter_data_{uuid.uuid4().hex[:8]}.csv"
-                csv_path = os.path.join(self.base_dir, csv_filename)
+                csv_path = os.path.abspath(os.path.join(self.base_dir, csv_filename))
                 
                 # Generate conversion code
                 conversion_code = await self._generate_csv_conversion_code(input_data, csv_path)
@@ -312,11 +312,11 @@ class PlotterTool(Tool):
             if output_filename:
                 if not output_filename.endswith('.png'):
                     output_filename += '.png'
-                png_path = os.path.join(self.base_dir, output_filename)
+                png_path = os.path.abspath(os.path.join(self.base_dir, output_filename))
             else:
                 import uuid
                 png_filename = f"plot_{uuid.uuid4().hex[:8]}.png"
-                png_path = os.path.join(self.base_dir, png_filename)
+                png_path = os.path.abspath(os.path.join(self.base_dir, png_filename))
             
             # Generate plotting code
             plotting_code = await self._generate_plotting_code(csv_path, png_path)
@@ -342,11 +342,13 @@ class PlotterTool(Tool):
                     message=f"PNG file was not created at {png_path}. Plotting code may have failed silently."
                 )
             
-            # Return success with file path
+            # Return success with absolute file paths
+            csv_abs_path = os.path.abspath(csv_path)
+            png_abs_path = os.path.abspath(png_path)
             return ToolResponse(
                 success=True,
-                message=f"Plot successfully generated!\n\nCSV file: {csv_path}\nPNG file: {png_path}",
-                extra={"csv_path": csv_path, "png_path": png_path}
+                message=f"Plot successfully generated!\n\nCSV file (absolute path): {csv_abs_path}\nPNG file (absolute path): {png_abs_path}",
+                extra={"csv_path": csv_abs_path, "png_path": png_abs_path}
             )
 
         except Exception as e:
