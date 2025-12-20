@@ -137,7 +137,7 @@ class VersionManager(BaseModel):
         """Initialize version manager (for backward compatibility)"""
         self.base_dir = assemble_project_path(os.path.join(config.workdir, "version"))
         os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "versions.json")
+        self.save_path = os.path.join(self.base_dir, "version.json")
         logger.info(f"| 📁 Version manager base directory: {self.base_dir} and save path: {self.save_path}")
     
     async def register_version(self, component_type: str, name: str, version: str,
@@ -168,6 +168,9 @@ class VersionManager(BaseModel):
             version_history = self._version_histories[component_type][name]
         
         version_history.add_version(version, description, metadata)
+        
+        # Save to JSON after registering version
+        await self.save_to_json()
         
         return version_history
     
@@ -295,6 +298,40 @@ class VersionManager(BaseModel):
         else:
             # Existing component, generate next patch version
             return await self.generate_next_version(component_type, name, "patch")
+    
+    async def deprecate_version(self, component_type: str, name: str, version: str):
+        """Deprecate a version for a component
+        
+        Args:
+            component_type: Type of component
+            name: Component name
+            version: Version string to deprecate
+        """
+        version_history = await self.get_version_history(component_type, name)
+        if version_history is None:
+            raise ValueError(f"Component {component_type}/{name} not found")
+        
+        version_history.deprecate_version(version)
+        
+        # Save to JSON after deprecating version
+        await self.save_to_json()
+    
+    async def archive_version(self, component_type: str, name: str, version: str):
+        """Archive a version for a component
+        
+        Args:
+            component_type: Type of component
+            name: Component name
+            version: Version string to archive
+        """
+        version_history = await self.get_version_history(component_type, name)
+        if version_history is None:
+            raise ValueError(f"Component {component_type}/{name} not found")
+        
+        version_history.archive_version(version)
+        
+        # Save to JSON after archiving version
+        await self.save_to_json()
     
     async def save_to_json(self, file_path: Optional[str] = None) -> str:
         """Save all version histories to JSON

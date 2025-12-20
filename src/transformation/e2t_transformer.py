@@ -2,19 +2,19 @@
 
 Converts ECP environments to TCP tools.
 """
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Type
 from pydantic import BaseModel
 
 from src.logger import logger
 from src.tool.server import tcp
-from src.tool.types import Tool, ToolResponse
 from src.environment.server import ecp
 from src.transformation.types import E2TRequest, E2TResponse
+from src.tool.types import Tool, ToolResponse
 
 
-def create_wrapped_tool_class(action_config, env_config):
+def create_wrapped_tool_class(action_config, env_config, env_name):
     # Capture variables in closure to avoid scope issues
-    tool_name = action_config.name
+    tool_name = f"{env_name}.{action_config.name}"
     tool_description = action_config.description
     
     class WrappedTool(Tool):
@@ -157,14 +157,14 @@ class E2TTransformer:
                 actions = env_config.actions
                 for action_name, action_config in actions.items():
                     
-                    WrappedToolClass = create_wrapped_tool_class(action_config, env_config)
+                    WrappedToolClass = create_wrapped_tool_class(action_config, env_config, env_name)
                     
                     # Don't pass action_config and env_config in config - they contain non-serializable functions
                     # WrappedTool.__init__ will get them from closure if not in config
                     # The args_schema, function_calling, and text will be correctly retrieved from action_config
                     # when the tool instance is created, and saved in ToolConfig
                     await tcp.register(WrappedToolClass, config={}, override=True)
-                    logger.info(f"| ✅ E2T: Tool {action_name} added to TCP")
+                    logger.info(f"| ✅ E2T: Tool {env_name}.{action_name} added to TCP")
                         
             return E2TResponse(
                 success=True,
