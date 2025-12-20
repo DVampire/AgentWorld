@@ -81,7 +81,7 @@ class TCPServer(BaseModel):
         self._registered_configs[tool_config.name] = tool_config
         return tool_config
     
-    async def list(self, include_disabled: bool = False) -> List[str]:
+    async def list(self) -> List[str]:
         """List all registered tools
         
         Args:
@@ -90,7 +90,7 @@ class TCPServer(BaseModel):
         Returns:
             List[str]: List of tool names
         """
-        return await self.tool_context_manager.list(include_disabled=include_disabled)
+        return await self.tool_context_manager.list()
     
     
     async def get(self, tool_name: str) -> Tool:

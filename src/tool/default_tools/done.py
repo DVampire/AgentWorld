@@ -1,4 +1,6 @@
 """Done tool for indicating that the task has been completed."""
+from typing import Dict, Any
+from pydantic import Field
 from src.tool.types import Tool, ToolResponse
 from src.registry import TOOL
 
@@ -13,7 +15,7 @@ class DoneTool(Tool):
 
     name: str = "done"
     description: str = _DONE_TOOL_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     def __init__(self, **kwargs):
         """A tool for indicating that the task has been completed."""

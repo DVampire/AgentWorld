@@ -1,7 +1,8 @@
 """File reader tool for reading file contents with optional line range."""
 
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
+from pydantic import Field
 
 from src.tool.types import Tool, ToolResponse
 from src.registry import TOOL
@@ -32,7 +33,7 @@ class FileReaderTool(Tool):
 
     name: str = "read"
     description: str = _FILE_READER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     def __init__(self, **kwargs):
         """Initialize the file reader tool."""

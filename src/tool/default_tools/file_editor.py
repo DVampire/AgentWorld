@@ -2,7 +2,7 @@
 
 import os
 from typing import Optional, List, Dict, Any
-
+from pydantic import Field
 from src.tool.types import Tool, ToolResponse
 from src.registry import TOOL
 from src.logger import logger
@@ -49,7 +49,7 @@ class FileEditorTool(Tool):
 
     name: str = "edit"
     description: str = _FILE_EDITOR_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     def __init__(self, **kwargs):
         """Initialize the file editor tool."""

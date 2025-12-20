@@ -426,7 +426,7 @@ class VersionManager(BaseModel):
                 return False
 
     @staticmethod
-    def compare_versions(v1: str, v2: str) -> int:
+    async def compare_versions(v1: str, v2: str) -> int:
         """Compare two version strings. Returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal.
         
         Args:

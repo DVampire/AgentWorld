@@ -33,7 +33,7 @@ class BraveSearch(Tool):
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: Optional[str] = Field(default=None, description="Brave Search API key")
     base_url: str = "https://api.search.brave.com/res/v1/web/search"
     

@@ -2,7 +2,7 @@
 
 import asyncio
 import os
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 from pydantic import Field
 
 from src.tool.types import Tool, ToolResponse
@@ -33,7 +33,7 @@ class MdifyTool(Tool):
 
     name: str = "mdify"
     description: str = _MDIFY_TOOL_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     timeout: int = Field(description="Timeout in seconds for file conversion", default=60)
     converter: Optional[MarkitdownConverter] = None

@@ -16,7 +16,7 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "openrouter/gpt-4.1"
+model_name = "openrouter/gemini-3-flash-preview"
 
 env_names = [
     "file_system"
@@ -45,6 +45,7 @@ mdify_tool.update(
 )
 #-----------------BROWSER TOOL CONFIG-----------------
 browser_tool.update(
+    model_name=model_name,
     base_dir=f"{workdir}/tool/browser",
 )
 #-----------------DEEP RESEARCHER TOOL CONFIG-----------------

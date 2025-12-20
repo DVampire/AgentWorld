@@ -2,6 +2,7 @@
 import asyncio
 from re import T
 from pydantic import Field
+from typing import Dict, Any
 
 from src.tool.types import Tool, ToolResponse
 from src.registry import TOOL
@@ -20,7 +21,7 @@ class BashTool(Tool):
     """A tool for executing bash commands asynchronously."""
     name: str = "bash"
     description: str = _BASH_TOOL_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     timeout: int = Field(description="Timeout in seconds for command execution", default=30)
     

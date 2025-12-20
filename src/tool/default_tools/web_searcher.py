@@ -26,7 +26,7 @@ class WebSearcherTool(Tool):
 
     name: str = "web_searcher"
     description: str = _WEB_SEARCHER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
 
     max_length: int = Field(default=4096, description="The maximum length of the search results")
     retry_delay: int = Field(default=10, description="The delay between retries")

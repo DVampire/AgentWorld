@@ -21,7 +21,7 @@ class ReformulatorTool(Tool):
     
     name: str = "reformulator"
     description: str = _REFORMULATOR_TOOL_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     model_name: str = Field(default="gpt-4.1", description="The model to use for reformulation.")
     

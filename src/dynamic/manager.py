@@ -5,9 +5,26 @@ import importlib.util
 import sys
 import inspect
 import ast
-from typing import Type, Optional, TypeVar, Any, Dict, List, Set, Callable
+import json
+import re
+from copy import deepcopy
+from typing import Type, Optional, TypeVar, Any, Dict, List, Set, Callable, Union, get_type_hints, Tuple
+
+import inflection
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 T = TypeVar('T')
+
+# Constants
+PYTHON_TYPE_FIELD = "x-python-type"
+JSON_TO_PYTHON_TYPE = {
+    "integer": "int",
+    "number": "float",
+    "string": "str",
+    "boolean": "bool",
+    "object": "dict",
+    "array": "list",
+}
 
 
 class DynamicModuleManager:
@@ -18,6 +35,7 @@ class DynamicModuleManager:
     - Loading classes and functions from source code strings
     - Managing dynamically generated code
     - Automatically injecting necessary imports based on code analysis
+    - Building parameter schemas and Pydantic models
     """
     
     def __init__(self):
@@ -28,6 +46,294 @@ class DynamicModuleManager:
         self._symbol_registry: Dict[str, Any] = {}
         # Context-based import providers: context_name -> callable that returns imports dict
         self._context_providers: Dict[str, Callable[[], Dict[str, Any]]] = {}
+    
+    def default_parameters_schema(self) -> Dict[str, Any]:
+        """Default empty parameters schema."""
+        return {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+    
+    def parse_docstring_descriptions(self, docstring: str) -> Dict[str, str]:
+        """Parse parameter descriptions from Google-style docstrings.
+        
+        Args:
+            docstring: The docstring to parse
+            
+        Returns:
+            Dictionary mapping parameter names to descriptions
+        """
+        if not docstring:
+            return {}
+
+        descriptions: Dict[str, str] = {}
+        lines = inspect.cleandoc(docstring).splitlines()
+        in_args = False
+
+        for line in lines:
+            stripped = line.strip()
+            if not in_args:
+                if stripped.lower().startswith("args"):
+                    in_args = True
+                continue
+
+            if stripped.lower().startswith(("returns:", "yields:", "raises:", "examples:")):
+                break
+
+            match = re.match(r"^\s*(\w+)\s*(?:\([^)]*\))?\s*:\s*(.+)$", stripped)
+            if match:
+                param_name = match.group(1)
+                description = match.group(2).strip()
+                descriptions[param_name] = description
+
+        return descriptions
+
+
+    def annotation_to_types(self, annotation: Any) -> Tuple[str, str]:
+        """Convert Python type annotation to JSON type and Python type string.
+        
+        Args:
+            annotation: Python type annotation
+            
+        Returns:
+            Tuple of (json_type, python_type_string)
+        """
+        if annotation is inspect._empty or annotation is None:
+            return "string", "Any"
+
+        basic_map = {
+            str: ("string", "str"),
+            int: ("integer", "int"),
+            float: ("number", "float"),
+            bool: ("boolean", "bool"),
+            dict: ("object", "dict"),
+            list: ("array", "list"),
+        }
+        if annotation in basic_map:
+            return basic_map[annotation]
+
+        origin = getattr(annotation, "__origin__", None)
+        args = getattr(annotation, "__args__", ())
+
+        if origin is Union and len(args) == 2 and type(None) in args:
+            inner_type = args[0] if args[1] is type(None) else args[1]
+            json_type, python_type = self.annotation_to_types(inner_type)
+            return json_type, f"Optional[{python_type}]"
+
+        if origin is list or (hasattr(annotation, "__origin__") and "List" in str(annotation)):
+            return "array", "list"
+
+        if origin is dict or (hasattr(annotation, "__origin__") and "Dict" in str(annotation)):
+            return "object", "dict"
+
+        type_str = str(annotation).replace("typing.", "")
+        return "string", type_str
+
+
+    def parse_type_string(self, type_str: str) -> Type:
+        """Parse a type string (e.g., 'str', 'Optional[str]', 'List[str]', 'Dict[str, Any]') to Python type.
+        
+        Supports both Python type names (str, int) and JSON schema type names (string, integer).
+        Also handles 'typing.' prefix and detailed Dict[K, V] parsing.
+        
+        Args:
+            type_str: Type string to parse
+            
+        Returns:
+            Python type
+        """
+        # Remove typing. prefix if present
+        type_str = type_str.replace("typing.", "").strip()
+        
+        # Handle common types (both Python and JSON schema names)
+        mapping = {
+            "str": str,
+            "string": str,
+            "int": int,
+            "integer": int,
+            "float": float,
+            "number": float,
+            "bool": bool,
+            "boolean": bool,
+            "dict": dict,
+            "object": dict,
+            "list": list,
+            "array": list,
+            "Any": Any,
+        }
+        if type_str in mapping:
+            return mapping[type_str]
+        
+        # Handle Optional[Type]
+        if type_str.startswith("Optional[") and type_str.endswith("]"):
+            inner = type_str[9:-1].strip()
+            return Optional[self.parse_type_string(inner)]  # type: ignore[index]
+        
+        # Handle List[Type]
+        if type_str.startswith("List[") and type_str.endswith("]"):
+            inner = type_str[5:-1].strip()
+            return List[self.parse_type_string(inner)]  # type: ignore[index]
+        
+        # Handle Dict[K, V] - parse key and value types if provided
+        if type_str.startswith("Dict[") and type_str.endswith("]"):
+            inner = type_str[5:-1].strip()
+            # Try to parse Dict[K, V] format
+            if "," in inner:
+                parts = inner.split(",", 1)
+                if len(parts) == 2:
+                    key_type = self.parse_type_string(parts[0].strip())
+                    value_type = self.parse_type_string(parts[1].strip())
+                    return Dict[key_type, value_type]  # type: ignore[index]
+            # Fallback to generic dict if parsing fails
+            return dict
+        
+        # Default to Any if can't parse
+        return Any
+
+    def json_type_to_python_type(self, json_type: str) -> Type:
+        """Convert JSON schema type to Python type.
+        
+        Args:
+            json_type: JSON schema type (e.g., "string", "integer", "number")
+            
+        Returns:
+            Python type
+        """
+        mapping = {
+            "integer": int,
+            "number": float,
+            "string": str,
+            "boolean": bool,
+            "object": dict,
+            "array": list,
+        }
+        return mapping.get(json_type, str)
+
+    def remove_python_type_field(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove x-python-type field from schema recursively.
+        
+        Args:
+            schema: Schema dictionary
+            
+        Returns:
+            Cleaned schema dictionary
+        """
+        cleaned = deepcopy(schema)
+        cleaned.pop(PYTHON_TYPE_FIELD, None)
+        if "properties" in cleaned:
+            for prop_info in cleaned["properties"].values():
+                if isinstance(prop_info, dict):
+                    prop_info.pop(PYTHON_TYPE_FIELD, None)
+        return cleaned
+
+
+    def build_args_schema(self, name: str, schema: Dict[str, Any]) -> Type[BaseModel]:
+        """Create a Pydantic model from a parameter schema.
+        
+        Args:
+            name: Name for the model (will be converted to PascalCase + "Input")
+            schema: Parameter schema dictionary
+            
+        Returns:
+            Pydantic BaseModel class
+        """
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", []))
+
+        model_name = inflection.camelize(name) + "Input"
+
+        if not properties:
+            return create_model(
+                model_name,
+                __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow"),
+            )
+
+        field_definitions: Dict[str, Any] = {}
+        for param_name, param_info in properties.items():
+            python_type_str = param_info.get(PYTHON_TYPE_FIELD)
+            if python_type_str:
+                python_type = self.parse_type_string(python_type_str)
+            else:
+                json_type = param_info.get("type", "string")
+                python_type = self.json_type_to_python_type(json_type)
+
+            is_required = param_name in required
+            if "default" in param_info:
+                default_value = param_info["default"]
+            elif is_required:
+                default_value = ...  # Required
+            else:
+                default_value = None
+
+            description = param_info.get("description", "")
+            if is_required and default_value is ...:
+                field_definitions[param_name] = (
+                    python_type,
+                    Field(description=description),
+                )
+            else:
+                field_definitions[param_name] = (
+                    Optional[python_type] if not is_required else python_type,
+                    Field(default=default_value, description=description),
+                )
+
+        return create_model(
+            model_name,
+            __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow"),
+            **field_definitions,
+        )
+
+    def build_function_calling(self, name: str, description: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Build OpenAI-compatible function-calling representation.
+        
+        Args:
+            name: Name of the tool/action
+            description: Description of the tool/action
+            schema: Parameter schema dictionary (will be cleaned by removing x-python-type fields)
+            
+        Returns:
+            OpenAI-compatible function-calling dictionary
+        """
+        # Remove x-python-type field from schema as it's only for internal use
+        cleaned_schema = self.remove_python_type_field(schema)
+        
+        return {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": cleaned_schema,
+            },
+        }
+
+
+    def build_text_representation(self, name: str, description: str, schema: Dict[str, Any], entity_type: str = "Tool") -> str:
+        """Build a human-readable text representation.
+        
+        Args:
+            name: Name of the tool/action
+            description: Description
+            schema: Parameter schema dictionary
+            entity_type: Type of entity ("Tool" or "Action")
+            
+        Returns:
+            Human-readable text representation
+        """
+        properties = schema.get("properties", {})
+        if not properties:
+            return f"{entity_type}: {name}\nDescription: {description}\nParameters: None"
+
+        required = set(schema.get("required", []))
+        text = f"{entity_type}: {name}\nDescription: {description}\nParameters:\n"
+        for param, info in properties.items():
+            raw_type = info.get("type", "string")
+            type_label = info.get(PYTHON_TYPE_FIELD) or JSON_TO_PYTHON_TYPE.get(raw_type, raw_type)
+            if param not in required and not str(type_label).startswith("Optional["):
+                type_label = f"Optional[{type_label}]"
+            default = info.get("default", "N/A")
+            text += f"    - {param} ({type_label}): {info.get('description', '')} (default: {default})\n"
+        return text
     
     def _generate_module_name(self, prefix: str = "dynamic_module") -> str:
         """Generate a unique virtual module name.
@@ -60,20 +366,53 @@ class DynamicModuleManager:
                 module_name.startswith('_dynamic_') or
                 '<' in module_name)
     
-    def get_class_source_code(self, cls: Type) -> Optional[str]:
-        """Extract source code of a class if possible.
+    def get_source_code(self, object: Union[Type['T'], Callable]) -> Optional[str]:
+        """Extract source code of a class or callable object if possible.
         
         Args:
-            cls: The class to extract source code from
+            object: The class or callable object to extract source code from
             
         Returns:
             Source code string if available, None otherwise
         """
         try:
-            return inspect.getsource(cls)
+            return inspect.getsource(object)
         except (OSError, TypeError):
             # Source code not available (e.g., dynamically generated, compiled, etc.)
             return None
+    
+    def get_full_module_source(self, cls: Type) -> str:
+        """Get the full source code of the module containing the class, including all imports.
+        
+        This is more reliable than inspect.getsource() which only gets the class definition.
+        By reading the entire module file, we preserve all import statements and module-level code,
+        ensuring the complete context is available when loading from JSON.
+        
+        Args:
+            cls: The class to get module source for
+            
+        Returns:
+            Full module source code as string, or class source if file reading fails
+        """
+        try:
+            # Get the module object
+            module = inspect.getmodule(cls)
+            if module is None:
+                # Fallback to inspect.getsource if module is not available
+                return inspect.getsource(cls)
+            
+            # Get the file path of the module
+            file_path = inspect.getfile(module)
+            
+            # Read the entire file to preserve all imports and context
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except (OSError, TypeError, IOError, AttributeError) as e:
+            # Fallback to inspect.getsource if file reading fails
+            try:
+                return inspect.getsource(cls)
+            except Exception:
+                return ""
     
     def extract_class_name_from_code(self, code: str) -> Optional[str]:
         """Extract the first class name from source code.
@@ -201,9 +540,11 @@ class DynamicModuleManager:
         
         return imports
     
-    def load_code(self, code: str, module_name: Optional[str] = None, 
-                  context: Optional[str] = None,
-                  inject_imports: Optional[Dict[str, Any]] = None) -> str:
+    def load_code(self, 
+                        code: str, 
+                        module_name: Optional[str] = None, 
+                        context: Optional[str] = None,
+                        inject_imports: Optional[Dict[str, Any]] = None) -> str:
         """Load code into a virtual module and return the module name.
         
         Args:
@@ -407,6 +748,30 @@ class DynamicModuleManager:
         """
         return self._loaded_modules.get(module_name)
     
+    def get_class_string(self, cls: Type) -> Optional[str]:
+        """Get the '<module_name.class_name>' string representation of a class.
+        
+        Args:
+            cls (Type): The class object
+            
+        Returns:
+            String in format '<module_name.class_name>', or None if cannot determine
+        """
+        if not isinstance(cls, type):
+            return None
+        
+        # Get module name
+        module_name = getattr(cls, '__module__', None)
+        if not module_name:
+            return None
+        
+        # Get class name
+        class_name = getattr(cls, '__name__', None)
+        if not class_name:
+            return None
+        
+        return f"<{module_name}.{class_name}>"
+    
     def list_loaded_modules(self) -> List[str]:
         """List all loaded dynamic module names.
         
@@ -414,6 +779,173 @@ class DynamicModuleManager:
             List of module names
         """
         return list(self._loaded_modules.keys())
+    
+    def get_parameters(self, object: Union[Type['T'], Callable]) -> Dict[str, Any]:
+        """Get the parameters of a function or class from source code.
+        
+        Args:
+            object (Union[Type['T'], Callable]): The function or class to get parameters for
+        """
+        try:
+            if isinstance(object, Type):
+                signature = inspect.signature(object.__call__)
+                hints = get_type_hints(object.__call__)
+                docstring = inspect.getdoc(object.__call__) or ""
+            elif isinstance(object, Callable):
+                signature = inspect.signature(object)
+                hints = get_type_hints(object)
+                docstring = inspect.getdoc(object) or ""
+        except Exception as e:
+            raise ValueError(f"Failed to get parameters for {object}: {e}")
+
+        # Get descriptions
+        doc_descriptions = self.parse_docstring_descriptions(docstring)
+
+        properties = {}
+        required = []
+        
+        for name, param in signature.parameters.items():
+            if name == "self":
+                continue
+            
+            # Skip generic "input" parameter
+            if name == "input" and len(signature.parameters) == 2:  # self + input
+                continue
+            
+            # Skip VAR_KEYWORD (**kwargs) and VAR_POSITIONAL (*args) parameters
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            
+            # Get type annotation
+            annotation = hints.get(name, param.annotation)
+            json_type, python_type = self.annotation_to_types(annotation)
+            
+            # Determine if required
+            is_required = param.default is inspect._empty
+            
+            # Build schema
+            schema: Dict[str, Any] = {
+                "type": json_type,
+                "description": doc_descriptions.get(name, ""),
+            }
+            schema[PYTHON_TYPE_FIELD] = python_type
+            
+            if not is_required:
+                schema["default"] = param.default
+            
+            properties[name] = schema
+            if is_required:
+                required.append(name)
+
+        if not properties:
+            return self.default_parameters_schema()
+
+        result: Dict[str, Any] = {
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": False,
+        }
+        if required:
+            result["required"] = required
+        return result
+    
+    def serialize_args_schema(self, args_schema: Type[BaseModel]) -> Optional[Dict[str, Any]]:
+        """Serialize a BaseModel type to a dictionary with class name and field information.
+        
+        Args:
+            args_schema: BaseModel class type
+            
+        Returns:
+            Dictionary with class_name and fields info, or None if serialization fails
+        """
+        try:
+            schema_info = {
+                "class_name": args_schema.__name__,
+                "fields": {}
+            }
+            
+            # Extract field information from model_fields
+            for field_name, field_info in args_schema.model_fields.items():
+                field_data = {
+                    "type": str(field_info.annotation) if hasattr(field_info, 'annotation') else "Any",
+                    "required": field_info.is_required() if hasattr(field_info, 'is_required') else True,
+                }
+                
+                # Add description if available
+                if hasattr(field_info, 'description') and field_info.description:
+                    field_data["description"] = field_info.description
+                
+                # Add default value if available
+                if hasattr(field_info, 'default') and field_info.default is not ...:
+                    if field_info.default is not None:
+                        # Try to serialize default value
+                        try:
+                            json.dumps(field_info.default)
+                            field_data["default"] = field_info.default
+                        except (TypeError, ValueError):
+                            field_data["default"] = None
+                    else:
+                        field_data["default"] = None
+                
+                schema_info["fields"][field_name] = field_data
+            
+            return schema_info
+        except Exception as e:
+            raise ValueError(f"Failed to serialize args_schema {args_schema.__name__}: {e}")
+        
+    def deserialize_args_schema(self, schema_info: Dict[str, Any]) -> Optional[Type[BaseModel]]:
+        """Deserialize a BaseModel type from saved schema information.
+        
+        Args:
+            schema_info: Dictionary with class_name and fields info
+            
+        Returns:
+            BaseModel class type, or None if deserialization fails
+        """
+        try:
+            
+            class_name = schema_info.get("class_name")
+            fields_info = schema_info.get("fields", {})
+            
+            if not class_name:
+                return None
+            
+            # Build field definitions for create_model
+            field_definitions = {}
+            for field_name, field_data in fields_info.items():
+                # Parse type string (e.g., "str", "Optional[str]", "List[str]")
+                type_str = field_data.get("type", "Any")
+                python_type = self.parse_type_string(type_str)
+                
+                # Get default value
+                default_value = field_data.get("default")
+                is_required = field_data.get("required", True)
+                
+                if default_value is None and not is_required:
+                    # Optional field
+                    python_type = Optional[python_type] if python_type != Any else Any
+                    default_value = None
+                elif default_value is None and is_required:
+                    default_value = ...  # Required field
+                
+                # Create Field with description if available
+                description = field_data.get("description", "")
+                if description:
+                    field_definitions[field_name] = (python_type, Field(default=default_value, description=description))
+                else:
+                    field_definitions[field_name] = (python_type, default_value)
+            
+            # Create the model dynamically
+            model = create_model(
+                class_name,
+                __config__=ConfigDict(arbitrary_types_allowed=True, extra="allow"),
+                **field_definitions
+            )
+            
+            return model
+        except Exception as e:
+            raise ValueError(f"Failed to deserialize args_schema: {e}")
+        
 
 
 # Global instance for convenience

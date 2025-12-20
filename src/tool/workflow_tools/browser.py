@@ -1,14 +1,18 @@
 """Browser tool for interacting with the browser."""
 
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import Field, ConfigDict
 from browser_use import Agent, ChatOpenAI
+
+from dotenv import load_dotenv
+load_dotenv(verbose=True)
 
 from src.utils import assemble_project_path
 from src.tool.types import Tool, ToolResponse
 from src.logger import logger
 from src.registry import TOOL
+
 
 _BROWSER_TOOL_DESCRIPTION = """Use the browser to interact with the internet to complete the task."""
 
@@ -19,10 +23,10 @@ class BrowserTool(Tool):
     
     name: str = "browser"
     description: str = _BROWSER_TOOL_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     model_name: str = Field(
-        default="gpt-4.1",
+        default="openrouter/gemini-3-flash-preview",
         description="The model to use for the browser."
     )
     
@@ -57,8 +61,16 @@ class BrowserTool(Tool):
             try:
                 agent = Agent(
                     task=task,
-                    llm=ChatOpenAI(model=self.model_name),
-                    page_extraction_llm=ChatOpenAI(model=self.model_name),
+                    llm=ChatOpenAI(
+                        model=self.model_name.split("/")[-1],
+                        base_url=os.getenv("OPENROUTER_BASE_URL"),
+                        api_key=os.getenv("OPENROUTER_API_KEY"),
+                    ),
+                    page_extraction_llm=ChatOpenAI(
+                        model=self.model_name.split("/")[-1],
+                        base_url=os.getenv("OPENROUTER_BASE_URL"),
+                        api_key=os.getenv("OPENROUTER_API_KEY"),
+                    ),
                     file_system_path=self.base_dir if self.base_dir else None,
                     generate_gif=os.path.join(self.base_dir, "browser.gif") if self.base_dir else None,
                     save_conversation_path=os.path.join(self.base_dir, "logs") if self.base_dir else None,

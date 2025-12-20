@@ -2,7 +2,7 @@
 
 import os
 import re
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.utils import dedent
@@ -49,7 +49,7 @@ class PlotterTool(Tool):
 
     name: str = "plotter"
     description: str = _PLOTTER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
 
     # Configuration parameters
     model_name: str = Field(

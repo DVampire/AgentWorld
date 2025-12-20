@@ -21,7 +21,7 @@ class PythonInterpreterTool(Tool):
     """A tool that can execute Python code."""
     name: str = "python_interpreter"
     description: str = _PYTHON_INTERPRETER_TOOL_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
 
     authorized_imports: Optional[List[str]] = Field(default=None, description="The authorized imports for the tool")
     base_python_tools: Optional[Dict[str, Any]] = Field(default=None, description="The base python tools for the tool")

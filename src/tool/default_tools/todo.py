@@ -63,6 +63,7 @@ class TodoTool(Tool):
     
     name: str = "todo"
     description: str = _TODO_TOOL_DESCRIPTION
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     todo_file: Optional[str] = None
     steps_file: Optional[str] = None

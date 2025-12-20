@@ -2,6 +2,8 @@
 
 import aiohttp
 from typing import Optional, Dict, Any, ClassVar
+from pydantic import Field
+
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse
 from src.registry import TOOL
@@ -17,7 +19,7 @@ class LeetCodeTool(Tool):
 
     name: str = "leetcode"
     description: str = _LEETCODE_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     # LeetCode GraphQL endpoint
     GRAPHQL_URL: ClassVar[str] = "https://leetcode.com/graphql"

@@ -4,7 +4,7 @@ import os
 import re
 import asyncio
 import urllib.request
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from urllib.parse import urlparse
 
@@ -91,7 +91,7 @@ class DeepAnalyzerTool(Tool):
 
     name: str = "deep_analyzer"
     description: str = _DEEP_ANALYZER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     # Configuration parameters
     max_rounds: int = Field(default=3, description="Maximum analysis rounds in __call__ main loop")

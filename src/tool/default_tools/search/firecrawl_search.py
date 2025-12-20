@@ -33,7 +33,7 @@ class FirecrawlSearch(Tool):
         "useful for when you need to answer questions about current events."
         " input should be a search query."
     )
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     api_key: Optional[str] = Field(default=None, description="Firecrawl API key")
     
     def __init__(self, **kwargs):

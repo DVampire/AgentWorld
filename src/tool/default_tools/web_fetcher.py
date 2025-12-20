@@ -1,5 +1,8 @@
 """Web fetcher tool for retrieving content from web pages."""
 
+from pydantic import Field
+from typing import Dict, Any
+
 from src.utils import fetch_url
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse
@@ -16,7 +19,7 @@ class WebFetcherTool(Tool):
 
     name: str = "web_fetcher"
     description: str = _WEB_FETCHER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     def __init__(self, **kwargs):
         """A tool for fetching web content asynchronously."""

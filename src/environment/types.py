@@ -3,25 +3,14 @@
 Core type definitions for the Environment Context Protocol.
 """
 
-import inspect
 import json
 import uuid
 import inflection
-from copy import deepcopy
 from enum import Enum
-from typing import Any, Dict, Optional, Union, Type, Callable, List, get_type_hints
-
+from typing import Any, Dict, Optional, Union, Type, Callable
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.utils import (
-    PYTHON_TYPE_FIELD,
-    default_parameters_schema,
-    parse_docstring_descriptions,
-    annotation_to_types,
-    build_args_schema,
-    build_function_calling,
-    build_text_representation,
-)
+from src.dynamic import dynamic_manager
 
 
 class Environment(BaseModel):
@@ -69,8 +58,7 @@ class Environment(BaseModel):
         """Get the state of the environment"""
         raise NotImplementedError("Get state method not implemented")
     
-    @property
-    def rules(self) -> str:
+    def get_rules(self) -> str:
         """Generate environment rules from environment instance.
         
         Returns:
@@ -180,134 +168,144 @@ class ActionConfig(BaseModel):
     env_name: str = Field(description="The name of the environment this action belongs to")
     name: str = Field(description="The name of the action")
     description: str = Field(description="The description of the action")
-    function: Optional[Callable] = Field(default=None, description="The function implementing the action")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the action")
-    enabled: bool = Field(default=True, description="Whether the action is enabled")
     version: str = Field(default="1.0.0", description="Version of the action")
-    config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the action")
     
+    function: Optional[Callable] = Field(default=None, description="The function implementing the action")
+    code: Optional[str] = Field(default=None, description="The source code of the action")
+    
+    # Default representations
     args_schema: Optional[Type[BaseModel]] = Field(default=None, description="Default args schema (BaseModel type)")
     function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")
     text: Optional[str] = Field(default=None, description="Default text representation")
-    
-    @property
-    def parameter_schema(self) -> Dict[str, Any]:
-        """Get the parameter schema for this action."""
-        schema = self._build_parameter_schema()
-        return deepcopy(schema)
-    
-    @property
-    def function_calling(self) -> Dict[str, Any]:
-        """Return the OpenAI-compatible function-calling representation."""
-        schema = self.parameter_schema
-        return build_function_calling(self.name, self.description, schema)
-    
-    @property
-    def args_schema(self) -> Type[BaseModel]:
-        """Return a BaseModel type for the action's input parameters.
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
         
-        The model name will be `{action_name}Input` (e.g., `clickInput`, `typeInput`).
-        
-        Returns:
-            Type[BaseModel]: A Pydantic BaseModel class for the action's input parameters
-        """
-        # Access the field directly to avoid recursion
-        stored_schema = object.__getattribute__(self, 'args_schema')
-        if stored_schema is not None:
-            return stored_schema
-        
-        # Otherwise, compute it from parameter_schema
-        schema = self.parameter_schema
-        computed_schema = build_args_schema(self.name, schema)
-        # Cache it for future use
-        object.__setattr__(self, 'args_schema', computed_schema)
-        return computed_schema
-    
-    @property
-    def text(self) -> str:
-        """Return the text representation of the action."""
-        schema = self.parameter_schema
-        return build_text_representation(self.name, self.description, schema, entity_type="Action")
-    
-    def _build_parameter_schema(self) -> Dict[str, Any]:
-        """Build parameter schema from function signature and docstring."""
-        if self.function is None:
-            return default_parameters_schema()
-        
-        try:
-            signature = inspect.signature(self.function)
-        except (TypeError, ValueError):
-            return default_parameters_schema()
-
-        try:
-            hints = get_type_hints(self.function)
-        except Exception:
-            hints = {}
-
-        docstring = inspect.getdoc(self.function) or ""
-        doc_descriptions = parse_docstring_descriptions(docstring)
-
-        properties: Dict[str, Any] = {}
-        required: List[str] = []
-
-        for name, param in signature.parameters.items():
-            if name == "self":
-                continue
-            if name == "input" and len(signature.parameters) == 2:
-                continue
-            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-                continue
-
-            annotation = hints.get(name, param.annotation)
-            json_type, python_type = annotation_to_types(annotation)
-
-            is_required = param.default is inspect._empty
-            schema: Dict[str, Any] = {
-                "type": json_type,
-                "description": doc_descriptions.get(name, ""),
-                PYTHON_TYPE_FIELD: python_type,
-            }
-            if not is_required:
-                schema["default"] = param.default
-
-            properties[name] = schema
-            if is_required:
-                required.append(name)
-
-        if not properties:
-            return default_parameters_schema()
-
-        result: Dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-            "additionalProperties": False,
+        result = {
+            "env_name": self.env_name,
+            "name": self.name,
+            "description": self.description,
+            "metadata": self.metadata,
+            "version": self.version,
+            
+            "function": f"<{self.function.__name__}>",
+            "code": self.code,
+            
+            "args_schema": dynamic_manager.serialize_args_schema(self.args_schema) if self.args_schema else None,
+            "function_calling": self.function_calling,
+            "text": self.text,
         }
-        if required:
-            result["required"] = required
+        
         return result
-
+    
+    @classmethod
+    def model_validate(cls, data: Dict[str, Any]) -> 'ActionConfig':
+        """Validate the model from a dictionary."""
+        env_name = data.get("env_name")
+        name = data.get("name")
+        description = data.get("description")
+        metadata = data.get("metadata")
+        version = data.get("version")
+        
+        function = None
+        code = data.get("code")
+        
+        args_schema = dynamic_manager.deserialize_args_schema(data.get("args_schema"))
+        function_calling = data.get("function_calling")
+        text = data.get("text")
+        
+        return cls(env_name=env_name,
+            name=name,
+            description=description,
+            metadata=metadata,
+            version=version,
+            function=function,
+            code=code,
+            args_schema=args_schema,
+            function_calling=function_calling,
+            text=text)
 
 class EnvironmentConfig(BaseModel):
     """Environment configuration"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(description="The name of the environment")
-    rules: str = Field(description="The rules of the environment")
     description: str = Field(description="The description of the environment")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the environment")
+    rules: str = Field(description="The rules of the environment")
     version: str = Field(default="1.0.0", description="Version of the environment")
     
-    actions: Dict[str, ActionConfig] = Field(default_factory=dict, description="Dictionary of actions available in this environment")
     cls: Optional[Type[Environment]] = Field(default=None, description="The class of the environment")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the environment")
     instance: Optional[Any] = Field(default=None, description="The instance of the environment")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the environment")
     code: Optional[str] = Field(default=None, description="Source code for dynamically generated environment classes (used when cls cannot be imported from a module)")
     
-    def __str__(self):
-        return f"EnvironmentConfig(name={self.name}, description={self.description}, actions={len(self.actions)})"
+    actions: Dict[str, ActionConfig] = Field(default_factory=dict, description="Dictionary of actions available in this environment")
     
-    def __repr__(self):
-        return self.__str__()
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
+        result = {
+            "name": self.name,
+            "description": self.description,
+            "metadata": self.metadata,
+            "rules": self.rules,
+            "version": self.version,
+            
+            "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
+            "config": self.config,
+            "instance": None,
+            "code": self.code,
+            
+            "actions": {name: action_config.model_dump() for name, action_config in self.actions.items()},
+        }
+        
+        return result
+    
+    @classmethod
+    def model_validate(cls, data: Dict[str, Any]) -> 'EnvironmentConfig':
+        """Validate the model from a dictionary."""
+        
+        name = data.get("name")
+        description = data.get("description")
+        metadata = data.get("metadata")
+        rules = data.get("rules")
+        version = data.get("version")
+        
+        cls_ = None
+        code = data.get("code")
+        if code:
+            class_name = dynamic_manager.extract_class_name_from_code(code)
+            if class_name:
+                try:
+                    cls_ = dynamic_manager.load_class(
+                        code, 
+                        class_name=class_name,
+                        base_class=Environment,
+                        context="environment"
+                    )
+                except Exception as e:
+                    cls_ = None
+            else:
+                cls_ = None
+        else:
+            cls_ = None
+            
+        config = data.get("config")
+        instance = data.get("instance", None)
+        
+        actions = {name: ActionConfig.model_validate(action_config) for name, action_config in data.get("actions", {}).items()}
+        
+        return cls(name=name,
+            description=description,
+            metadata=metadata,
+            rules=rules,
+            version=version,
+            cls=cls_,
+            config=config,
+            instance=instance,
+            code=code,
+            actions=actions)
     
 class ScreenshotInfo(BaseModel):
     """Screenshot information"""

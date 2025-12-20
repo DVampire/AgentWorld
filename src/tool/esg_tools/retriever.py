@@ -3,7 +3,7 @@
 import os
 import re
 import json
-from typing import Optional, List
+from typing import Optional, Dict, Any
 import pandas as pd
 from tabulate import tabulate
 from pydantic import Field, ConfigDict
@@ -51,7 +51,7 @@ class RetrieverTool(Tool):
 
     name: str = "retriever"
     description: str = _RETRIEVER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
 
     # Configuration parameters
     model_name: str = Field(

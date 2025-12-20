@@ -46,7 +46,7 @@ class DeepResearcherTool(Tool):
 
     name: str = "deep_researcher"
     description: str = _DEEP_RESEARCHER_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     # Configuration parameters
     max_rounds: int = Field(default=3, description="Maximum search rounds")

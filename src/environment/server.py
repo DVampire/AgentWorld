@@ -3,9 +3,9 @@
 Server implementation for the Environment Context Protocol with lazy loading support.
 """
 from typing import Any, Dict, List, Optional, Type, Union, Callable
-import asyncio
 import os
 from pydantic import BaseModel, ConfigDict, Field
+import inspect
 
 from src.logger import logger
 from src.config import config
@@ -52,13 +52,6 @@ class ECPServer(BaseModel):
         )
         await self.environment_context_manager.initialize(env_names=env_names)
         
-        # Sync registered_configs from context manager after initialization
-        env_list = await self.environment_context_manager.list()
-        for env_name in env_list:
-            env_config = await self.environment_context_manager.get_info(env_name)
-            if env_config and env_name not in self._registered_configs:
-                self._registered_configs[env_name] = env_config
-        
         logger.info("| ✅ Environments initialization completed")
         
     async def get_contract(self) -> str:
@@ -81,40 +74,46 @@ class ECPServer(BaseModel):
         def decorator(func: Callable):
             action_name = name or func.__name__
             
-            # Store action metadata for registration in instance's __init__
             func._action_name = action_name
             func._action_description = description
             func._action_function = func
-            func._metadata = metadata if metadata is not None else {}
+            func._action_metadata = metadata if metadata is not None else {}
             
             return func
         return decorator
     
-    async def register(self, env: Union[Environment, Type[Environment]], *, override: bool = False, **kwargs: Any) -> EnvironmentConfig:
-        """Register an environment class or instance asynchronously.
+    async def register(self, 
+                       env_cls: Type[Environment],
+                       env_config_dict: Optional[Dict[str, Any]] = None,
+                       override: bool = False,
+                       version: Optional[str] = None) -> EnvironmentConfig:
+        """Register an environment class asynchronously.
         
         Args:
-            env: Environment class or instance to register
+            env_cls: Environment class to register
+            env_config_dict: Configuration dict for environment initialization
             override: Whether to override existing registration
-            **kwargs: Configuration for environment initialization
+            version: Optional version string
             
         Returns:
             EnvironmentConfig: Environment configuration
         """
-        env_config = await self.environment_context_manager.register(env, override=override, **kwargs)
+        env_config = await self.environment_context_manager.register(
+            env_cls, 
+            env_config_dict=env_config_dict, 
+            override=override,
+            version=version
+        )
         self._registered_configs[env_config.name] = env_config
         return env_config
     
-    async def list(self, include_disabled: bool = False) -> List[str]:
+    async def list(self) -> List[str]:
         """List all registered environments
         
-        Args:
-            include_disabled: Whether to include disabled environments (not used for environments, kept for compatibility)
-            
         Returns:
             List[str]: List of environment names
         """
-        return await self.environment_context_manager.list(include_disabled=include_disabled)
+        return await self.environment_context_manager.list()
     
     
     async def get(self, env_name: str) -> Optional[Environment]:
@@ -155,42 +154,46 @@ class ECPServer(BaseModel):
         await self.environment_context_manager.cleanup()
         self._registered_configs.clear()
     
-    async def update(self, env_name: str, env: Union[Environment, Type[Environment]], 
-                    new_version: Optional[str] = None, description: Optional[str] = None,
-                    **kwargs: Any) -> EnvironmentConfig:
+    async def update(self, 
+                     env_cls: Type[Environment],
+                     env_config_dict: Optional[Dict[str, Any]] = None,
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None) -> EnvironmentConfig:
         """Update an existing environment with new configuration and create a new version
         
         Args:
-            env_name: Name of the environment to update
-            env: New environment class or instance with updated implementation
+            env_cls: New environment class with updated implementation
+            env_config_dict: Configuration dict for environment initialization
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
-            **kwargs: Configuration for environment initialization
             
         Returns:
             EnvironmentConfig: Updated environment configuration
         """
         env_config = await self.environment_context_manager.update(
-            env_name, env, new_version, description, **kwargs
+            env_cls, env_config_dict=env_config_dict, new_version=new_version, description=description
         )
         self._registered_configs[env_config.name] = env_config
         return env_config
     
-    async def copy(self, env_name: str, new_name: Optional[str] = None,
-                  new_version: Optional[str] = None, **override_config) -> EnvironmentConfig:
+    async def copy(self, 
+                  env_name: str,
+                  new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, 
+                  new_config: Optional[Dict[str, Any]] = None) -> EnvironmentConfig:
         """Copy an existing environment
         
         Args:
             env_name: Name of the environment to copy
             new_name: New name for the copied environment. If None, uses original name.
             new_version: New version for the copied environment. If None, increments version.
-            **override_config: Configuration overrides
+            new_config: New configuration dict for the copied environment. If None, uses original config.
             
         Returns:
             EnvironmentConfig: New environment configuration
         """
         env_config = await self.environment_context_manager.copy(
-            env_name, new_name, new_version, **override_config
+            env_name, new_name, new_version, new_config
         )
         self._registered_configs[env_config.name] = env_config
         return env_config

@@ -1,13 +1,9 @@
 """Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
-import importlib
 import os
-import ast
-import asyncio
 from asyncio_atexit import register as async_atexit_register
 from typing import Any, Dict, List, Type, Optional, Union, Tuple
 from datetime import datetime
 import inflection
-import inspect
 import json
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,12 +11,13 @@ from src.logger import logger
 from src.config import config
 from src.environment.faiss.service import FaissService
 from src.environment.faiss.types import FaissAddRequest
-from src.utils import assemble_project_path, gather_with_concurrency
-from src.utils import serialize_args_schema, deserialize_args_schema
+from src.utils import (assemble_project_path, 
+                       gather_with_concurrency,
+                       file_lock
+                       )
 from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.version import version_manager
 from src.dynamic import dynamic_manager
-from src.utils.file_utils import file_lock
 from src.registry import TOOL
 
 class ToolContextManager(BaseModel):
@@ -112,7 +109,7 @@ class ToolContextManager(BaseModel):
             if tool_name in tool_configs:
                 registry_config = tool_configs[tool_name]
                 # Compare versions: only override if code version is strictly greater
-                if version_manager.compare_versions(code_config.version, registry_config.version) > 0:
+                if await version_manager.compare_versions(code_config.version, registry_config.version) > 0:
                     logger.info(f"| 🔄 Overriding tool {tool_name} from registry (v{registry_config.version}) with code version (v{code_config.version})")
                     tool_configs[tool_name] = code_config
                 else:
@@ -166,36 +163,34 @@ class ToolContextManager(BaseModel):
                 tool_config_key = inflection.underscore(tool_cls.__name__)
                 tool_config_dict = config.get(tool_config_key, {})
                 
-                # Set type to tool class name, will be used for building tool instance
-                tool_cls_name = tool_cls.__name__
-                if 'type' not in tool_config_dict:
-                    tool_config_dict['type'] = tool_cls_name
-                
                 # Get tool properties from tool class
                 tool_name = tool_cls.model_fields['name'].default
                 tool_description = tool_cls.model_fields['description'].default
-                tool_enabled = tool_cls.model_fields['enabled'].default
+                tool_metadata = tool_cls.model_fields['metadata'].default
                 
                 # Get or generate version from version_manager
                 tool_version = await version_manager.get_version("tool", tool_name)
                 
-                # Get full module source code (including imports)
-                # This ensures all imports are preserved when saving/loading from JSON
-                tool_code = self._get_full_module_source(tool_cls)
+                # Get full module source code
+                tool_code = dynamic_manager.get_full_module_source(tool_cls)
+                
+                tool_parameters = dynamic_manager.get_parameters(tool_cls)
+                tool_function_calling = dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+                tool_text = dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+                tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
                 
                 # Create tool config (ToolConfig.id is auto-incremented internally if needed)
                 tool_config = ToolConfig(
                     name=tool_name,
                     description=tool_description,
-                    enabled=tool_enabled,
                     version=tool_version,
                     cls=tool_cls,
                     config=tool_config_dict,
                     instance=None,
-                    function_calling=None,
-                    text=None,
-                    args_schema=None,
-                    metadata={},
+                    function_calling=tool_function_calling,
+                    text=tool_text,
+                    args_schema=tool_args_schema,
+                    metadata=tool_metadata,
                     code=tool_code,
                 )
                 
@@ -206,6 +201,9 @@ class ToolContextManager(BaseModel):
                 if tool_name not in self._tool_history_versions:
                     self._tool_history_versions[tool_name] = {}
                 self._tool_history_versions[tool_name][tool_version] = tool_config
+                
+                # Register version to version manager
+                await version_manager.register_version("tool", tool_name, tool_version)
                 
                 logger.info(f"| 📝 Registered tool: {tool_name} ({tool_cls.__name__})")
                 
@@ -248,15 +246,14 @@ class ToolContextManager(BaseModel):
                         "1.0.0": {
                             "name": str,
                             "description": str,
-                            "enabled": bool,
+                            "metadata": dict,
                             "version": str,
-                            "cls": Type[Tool], # will be loaded from code
+                            "cls": Type[Tool],
                             "config": dict,
                             "instance": Tool, # will be built when needed
-                            "metadata": dict,
-                            "function_calling": dict, # will be built when needed
-                            "text": str, # will be built when needed
-                            "args_schema": BaseModel, # will be built when needed
+                            "function_calling": dict, 
+                            "text": str, 
+                            "args_schema": BaseModel,
                             "code": str
                         },
                         ...
@@ -295,81 +292,17 @@ class ToolContextManager(BaseModel):
                     return None
                 
                 version_map: Dict[str, ToolConfig] = {}
-                current_config: Optional[ToolConfig] = None  # Active config for current_version
+                current_tool_config: Optional[ToolConfig] = None
                 
-                for version_str, version_data in versions.items():
-                    name = version_data.get("name", "")
-                    description = version_data.get("description", "")
-                    enabled = version_data.get("enabled", True)
-                    version = version_data.get("version", version_str)
-                    
-                    code = version_data.get("code", None)
-                    config = version_data.get("config", {})
-                    
-                    if code:
-                        # Dynamic class: load class from source code
-                        # Extract class name from config
-                        class_name = config.get("type")
-                        if not class_name:
-                            # Try to extract from code
-                            class_name = dynamic_manager.extract_class_name_from_code(code)
-                        
-                        if class_name:
-                            try:
-                                # Use context="tool" for automatic import injection
-                                # The full module source code includes all imports, so they should be available
-                                cls = dynamic_manager.load_class(
-                                    code, 
-                                    class_name=class_name,
-                                    base_class=Tool,
-                                    context="tool"
-                                )
-                            except Exception as e:
-                                logger.warning(f"| ⚠️ Failed to load dynamic class for {tool_name}@{version}: {e}")
-                                cls = None
-                        else:
-                            logger.warning(f"| ⚠️ Cannot determine class name from code for {tool_name}@{version}")
-                            cls = None
-                    else:
-                        cls = None
-                    instance = version_data.get("instance", None)
-                    metadata = version_data.get("metadata", {})
-                    function_calling = version_data.get("function_calling", None)
-                    text = version_data.get("text", None)
-                    
-                    # Restore args_schema from saved schema info (if present)
-                    args_schema = None
-                    args_schema_info = version_data.get("args_schema")
-                    if args_schema_info:
-                        try:
-                            args_schema = deserialize_args_schema(args_schema_info)
-                        except Exception as e:
-                            logger.warning(f"| ⚠️ Failed to restore args_schema for {tool_name}@{version}: {e}")
-                    
-                    # Create ToolConfig (args_schema will be set after creation to avoid validation errors)
-                    tool_config = ToolConfig(
-                        name=name,
-                        description=description,
-                        enabled=enabled,
-                        version=version,
-                        cls=cls,
-                        config=config,
-                        instance=instance,
-                        metadata=metadata,
-                        function_calling=function_calling,
-                        text=text,
-                        code=code,
-                    )
-                    
-                    # Set args_schema after creation to bypass validation
-                    if args_schema is not None:
-                        tool_config.args_schema = args_schema
+                for _, version_data in versions.items():
+                    tool_config = ToolConfig.model_validate(version_data)
+                    version = tool_config.version
                     version_map[version] = tool_config
                     
                     if version == current_version:
-                        current_config = tool_config
+                        current_tool_config = tool_config
                 
-                return tool_name, version_map, current_config
+                return tool_name, version_map, current_tool_config
             except Exception as e:
                 logger.error(f"| ❌ Failed to load tool {tool_name} from code JSON: {e}")
                 return None
@@ -383,18 +316,22 @@ class ToolContextManager(BaseModel):
         for result in results:
             if isinstance(result, Exception) or result is None:
                 continue
-            tool_name, version_map, current_config = result
+            tool_name, version_map, current_tool_config = result
             if not version_map:
                 continue
             # Store all versions in history (mapped by version string)
             self._tool_history_versions[tool_name] = version_map
             # Active config: the one corresponding to current_version
-            if current_config is not None:
-                tool_configs[tool_name] = current_config
+            if current_tool_config is not None:
+                tool_configs[tool_name] = current_tool_config
             else:
                 # Fallback: if current_version is not found, use the last available version
                 logger.warning(f"| ⚠️ Tool {tool_name} current_version not found, using last available version")
                 tool_configs[tool_name] = list(version_map.values())[-1]
+            
+            # Register all versions to version manager
+            for tool_config in version_map.values():
+                await version_manager.register_version("tool", tool_name, tool_config.version)
             
         logger.info(f"| 📂 Loaded {len(tool_configs)} tools from {self.save_path}")
         return tool_configs
@@ -446,17 +383,9 @@ class ToolContextManager(BaseModel):
             if tool_config.cls is None:
                 raise ValueError(f"Cannot create tool {tool_config.name}: no class provided. Class should be loaded during initialization.")
             
+            # Instantiate tool instance
             tool_instance = tool_config.cls(**tool_config.config) if tool_config.config else tool_config.cls()
             tool_config.instance = tool_instance
-            
-            # Lazy compute function_calling, text, and args_schema if not already set
-            if tool_config.function_calling is None or tool_config.text is None or tool_config.args_schema is None:
-                try:
-                    tool_config.function_calling = tool_instance.function_calling
-                    tool_config.text = tool_instance.text
-                    tool_config.args_schema = tool_instance.args_schema
-                except Exception as e:
-                    logger.debug(f"| ⚠️ Failed to get properties from tool instance {tool_config.name}: {e}")
             
             # Store tool metadata
             self._tool_configs[tool_config.name] = tool_config
@@ -469,7 +398,7 @@ class ToolContextManager(BaseModel):
             raise
     
     async def register(self, 
-                       tool: Union[Tool, Type[Tool]],
+                       tool_cls: Type[Tool],
                        tool_config_dict: Optional[Dict[str, Any]] = None,
                        override: bool = False,
                        version: Optional[str] = None) -> ToolConfig:
@@ -483,108 +412,51 @@ class ToolContextManager(BaseModel):
         """
         
         try:
-            # --- Normalize to a common representation ---
-            if isinstance(tool, Tool):
-                # Instance already created
-                tool_instance = tool
-                tool_cls = type(tool_instance)
-                tool_name = tool_instance.name
-                tool_description = tool_instance.description
-                tool_enabled = tool_instance.enabled
-                function_calling = tool_instance.function_calling
-                text = tool_instance.text
-                args_schema = tool_instance.args_schema
-                metadata = getattr(tool_instance, "metadata", {})
-                # Instances don't need an init config
-                tool_config_dict = {}
-                # Version: use explicit one or instance attribute, otherwise default
-                tool_version = version or getattr(tool_instance, "version", "1.0.0")
+            if tool_config_dict is None:
+                # Fallback to global config by class name
+                tool_config_key = inflection.underscore(tool_cls.__name__)
+                tool_config_dict = config.get(tool_config_key, {})
+            
+            # Instantiate tool immediately (register is a runtime operation)
+            try:
+                tool_instance = tool_cls(**tool_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create tool instance for {tool_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate tool {tool_cls.__name__} with provided config: {e}")
+            
+            tool_name = tool_instance.name
+            tool_description = tool_instance.description
+            tool_metadata = tool_instance.metadata
+            
+            # Get or generate version from version_manager
+            if version is None:
+                tool_version = await version_manager.get_version("tool", tool_name)
             else:
-                # Tool is a class, we need to build an instance
-                tool_cls = tool
-                if tool_config_dict is None:
-                    # Fallback to global config by class name
-                    tool_config_key = inflection.underscore(tool_cls.__name__)
-                    tool_config_dict = config.get(tool_config_key, {})
+                tool_version = version
                 
-                # Instantiate tool immediately (register is a runtime operation)
-                try:
-                    tool_instance = tool_cls(**tool_config_dict)
-                except Exception as e:
-                    logger.error(f"| ❌ Failed to create tool instance for {tool_cls.__name__}: {e}")
-                    raise ValueError(f"Failed to instantiate tool {tool_cls.__name__} with provided config: {e}")
-                
-                tool_name = tool_instance.name
-                tool_description = tool_instance.description
-                tool_enabled = tool_instance.enabled
-                
-                # Get properties with validation and error handling
-                try:
-                    function_calling = tool_instance.function_calling
-                    # Ensure it's a dict or None
-                    if function_calling is not None and not isinstance(function_calling, dict):
-                        logger.warning(f"| ⚠️ Tool {tool_name} function_calling is not a dict: {type(function_calling)}, value: {function_calling}")
-                        function_calling = None
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to get function_calling for {tool_name}: {e}")
-                    function_calling = None
-                
-                try:
-                    text = tool_instance.text
-                    # Ensure it's a string or None
-                    if text is not None and not isinstance(text, str):
-                        logger.warning(f"| ⚠️ Tool {tool_name} text is not a string: {type(text)}, value: {text}")
-                        text = None
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to get text for {tool_name}: {e}")
-                    text = None
-                
-                try:
-                    args_schema = tool_instance.args_schema
-                    # Ensure it's a BaseModel type or None
-                    if args_schema is not None:
-                        if not isinstance(args_schema, type) or not issubclass(args_schema, BaseModel):
-                            logger.warning(f"| ⚠️ Tool {tool_name} args_schema is not a BaseModel type: {type(args_schema)}, value: {args_schema}")
-                            args_schema = None
-                except Exception as e:
-                    logger.warning(f"| ⚠️ Failed to get args_schema for {tool_name}: {e}")
-                    args_schema = None
-                
-                metadata = getattr(tool_instance, "metadata", {})
-                
-                # Version: ask version_manager if not provided
-                if version is None:
-                    tool_version = await version_manager.get_version("tool", tool_name)
-                else:
-                    tool_version = version
+            # Get tool code
+            tool_code = dynamic_manager.get_source_code(tool_cls)
+            if not tool_code:
+                logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
             
-            # --- Common validations ---
-            if not tool_name:
-                raise ValueError("Tool.name cannot be empty.")
-            
-            if tool_name in self._tool_configs and not override:
-                raise ValueError(f"Tool '{tool_name}' already registered. Use override=True to replace it.")
-            
-            # --- Dynamic code handling ---
-            tool_code = None
-            if dynamic_manager.is_dynamic_class(tool_cls):
-                tool_code = dynamic_manager.get_class_source_code(tool_cls)
-                if not tool_code:
-                    logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
+            # Get tool parameters
+            tool_parameters = dynamic_manager.get_parameters(tool_cls)
+            tool_function_calling = dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+            tool_text = dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+            tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
             
             # --- Build ToolConfig ---
             tool_config = ToolConfig(
                 name=tool_name,
                 description=tool_description,
-                enabled=tool_enabled,
+                metadata=tool_metadata,
                 version=tool_version,
                 cls=tool_cls,
                 config=tool_config_dict or {},
                 instance=tool_instance,
-                metadata=metadata,
-                function_calling=function_calling,
-                text=text,
-                args_schema=args_schema,
+                function_calling=tool_function_calling,
+                text=tool_text,
+                args_schema=tool_args_schema,
                 code=tool_code,
             )
             
@@ -630,240 +502,239 @@ class ToolContextManager(BaseModel):
         return tool_config.instance if tool_config.instance is not None else None
     
     async def get_info(self, tool_name: str) -> Optional[ToolConfig]:
-        """Get tool configuration by name
+        """Get tool info by name
         
         Args:
             tool_name: Tool name
             
         Returns:
-            ToolConfig: Tool configuration or None if not found
+            ToolConfig: Tool info or None if not found
         """
         return self._tool_configs.get(tool_name)
     
-    async def list(self, include_disabled: bool = False) -> List[str]:
+    async def list(self) -> List[str]:
         """Get list of registered tools
         
-        Args:
-            include_disabled: Whether to include disabled tools
-            
         Returns:
             List[str]: List of tool names
         """
-        if include_disabled:
-            return list(self._tool_configs.keys())
-        return [
-            name for name, config in self._tool_configs.items()
-            if config.enabled
-        ]
+        return [name for name in self._tool_configs.keys()]
     
     async def update(self, 
-                     tool_name: str, tool: Union[Tool, Type[Tool]], 
+                     tool_cls: Type[Tool],
                      tool_config_dict: Optional[Dict[str, Any]] = None,
                      new_version: Optional[str] = None, 
                      description: Optional[str] = None) -> ToolConfig:
         """Update an existing tool with new configuration and create a new version
         
         Args:
-            tool_name: Name of the tool to update
-            tool: New tool class or instance with updated implementation
-            tool_config_dict: Configuration dict for tool initialization (required when tool is a class)
-                   If None and tool is a class, will try to get from global config
+            tool_cls: New tool class with updated implementation
+            tool_config_dict: Configuration dict for tool initialization
+                   If None, will try to get from global config
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
             
         Returns:
             ToolConfig: Updated tool configuration
         """
-        original_config = self._tool_configs.get(tool_name)
-        if original_config is None:
-            raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
-        
-        # Determine new version from version_manager
-        if new_version is None:
-            # Get current version from version_manager and generate next patch version
-            new_version = await version_manager.generate_next_version("tool", tool_name, "patch")
-        
-        # Create new tool config with updated content
-        if isinstance(tool, Tool):
-            # Check if this is a dynamically generated class that needs code saved
-            tool_code = None
-            tool_cls = type(tool)
-            if dynamic_manager.is_dynamic_class(tool_cls):
-                tool_code = dynamic_manager.get_class_source_code(tool_cls)
-                if not tool_code:
-                    logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
-            
-            # Updating with an instance - get properties directly from instance
-            updated_config = ToolConfig(
-                name=tool_name,  # Keep same name
-                description=tool.description,
-                enabled=tool.enabled,
-                version=new_version,
-                cls=tool_cls,
-                config={},  # Instance already created, no config needed
-                instance=tool,  # Use the provided instance
-                metadata=getattr(tool, 'metadata', {}),
-                function_calling=tool.function_calling,
-                text=tool.text,
-                args_schema=tool.args_schema,
-                code=tool_code,
-            )
-        else:
-            # Updating with a class - need tool_config_dict for instantiation
+        try:
             if tool_config_dict is None:
-                # Try to get config from global config
-                tool_config_key = inflection.underscore(tool.__name__)
+                # Fallback to global config by class name
+                tool_config_key = inflection.underscore(tool_cls.__name__)
                 tool_config_dict = config.get(tool_config_key, {})
             
-            # Create instance immediately since update may be called at runtime
+            # Instantiate tool immediately (update is a runtime operation)
             try:
-                tool_instance = tool(**tool_config_dict)
-                tool_description = tool_instance.description
-                function_calling = tool_instance.function_calling
-                text = tool_instance.text
-                args_schema = tool_instance.args_schema
-                tool_enabled = tool_instance.enabled
+                tool_instance = tool_cls(**tool_config_dict)
             except Exception as e:
-                logger.error(f"| ❌ Failed to create tool instance for {tool.__name__}: {e}")
-                raise ValueError(f"Failed to instantiate tool {tool.__name__} with provided config: {e}")
+                logger.error(f"| ❌ Failed to create tool instance for {tool_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate tool {tool_cls.__name__} with provided config: {e}")
             
-            # Prepare config dict with 'type' field for TOOL.build() (for future rebuilds)
-            # tool_config_dict is already set above
-            if 'type' not in tool_config_dict:
-                tool_config_dict['type'] = tool.__name__
+            tool_name = tool_instance.name
             
-            # Check if this is a dynamically generated class that needs code saved
-            tool_code = None
-            if dynamic_manager.is_dynamic_class(tool):
-                tool_code = dynamic_manager.get_class_source_code(tool)
-                if not tool_code:
-                    logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
+            # Check if tool exists
+            original_config = self._tool_configs.get(tool_name)
+            if original_config is None:
+                raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
             
+            tool_description = tool_instance.description
+            tool_metadata = tool_instance.metadata
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                # Get current version from version_manager and generate next patch version
+                new_version = await version_manager.generate_next_version("tool", tool_name, "patch")
+            
+            # Get tool code
+            tool_code = await dynamic_manager.get_class_source_code(tool_cls)
+            if not tool_code:
+                logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
+            
+            # Get tool parameters and build properties using dynamic_manager methods
+            tool_parameters = await dynamic_manager.get_parameters(tool_cls)
+            tool_function_calling = await dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+            tool_text = await dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+            tool_args_schema = await dynamic_manager.build_args_schema(tool_name, tool_parameters)
+            
+            # --- Build ToolConfig ---
             updated_config = ToolConfig(
                 name=tool_name,  # Keep same name
                 description=tool_description,
-                enabled=tool_enabled,
+                metadata=tool_metadata,
                 version=new_version,
-                cls=tool,
-                config=tool_config_dict,
-                instance=tool_instance,  # Instance is ready for immediate use
-                metadata={},
-                function_calling=function_calling,
-                text=text,
-                args_schema=args_schema,
+                cls=tool_cls,
+                config=tool_config_dict or {},
+                instance=tool_instance,
+                function_calling=tool_function_calling,
+                text=tool_text,
+                args_schema=tool_args_schema,
                 code=tool_code,
             )
+            
+            # Update the tool config (replaces current version)
+            self._tool_configs[tool_name] = updated_config
+            
+            # Store in version history
+            if tool_name not in self._tool_history_versions:
+                self._tool_history_versions[tool_name] = {}
+            self._tool_history_versions[tool_name][updated_config.version] = updated_config
+            
+            # Register new version record to version manager
+            await version_manager.register_version(
+                "tool", 
+                tool_name, 
+                new_version,
+                description=description or f"Updated from {original_config.version}"
+            )
+            
+            # Update embedding index
+            await self._store(updated_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 🔄 Updated tool {tool_name} from v{original_config.version} to v{new_version}")
+            return updated_config
         
-        # Update the tool config (replaces current version)
-        self._tool_configs[tool_name] = updated_config
-        
-        # Store in version history
-        if tool_name not in self._tool_history_versions:
-            self._tool_history_versions[tool_name] = {}
-        self._tool_history_versions[tool_name][updated_config.version] = updated_config
-        
-        # Register new version record to version manager
-        await version_manager.register_version(
-            "tool", 
-            tool_name, 
-            new_version,
-            description=description or f"Updated from {original_config.version}"
-        )
-        
-        # Update embedding index
-        await self._store(updated_config)
-        
-        # Persist to JSON
-        await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
-        
-        logger.info(f"| 🔄 Updated tool {tool_name} from v{original_config.version} to v{new_version}")
-        return updated_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to update tool: {e}")
+            raise
     
-    async def copy(self, tool_name: str, new_name: Optional[str] = None, 
-                  new_version: Optional[str] = None, **override_config) -> ToolConfig:
+    async def copy(self, 
+                  tool_name: str,
+                  new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, 
+                  new_config: Optional[Dict[str, Any]] = None) -> ToolConfig:
         """Copy an existing tool configuration
         
         Args:
             tool_name: Name of the tool to copy
             new_name: New name for the copied tool. If None, uses original name.
             new_version: New version for the copied tool. If None, increments version.
-            **override_config: Configuration overrides
+            new_config: New configuration dict for the copied tool. If None, uses original config.
             
         Returns:
             ToolConfig: New tool configuration
         """
-        original_config = self._tool_configs.get(tool_name)
-        if original_config is None:
-            raise ValueError(f"Tool {tool_name} not found")
+        try:
+            original_config = self._tool_configs.get(tool_name)
+            if original_config is None:
+                raise ValueError(f"Tool {tool_name} not found")
+            
+            if original_config.cls is None:
+                raise ValueError(f"Cannot copy tool {tool_name}: no class provided")
+            
+            # Determine new name
+            if new_name is None:
+                new_name = tool_name
+            
+            # Prepare config dict (merge original config with new config)
+            tool_config_dict = original_config.config.copy() if original_config.config else {}
+            if new_config:
+                # Merge new config into original config
+                tool_config_dict.update(new_config)
+            
+            # Instantiate tool instance (copy is a runtime operation)
+            try:
+                tool_instance = original_config.cls(**tool_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create tool instance for {original_config.cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate tool {original_config.cls.__name__} with provided config: {e}")
+            
+            # Apply name override if provided (after instantiation)
+            if new_name != tool_name:
+                tool_instance.name = new_name
+            
+            tool_description = tool_instance.description
+            tool_metadata = tool_instance.metadata
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                if new_name == tool_name:
+                    # If copying with same name, get next version from version_manager
+                    new_version = await version_manager.generate_next_version("tool", new_name, "patch")
+                else:
+                    # If copying with different name, get or generate version for new name
+                    new_version = await version_manager.get_version("tool", new_name)
+            
+            # Get tool code
+            tool_code = await dynamic_manager.get_class_source_code(original_config.cls)
+            if not tool_code:
+                logger.warning(f"| ⚠️ Tool {new_name} is dynamic but source code cannot be extracted")
+            
+            # Get tool parameters and build properties using dynamic_manager methods
+            tool_parameters = await dynamic_manager.get_parameters(original_config.cls)
+            tool_function_calling = await dynamic_manager.build_function_calling(new_name, tool_description, tool_parameters)
+            tool_text = await dynamic_manager.build_text_representation(new_name, tool_description, tool_parameters)
+            tool_args_schema = await dynamic_manager.build_args_schema(new_name, tool_parameters)
+            
+            # --- Build ToolConfig ---
+            new_config = ToolConfig(
+                name=new_name,
+                description=tool_description,
+                metadata=tool_metadata,
+                version=new_version,
+                cls=original_config.cls,
+                config=tool_config_dict,
+                instance=tool_instance,
+                function_calling=tool_function_calling,
+                text=tool_text,
+                args_schema=tool_args_schema,
+                code=tool_code,
+            )
+            
+            # Register new tool
+            self._tool_configs[new_name] = new_config
+            
+            # Store in version history
+            if new_name not in self._tool_history_versions:
+                self._tool_history_versions[new_name] = {}
+            self._tool_history_versions[new_name][new_version] = new_config
+            
+            # Register version record to version manager
+            await version_manager.register_version(
+                "tool", 
+                new_name, 
+                new_version,
+                description=f"Copied from {tool_name}@{original_config.version}"
+            )
+            
+            # Register to embedding index
+            await self._store(new_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 📋 Copied tool {tool_name}@{original_config.version} to {new_name}@{new_version}")
+            return new_config
         
-        # Determine new name
-        if new_name is None:
-            new_name = tool_name
-        
-        # Determine new version from version_manager
-        if new_version is None:
-            if new_name == tool_name:
-                # If copying with same name, get next version from version_manager
-                new_version = await version_manager.generate_next_version("tool", new_name, "patch")
-            else:
-                # If copying with different name, get or generate version for new name
-                new_version = await version_manager.get_or_generate_version("tool", new_name)
-        
-        # Create copy of config
-        new_config_dict = original_config.model_dump()
-        new_config_dict["name"] = new_name
-        new_config_dict["version"] = new_version
-        
-        # Apply overrides
-        if override_config:
-            if "description" in override_config:
-                new_config_dict["description"] = override_config.pop("description")
-            if "enabled" in override_config:
-                new_config_dict["enabled"] = override_config.pop("enabled")
-            if "metadata" in override_config:
-                new_config_dict["metadata"].update(override_config.pop("metadata"))
-            # Merge remaining overrides into config
-            new_config_dict["config"].update(override_config)
-        
-        # Ensure 'type' field exists in config for TOOL.build()
-        # Get cls from original_config since model_dump() may not include it properly
-        if original_config.cls and "config" in new_config_dict:
-            if 'type' not in new_config_dict["config"]:
-                new_config_dict["config"]['type'] = original_config.cls.__name__
-        
-        # Clear instance (will be created on demand)
-        new_config_dict["instance"] = None
-        
-        new_config = ToolConfig(**new_config_dict)
-        
-        # Register new tool
-        self._tool_configs[new_name] = new_config
-        
-        # Store in version history
-        if new_name not in self._tool_history_versions:
-            self._tool_history_versions[new_name] = {}
-        self._tool_history_versions[new_name][new_version] = new_config
-        
-        # Register version record to version manager
-        await version_manager.register_version(
-            "tool", 
-            new_name, 
-            new_version,
-            description=f"Copied from {tool_name}@{original_config.version}"
-        )
-        
-        # Register to embedding index
-        await self._store(new_config)
-        
-        # Persist to JSON
-        await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
-        
-        logger.info(f"| 📋 Copied tool {tool_name}@{original_config.version} to {new_name}@{new_version}")
-        return new_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to copy tool: {e}")
+            raise
     
     async def unregister(self, tool_name: str) -> bool:
         """Unregister a tool
@@ -923,23 +794,9 @@ class ToolContextManager(BaseModel):
             
             for tool_name, version_map in self._tool_history_versions.items():
                 try:
-                    # Serialize all versions for this tool as a dict: {version_str: config_dict}
                     versions_data: Dict[str, Dict[str, Any]] = {}
-                    for version_str, tool_config in version_map.items():
-                        # Serialize tool config (excluding non-serializable fields)
-                        # - cls: Cannot serialize Type objects, code is saved if available
-                        # - instance: Runtime state, should be recreated via build() on load
-                        # - args_schema: Will be serialized separately as schema info
-                        # Other fields like name, description, version, config, function_calling, text, code are saved
-                        config_dict = tool_config.model_dump(mode="json", exclude={"cls", "instance", "args_schema"})
-                        
-                        # Serialize args_schema (BaseModel type) as schema info
-                        if tool_config.args_schema is not None:
-                            args_schema_info = serialize_args_schema(tool_config.args_schema)
-                            if args_schema_info:
-                                config_dict["args_schema"] = args_schema_info
-                        
-                        # Use version string as key
+                    for _, tool_config in version_map.items():
+                        config_dict = tool_config.model_dump()
                         versions_data[tool_config.version] = config_dict
                     
                     # Get current_version from active config if it exists
@@ -1020,64 +877,16 @@ class ToolContextManager(BaseModel):
                         latest_version = None
                         
                         for version_str, config_dict in versions_data.items():
-                            # Try to load class - priority: code > TOOL registry
-                            cls = None
-                            config_dict_copy = config_dict.copy()
-                            
-                            # Case 1: Load from code (for dynamically generated tools)
-                            if "code" in config_dict and config_dict["code"]:
-                                try:
-                                    # Extract class name from config or code
-                                    class_name = config_dict.get("config", {}).get("type")
-                                    if not class_name:
-                                        # Try to extract from code by parsing
-                                        tree = ast.parse(config_dict["code"])
-                                        for node in ast.walk(tree):
-                                            if isinstance(node, ast.ClassDef):
-                                                class_name = node.name
-                                                break
-                                    
-                                    if class_name:
-                                        # Use context="tool" for automatic import injection
-                                        cls = dynamic_manager.load_class(
-                                            config_dict["code"], 
-                                            class_name, 
-                                            Tool,
-                                            context="tool"
-                                        )
-                                        logger.debug(f"| ✅ Loaded tool class {class_name} from code for {tool_name}")
-                                    else:
-                                        logger.warning(f"| ⚠️ Cannot determine class name from code for {tool_name}")
-                                except Exception as e:
-                                    logger.warning(f"| ⚠️ Failed to load class from code for {tool_name}: {e}")
-                            
                             # Ensure version field is present
-                            if "version" not in config_dict_copy:
-                                config_dict_copy["version"] = version_str
+                            if "version" not in config_dict:
+                                config_dict["version"] = version_str
                             
-                            # Restore args_schema from saved schema info
-                            args_schema = None
-                            if "args_schema" in config_dict_copy:
-                                args_schema_info = config_dict_copy.pop("args_schema")
-                                try:
-                                    args_schema = deserialize_args_schema(args_schema_info)
-                                except Exception as e:
-                                    logger.warning(f"| ⚠️ Failed to restore args_schema for {tool_name}@{version_str}: {e}")
-                            
-                            # Remove cls and args_schema from dict before creating ToolConfig
-                            # They will be set after creation to avoid validation errors
-                            config_dict_copy.pop("cls", None)
-                            
-                            # Create ToolConfig
-                            tool_config = ToolConfig(**config_dict_copy)
-                            
-                            # Set cls and args_schema after creation
-                            if cls is not None:
-                                tool_config.cls = cls
-                            if args_schema is not None:
-                                tool_config.args_schema = args_schema
-                            
-                            version_configs.append(tool_config)
+                            try:
+                                tool_config = ToolConfig.model_validate(config_dict)
+                                version_configs.append(tool_config)
+                            except Exception as e:
+                                logger.warning(f"| ⚠️ Failed to load tool config for {tool_name}@{version_str}: {e}")
+                                continue
                             
                             # Track latest version
                             if latest_config is None or (
@@ -1120,41 +929,6 @@ class ToolContextManager(BaseModel):
                 logger.error(f"| ❌ Failed to load tools from {file_path}: {e}")
                 return False
     
-    def _get_full_module_source(self, cls: Type[Tool]) -> str:
-        """Get the full source code of the module containing the class, including all imports.
-        
-        This is more reliable than inspect.getsource() which only gets the class definition.
-        By reading the entire module file, we preserve all import statements and module-level code,
-        ensuring the complete context is available when loading from JSON.
-        
-        Args:
-            cls: The tool class
-            
-        Returns:
-            Full module source code as string, or class source if file reading fails
-        """
-        try:
-            # Get the module object
-            module = inspect.getmodule(cls)
-            if module is None:
-                # Fallback to inspect.getsource if module is not available
-                return inspect.getsource(cls)
-            
-            # Get the file path of the module
-            file_path = inspect.getfile(module)
-            
-            # Read the entire file to preserve all imports and context
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except (OSError, TypeError, IOError, AttributeError) as e:
-            # Fallback to inspect.getsource if file reading fails
-            logger.debug(f"| ⚠️ Failed to read module file for {cls.__name__}, falling back to inspect.getsource: {e}")
-            try:
-                return inspect.getsource(cls)
-            except Exception:
-                logger.warning(f"| ⚠️ Failed to get source code for {cls.__name__}")
-                return ""
-    
     async def restore(self, tool_name: str, version: str, auto_initialize: bool = True) -> Optional[ToolConfig]:
         """Restore a specific version of a tool from history
         
@@ -1184,7 +958,13 @@ class ToolContextManager(BaseModel):
         # Update version manager current version
         version_history = await version_manager.get_version_history("tool", tool_name)
         if version_history:
+            # Check if version exists in version history, if not register it
+            if version not in version_history.versions:
+                await version_manager.register_version("tool", tool_name, version)
             version_history.current_version = version
+        else:
+            # If version history doesn't exist, register the version first
+            await version_manager.register_version("tool", tool_name, version)
         
         # Initialize if requested
         if auto_initialize and restored_config.cls is not None:
@@ -1203,13 +983,13 @@ class ToolContextManager(BaseModel):
             for index, tool_name in enumerate(tool_names):
                 tool_info = await self.get_info(tool_name)
                 text = tool_info.text
-                contract.append(f"{index + 1:04d}: {text}")
+                contract.append(f"{index + 1:04d}\n{text}\n")
         else:
             for index, tool_name in enumerate(self._tool_configs.keys()):
                 tool_info = await self.get_info(tool_name)
                 text = tool_info.text
-                contract.append(f"{index + 1:04d}: {text}")
-        contract_text = "\n".join(contract)
+                contract.append(f"{index + 1:04d}\n{text}\n")
+        contract_text = "---\n".join(contract)
         with open(self.contract_path, "w", encoding="utf-8") as f:
             f.write(contract_text)
         logger.info(f"| 📝 Saved {len(contract)} tools contract to {self.contract_path}")

@@ -1,25 +1,15 @@
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import re
-from copy import deepcopy
-from typing import Any, Dict, List, Optional, Type, get_type_hints, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.utils import (
-    PYTHON_TYPE_FIELD,
-    default_parameters_schema,
-    parse_docstring_descriptions,
-    annotation_to_types,
-    build_args_schema,
-    build_function_calling,
-    build_text_representation,
-    dedent,
-)
+from src.utils import dedent
 from src.model import model_manager
+from src.dynamic import dynamic_manager
 from src.message import HumanMessage, SystemMessage
 
 class ContentItem(BaseModel):
@@ -340,151 +330,11 @@ class Tool(BaseModel):
 
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
-    enabled: bool = Field(default=True, description="Whether the tool is enabled")
-
-    @staticmethod
-    def default_parameters_schema() -> Dict[str, Any]:
-        return default_parameters_schema()
-        
-    @property
-    def name(self) -> str:
-        return self._name
+    metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     
-    @name.setter
-    def name(self, value: str) -> None:
-        self._name = value
-
-    @property
-    def description(self) -> str:
-        return self._description
-
-    @description.setter
-    def description(self, value: str) -> None:
-        self._description = value
-        
-    @property
-    def is_enabled(self) -> bool:
-        return bool(self.enabled)
-
-    @is_enabled.setter
-    def is_enabled(self, value: bool) -> None:
-        self.enabled = bool(value)
-
-    @property
-    def parameter_schema(self) -> Dict[str, Any]:
-        schema = self._build_parameter_schema()
-        return deepcopy(schema)
-
-    async def __call__(self, input: Dict[str, Any], **kwargs) -> ToolResponse:
-        """
-        Execute the tool asynchronously.
-        
-        Args:
-            input (Dict[str, Any]): The input to the tool.
-            
-        Returns:
-            ToolResponse: The response from the tool call.
-        """
-        raise NotImplementedError("Tool subclasses must implement __call__")
-    
-    @property
-    def function_calling(self) -> Dict[str, Any]:
-        """Return the OpenAI-compatible function-calling representation."""
-        schema = self.parameter_schema
-        return build_function_calling(self.name, self.description, schema)
-        
-    @property
-    def args_schema(self) -> Type[BaseModel]:
-        """Return a BaseModel type for the tool's input parameters.
-        
-        The model name will be `{tool_name}Input` (e.g., `bashInput`, `python_interpreterInput`).
-        
-        Returns:
-            Type[BaseModel]: A Pydantic BaseModel class for the tool's input parameters
-        """
-        schema = self.parameter_schema
-        return build_args_schema(self.name, schema)
-    
-    @property
-    def text(self) -> str:
-        """
-        Return the text representation of the tool.
-        
-        Example:
-        ```
-        Tool: python_interpreter
-        Description: A tool that can execute Python code.
-        Parameters:
-            - code (str): Python code to execute. (default: None)
-        ```
-        """
-        schema = self.parameter_schema
-        return build_text_representation(self.name, self.description, schema, entity_type="Tool")
-
-    def _build_parameter_schema(self) -> Dict[str, Any]:
-        """Build parameter schema from function signature and docstring."""
-        try:
-            signature = inspect.signature(self.__class__.__call__)
-        except (TypeError, ValueError):
-            return self.default_parameters_schema()
-
-        # Get type hints
-        try:
-            hints = get_type_hints(self.__class__.__call__)
-        except Exception:
-            hints = {}
-
-        # Get docstring for descriptions
-        docstring = inspect.getdoc(self.__class__.__call__) or ""
-        doc_descriptions = parse_docstring_descriptions(docstring)
-
-        properties = {}
-        required = []
-        
-        for name, param in signature.parameters.items():
-            if name == "self":
-                continue
-            
-            # Skip generic "input" parameter
-            if name == "input" and len(signature.parameters) == 2:  # self + input
-                continue
-            
-            # Skip VAR_KEYWORD (**kwargs) and VAR_POSITIONAL (*args) parameters
-            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-                continue
-            
-            # Get type annotation
-            annotation = hints.get(name, param.annotation)
-            json_type, python_type = annotation_to_types(annotation)
-            
-            # Determine if required
-            is_required = param.default is inspect._empty
-            
-            # Build schema
-            schema: Dict[str, Any] = {
-                "type": json_type,
-                "description": doc_descriptions.get(name, ""),
-            }
-            schema[PYTHON_TYPE_FIELD] = python_type
-            
-            if not is_required:
-                schema["default"] = param.default
-            
-            properties[name] = schema
-            if is_required:
-                required.append(name)
-
-        if not properties:
-            return self.default_parameters_schema()
-
-        result: Dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-            "additionalProperties": False,
-        }
-        if required:
-            result["required"] = required
-        return result
+    async def __call__(self, **kwargs) -> ToolResponse:
+        """Call the tool with the given arguments."""
+        raise NotImplementedError("All tools must implement __call__")
 
 class ToolConfig(BaseModel):
     """Tool configuration"""
@@ -492,19 +342,85 @@ class ToolConfig(BaseModel):
     
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
-    enabled: bool = Field(default=True, description="Whether the tool is enabled")
+    metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     version: str = Field(default="1.0.0", description="Version of the tool")
     
     cls: Optional[Type[Tool]] = Field(default=None, description="The class of the tool")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the tool")
     instance: Optional[Tool] = Field(default=None, description="The instance of the tool")
-    metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
     code: Optional[str] = Field(default=None, description="Source code for dynamically generated tool classes (used when cls cannot be imported from a module)")
     
     # Default representations
     function_calling: Optional[Dict[str, Any]] = Field(default=None, description="Default function calling representation")
     text: Optional[str] = Field(default=None, description="Default text representation")
     args_schema: Optional[Type[BaseModel]] = Field(default=None, description="Default args schema (BaseModel type)")
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
+        
+        result = {
+            "name": self.name,
+            "description": self.description,
+            "metadata": self.metadata,
+            "version": self.version,
+            
+            "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
+            "config": self.config,
+            "instance": None,
+            "code": self.code,
+            
+            "function_calling": self.function_calling,
+            "text": self.text,
+            "args_schema": dynamic_manager.serialize_args_schema(self.args_schema) if self.args_schema else None,
+        }
+        
+        return result
+    
+    @classmethod
+    def model_validate(cls, data: Dict[str, Any]) -> 'ToolConfig':
+        """Validate the model from a dictionary."""
+        name = data.get("name")
+        description = data.get("description")
+        metadata = data.get("metadata")
+        version = data.get("version")
+        
+        cls_ = None
+        code = data.get("code")
+        if code:
+            class_name = dynamic_manager.extract_class_name_from_code(code)
+            if class_name:
+                try:
+                    cls_ = dynamic_manager.load_class(
+                        code, 
+                        class_name=class_name,
+                        base_class=Tool,
+                        context="tool"
+                    )
+                except Exception as e:
+                    cls_ = None
+            else:
+                cls_ = None
+        else:
+            cls_ = None
+            
+        config = data.get("config")
+        instance = data.get("instance", None)
+
+        function_calling = data.get("function_calling")
+        text = data.get("text")
+        args_schema = dynamic_manager.deserialize_args_schema(data.get("args_schema"))
+        
+        return cls(name=name, 
+            description=description,
+            metadata=metadata,
+            version=version,
+            cls=cls_, 
+            config=config, 
+            instance=instance, 
+            function_calling=function_calling, 
+            text=text, 
+            args_schema=args_schema
+        )
 
 __all__ = [
     "Tool",

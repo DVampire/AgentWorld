@@ -4,7 +4,6 @@ import os
 import json
 import asyncio
 import inflection
-import inspect
 from datetime import datetime
 from typing import Any, Dict, Callable, Optional, List, Union, Type, Tuple
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,7 +14,6 @@ from src.config import config
 from src.version import version_manager
 from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
-from src.utils import serialize_args_schema, deserialize_args_schema
 from src.environment.types import Environment, EnvironmentConfig, ActionConfig
 from src.environment.faiss.service import FaissService
 from src.environment.faiss.types import FaissAddRequest
@@ -29,6 +27,7 @@ class EnvironmentContextManager(BaseModel):
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
     save_path: str = Field(default=None, description="The path to save the environments")
     contract_path: str = Field(default=None, description="The path to save the environment contract")
+            
     def __init__(self, 
                  base_dir: Optional[str] = None,
                  save_path: Optional[str] = None, 
@@ -130,7 +129,7 @@ class EnvironmentContextManager(BaseModel):
         # Build all environments concurrently with a concurrency limit
         env_names_list = list(env_configs.keys())
         tasks = [
-            self._build_environment(env_configs[name]) for name in env_names_list
+            self.build(env_configs[name]) for name in env_names_list
         ]
         results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
 
@@ -164,77 +163,86 @@ class EnvironmentContextManager(BaseModel):
                 env_cls: Environment class to register
             """
             try:
-                # Get environment config from global config
-                # Follow the same pattern as tools:
-                #   tool:  inflection.underscore(ToolCls.__name__) -> config.get(key, {})
-                #   env :  inflection.underscore(EnvironmentCls.__name__) -> config.get(key, {})
-                #
-                # For example, FileSystemEnvironment -> "file_system_environment",
-                # which matches the key used in `configs/tool_calling_agent.py`.
                 env_config_key = inflection.underscore(env_cls.__name__)
-                env_config_dict_raw = config.get(env_config_key, {})
-                
-                # Filter out None values from config to avoid passing None to constructors
-                env_config_dict = {k: v for k, v in env_config_dict_raw.items() if v is not None} if env_config_dict_raw else {}
+                env_config_dict= config.get(env_config_key, {})
                 
                 # Get environment properties from environment class
                 env_name = env_cls.model_fields['name'].default
                 env_description = env_cls.model_fields['description'].default
+                env_metadata = env_cls.model_fields['metadata'].default
                 
                 # Get or generate version from version_manager
                 env_version = await version_manager.get_version("environment", env_name)
                 
-                # Get full module source code (including imports)
-                # This ensures all imports are preserved when saving/loading from JSON
-                env_code = self._get_full_module_source(env_cls)
+                # Get full module source code
+                env_code = dynamic_manager.get_full_module_source(env_cls)
                 
-                # Collect actions from class methods marked with @ecp.action
-                actions = {}
+                # Build actions from environment class
+                env_actions = {}
                 for attr_name in dir(env_cls):
                     attr = getattr(env_cls, attr_name)
                     if hasattr(attr, '_action_name'):
                         action_name = getattr(attr, '_action_name')
+                        action_description = getattr(attr, '_action_description', '')
+                        action_function = getattr(attr, '_action_function', None)
+                        action_metadata = getattr(attr, '_action_metadata', {})
+                        
+                        action_version = await version_manager.get_version("action", action_name)
+                        
+                        action_code = dynamic_manager.get_source_code(attr)
+                        if not action_code:
+                            logger.warning(f"| ⚠️ Action {action_name} is dynamic but source code cannot be extracted")
+                        
+                        action_parameters = dynamic_manager.get_parameters(action_function)
+                        action_function_calling = dynamic_manager.build_function_calling(action_name, action_description, action_parameters)
+                        action_text = dynamic_manager.build_text_representation(action_name, action_description, action_parameters)
+                        action_args_schema = dynamic_manager.build_args_schema(action_name, action_parameters)
+                        
                         action_config = ActionConfig(
                             env_name=env_name,
                             name=action_name,
-                            description=getattr(attr, '_action_description', ''),
-                            function=getattr(attr, '_action_function', None),
-                            metadata=getattr(attr, '_metadata', {})
+                            description=action_description,
+                            function=action_function,
+                            metadata=action_metadata,
+                            version=action_version,
+                            code=action_code,
+                            function_calling=action_function_calling,
+                            text=action_text,
+                            args_schema=action_args_schema,
                         )
-                        actions[action_name] = action_config
-                
-                # Get metadata
-                metadata = {}
-                
-                # Create environment config
+                        
+                        env_actions[action_name] = action_config
+                        
+                        
+                # Build environment config
                 env_config = EnvironmentConfig(
                     name=env_name,
                     description=env_description,
-                    rules="",  # Will be generated when needed
+                    metadata=env_metadata,
                     version=env_version,
-                    actions=actions,
                     cls=env_cls,
                     config=env_config_dict,
                     instance=None,
-                    metadata=metadata,
-                    code=env_code
+                    code=env_code,
+                    actions=env_actions,
+                    rules="",  # Will be generated when needed
                 )
                 
-                # Store environment config
                 env_configs[env_name] = env_config
                 
-                # Store in version history (by version string)
+                # Store in dict-based history (for quick lookup by version)
                 if env_name not in self._environment_history_versions:
                     self._environment_history_versions[env_name] = {}
                 self._environment_history_versions[env_name][env_version] = env_config
                 
+                # Register version to version manager
+                await version_manager.register_version("environment", env_name, env_version)
+                
                 logger.info(f"| 📝 Registered environment: {env_name} ({env_cls.__name__})")
-                
-                return env_name
-                
+
             except Exception as e:
                 logger.error(f"| ❌ Failed to register environment class {env_cls.__name__}: {e}")
-                return None
+                raise
             
         import src.environment  # noqa: F401
         
@@ -271,14 +279,14 @@ class EnvironmentContextManager(BaseModel):
                         "1.0.0": {
                             "name": str,
                             "description": str,
+                            "metadata": dict,
                             "version": str,
                             "cls": Type[Environment], # will be loaded from code
                             "config": dict,
                             "instance": Environment, # will be built when needed
-                            "metadata": dict,
+                            "code": str,
                             "actions": dict, # will be built when needed
                             "rules": str,
-                            "code": str
                         },
                         ...
                     }
@@ -318,87 +326,14 @@ class EnvironmentContextManager(BaseModel):
                 version_map: Dict[str, EnvironmentConfig] = {}
                 current_config: Optional[EnvironmentConfig] = None  # Active config for current_version
                 
-                for version_str, version_data in versions.items():
-                    name = version_data.get("name", "")
-                    description = version_data.get("description", "")
-                    version = version_data.get("version", version_str)
-                    rules = version_data.get("rules", "")
-                    code = version_data.get("code", None)
-                    config_dict = version_data.get("config", {})
-                    metadata = version_data.get("metadata", {})
-                    actions_data = version_data.get("actions", {})
-                    instance = version_data.get("instance", None)
-                    
-                    cls = None
-                    if code:
-                        # Dynamic class: load class from source code
-                        # Extract class name from config
-                        class_name = config_dict.get("type")
-                        if not class_name:
-                            # Try to extract from code
-                            class_name = dynamic_manager.extract_class_name_from_code(code)
-                        
-                        if class_name:
-                            try:
-                                # Use context="environment" for automatic import injection
-                                cls = dynamic_manager.load_class(
-                                    code, 
-                                    class_name=class_name,
-                                    base_class=Environment,
-                                    context="environment"
-                                )
-                            except Exception as e:
-                                logger.warning(f"| ⚠️ Failed to load dynamic class for {env_name}@{version}: {e}")
-                    
-                    # Restore actions from saved data
-                    actions = {}
-                    if actions_data:
-                        for action_name, action_data in actions_data.items():
-                            if isinstance(action_data, dict):
-                                # Restore args_schema from saved schema info (if present)
-                                args_schema = None
-                                args_schema_info = action_data.get("args_schema")
-                                if args_schema_info:
-                                    try:
-                                        args_schema = deserialize_args_schema(args_schema_info)
-                                    except Exception as e:
-                                        logger.warning(f"| ⚠️ Failed to restore args_schema for action {action_name}@{version}: {e}")
-                                
-                                # Remove args_schema from dict before creating ActionConfig
-                                action_data_copy = action_data.copy()
-                                action_data_copy.pop("args_schema", None)
-                                
-                                # Restore ActionConfig from dict
-                                action_config = ActionConfig(**action_data_copy)
-                                
-                                # Set args_schema after creation to bypass validation
-                                if args_schema is not None:
-                                    action_config.args_schema = args_schema
-                                
-                                actions[action_name] = action_config
-                    
-                    # Get code from version_data if available
-                    code = version_data.get("code", None)
-                    
-                    # Create EnvironmentConfig
-                    env_config = EnvironmentConfig(
-                        name=name,
-                        description=description,
-                        rules=rules,
-                        version=version,
-                        cls=cls,
-                        config=config_dict,
-                        instance=instance,
-                        metadata=metadata,
-                        actions=actions,
-                        code=code,
-                    )
-                    
+                for _, version_data in versions.items():
+                    env_config = EnvironmentConfig.model_validate(version_data)
+                    version = env_config.version
                     version_map[version] = env_config
                     
                     if version == current_version:
                         current_config = env_config
-                
+                        
                 return env_name, version_map, current_config
             except Exception as e:
                 logger.error(f"| ❌ Failed to load environment {env_name} from code JSON: {e}")
@@ -413,327 +348,25 @@ class EnvironmentContextManager(BaseModel):
         for result in results:
             if isinstance(result, Exception) or result is None:
                 continue
-            env_name, version_map, current_config = result
+            env_name, version_map, current_environment_config = result
             if not version_map:
                 continue
             # Store all versions in history (mapped by version string)
             self._environment_history_versions[env_name] = version_map
             # Active config: the one corresponding to current_version
-            if current_config is not None:
-                env_configs[env_name] = current_config
+            if current_environment_config is not None:
+                env_configs[env_name] = current_environment_config
             else:
                 # Fallback: if current_version is not found, use the last available version
                 logger.warning(f"| ⚠️ Environment {env_name} current_version not found, using last available version")
                 env_configs[env_name] = list(version_map.values())[-1]
             
+            # Register all versions to version manager
+            for env_config in version_map.values():
+                await version_manager.register_version("environment", env_name, env_config.version)
+            
         logger.info(f"| 📂 Loaded {len(env_configs)} environments from {self.save_path}")
         return env_configs
-    
-    async def _build_environment(self, env_config: EnvironmentConfig) -> EnvironmentConfig:
-        """Build an environment instance from config (internal helper, similar to tool's build).
-        
-        Args:
-            env_config: Environment configuration
-            
-        Returns:
-            EnvironmentConfig: Environment configuration with instance
-        """
-        if env_config.name in self._environment_configs:
-            existing_config = self._environment_configs[env_config.name]
-            if existing_config.instance is not None:
-                return existing_config
-        
-        try:
-            if env_config.cls is None:
-                raise ValueError(f"Cannot create environment {env_config.name}: no class provided. Class should be loaded during initialization.")
-            
-            # Filter out None values from config to avoid passing None to constructors
-            filtered_config = {}
-            if env_config.config:
-                filtered_config = {k: v for k, v in env_config.config.items() if v is not None}
-            
-            # Create instance from cls
-            if filtered_config:
-                instance = env_config.cls(**filtered_config)
-            else:
-                instance = env_config.cls()
-            
-            # Initialize environment
-            if hasattr(instance, "initialize"):
-                await instance.initialize()
-            
-            # Collect actions from instance's actions dictionary
-            if hasattr(instance, 'actions') and isinstance(instance.actions, dict):
-                env_config.actions = instance.actions.copy()
-            
-            # Store instance
-            env_config.instance = instance
-            
-            # Generate rules if not already generated
-            if not env_config.rules:
-                env_config.rules = instance.rules
-            
-            # Store metadata
-            self._environment_configs[env_config.name] = env_config
-            
-            logger.info(f"| ✅ Environment {env_config.name} created and stored")
-            return env_config
-        except Exception as e:
-            logger.error(f"| ❌ Failed to create environment {env_config.name}: {e}")
-            raise
-    
-    async def build(self, 
-              env_config: EnvironmentConfig,
-              env_factory: Optional[Callable] = None,
-              **kwargs
-              ) -> EnvironmentConfig:
-        """Create and store an environment instance.
-        
-        Args:
-            env_config: Environment configuration
-            env_factory: Function to create the environment instance
-            
-        Returns:
-            EnvironmentConfig: Environment configuration
-        """
-        if env_config.name in self._environment_configs:
-            existing_config = self._environment_configs[env_config.name]
-            # If instance already exists, return it
-            if existing_config.instance is not None:
-                return existing_config
-            # Otherwise, update config and create instance
-            existing_config.config = env_config.config
-            existing_config.cls = env_config.cls
-            env_config = existing_config
-        
-        try:
-            # Create environment instance
-            if env_config.cls is None:
-                raise ValueError(f"Cannot create environment {env_config.name}: no class provided. Class should be loaded during initialization.")
-            
-            # Filter out None values from config to avoid passing None to constructors
-            filtered_config = {}
-            if env_config.config:
-                filtered_config = {k: v for k, v in env_config.config.items() if v is not None}
-            
-            # Use factory if provided and valid, otherwise create from cls
-            if env_factory and callable(env_factory):
-                try:
-                    instance = env_factory()
-                    if instance is None:
-                        # Factory returned None, fall back to cls
-                        if filtered_config:
-                            instance = env_config.cls(**filtered_config)
-                        else:
-                            instance = env_config.cls()
-                except Exception:
-                    # Factory failed, fall back to cls
-                    if filtered_config:
-                        instance = env_config.cls(**filtered_config)
-                    else:
-                        instance = env_config.cls()
-            else:
-                if filtered_config:
-                    instance = env_config.cls(**filtered_config)
-                else:
-                    instance = env_config.cls()
-            
-            # Initialize environment
-            if hasattr(instance, "initialize"):
-                await instance.initialize()
-            
-            # Collect actions from instance's actions dictionary
-            if hasattr(instance, 'actions') and isinstance(instance.actions, dict):
-                # Update env_config with actions from instance
-                env_config.actions = instance.actions.copy()
-            
-            # Store instance
-            env_config.instance = instance
-            
-            # Generate rules if not already generated
-            if not env_config.rules:
-                env_config.rules = instance.rules
-            
-            # Store metadata
-            self._environment_configs[env_config.name] = env_config
-            
-            logger.info(f"| ✅ Environment {env_config.name} created and stored")
-            return env_config
-        except Exception as e:
-            logger.error(f"| ❌ Failed to create environment {env_config.name}: {e}")
-            raise
-    
-    async def register(self, env: Union[Environment, Type[Environment]], *, override: bool = False, **kwargs: Any) -> EnvironmentConfig:
-        """Register an environment class or instance.
-        
-        Args:
-            env: Environment class or instance
-            override: Whether to override existing registration
-            **kwargs: Configuration for environment initialization
-            
-        Returns:
-            EnvironmentConfig: Environment configuration
-        """
-        # Create temporary instance to get name and description
-        try:
-            if isinstance(env, Environment):
-                env_name = env.name
-                env_description = env.description
-                env_cls = type(env)
-                env_instance = env
-            elif isinstance(env, type) and issubclass(env, Environment):
-                # Try to create temporary instance
-                try:
-                    temp_instance = env(**kwargs)
-                    env_name = temp_instance.name
-                    env_description = temp_instance.description
-                    env_cls = env
-                    env_instance = None
-                except Exception as inst_exc:
-                    # If instantiation fails, try to get from model_fields
-                    logger.debug(f"| ⚠️ Failed to instantiate {env.__name__} for registration: {inst_exc}")
-                    env_name = None
-                    env_description = ''
-                    
-                    # Try to get name from model_fields default value
-                    if hasattr(env, 'model_fields') and 'name' in env.model_fields:
-                        field_info = env.model_fields['name']
-                        if hasattr(field_info, 'default'):
-                            default_value = field_info.default
-                            # Check if default is a string (not None and not undefined)
-                            if isinstance(default_value, str) and default_value:
-                                env_name = default_value
-                                logger.debug(f"| 📝 Got env_name from model_fields: {env_name}")
-                    
-                    # Try to get description from model_fields default value
-                    if hasattr(env, 'model_fields') and 'description' in env.model_fields:
-                        field_info = env.model_fields['description']
-                        if hasattr(field_info, 'default'):
-                            default_value = field_info.default
-                            # Check if default is a string
-                            if isinstance(default_value, str):
-                                env_description = default_value
-                    
-                    env_cls = env
-                    env_instance = None
-                    
-                    if not env_name:
-                        raise ValueError(f"Environment class {env.__name__} has no name (failed to instantiate and no default in model_fields)")
-            else:
-                raise TypeError(f"Expected Environment instance or subclass, got {type(env)!r}")
-            
-            if not env_name:
-                raise ValueError("Environment.name cannot be empty.")
-            
-            if env_name in self._environment_configs and not override:
-                raise ValueError(f"Environment '{env_name}' already registered. Use override=True to replace it.")
-            
-            # Collect actions - if instance exists, use its actions dictionary, otherwise collect from class
-            actions = {}
-            if env_instance is not None:
-                # If registering an instance, use its actions dictionary
-                if hasattr(env_instance, 'actions') and isinstance(env_instance.actions, dict):
-                    actions = env_instance.actions.copy()
-            else:
-                # If registering a class, collect actions from class methods marked with @ecp.action
-                target = env_cls
-                for attr_name in dir(target):
-                    attr = getattr(target, attr_name)
-                    if hasattr(attr, '_action_name'):
-                        action_name = getattr(attr, '_action_name')
-                        action_config = ActionConfig(
-                            env_name=env_name,
-                            name=action_name,
-                            description=getattr(attr, '_action_description', ''),
-                            function=getattr(attr, '_action_function', None),
-                            metadata=getattr(attr, '_metadata', {})
-                        )
-                        actions[action_name] = action_config
-            
-            # Get metadata
-            if env_instance is not None:
-                metadata = getattr(env_instance, 'metadata', {})
-            else:
-                metadata = {}
-            
-            # Get or generate version from version_manager
-            version = await version_manager.get_version("environment", env_name)
-            
-            # Dynamic code handling
-            env_code = None
-            if dynamic_manager.is_dynamic_class(env_cls):
-                env_code = dynamic_manager.get_class_source_code(env_cls)
-                if not env_code:
-                    logger.warning(f"| ⚠️ Environment {env_name} is dynamic but source code cannot be extracted")
-            else:
-                # Get full module source code for non-dynamic classes
-                env_code = self._get_full_module_source(env_cls)
-            
-            # Create EnvironmentConfig
-            if env_instance is not None:
-                # Registering an instance
-                env_config = EnvironmentConfig(
-                    name=env_name,
-                    description=env_description,
-                    rules="",  # Will be generated when needed
-                    version=version,
-                    actions=actions,
-                    cls=env_cls,
-                    config={},
-                    instance=env_instance,
-                    metadata=metadata,
-                    code=env_code
-                )
-            else:
-                # Registering a class - store config for lazy loading
-                # Filter out None values from kwargs
-                filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None} if kwargs else {}
-                env_config = EnvironmentConfig(
-                    name=env_name,
-                    description=env_description,
-                    rules="",  # Will be generated when needed
-                    version=version,
-                    actions=actions,
-                    cls=env_cls,
-                    config=filtered_kwargs,
-                    instance=None,  # Will be created on initialize
-                    metadata=metadata,
-                    code=env_code
-                )
-            
-            # Generate rules if we have instance, or try to create temporary instance
-            if env_config.instance:
-                env_config.rules = env_config.instance.rules
-            elif env_config.cls and env_config.config is not None:
-                # Try to create temporary instance to generate rules
-                try:
-                    temp_instance = env_config.cls(**env_config.config)
-                    env_config.rules = temp_instance.rules
-                except Exception as e:
-                    logger.debug(f"| ⚠️ Failed to create temporary instance for rules generation: {e}")
-                    env_config.rules = ""  # Leave empty, will be generated when instance is created
-            
-            # Store environment config
-            self._environment_configs[env_name] = env_config
-            
-            # Store in version history (by version string)
-            if env_name not in self._environment_history_versions:
-                self._environment_history_versions[env_name] = {}
-            self._environment_history_versions[env_name][env_config.version] = env_config
-            
-            # Register version record to version manager
-            await version_manager.register_version("environment", env_name, env_config.version)
-            
-            # Add to FAISS index
-            await self._store(env_config)
-            
-            logger.debug(f"| 📝 Registered environment config: {env_name} v{env_config.version}")
-            
-            return env_config
-            
-        except Exception as e:
-            logger.error(f"| ❌ Failed to register environment: {e}")
-            raise
     
     async def _store(self, env_config: EnvironmentConfig):
         """Add environment information to the embedding index.
@@ -768,6 +401,198 @@ class EnvironmentContextManager(BaseModel):
             
         except Exception as e:
             logger.warning(f"| ⚠️ Failed to add environment {env_config.name} to FAISS index: {e}")
+    
+    async def build(self, env_config: EnvironmentConfig) -> EnvironmentConfig:
+        """Build an environment instance from config (internal helper, similar to tool's build).
+        
+        Args:
+            env_config: Environment configuration
+            
+        Returns:
+            EnvironmentConfig: Environment configuration with instance
+        """
+        if env_config.name in self._environment_configs:
+            existing_config = self._environment_configs[env_config.name]
+            if existing_config.instance is not None:
+                return existing_config
+        
+        try:
+            if env_config.cls is None:
+                raise ValueError(f"Cannot create environment {env_config.name}: no class provided. Class should be loaded during initialization.")
+            
+            env_instance = env_config.cls(**env_config.config) if env_config.config else env_config.cls()
+            env_config.instance = env_instance
+            
+            # Generate rules if not already generated
+            if not env_config.rules:
+                env_config.rules = env_instance.get_rules()
+            
+            # Store metadata
+            self._environment_configs[env_config.name] = env_config
+            
+            logger.info(f"| ✅ Environment {env_config.name} created and stored")
+            
+            return env_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to create environment {env_config.name}: {e}")
+            raise
+    
+    async def register(self, 
+                       env_cls: Type[Environment], 
+                       env_config_dict: Optional[Dict[str, Any]] = None,
+                       override: bool = False,
+                       version: Optional[str] = None) -> EnvironmentConfig:
+        """Register an environment class.
+        
+        This will:
+        - Create an environment instance
+        - Create an `EnvironmentConfig`
+        - Store it as the current config and append to version history
+        - Register the version in `version_manager` and FAISS index
+        
+        Args:
+            env_cls: Environment class
+            env_config_dict: Configuration dict for environment initialization.
+                           If None, will try to get from global config or use empty dict.
+            override: Whether to override existing registration
+            version: Optional version string. If None, auto-generates from version_manager.
+            
+        Returns:
+            EnvironmentConfig: Environment configuration
+        """
+        try:
+            if env_config_dict is None:
+                # Fallback to global config by class name
+                env_config_key = inflection.underscore(env_cls.__name__)
+                env_config_dict = getattr(config, env_config_key, {}) if hasattr(config, env_config_key) else {}
+            
+            # Instantiate environment immediately (register is a runtime operation)
+            try:
+                env_instance = env_cls(**env_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create environment instance for {env_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate environment {env_cls.__name__} with provided config: {e}")
+            
+            env_name = env_instance.name
+            env_description = env_instance.description
+            env_metadata = getattr(env_instance, 'metadata', {})
+            
+            if not env_name:
+                raise ValueError("Environment.name cannot be empty.")
+            
+            if env_name in self._environment_configs and not override:
+                raise ValueError(f"Environment '{env_name}' already registered. Use override=True to replace it.")
+            
+            # Get or generate version from version_manager
+            if version is None:
+                env_version = await version_manager.get_version("environment", env_name)
+            else:
+                env_version = version
+            
+            # Get environment code
+            env_code = dynamic_manager.get_full_module_source(env_cls)
+            
+            # Build actions from environment class (same as _load_from_registry)
+            actions = {}
+            for attr_name in dir(env_cls):
+                attr = getattr(env_cls, attr_name)
+                if hasattr(attr, '_action_name'):
+                    action_name = getattr(attr, '_action_name')
+                    action_description = getattr(attr, '_action_description', '')
+                    action_function = getattr(attr, '_action_function', None)
+                    action_metadata = getattr(attr, '_action_metadata', {})
+                    
+                    action_version = await version_manager.get_version("action", action_name)
+                    
+                    action_code = dynamic_manager.get_source_code(attr)
+                    if not action_code:
+                        logger.warning(f"| ⚠️ Action {action_name} is dynamic but source code cannot be extracted")
+                    
+                    action_parameters = dynamic_manager.get_parameters(action_function)
+                    action_function_calling = dynamic_manager.build_function_calling(action_name, action_description, action_parameters)
+                    action_text = dynamic_manager.build_text_representation(action_name, action_description, action_parameters)
+                    action_args_schema = dynamic_manager.build_args_schema(action_name, action_parameters)
+                    
+                    action_config = ActionConfig(
+                        env_name=env_name,
+                        name=action_name,
+                        description=action_description,
+                        function=action_function,
+                        metadata=action_metadata,
+                        version=action_version,
+                        code=action_code,
+                        function_calling=action_function_calling,
+                        text=action_text,
+                        args_schema=action_args_schema,
+                    )
+                    
+                    actions[action_name] = action_config
+            
+            # Get rules from instance
+            env_rules = env_instance.get_rules() if hasattr(env_instance, 'get_rules') else ""
+            
+            # --- Build EnvironmentConfig ---
+            env_config = EnvironmentConfig(
+                name=env_name,
+                description=env_description,
+                rules=env_rules,
+                version=env_version,
+                actions=actions,
+                cls=env_cls,
+                config=env_config_dict or {},
+                instance=env_instance,
+                metadata=env_metadata,
+                code=env_code
+            )
+            
+            # --- Persist current config and history ---
+            self._environment_configs[env_name] = env_config
+            
+            # Store in dict-based history (for quick lookup by version)
+            if env_name not in self._environment_history_versions:
+                self._environment_history_versions[env_name] = {}
+            self._environment_history_versions[env_name][env_config.version] = env_config
+            
+            # Register version in version manager
+            await version_manager.register_version("environment", env_name, env_config.version)
+            
+            # Add to FAISS index
+            await self._store(env_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            
+            logger.info(f"| 📝 Registered environment config: {env_name}: {env_config.version}")
+            return env_config
+        
+        except Exception as e:
+            logger.error(f"| ❌ Failed to register environment: {e}")
+            raise
+        
+    async def get(self, env_name: str) -> Optional[Environment]:
+        """Get environment instance by name
+        
+        Args:
+            env_name: Environment name
+            
+        Returns:
+            Environment: Environment instance or None if not found
+        """
+        env_config = self._environment_configs.get(env_name)
+        if env_config:
+            return env_config.instance
+        return None
+    
+    async def get_info(self, env_name: str) -> Optional[EnvironmentConfig]:
+        """Get environment configuration by name
+        
+        Args:
+            env_name: Environment name
+            
+        Returns:
+            EnvironmentConfig: Environment configuration or None if not found
+        """
+        return self._environment_configs.get(env_name)
         
     async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
@@ -783,7 +608,7 @@ class EnvironmentContextManager(BaseModel):
             raise ValueError(f"Environment '{env_name}' not found")
         return await env_config.instance.get_state()
         
-    async def list(self, include_disabled: bool = False) -> List[str]:
+    async def list(self) -> List[str]:
         """Get list of registered environments
         
         Args:
@@ -794,258 +619,278 @@ class EnvironmentContextManager(BaseModel):
         """
         return [name for name in self._environment_configs.keys()]
     
-    async def get_info(self, env_name: str) -> Optional[EnvironmentConfig]:
-        """Get environment configuration by name
-        
-        Args:
-            env_name: Environment name
-            
-        Returns:
-            EnvironmentConfig: Environment configuration or None if not found
-        """
-        return self._environment_configs.get(env_name)
     
-    async def get(self, env_name: str) -> Optional[Environment]:
-        """Get environment instance by name
-        
-        Args:
-            env_name: Environment name
-            
-        Returns:
-            Environment: Environment instance or None if not found
-        """
-        env_config = self._environment_configs.get(env_name)
-        if env_config:
-            return env_config.instance
-        return None
-    
-    async def update(self, env_name: str, env: Union[Environment, Type[Environment]], 
-                    new_version: Optional[str] = None, description: Optional[str] = None,
-                    **kwargs: Any) -> EnvironmentConfig:
+    async def update(self, 
+                     env_cls: Type[Environment],
+                     env_config_dict: Optional[Dict[str, Any]] = None,
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None) -> EnvironmentConfig:
         """Update an existing environment with new configuration and create a new version
         
         Args:
-            env_name: Name of the environment to update
-            env: New environment class or instance with updated implementation
+            env_cls: New environment class with updated implementation
+            env_config_dict: Configuration dict for environment initialization
+                   If None, will try to get from global config
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
-            **kwargs: Configuration for environment initialization
             
         Returns:
             EnvironmentConfig: Updated environment configuration
         """
-        original_config = self._environment_configs.get(env_name)
-        if original_config is None:
-            raise ValueError(f"Environment {env_name} not found. Use register() to register a new environment.")
-        
-        # Get new environment info
-        if isinstance(env, Environment):
-            new_description = env.description
-            env_cls = type(env)
-            env_instance = env
-        elif isinstance(env, type) and issubclass(env, Environment):
+        try:
+            if env_config_dict is None:
+                # Fallback to global config by class name
+                env_config_key = inflection.underscore(env_cls.__name__)
+                env_config_dict = getattr(config, env_config_key, {}) if hasattr(config, env_config_key) else {}
+            
+            # Instantiate environment immediately (update is a runtime operation)
             try:
-                temp_instance = env(**kwargs)
-                new_description = temp_instance.description
-                env_cls = env
-                env_instance = None
-            except Exception:
-                new_description = getattr(env, 'description', original_config.description)
-                env_cls = env
-                env_instance = None
-        else:
-            raise TypeError(f"Expected Environment instance or subclass, got {type(env)!r}")
-        
-        # Determine new version from version_manager
-        if new_version is None:
-            # Get current version from version_manager and generate next patch version
-            new_version = await version_manager.generate_next_version("environment", env_name, "patch")
-        
-        # Collect actions
-        actions = {}
-        if env_instance is not None:
-            if hasattr(env_instance, 'actions') and isinstance(env_instance.actions, dict):
-                actions = env_instance.actions.copy()
-        else:
-            target = env_cls
-            for attr_name in dir(target):
-                attr = getattr(target, attr_name)
+                env_instance = env_cls(**env_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create environment instance for {env_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate environment {env_cls.__name__} with provided config: {e}")
+            
+            env_name = env_instance.name
+            
+            # Check if environment exists
+            original_config = self._environment_configs.get(env_name)
+            if original_config is None:
+                raise ValueError(f"Environment {env_name} not found. Use register() to register a new environment.")
+            
+            env_description = env_instance.description
+            env_metadata = getattr(env_instance, 'metadata', {})
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                # Get current version from version_manager and generate next patch version
+                new_version = await version_manager.generate_next_version("environment", env_name, "patch")
+            
+            # Get environment code
+            env_code = dynamic_manager.get_full_module_source(env_cls)
+            
+            # Build actions from environment class (same as register)
+            actions = {}
+            for attr_name in dir(env_cls):
+                attr = getattr(env_cls, attr_name)
                 if hasattr(attr, '_action_name'):
                     action_name = getattr(attr, '_action_name')
+                    action_description = getattr(attr, '_action_description', '')
+                    action_function = getattr(attr, '_action_function', None)
+                    action_metadata = getattr(attr, '_action_metadata', {})
+                    
+                    action_version = await version_manager.get_version("action", action_name)
+                    
+                    action_code = dynamic_manager.get_source_code(attr)
+                    if not action_code:
+                        logger.warning(f"| ⚠️ Action {action_name} is dynamic but source code cannot be extracted")
+                    
+                    action_parameters = dynamic_manager.get_parameters(action_function)
+                    action_function_calling = dynamic_manager.build_function_calling(action_name, action_description, action_parameters)
+                    action_text = dynamic_manager.build_text_representation(action_name, action_description, action_parameters)
+                    action_args_schema = dynamic_manager.build_args_schema(action_name, action_parameters)
+                    
                     action_config = ActionConfig(
                         env_name=env_name,
                         name=action_name,
-                        description=getattr(attr, '_action_description', ''),
-                        function=getattr(attr, '_action_function', None),
-                        metadata=getattr(attr, '_metadata', {})
+                        description=action_description,
+                        function=action_function,
+                        metadata=action_metadata,
+                        version=action_version,
+                        code=action_code,
+                        function_calling=action_function_calling,
+                        text=action_text,
+                        args_schema=action_args_schema,
                     )
+                    
                     actions[action_name] = action_config
-        
-        # Get metadata
-        if env_instance is not None:
-            metadata = getattr(env_instance, 'metadata', {})
-        else:
-            metadata = original_config.metadata if original_config else {}
-        
-        # Dynamic code handling
-        env_code = None
-        if dynamic_manager.is_dynamic_class(env_cls):
-            env_code = dynamic_manager.get_class_source_code(env_cls)
-            if not env_code:
-                logger.warning(f"| ⚠️ Environment {env_name} is dynamic but source code cannot be extracted")
-        else:
-            env_code = self._get_full_module_source(env_cls)
-        
-        # Create updated config
-        if env_instance is not None:
+            
+            # Get rules from instance
+            env_rules = env_instance.get_rules() if hasattr(env_instance, 'get_rules') else ""
+            
+            # --- Build EnvironmentConfig ---
             updated_config = EnvironmentConfig(
-                name=env_name,
-                description=description or new_description,
-                rules="",  # Will be generated below
+                name=env_name,  # Keep same name
+                description=env_description,
+                rules=env_rules,
                 version=new_version,
                 actions=actions,
                 cls=env_cls,
-                config={},
+                config=env_config_dict or {},
                 instance=env_instance,
-                metadata=metadata,
+                metadata=env_metadata,
                 code=env_code
             )
-        else:
-            # Filter out None values from kwargs
-            filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None} if kwargs else {}
-            updated_config = EnvironmentConfig(
-                name=env_name,
-                description=description or new_description,
-                rules="",  # Will be generated below
-                version=new_version,
-                actions=actions,
-                cls=env_cls,
-                config=filtered_kwargs,
-                instance=None,
-                metadata=metadata,
-                code=env_code
+            
+            # Update the environment config (replaces current version)
+            self._environment_configs[env_name] = updated_config
+            
+            # Store in version history
+            if env_name not in self._environment_history_versions:
+                self._environment_history_versions[env_name] = {}
+            self._environment_history_versions[env_name][updated_config.version] = updated_config
+            
+            # Register new version record to version manager
+            await version_manager.register_version(
+                "environment", 
+                env_name, 
+                new_version,
+                description=description or f"Updated from {original_config.version}"
             )
+            
+            # Update embedding index
+            await self._store(updated_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            
+            logger.info(f"| 🔄 Updated environment {env_name} from v{original_config.version} to v{new_version}")
+            return updated_config
         
-        # Generate rules
-        if updated_config.instance:
-            updated_config.rules = updated_config.instance.rules
-        elif updated_config.cls and updated_config.config is not None:
-            # Try to create temporary instance to generate rules
-            try:
-                temp_instance = updated_config.cls(**updated_config.config)
-                updated_config.rules = temp_instance.rules
-            except Exception as e:
-                logger.debug(f"| ⚠️ Failed to create temporary instance for rules generation: {e}")
-                updated_config.rules = ""  # Leave empty, will be generated when instance is created
-        else:
-            updated_config.rules = ""  # Leave empty, will be generated when instance is created
-        
-        # Update the environment config (replaces current version)
-        self._environment_configs[env_name] = updated_config
-        
-        # Store in version history
-        if env_name not in self._environment_history_versions:
-            self._environment_history_versions[env_name] = {}
-        self._environment_history_versions[env_name][updated_config.version] = updated_config
-        
-        # Register new version record to version manager
-        await version_manager.register_version(
-            "environment", 
-            env_name, 
-            new_version,
-            description=description or f"Updated from {original_config.version}"
-        )
-        
-        # Update embedding index
-        await self._store(updated_config)
-        
-        logger.info(f"| 🔄 Updated environment {env_name} from v{original_config.version} to v{new_version}")
-        return updated_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to update environment: {e}")
+            raise
     
-    async def copy(self, env_name: str, new_name: Optional[str] = None, 
-                  new_version: Optional[str] = None, **override_config) -> EnvironmentConfig:
+    async def copy(self, 
+                  env_name: str,
+                  new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, 
+                  new_config: Optional[Dict[str, Any]] = None) -> EnvironmentConfig:
         """Copy an existing environment configuration
         
         Args:
             env_name: Name of the environment to copy
             new_name: New name for the copied environment. If None, uses original name.
             new_version: New version for the copied environment. If None, increments version.
-            **override_config: Configuration overrides
+            new_config: New configuration dict for the copied environment. If None, uses original config.
             
         Returns:
             EnvironmentConfig: New environment configuration
         """
-        original_config = self._environment_configs.get(env_name)
-        if original_config is None:
-            raise ValueError(f"Environment {env_name} not found")
-        
-        # Determine new name
-        if new_name is None:
-            new_name = env_name
-        
-        # Determine new version from version_manager
-        if new_version is None:
-            if new_name == env_name:
-                # If copying with same name, get next version from version_manager
-                new_version = await version_manager.generate_next_version("environment", new_name, "patch")
-            else:
-                # If copying with different name, get or generate version for new name
-                new_version = await version_manager.get_or_generate_version("environment", new_name)
-        
-        # Create copy of config
-        new_config_dict = original_config.model_dump()
-        new_config_dict["name"] = new_name
-        new_config_dict["version"] = new_version
-        
-        # Apply overrides
-        if override_config:
-            if "description" in override_config:
-                new_config_dict["description"] = override_config.pop("description")
-            if "version" in override_config:
-                new_config_dict["version"] = override_config.pop("version")
-            if "metadata" in override_config:
-                if "metadata" in new_config_dict:
-                    new_config_dict["metadata"].update(override_config.pop("metadata"))
+        try:
+            original_config = self._environment_configs.get(env_name)
+            if original_config is None:
+                raise ValueError(f"Environment {env_name} not found")
+            
+            if original_config.cls is None:
+                raise ValueError(f"Cannot copy environment {env_name}: no class provided")
+            
+            # Determine new name
+            if new_name is None:
+                new_name = env_name
+            
+            # Prepare config dict (merge original config with new config)
+            env_config_dict = original_config.config.copy() if original_config.config else {}
+            if new_config:
+                # Merge new config into original config
+                env_config_dict.update(new_config)
+            
+            # Instantiate environment instance (copy is a runtime operation)
+            try:
+                env_instance = original_config.cls(**env_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create environment instance for {original_config.cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate environment {original_config.cls.__name__} with provided config: {e}")
+            
+            # Apply name override if provided (after instantiation)
+            if new_name != env_name:
+                env_instance.name = new_name
+            
+            env_description = env_instance.description
+            env_metadata = getattr(env_instance, 'metadata', {})
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                if new_name == env_name:
+                    # If copying with same name, get next version from version_manager
+                    new_version = await version_manager.generate_next_version("environment", new_name, "patch")
                 else:
-                    new_config_dict["metadata"] = override_config.pop("metadata")
-            # Merge remaining overrides into config
-            if "config" in new_config_dict:
-                new_config_dict["config"].update(override_config)
-            else:
-                new_config_dict["config"] = override_config
+                    # If copying with different name, get or generate version for new name
+                    new_version = await version_manager.get_version("environment", new_name)
+            
+            # Get environment code
+            env_code = dynamic_manager.get_full_module_source(original_config.cls)
+            
+            # Build actions from environment class (same as register)
+            actions = {}
+            for attr_name in dir(original_config.cls):
+                attr = getattr(original_config.cls, attr_name)
+                if hasattr(attr, '_action_name'):
+                    action_name = getattr(attr, '_action_name')
+                    action_description = getattr(attr, '_action_description', '')
+                    action_function = getattr(attr, '_action_function', None)
+                    action_metadata = getattr(attr, '_action_metadata', {})
+                    
+                    action_version = await version_manager.get_version("action", action_name)
+                    
+                    action_code = dynamic_manager.get_source_code(attr)
+                    if not action_code:
+                        logger.warning(f"| ⚠️ Action {action_name} is dynamic but source code cannot be extracted")
+                    
+                    action_parameters = dynamic_manager.get_parameters(action_function)
+                    action_function_calling = dynamic_manager.build_function_calling(action_name, action_description, action_parameters)
+                    action_text = dynamic_manager.build_text_representation(action_name, action_description, action_parameters)
+                    action_args_schema = dynamic_manager.build_args_schema(action_name, action_parameters)
+                    
+                    action_config = ActionConfig(
+                        env_name=new_name,
+                        name=action_name,
+                        description=action_description,
+                        function=action_function,
+                        metadata=action_metadata,
+                        version=action_version,
+                        code=action_code,
+                        function_calling=action_function_calling,
+                        text=action_text,
+                        args_schema=action_args_schema,
+                    )
+                    
+                    actions[action_name] = action_config
+            
+            # Get rules from instance
+            env_rules = env_instance.get_rules() if hasattr(env_instance, 'get_rules') else ""
+            
+            # --- Build EnvironmentConfig ---
+            copied_config = EnvironmentConfig(
+                name=new_name,
+                description=env_description,
+                rules=env_rules,
+                version=new_version,
+                actions=actions,
+                cls=original_config.cls,
+                config=env_config_dict,
+                instance=env_instance,
+                metadata=env_metadata,
+                code=env_code
+            )
+            
+            # Register new environment
+            self._environment_configs[new_name] = copied_config
+            
+            # Store in version history
+            if new_name not in self._environment_history_versions:
+                self._environment_history_versions[new_name] = {}
+            self._environment_history_versions[new_name][new_version] = copied_config
+            
+            # Register version record to version manager
+            await version_manager.register_version(
+                "environment", 
+                new_name, 
+                new_version,
+                description=f"Copied from {env_name}@{original_config.version}"
+            )
+            
+            # Register to embedding index
+            await self._store(copied_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            
+            logger.info(f"| 📋 Copied environment {env_name}@{original_config.version} to {new_name}@{new_version}")
+            return copied_config
         
-        # Clear instance (will be created on demand)
-        new_config_dict["instance"] = None
-        
-        # Update actions env_name in copied actions
-        if "actions" in new_config_dict and new_config_dict["actions"]:
-            for action_name, action_config_dict in new_config_dict["actions"].items():
-                if isinstance(action_config_dict, dict):
-                    action_config_dict["env_name"] = new_name
-        
-        new_config = EnvironmentConfig(**new_config_dict)
-        
-        # Register new environment
-        self._environment_configs[new_name] = new_config
-        
-        # Store in version history
-        if new_name not in self._environment_history_versions:
-            self._environment_history_versions[new_name] = {}
-        self._environment_history_versions[new_name][new_version] = new_config
-        
-        # Register version record to version manager
-        await version_manager.register_version(
-            "environment", 
-            new_name, 
-            new_config.version,
-            description=f"Copied from {env_name}@{original_config.version}"
-        )
-        
-        # Register to embedding index
-        await self._store(new_config)
-        
-        logger.info(f"| 📋 Copied environment {env_name}@{original_config.version} to {new_name}@{new_config.version}")
-        return new_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to copy environment: {e}")
+            raise
     
     async def unregister(self, env_name: str) -> bool:
         """Unregister an environment
@@ -1061,16 +906,6 @@ class EnvironmentContextManager(BaseModel):
             return False
         
         env_config = self._environment_configs[env_name]
-        
-        # Cleanup instance if exists
-        if env_config.instance and hasattr(env_config.instance, "cleanup"):
-            try:
-                if asyncio.iscoroutinefunction(env_config.instance.cleanup):
-                    await env_config.instance.cleanup()
-                else:
-                    env_config.instance.cleanup()
-            except Exception as e:
-                logger.warning(f"| ⚠️ Error cleaning up environment {env_name} instance: {e}")
         
         # Remove from configs
         del self._environment_configs[env_name]
@@ -1115,61 +950,9 @@ class EnvironmentContextManager(BaseModel):
             
             for env_name, version_map in self._environment_history_versions.items():
                 try:
-                    # Serialize all versions for this environment as a dict: {version_str: config_dict}
                     versions_data: Dict[str, Dict[str, Any]] = {}
-                    for version_str, env_config in version_map.items():
-                        # Serialize environment config (excluding non-serializable fields)
-                        # - cls: Cannot serialize Type objects, code is saved if available
-                        # - instance: Runtime state, should be recreated via build() on load
-                        # - actions: Will be serialized separately to exclude function field
-                        config_dict = env_config.model_dump(mode="json", exclude={"cls", "instance", "actions"})
-                        
-                        # Store code if available
-                        if env_config.cls is not None:
-                            if dynamic_manager.is_dynamic_class(env_config.cls):
-                                code = dynamic_manager.get_class_source_code(env_config.cls)
-                            else:
-                                code = self._get_full_module_source(env_config.cls)
-                            if code:
-                                config_dict["code"] = code
-                        
-                        # Serialize actions (excluding function which is not serializable, similar to tool's instance)
-                        actions_dict = {}
-                        if env_config.actions:
-                            for action_name, action_config in env_config.actions.items():
-                                # Serialize ActionConfig excluding non-serializable fields
-                                # - function: Callable, not serializable
-                                # - args_schema: Type[BaseModel], will be serialized separately as schema info
-                                # - function_calling, text: These are computed properties, exclude them
-                                action_dict = action_config.model_dump(
-                                    mode="json",
-                                    exclude={"function", "args_schema", "function_calling", "text"}
-                                )
-                                
-                                # Serialize args_schema separately if it exists
-                                # Use object.__getattribute__ to bypass property and get the field value directly
-                                try:
-                                    # Check if args_schema field is set in the model
-                                    if "args_schema" in action_config.model_fields:
-                                        # Get the field value directly, bypassing the property
-                                        stored_args_schema = object.__getattribute__(action_config, 'args_schema')
-                                        # Only serialize if it's actually a Type[BaseModel], not None or property
-                                        if stored_args_schema is not None and isinstance(stored_args_schema, type) and issubclass(stored_args_schema, BaseModel):
-                                            try:
-                                                args_schema_info = serialize_args_schema(stored_args_schema)
-                                                if args_schema_info:
-                                                    action_dict["args_schema"] = args_schema_info
-                                            except Exception as e:
-                                                logger.warning(f"| ⚠️ Failed to serialize args_schema for action {action_name}: {e}")
-                                except (AttributeError, TypeError) as e:
-                                    # Field not set or not accessible, skip
-                                    pass
-                                
-                                actions_dict[action_name] = action_dict
-                        
-                        config_dict["actions"] = actions_dict
-                        
-                        # Use version string as key
+                    for _, env_config in version_map.items():
+                        config_dict = env_config.model_dump()
                         versions_data[env_config.version] = config_dict
                     
                     # Get current_version from active config if it exists
@@ -1179,17 +962,17 @@ class EnvironmentContextManager(BaseModel):
                         current_config = self._environment_configs[env_name]
                         if current_config is not None:
                             current_version = current_config.version
-                    else:
-                        # Fallback: use the latest version from version history
-                        if version_map:
-                            # Get the latest version by comparing version strings
-                            latest_version_str = None
-                            for version_str in version_map.keys():
-                                if latest_version_str is None:
-                                    latest_version_str = version_str
-                                elif version_manager.compare_versions(version_str, latest_version_str) > 0:
-                                    latest_version_str = version_str
-                            current_version = latest_version_str
+                    
+                    # If not found in active configs, use latest version from history
+                    if current_version is None and version_map:
+                        # Find latest version by comparing version strings
+                        latest_version_str = None
+                        for version_str in version_map.keys():
+                            if latest_version_str is None:
+                                latest_version_str = version_str
+                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
+                                latest_version_str = version_str
+                        current_version = latest_version_str
                     
                     save_data["environments"][env_name] = {
                         "versions": versions_data,
@@ -1250,79 +1033,16 @@ class EnvironmentContextManager(BaseModel):
                         latest_version = None
                         
                         for version_str, config_dict in versions_data.items():
-                            # Try to load class from code
-                            cls = None
-                            config_dict_copy = config_dict.copy()
-                            
-                            # Case 1: Load from code (for dynamically generated environments)
-                            if "code" in config_dict and config_dict["code"]:
-                                try:
-                                    # Extract class name from config or code
-                                    class_name = config_dict.get("config", {}).get("type")
-                                    if not class_name:
-                                        # Try to extract from code by parsing
-                                        class_name = dynamic_manager.extract_class_name_from_code(config_dict["code"])
-                                    
-                                    if class_name:
-                                        # Use context="environment" for automatic import injection
-                                        cls = dynamic_manager.load_class(
-                                            config_dict["code"], 
-                                            class_name, 
-                                            Environment,
-                                            context="environment"
-                                        )
-                                        logger.debug(f"| ✅ Loaded environment class {class_name} from code for {env_name}")
-                                    else:
-                                        logger.warning(f"| ⚠️ Cannot determine class name from code for {env_name}")
-                                except Exception as e:
-                                    logger.warning(f"| ⚠️ Failed to load class from code for {env_name}: {e}")
-                            
                             # Ensure version field is present
-                            if "version" not in config_dict_copy:
-                                config_dict_copy["version"] = version_str
+                            if "version" not in config_dict:
+                                config_dict["version"] = version_str
                             
-                            # Remove code from dict before creating EnvironmentConfig
-                            config_dict_copy.pop("code", None)
-                            
-                            # Restore actions from saved data
-                            actions = {}
-                            if "actions" in config_dict_copy and config_dict_copy["actions"]:
-                                for action_name, action_data in config_dict_copy["actions"].items():
-                                    if isinstance(action_data, dict):
-                                        # Restore args_schema from saved schema info (if present)
-                                        args_schema = None
-                                        args_schema_info = action_data.get("args_schema")
-                                        if args_schema_info:
-                                            try:
-                                                args_schema = deserialize_args_schema(args_schema_info)
-                                            except Exception as e:
-                                                logger.warning(f"| ⚠️ Failed to restore args_schema for action {action_name}@{version_str}: {e}")
-                                        
-                                        # Remove args_schema from dict before creating ActionConfig
-                                        action_data_copy = action_data.copy()
-                                        action_data_copy.pop("args_schema", None)
-                                        
-                                        try:
-                                            action_config = ActionConfig(**action_data_copy)
-                                            
-                                            # Set args_schema after creation to bypass validation
-                                            if args_schema is not None:
-                                                action_config.args_schema = args_schema
-                                            
-                                            actions[action_name] = action_config
-                                        except Exception as e:
-                                            logger.warning(f"| ⚠️ Failed to restore action {action_name} for {env_name}@{version_str}: {e}")
-                            
-                            config_dict_copy["actions"] = actions
-                            
-                            # Create EnvironmentConfig
-                            env_config = EnvironmentConfig(**config_dict_copy)
-                            
-                            # Set cls after creation
-                            if cls is not None:
-                                env_config.cls = cls
-                            
-                            version_configs.append(env_config)
+                            try:
+                                env_config = EnvironmentConfig.model_validate(config_dict)
+                                version_configs.append(env_config)
+                            except Exception as e:
+                                logger.warning(f"| ⚠️ Failed to load environment config for {env_name}@{version_str}: {e}")
+                                continue
                             
                             # Track latest version
                             if latest_config is None or (
@@ -1351,16 +1071,7 @@ class EnvironmentContextManager(BaseModel):
                             
                             # Create instance if requested (instance is not saved in JSON, must be created via build)
                             if auto_initialize and latest_config.cls is not None:
-                                def environment_factory():
-                                    # Filter out None values from config
-                                    filtered_config = {}
-                                    if latest_config.config:
-                                        filtered_config = {k: v for k, v in latest_config.config.items() if v is not None}
-                                    if filtered_config:
-                                        return latest_config.cls(**filtered_config)
-                                    else:
-                                        return latest_config.cls()
-                                await self.build(latest_config, environment_factory)
+                                await self.build(latest_config)
                             
                             loaded_count += 1
                     except Exception as e:
@@ -1374,40 +1085,6 @@ class EnvironmentContextManager(BaseModel):
                 logger.error(f"| ❌ Failed to load environments from {file_path}: {e}")
                 return False
     
-    def _get_full_module_source(self, cls: Type[Environment]) -> str:
-        """Get the full source code of the module containing the class, including all imports.
-        
-        This is more reliable than inspect.getsource() which only gets the class definition.
-        By reading the entire module file, we preserve all import statements and module-level code,
-        ensuring the complete context is available when loading from JSON.
-        
-        Args:
-            cls: The environment class
-            
-        Returns:
-            Full module source code as string, or class source if file reading fails
-        """
-        try:
-            # Get the module object
-            module = inspect.getmodule(cls)
-            if module is None:
-                # Fallback to inspect.getsource if module is not available
-                return inspect.getsource(cls)
-            
-            # Get the file path of the module
-            file_path = inspect.getfile(module)
-            
-            # Read the entire file to preserve all imports and context
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except (OSError, TypeError, IOError, AttributeError) as e:
-            # Fallback to inspect.getsource if file reading fails
-            logger.debug(f"| ⚠️ Failed to read module file for {cls.__name__}, falling back to inspect.getsource: {e}")
-            try:
-                return inspect.getsource(cls)
-            except Exception:
-                logger.warning(f"| ⚠️ Failed to get source code for {cls.__name__}")
-                return ""
     
     async def restore(self, env_name: str, version: str, auto_initialize: bool = True) -> Optional[EnvironmentConfig]:
         """Restore a specific version of an environment from history
@@ -1438,25 +1115,20 @@ class EnvironmentContextManager(BaseModel):
         # Update version manager current version
         version_history = await version_manager.get_version_history("environment", env_name)
         if version_history:
+            # Check if version exists in version history, if not register it
+            if version not in version_history.versions:
+                await version_manager.register_version("environment", env_name, version)
             version_history.current_version = version
+        else:
+            # If version history doesn't exist, register the version first
+            await version_manager.register_version("environment", env_name, version)
         
         # Initialize if requested
         if auto_initialize and restored_config.cls is not None:
-            def environment_factory():
-                # Filter out None values from config
-                filtered_config = {}
-                if restored_config.config:
-                    filtered_config = {k: v for k, v in restored_config.config.items() if v is not None}
-                if filtered_config:
-                    return restored_config.cls(**filtered_config)
-                else:
-                    return restored_config.cls()
-            await self.build(restored_config, environment_factory)
+            await self.build(restored_config)
         
         # Persist to JSON (current_version changes)
         await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
         
         logger.info(f"| 🔄 Restored environment {env_name} to version {version}")
         return restored_config
@@ -1468,41 +1140,15 @@ class EnvironmentContextManager(BaseModel):
             for index, env_name in enumerate(env_names):
                 env_info = await self.get_info(env_name)
                 if env_info is None:
-                    logger.warning(f"| ⚠️ Environment {env_name} not found, skipping")
                     continue
-                # Get rules from config, or generate from instance if empty
                 text = env_info.rules
-                if not text and env_info.instance:
-                    text = env_info.instance.rules
-                elif not text and env_info.cls and env_info.config is not None:
-                    # Try to create temporary instance to generate rules
-                    try:
-                        temp_instance = env_info.cls(**env_info.config)
-                        text = temp_instance.rules
-                    except Exception as e:
-                        logger.debug(f"| ⚠️ Failed to generate rules for {env_name}: {e}")
-                        text = ""
-                contract.append(f"{index + 1:04d}: {text}")
+                contract.append(f"{index + 1:04d}\n{text}\n")
         else:
             for index, env_name in enumerate(self._environment_configs.keys()):
                 env_info = await self.get_info(env_name)
-                if env_info is None:
-                    logger.warning(f"| ⚠️ Environment {env_name} not found, skipping")
-                    continue
-                # Get rules from config, or generate from instance if empty
                 text = env_info.rules
-                if not text and env_info.instance:
-                    text = env_info.instance.rules
-                elif not text and env_info.cls and env_info.config is not None:
-                    # Try to create temporary instance to generate rules
-                    try:
-                        temp_instance = env_info.cls(**env_info.config)
-                        text = temp_instance.rules
-                    except Exception as e:
-                        logger.debug(f"| ⚠️ Failed to generate rules for {env_name}: {e}")
-                        text = ""
-                contract.append(f"{index + 1:04d}: {text}")
-        contract_text = "\n".join(contract)
+                contract.append(f"{index + 1:04d}\n{text}\n")
+        contract_text = "---\n".join(contract)
         with open(self.contract_path, "w", encoding="utf-8") as f:
             f.write(contract_text)
         logger.info(f"| 📝 Saved {len(contract)} environments contract to {self.contract_path}")
@@ -1520,10 +1166,7 @@ class EnvironmentContextManager(BaseModel):
             for env_name, env_config in self._environment_configs.items():
                 if env_config.instance and hasattr(env_config.instance, "cleanup"):
                     try:
-                        if asyncio.iscoroutinefunction(env_config.instance.cleanup):
-                            await env_config.instance.cleanup()
-                        else:
-                            env_config.instance.cleanup()
+                        await env_config.instance.cleanup()
                     except Exception as e:
                         logger.warning(f"| ⚠️ Error cleaning up environment {env_name} instance: {e}")
             

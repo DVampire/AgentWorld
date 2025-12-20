@@ -1,7 +1,7 @@
 """Report Tool - A tool for managing and refining markdown reports."""
 
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import Field, ConfigDict
 
 from src.registry import TOOL
@@ -37,7 +37,7 @@ class ReportTool(Tool):
 
     name: str = "report"
     description: str = _REPORT_DESCRIPTION
-    enabled: bool = True
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     model_name: str = Field(
         default="openrouter/gemini-3-flash-preview",
