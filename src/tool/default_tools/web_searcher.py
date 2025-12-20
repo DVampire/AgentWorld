@@ -73,7 +73,7 @@ class WebSearcherTool(Tool):
             filter_year (Optional[int]): Filter results by year.
         """
         try:
-            logger.info(f"🔍 Starting deep web search for query: {query}")
+            logger.info(f"| 🔍 Starting deep web search for query: {query}")
             
             search_params = {"lang": lang, "country": country}
             if filter_year is not None:
@@ -87,10 +87,10 @@ class WebSearcherTool(Tool):
                     break
                 
                 if retry_count < self.max_retries:
-                    logger.warning(f"All search tools failed. Waiting {self.retry_delay} seconds before retry {retry_count + 1}/{self.max_retries}...")
+                    logger.warning(f"| ❌ All search tools failed. Waiting {self.retry_delay} seconds before retry {retry_count + 1}/{self.max_retries}...")
                     await asyncio.sleep(self.retry_delay)
                 else:
-                    logger.error(f"All search tools failed after {self.max_retries} retries. Giving up.")
+                    logger.error(f"| ❌ All search tools failed after {self.max_retries} retries. Giving up.")
                     return ToolResponse(
                         success=False,
                         message=f"Error: All search tools failed to return results after multiple retries.",
@@ -117,26 +117,26 @@ class WebSearcherTool(Tool):
                     }
                 )
 
-            logger.info(f"✅ Found {len(results)} search results from multiple engines")
+            logger.info(f"| ✅ Found {len(results)} search results from multiple engines")
 
             # Step 2: Fetch content from all pages
             if self.fetch_content:
-                logger.info("📥 Fetching content from web pages...")
+                logger.info("| 📥 Fetching content from web pages...")
                 results = await self._fetch_content_for_results(results)
-                logger.info(f"✅ Fetched content from {len([r for r in results if r.get('raw_content')])} pages")
+                logger.info(f"| ✅ Fetched content from {len([r for r in results if r.get('raw_content')])} pages")
 
             # Step 3: Summarize each page based on the query
             if self.summarize_pages:
-                logger.info("📝 Summarizing each page based on the query...")
+                logger.info("| 📝 Summarizing each page based on the query...")
                 results = await self._summarize_results(results, query)
-                logger.info(f"✅ Summarized {len([r for r in results if r.get('summary')])} pages")
+                logger.info(f"| ✅ Summarized {len([r for r in results if r.get('summary')])} pages")
 
             # Step 4: Merge all summaries into a final report
             merged_summary = None
             if self.merge_summaries and any(r.get("summary") for r in results):
-                logger.info("🔗 Merging all summaries into final report...")
+                logger.info("| 🔗 Merging all summaries into final report...")
                 merged_summary = await self._merge_summaries(results, query)
-                logger.info("✅ Generated merged summary with citations")
+                logger.info("| ✅ Generated merged summary with citations")
 
             # Get unique search engines that contributed results
             search_engines_used = list(set(r.get("source", "") for r in results))
@@ -174,7 +174,7 @@ class WebSearcherTool(Tool):
             )
 
         except Exception as e:
-            logger.error(f"Error in web search: {e}")
+            logger.error(f"| ❌ Error in web search: {e}")
             return ToolResponse(
                 success=False,
                 message=f"Error during web search: {e}",
@@ -195,7 +195,7 @@ class WebSearcherTool(Tool):
         async def search_with_tool(tool_name: str):
             """Search with a single tool and return results or None on failure."""
             tool = self.search_tools[tool_name]
-            logger.info(f"🔎 Attempting search with {tool_name.capitalize()}...")
+            logger.info(f"| 🔎 Attempting search with {tool_name.capitalize()}...")
             
             try:
                 search_items = await self._perform_search_with_tool(
@@ -203,7 +203,7 @@ class WebSearcherTool(Tool):
                 )
 
                 if not search_items:
-                    logger.warning(f"Search tool {tool_name} returned no results")
+                    logger.warning(f"| ❌ Search tool {tool_name} returned no results")
                     return None
 
                 # Transform search items into dictionaries
@@ -219,7 +219,7 @@ class WebSearcherTool(Tool):
                     }
                     for i, item in enumerate(search_items)
                 ]
-                logger.info(f"✅ {tool_name.capitalize()} returned {len(results)} results")
+                logger.info(f"| ✅ {tool_name.capitalize()} returned {len(results)} results")
                 return results
             except (ValueError, RetryError, Exception) as e:
                 error_msg = str(e)
@@ -227,7 +227,7 @@ class WebSearcherTool(Tool):
                     # Extract the last exception from RetryError
                     if e.last_attempt and e.last_attempt.exception():
                         error_msg = str(e.last_attempt.exception())
-                logger.warning(f"Search tool {tool_name} failed: {error_msg}")
+                logger.warning(f"| ❌ Search tool {tool_name} failed: {error_msg}")
                 return None
 
         # Execute all searches in parallel
@@ -243,7 +243,7 @@ class WebSearcherTool(Tool):
             tool_name = tool_order[i]
             if isinstance(result, Exception):
                 failed_tools.append(tool_name)
-                logger.error(f"Search tool {tool_name} raised exception: {str(result)}")
+                logger.error(f"| ❌ Search tool {tool_name} raised exception: {str(result)}")
             elif result is None:
                 failed_tools.append(tool_name)
             else:
@@ -252,12 +252,12 @@ class WebSearcherTool(Tool):
         
         # Log summary
         if successful_tools:
-            logger.info(f"✅ Successfully retrieved results from: {', '.join(successful_tools)}")
+            logger.info(f"| ✅ Successfully retrieved results from: {', '.join(successful_tools)}")
         if failed_tools:
-            logger.warning(f"⚠️ Failed search tools: {', '.join(failed_tools)}")
+            logger.warning(f"| ⚠️ Failed search tools: {', '.join(failed_tools)}")
         
         if not all_results:
-            logger.error(f"All search tools failed: {', '.join(failed_tools)}")
+            logger.error(f"| ❌ All search tools failed: {', '.join(failed_tools)}")
             return []
         
         # Deduplicate results by URL (keep first occurrence)
@@ -272,7 +272,7 @@ class WebSearcherTool(Tool):
         for i, result in enumerate(unique_results, 1):
             result["position"] = i
         
-        logger.info(f"📊 Merged {len(unique_results)} unique results from {len(successful_tools)} search engine(s)")
+        logger.info(f"| 📊 Merged {len(unique_results)} unique results from {len(successful_tools)} search engine(s)")
         return unique_results
 
     async def _fetch_content_for_results(
@@ -293,7 +293,7 @@ class WebSearcherTool(Tool):
         final_results = []
         for i, result in enumerate(fetched_results):
             if isinstance(result, Exception):
-                logger.warning(f"Exception fetching content for result {i+1}: {result}")
+                logger.warning(f"| ❌ Exception fetching content for result {i+1}: {result}")
                 # Keep original result without content
                 if i < len(results):
                     results[i]["raw_content"] = None
@@ -322,10 +322,10 @@ class WebSearcherTool(Tool):
                 else:
                     result["raw_content"] = None
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout fetching content from {url} (exceeded 20s)")
+                logger.warning(f"| ❌ Timeout fetching content from {url} (exceeded 20s)")
                 result["raw_content"] = None
             except Exception as e:
-                logger.warning(f"Error fetching content from {url}: {e}")
+                logger.warning(f"| ❌ Error fetching content from {url}: {e}")
                 result["raw_content"] = None
         return result
 
@@ -367,7 +367,7 @@ class WebSearcherTool(Tool):
                 else:
                     result["summary"] = "Failed to generate summary."
             except Exception as e:
-                logger.warning(f"Failed to summarize {url}: {e}")
+                logger.warning(f"| ❌ Failed to summarize {url}: {e}")
                 result["summary"] = f"Summary unavailable: {str(e)}"
 
             return result
@@ -380,7 +380,7 @@ class WebSearcherTool(Tool):
         final_results = []
         for i, result in enumerate(summarized_results):
             if isinstance(result, Exception):
-                logger.error(f"Exception while summarizing result {i}: {result}")
+                logger.error(f"| ❌ Exception while summarizing result {i}: {result}")
                 # Keep original result without summary
                 if i < len(results):
                     results[i]["summary"] = f"Summary failed: {str(result)}"
@@ -452,7 +452,7 @@ class WebSearcherTool(Tool):
                 return self._fallback_merge_summaries(summarized_results, query)
 
         except Exception as e:
-            logger.error(f"Failed to merge summaries: {e}")
+            logger.error(f"| ❌ Failed to merge summaries: {e}")
             return self._fallback_merge_summaries(summarized_results, query)
 
     def _fallback_merge_summaries(self, results: List[Dict[str, Any]], query: str) -> str:
@@ -536,8 +536,8 @@ class WebSearcherTool(Tool):
                 error_msg = str(last_exception)
             else:
                 error_msg = f"Search failed after 3 retries: {str(e)}"
-            logger.error(f"Search tool {tool.name if hasattr(tool, 'name') else 'unknown'} failed after retries: {error_msg}")
+            logger.error(f"| ❌ Search tool {tool.name if hasattr(tool, 'name') else 'unknown'} failed after retries: {error_msg}")
             raise ValueError(error_msg) from e
         except Exception as e:
-            logger.error(f"Unexpected error in search tool {tool.name if hasattr(tool, 'name') else 'unknown'}: {str(e)}")
+            logger.error(f"| ❌ Unexpected error in search tool {tool.name if hasattr(tool, 'name') else 'unknown'}: {str(e)}")
             raise

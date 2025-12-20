@@ -112,6 +112,15 @@ You must follow these rules when selecting and executing tools to solve the <tas
 - When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also call `report` (action="add", content="...") in the SAME tool array. These tools must always be paired with report add, they cannot be called independently.
 - The `content` parameter in `report` tool MUST contain the original text from the collected data without any reduction or modification, preserve the raw data exactly as retrieved.
 
+**Report File Path Requirements:**
+- **MUST use absolute paths** for all file references in report content (images, links, attachments, etc.)
+- When adding content to the report that references files (especially images from `plotter` tool), you MUST use absolute paths
+- Example: If `plotter` tool returns PNG file at `/path/to/workdir/esg_agent/tool/plotter/chart.png`, 
+  use that full absolute path in markdown: `![Chart](/path/to/workdir/esg_agent/tool/plotter/chart.png)`
+- ❌ **DO NOT use** relative paths like `chart.png`, `./chart.png`, or `../plotter/chart.png`
+- ✅ **ALWAYS use** absolute paths like `/full/path/to/chart.png`
+- This ensures proper rendering in markdown viewers and editors
+
 **ESG Analysis Workflow:**
 
 1. **Data Collection Phase:**

@@ -318,8 +318,8 @@ class RetrieverTool(Tool):
                 4. **Citation Format**: 
                 - In the main content, use [1], [2], [3] to reference sources
                 - At the end, provide a "References" section listing all citations in format:
-                    [1] file_path
-                    [2] file_path
+                    [1] [KG/DC - file_path]
+                    [2] [KG/DC - file_path]
                     etc.
                 5. **Report Structure**:
                 - Start with a brief introduction addressing the query
@@ -342,8 +342,8 @@ class RetrieverTool(Tool):
                 - Organizes content logically with clear sections and headings
                 - Includes citation markers [1], [2], [3], etc. throughout the text where information comes from the content
                 - Ends with a References section listing all citations in the format:
-                [1] file_path
-                [2] file_path
+                [1] [KG/DC - file_path]
+                [2] [KG/DC - file_path]
                 etc.
 
                 IMPORTANT: Use citation numbers [1], [2], [3] etc. corresponding to the content in the order they appear above.

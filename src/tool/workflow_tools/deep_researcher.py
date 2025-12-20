@@ -15,6 +15,7 @@ from src.message.types import HumanMessage, SystemMessage
 from src.tool.types import Tool, ToolResponse
 from src.tool.default_tools.web_searcher import WebSearcherTool
 from src.registry import TOOL
+from src.tool.types import Report
 
 
 _DEEP_RESEARCHER_DESCRIPTION = """Deep research tool that performs multi-round web search and content analysis.
@@ -51,7 +52,7 @@ class DeepResearcherTool(Tool):
     max_rounds: int = Field(default=3, description="Maximum search rounds")
     num_results: int = Field(default=5, description="Number of search results per round")
     model_name: str = Field(
-        default="o3",
+        default="openrouter/gemini-3-flash-preview",
         description="The model to use for query generation and answer evaluation."
     )
     web_searcher: WebSearcherTool = Field(
@@ -112,6 +113,12 @@ class DeepResearcherTool(Tool):
         # Store research history
         self.research_history = []
         
+        # Initialize Report instance for storing research items
+        self.report = Report(
+            title="Research Report",
+            model_name=self.model_name
+        )
+        
         # File path (will be set in __call__)
         self.file_path = None
 
@@ -138,14 +145,18 @@ class DeepResearcherTool(Tool):
             md_filename = f"research_{uuid.uuid4().hex[:8]}.md"
             self.file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
-            # Initialize file with task
-            if self.file_path:
-                with open(self.file_path, 'w', encoding='utf-8') as f:
-                    f.write(f"# Research Report\n\n")
-                    f.write(f"## Research Task\n\n{task}\n\n")
-                    if image:
-                        f.write(f"## Image\n\n{image}\n\n")
-                    f.write(f"---\n\n")
+            # Reset report for new research task
+            self.report = Report(
+                title="Research Report",
+                model_name=self.model_name
+            )
+            
+            # Add initial task information as first item
+            task_content = f"## Research Task\n\n{task}\n\n"
+            if image:
+                task_content += f"## Image\n\n{image}\n\n"
+            
+            await self.report.add_item(task_content)
             
             final_evaluation = None
             
@@ -162,14 +173,14 @@ class DeepResearcherTool(Tool):
                 
                 if not search_results:
                     logger.warning(f"| ❌ All searches failed in round {round_num}")
-                    # Still write to file
-                    if self.file_path:
-                        self._append_round_to_md(round_num, query, "No search results found.", None)
+                    # Add empty result to report
+                    empty_content = f"## Round {round_num}\n\n### Search Query\n\n{query}\n\n### Search Results\n\nNo search results found.\n\n"
+                    await self.report.add_item(empty_content)
                     continue
                 
                 # Merge all search results
                 merged_summary = self._merge_search_results(search_results)
-                logger.info(f"| ✅ Merged {len(search_results)} search results: {merged_summary[:200]}...")
+                logger.info(f"| ✅ Merged {len(search_results)} search results: {merged_summary[:1000]}...")
                 
                 # Record round information
                 round_info = {
@@ -182,9 +193,14 @@ class DeepResearcherTool(Tool):
                 # Check if answer is found
                 evaluation = await self._evaluate_completeness(task, merged_summary)
                 
-                # Append round to file
-                if self.file_path:
-                    self._append_round_to_md(round_num, query, merged_summary, evaluation)
+                # Add round content to report
+                round_content = f"## Round {round_num}\n\n### Search Query\n\n{query}\n\n### Search Results\n\n{merged_summary}\n\n"
+                if evaluation:
+                    round_content += f"### Evaluation\n\n"
+                    round_content += f"- **Answer Found**: {'Yes' if evaluation.is_complete else 'No'}\n"
+                    round_content += f"- **Reasoning**: {evaluation.reasoning}\n\n"
+                
+                await self.report.add_item(round_content)
                 
                 if evaluation.is_complete:
                     logger.info(f"✅ Answer found in round {round_num}: {evaluation.reasoning[:100]}...")
@@ -193,22 +209,18 @@ class DeepResearcherTool(Tool):
                 
                 logger.info(f"| ⏭️ Round {round_num} completed, continuing to next round")
             
-            # Finalize file and generate summary
+            # Finalize report and generate summary
             answer_found = final_evaluation.is_complete if final_evaluation else False
             
             if self.file_path:
-                # Read the file
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    md_content = f.read()
+                # Generate final report using Report.complete()
+                # This will merge all items, renumber citations and references, and generate the final markdown
+                final_report_content = await self.report.complete(self.file_path)
                 
-                # Reorganize and generate summary
-                reorganized_md, summary = await self._reorganize_and_summarize(
-                    task, md_content, answer_found, final_evaluation
+                # Generate summary from the final report
+                summary = await self._generate_summary(
+                    task, final_report_content, answer_found, final_evaluation
                 )
-                
-                # Write reorganized content back
-                with open(self.file_path, 'w', encoding='utf-8') as f:
-                    f.write(reorganized_md)
                 
                 # Build evaluation info for extra
                 evaluation_info = None
@@ -433,80 +445,24 @@ class DeepResearcherTool(Tool):
         # For now, just return the combined text
         return combined_text
 
-    def _append_round_to_md(self, round_num: int, query: str, summary: str, evaluation: Optional[CompletenessEvaluation]):
-        """Append a research round to the file."""
-        if not self.file_path:
-            return
-        
-        try:
-            with open(self.file_path, 'a', encoding='utf-8') as f:
-                f.write(f"## Round {round_num}\n\n")
-                f.write(f"### Search Query\n\n{query}\n\n")
-                f.write(f"### Search Results\n\n{summary}\n\n")
-                if evaluation:
-                    f.write(f"### Evaluation\n\n")
-                    f.write(f"- **Answer Found**: {'Yes' if evaluation.is_complete else 'No'}\n")
-                    f.write(f"- **Reasoning**: {evaluation.reasoning}\n\n")
-                f.write(f"---\n\n")
-        except Exception as e:
-            logger.warning(f"Failed to append round {round_num} to MD file: {e}")
-
-    async def _reorganize_and_summarize(
+    async def _generate_summary(
         self, 
         task: str, 
-        md_content: str, 
+        report_content: str, 
         answer_found: bool,
         evaluation: Optional[CompletenessEvaluation]
-    ) -> tuple[str, str]:
-        """Reorganize the MD file structure and generate a summary."""
-        prompt = dedent(f"""You are an expert at organizing research reports. Reorganize the following research report markdown file to make it well-structured and easy to read.
-
-        Research Task: {task}
-        Answer Found: {'Yes' if answer_found else 'No'}
-        {'Evaluation: ' + evaluation.reasoning if evaluation else 'No evaluation available'}
-
-        Current Markdown Content:
-        {md_content}
-
-        Please reorganize this markdown file with the following structure:
-        1. Title and Research Task (clear and prominent)
-        2. Executive Summary (brief overview of findings)
-        3. Research Methodology (if applicable)
-        4. Detailed Findings (organized by rounds or topics)
-        5. Conclusion (with clear statement about whether the answer was found)
-        6. Evaluation (if available)
-
-        Make sure the conclusion section clearly states:
-        - Whether a complete answer to the research task was found
-        - A summary of the key findings
-        - Any limitations or gaps in the research
-
-        Return the reorganized markdown content. Keep all important information from the original content.
-        """)
-
-        messages = [
-            SystemMessage(content="You are an expert at organizing and structuring research reports. Create clear, well-organized markdown documents."),
-            HumanMessage(content=prompt)
-        ]
-
-        response = await model_manager(
-            model=self.model_name,
-            messages=messages
-        )
-
-        reorganized_md = response.message.strip()
-
-        # Generate summary with explicit answer status
+    ) -> str:
+        """Generate a summary from the final report content."""
         answer_status = f"Answer Found: {'Yes' if answer_found else 'No'}"
         evaluation_text = f"\n\nEvaluation: {evaluation.reasoning}" if evaluation else ""
         
-        summary_prompt = dedent(f"""Based on the reorganized research report below, generate a comprehensive summary.
+        summary_prompt = dedent(f"""Based on the research report below, generate a comprehensive summary.
 
         Research Task: {task}
         Answer Found Status: {answer_status}{evaluation_text}
         
-        Reorganized Report:
-        {reorganized_md}
+        Research Report:
+        {report_content}
 
         Generate a summary that:
         1. MUST start with a clear statement: "Answer Found: Yes" or "Answer Found: No" (use this exact format)
@@ -547,7 +503,7 @@ class DeepResearcherTool(Tool):
         else:
             final_summary = summary_text
         
-        return reorganized_md, final_summary
+        return final_summary
 
     async def _evaluate_completeness(self, task: str, summary: str) -> CompletenessEvaluation:
         """Evaluate if we have found a complete answer using LLM with structured output."""
