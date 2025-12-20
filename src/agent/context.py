@@ -1,31 +1,25 @@
 """Agent Context Manager for managing agent lifecycle and resources with lazy loading."""
-
-import ast
-import inspect
-import json
 import os
 from asyncio_atexit import register as async_atexit_register
+from typing import Any, Dict, List, Type, Optional, Union, Tuple
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
-
 import inflection
+import json
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.logger import logger
 from src.config import config
-from src.dynamic import dynamic_manager
 from src.environment.faiss.service import FaissService
 from src.environment.faiss.types import FaissAddRequest
-from src.logger import logger
-from src.registry import AGENT
 from src.utils import (
     assemble_project_path,
-    deserialize_args_schema,
     gather_with_concurrency,
-    serialize_args_schema,
+    file_lock
 )
-from src.utils.file_utils import file_lock
-from src.version import version_manager
 from src.agent.types import Agent, AgentConfig
+from src.version import version_manager
+from src.dynamic import dynamic_manager
+from src.registry import AGENT
 
 
 class AgentContextManager(BaseModel):
@@ -174,96 +168,63 @@ class AgentContextManager(BaseModel):
 
         agent_configs: Dict[str, AgentConfig] = {}
 
-        async def register_agent_class(agent_cls: Type[Agent]) -> None:
-            agent_name: Optional[str] = None
+        async def register_agent_class(agent_cls: Type[Agent]):
+            """Register an agent class synchronously.
+            
+            Args:
+                agent_cls: Agent class to register
+            """
             try:
+                # Get agent config from global config
                 agent_config_key = inflection.underscore(agent_cls.__name__)
-                agent_init_config = config.get(f"{agent_config_key}_agent", {})
-
-                # Try to create temporary instance to get name/description/etc.
-                try:
-                    temp_instance = agent_cls(workdir=config.workdir, **agent_init_config)
-                    agent_name = temp_instance.name
-                    agent_description = temp_instance.description
-                    args_schema = getattr(temp_instance, "args_schema", None)
-                    metadata = getattr(temp_instance, "metadata", {}) or {}
-                except Exception:
-                    # Fallback to model_fields, similar to previous implementation
-                    if hasattr(agent_cls, "model_fields") and "name" in agent_cls.model_fields:
-                        field_info = agent_cls.model_fields["name"]
-                        default_value = getattr(field_info, "default", None)
-                        if isinstance(default_value, str) and default_value:
-                            agent_name = default_value
-
-                    if hasattr(agent_cls, "model_fields") and "description" in agent_cls.model_fields:
-                        field_info = agent_cls.model_fields["description"]
-                        default_value = getattr(field_info, "default", None)
-                        if isinstance(default_value, str):
-                            agent_description = default_value
-                        else:
-                            agent_description = ""
-                    else:
-                        agent_description = ""
-
-                    if hasattr(agent_cls, "model_fields") and "args_schema" in agent_cls.model_fields:
-                        field_info = agent_cls.model_fields["args_schema"]
-                        args_schema = getattr(field_info, "default", None)
-                    else:
-                        args_schema = None
-
-                    if hasattr(agent_cls, "model_fields") and "metadata" in agent_cls.model_fields:
-                        field_info = agent_cls.model_fields["metadata"]
-                        metadata = getattr(field_info, "default", {}) or {}
-                    else:
-                        metadata = {}
-
-                    if not agent_name:
-                        logger.warning(
-                            f"| ⚠️ Agent class {agent_cls.__name__} has no name, skipping"
-                        )
-                        return
-
-                if not agent_name:
-                    logger.warning(
-                        f"| ⚠️ Agent class {agent_cls.__name__} has empty name, skipping"
-                    )
-                    return
-
-                # Get or generate version
+                agent_config_dict = getattr(config, agent_config_key, {})
+                
+                # Get agent properties from agent class
+                agent_name = agent_cls.model_fields['name'].default
+                agent_description = agent_cls.model_fields['description'].default
+                agent_metadata = agent_cls.model_fields['metadata'].default
+                
+                # Get or generate version from version_manager
                 agent_version = await version_manager.get_version("agent", agent_name)
-
+                
                 # Get full module source code
-                agent_code = self._get_full_module_source(agent_cls)
-
-                # Build AgentConfig (instance is not created here)
+                agent_code = dynamic_manager.get_full_module_source(agent_cls)
+                
+                agent_parameters = dynamic_manager.get_parameters(agent_cls)
+                agent_function_calling = dynamic_manager.build_function_calling(agent_name, agent_description, agent_parameters)
+                agent_text = dynamic_manager.build_text_representation(agent_name, agent_description, agent_parameters)
+                agent_args_schema = dynamic_manager.build_args_schema(agent_name, agent_parameters)
+                
+                # Create agent config (AgentConfig.id is auto-incremented internally if needed)
                 agent_config = AgentConfig(
                     name=agent_name,
                     description=agent_description,
                     version=agent_version,
                     cls=agent_cls,
-                    config=agent_init_config,
+                    config=agent_config_dict,
                     instance=None,
-                    metadata=metadata,
-                    function_calling=None,
-                    text=None,
-                    args_schema=args_schema,
+                    function_calling=agent_function_calling,
+                    text=agent_text,
+                    args_schema=agent_args_schema,
+                    metadata=agent_metadata,
                     code=agent_code,
                 )
-
+                
+                # Store agent config
                 agent_configs[agent_name] = agent_config
-
-                # Store in history by version
+                
+                # Store in version history (by version string)
                 if agent_name not in self._agent_history_versions:
                     self._agent_history_versions[agent_name] = {}
                 self._agent_history_versions[agent_name][agent_version] = agent_config
-
-                logger.info(f"| 📝 Registered agent from registry: {agent_name} ({agent_cls.__name__})")
-
+                
+                # Register version to version manager
+                await version_manager.register_version("agent", agent_name, agent_version)
+                
+                logger.info(f"| 📝 Registered agent: {agent_name} ({agent_cls.__name__})")
+                
             except Exception as e:
-                agent_name_str = agent_name or agent_cls.__name__
-                logger.error(
-                    f"| ❌ Failed to register agent class {agent_cls.__name__} (name: {agent_name_str}): {e}"
-                )
+                logger.error(f"| ❌ Failed to register agent class {agent_cls.__name__}: {e}")
                 raise
 
         import src.agent  # noqa: F401
@@ -282,228 +243,169 @@ class AgentContextManager(BaseModel):
 
         return agent_configs
 
-    async def _load_from_code(self) -> Dict[str, AgentConfig]:
-        """Load agents from JSON code file (multi-version history)."""
-
+    async def _load_from_code(self):
+        """Load agents from code files.
+        
+        JSON file content example:
+        {
+            "metadata": {
+                "saved_at": str,  # "YYYY-MM-DD HH:MM:SS"
+                "num_agents": int,  # total agent count
+                "num_versions": int  # total version count
+            },
+            "agents": {
+                "agent_name": {
+                    "current_version": "1.0.0",
+                    "versions": {
+                        "1.0.0": {
+                            "name": str,
+                            "description": str,
+                            "metadata": dict,
+                            "version": str,
+                            "cls": Type[Agent],
+                            "config": dict,
+                            "instance": Agent, # will be built when needed
+                            "function_calling": dict, 
+                            "text": str, 
+                            "args_schema": BaseModel,
+                            "code": str
+                        },
+                        ...
+                    }
+                }
+            }
+        }
+        """
+        
         agent_configs: Dict[str, AgentConfig] = {}
-
+        
+        # If save file does not exist yet, nothing to load
         if not os.path.exists(self.save_path):
-            logger.info(
-                f"| 📂 Agent config file not found at {self.save_path}, skipping code-based loading"
-            )
+            logger.info(f"| 📂 Agent config file not found at {self.save_path}, skipping code-based loading")
             return agent_configs
-
+        
+        # Load all agent configs from json file
         try:
             with open(self.save_path, "r", encoding="utf-8") as f:
                 load_data = json.load(f)
         except json.JSONDecodeError as e:
-            logger.warning(
-                f"| ⚠️ Failed to parse agent config JSON from {self.save_path}: {e}"
-            )
+            logger.warning(f"| ⚠️ Failed to parse agent config JSON from {self.save_path}: {e}")
             return agent_configs
-
+        
         metadata = load_data.get("metadata", {})
         agents_data = load_data.get("agents", {})
 
-        async def register_agent_from_json(
-            agent_name: str, agent_data: Dict[str, Any]
-        ) -> Optional[Tuple[str, Dict[str, AgentConfig], Optional[AgentConfig]]]:
+        async def register_agent_class(agent_name: str, agent_data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, AgentConfig], Optional[AgentConfig]]]:
             """Load all versions for a single agent from JSON."""
             try:
                 current_version = agent_data.get("current_version", "1.0.0")
                 versions = agent_data.get("versions", {})
-
+                
                 if not versions:
-                    logger.warning(f"| ⚠️ Agent {agent_name} has no versions in JSON")
+                    logger.warning(f"| ⚠️ Agent {agent_name} has no versions")
                     return None
-
+                
                 version_map: Dict[str, AgentConfig] = {}
-                current_config: Optional[AgentConfig] = None
-
-                for version_str, version_data in versions.items():
-                    name = version_data.get("name", "")
-                    description = version_data.get("description", "")
-                    enabled_version = version_data.get("version", version_str)
-
-                    code = version_data.get("code", None)
-                    config_dict = version_data.get("config", {}) or {}
-
-                    # Dynamic class handling
-                    cls = None
-                    if code:
-                        try:
-                            # First try to get class name from saved metadata
-                            class_name = version_data.get("class_name")
-                            
-                            # Fallback to config.type (for backward compatibility)
-                            if not class_name:
-                                class_name = config_dict.get("type")
-                            
-                            if class_name:
-                                cls = dynamic_manager.load_class(
-                                    code,
-                                    class_name=class_name,
-                                    base_class=Agent,
-                                    context="agent",
-                                )
-                            else:
-                                # Last resort: let load_class find Agent subclass automatically
-                                cls = dynamic_manager.load_class(
-                                    code,
-                                    base_class=Agent,
-                                    context="agent",
-                                )
-                        except Exception as e:
-                            logger.error(
-                                f"| ❌ Failed to load agent class from code for {agent_name}@{version_str}: {e}"
-                            )
-
-                    instance = version_data.get("instance", None)
-                    metadata_val = version_data.get("metadata", {}) or {}
-                    function_calling = version_data.get("function_calling", None)
-                    text = version_data.get("text", None)
-
-                    # Restore args_schema from saved schema info (if present)
-                    args_schema = None
-                    args_schema_info = version_data.get("args_schema")
-                    if args_schema_info:
-                        try:
-                            args_schema = deserialize_args_schema(args_schema_info)
-                        except Exception as e:
-                            logger.warning(
-                                f"| ⚠️ Failed to restore args_schema for {agent_name}@{version_str}: {e}"
-                            )
-
-                    agent_config = AgentConfig(
-                        name=name,
-                        description=description,
-                        version=enabled_version,
-                        cls=cls,
-                        config=config_dict,
-                        instance=instance,
-                        metadata=metadata_val,
-                        function_calling=function_calling,
-                        text=text,
-                        args_schema=args_schema,
-                        code=code,
-                    )
-
-                    version_map[enabled_version] = agent_config
-                    if enabled_version == current_version:
-                        current_config = agent_config
-
-                return agent_name, version_map, current_config
+                current_agent_config: Optional[AgentConfig] = None
+                
+                for _, version_data in versions.items():
+                    agent_config = AgentConfig.model_validate(version_data)
+                    version = agent_config.version
+                    version_map[version] = agent_config
+                    
+                    if version == current_version:
+                        current_agent_config = agent_config
+                
+                return agent_name, version_map, current_agent_config
             except Exception as e:
-                logger.error(
-                    f"| ❌ Failed to load agent {agent_name} from code JSON: {e}"
-                )
+                logger.error(f"| ❌ Failed to load agent {agent_name} from code JSON: {e}")
                 return None
 
+        # Launch loading of each agent concurrently with a concurrency limit
         tasks = [
-            register_agent_from_json(agent_name, agent_data)
-            for agent_name, agent_data in agents_data.items()
+            register_agent_class(agent_name, agent_data) for agent_name, agent_data in agents_data.items()
         ]
-        results = await gather_with_concurrency(
-            tasks, max_concurrency=10, return_exceptions=True
-        )
+        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
 
         for result in results:
             if isinstance(result, Exception) or result is None:
                 continue
-            agent_name, version_map, current_config = result
+            agent_name, version_map, current_agent_config = result
             if not version_map:
                 continue
-
+            # Store all versions in history (mapped by version string)
             self._agent_history_versions[agent_name] = version_map
-
-            if current_config is not None:
-                agent_configs[agent_name] = current_config
+            # Active config: the one corresponding to current_version
+            if current_agent_config is not None:
+                agent_configs[agent_name] = current_agent_config
             else:
-                logger.warning(
-                    f"| ⚠️ Agent {agent_name} current_version not found, using last available version"
-                )
+                # Fallback: if current_version is not found, use the last available version
+                logger.warning(f"| ⚠️ Agent {agent_name} current_version not found, using last available version")
                 agent_configs[agent_name] = list(version_map.values())[-1]
-
+            
+            # Register all versions to version manager
+            for agent_config in version_map.values():
+                await version_manager.register_version("agent", agent_name, agent_config.version)
+            
         logger.info(f"| 📂 Loaded {len(agent_configs)} agents from {self.save_path}")
         return agent_configs
 
-    async def _store(self, agent_config: AgentConfig) -> None:
-        """Add agent information to the embedding index."""
+    async def _store(self, agent_config: AgentConfig):
+        """Add agent information to the embedding index.
+        
+        Args:
+            agent_config: Agent configuration
+        """
         if self._faiss_service is None:
             return
-
+            
         try:
-            agent_text = (
-                f"Agent: {agent_config.name}\nDescription: {agent_config.description}"
-            )
+            # Create comprehensive text representation
+            agent_text = f"Agent: {agent_config.name}\nDescription: {agent_config.description}"
+            
+            # Add to FAISS index
             request = FaissAddRequest(
                 texts=[agent_text],
-                metadatas=[
-                    {
-                        "name": agent_config.name,
-                        "description": agent_config.description,
-                    }
-                ],
+                metadatas=[{
+                    "name": agent_config.name,
+                    "description": agent_config.description
+                }]
             )
+            
             await self._faiss_service.add_documents(request)
+            
         except Exception as e:
-            logger.warning(
-                f"| ⚠️ Failed to add agent {agent_config.name} to FAISS index: {e}"
-            )
+            logger.warning(f"| ⚠️ Failed to add agent {agent_config.name} to FAISS index: {e}")
 
     async def build(self, agent_config: AgentConfig) -> AgentConfig:
-        """Create an agent instance and store it."""
-
+        """Create an agent instance and store it.
+        
+        Args:
+            agent_config: Agent configuration
+            
+        Returns:
+            AgentConfig: Agent configuration with instance
+        """
         if agent_config.name in self._agent_configs:
             existing_config = self._agent_configs[agent_config.name]
             if existing_config.instance is not None:
                 return existing_config
-
+        
+        # Create new agent instance
         try:
+            # cls should already be loaded (either from registry or from code in _load_from_code)
             if agent_config.cls is None:
-                raise ValueError(
-                    f"Cannot create agent {agent_config.name}: no class provided. "
-                    "Class should be loaded during initialization."
-                )
-
-            init_config = dict(agent_config.config or {})
-            # Merge with global config if available
-            agent_config_key = inflection.underscore(agent_config.cls.__name__)
-            global_config = config.get(agent_config_key, {})
-            if global_config:
-                init_config.update(global_config)
-            if "workdir" not in init_config:
-                init_config["workdir"] = config.workdir
-
-            agent_instance = agent_config.cls(**init_config)
+                raise ValueError(f"Cannot create agent {agent_config.name}: no class provided. Class should be loaded during initialization.")
+            
+            # Instantiate agent instance
+            agent_instance = agent_config.cls(**agent_config.config) if agent_config.config else agent_config.cls()
             agent_config.instance = agent_instance
-
-            # Initialize the agent instance
-            if hasattr(agent_instance, 'initialize'):
-                try:
-                    await agent_instance.initialize()
-                except Exception as e:
-                    logger.warning(
-                        f"| ⚠️ Failed to initialize agent instance {agent_config.name}: {e}"
-                    )
-
-            # Lazy compute function_calling, text, and args_schema if not already set
-            if (
-                agent_config.function_calling is None
-                or agent_config.text is None
-                or agent_config.args_schema is None
-            ):
-                try:
-                    agent_config.function_calling = agent_instance.function_calling
-                    agent_config.text = agent_instance.text
-                    agent_config.args_schema = agent_instance.args_schema
-                except Exception as e:
-                    logger.debug(
-                        f"| ⚠️ Failed to get properties from agent instance {agent_config.name}: {e}"
-                    )
-
+            
+            # Store agent metadata
             self._agent_configs[agent_config.name] = agent_config
-            logger.info(f"| 🎮 Agent {agent_config.name} created and stored")
+            
+            logger.info(f"| 🔧 Agent {agent_config.name} created and stored")
+            
             return agent_config
         except Exception as e:
             logger.error(f"| ❌ Failed to create agent {agent_config.name}: {e}")
@@ -511,12 +413,12 @@ class AgentContextManager(BaseModel):
 
     async def register(
         self,
-        agent: Union[Agent, Type[Agent]],
+        agent_cls: Type[Agent],
         agent_config_dict: Optional[Dict[str, Any]] = None,
         override: bool = False,
         version: Optional[str] = None,
     ) -> AgentConfig:
-        """Register an agent class or instance.
+        """Register an agent class.
 
         This will:
         - Create (or reuse) an agent instance
@@ -524,372 +426,414 @@ class AgentContextManager(BaseModel):
         - Store it as the current config and append to version history
         - Register the version in `version_manager` and FAISS index
         """
-
+        
         try:
-            if isinstance(agent, Agent):
-                agent_instance = agent
-                agent_cls = type(agent_instance)
-                agent_name = agent_instance.name
-                agent_description = agent_instance.description
-                function_calling = agent_instance.function_calling
-                text = agent_instance.text
-                args_schema = agent_instance.args_schema
-                metadata = getattr(agent_instance, "metadata", {}) or {}
-                agent_config_dict = {}
-                agent_version = version or getattr(agent_instance, "version", "1.0.0")
+            if agent_config_dict is None:
+                # Fallback to global config by class name
+                agent_config_key = inflection.underscore(agent_cls.__name__)
+                agent_config_dict = getattr(config, agent_config_key, {})
+            
+            # Instantiate agent immediately (register is a runtime operation)
+            try:
+                agent_instance = agent_cls(**agent_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create agent instance for {agent_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate agent {agent_cls.__name__} with provided config: {e}")
+            
+            agent_name = agent_instance.name
+            agent_description = agent_instance.description
+            agent_metadata = agent_instance.metadata
+            
+            # Get or generate version from version_manager
+            if version is None:
+                agent_version = await version_manager.get_version("agent", agent_name)
             else:
-                agent_cls = agent
-                if agent_config_dict is None:
-                    agent_config_key = inflection.underscore(agent_cls.__name__)
-                    agent_config_dict = config.get(f"{agent_config_key}_agent", {})
-
-                init_config = dict(agent_config_dict)
-                if "workdir" not in init_config:
-                    init_config["workdir"] = config.workdir
-
-                try:
-                    agent_instance = agent_cls(**init_config)
-                except Exception as e:
-                    logger.error(
-                        f"| ❌ Failed to create agent instance for {agent_cls.__name__}: {e}"
-                    )
-                    raise ValueError(
-                        f"Failed to instantiate agent {agent_cls.__name__} with provided config: {e}"
-                    )
-
-                agent_name = agent_instance.name
-                agent_description = agent_instance.description
-                function_calling = agent_instance.function_calling
-                text = agent_instance.text
-                args_schema = agent_instance.args_schema
-                metadata = getattr(agent_instance, "metadata", {}) or {}
-
-                if version is None:
-                    agent_version = await version_manager.get_version("agent", agent_name)
-                else:
-                    agent_version = version
-
-            if not agent_name:
-                raise ValueError("Agent.name cannot be empty.")
-
-            if agent_name in self._agent_configs and not override:
-                raise ValueError(
-                    f"Agent '{agent_name}' already registered. Use override=True to replace it."
-                )
-
-            agent_code = None
-            if dynamic_manager.is_dynamic_class(agent_cls):
-                agent_code = dynamic_manager.get_class_source_code(agent_cls)
-                if not agent_code:
-                    logger.warning(
-                        f"| ⚠️ Agent {agent_name} is dynamic but source code cannot be extracted"
-                    )
-
+                agent_version = version
+                
+            # Get agent code
+            agent_code = dynamic_manager.get_source_code(agent_cls)
+            if not agent_code:
+                logger.warning(f"| ⚠️ Agent {agent_name} is dynamic but source code cannot be extracted")
+            
+            # Get agent parameters
+            agent_parameters = dynamic_manager.get_parameters(agent_cls)
+            agent_function_calling = dynamic_manager.build_function_calling(agent_name, agent_description, agent_parameters)
+            agent_text = dynamic_manager.build_text_representation(agent_name, agent_description, agent_parameters)
+            agent_args_schema = dynamic_manager.build_args_schema(agent_name, agent_parameters)
+            
+            # --- Build AgentConfig ---
             agent_config = AgentConfig(
                 name=agent_name,
                 description=agent_description,
+                metadata=agent_metadata,
                 version=agent_version,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
-                metadata=metadata,
-                function_calling=function_calling,
-                text=text,
-                args_schema=args_schema,
+                function_calling=agent_function_calling,
+                text=agent_text,
+                args_schema=agent_args_schema,
                 code=agent_code,
             )
-
+            
+            # --- Persist current config and history ---
             self._agent_configs[agent_name] = agent_config
-
+            
+            # Store in dict-based history (for quick lookup by version)
             if agent_name not in self._agent_history_versions:
                 self._agent_history_versions[agent_name] = {}
             self._agent_history_versions[agent_name][agent_config.version] = agent_config
-
-            await version_manager.register_version(
-                "agent", agent_name, agent_config.version
-            )
-
+            
+            # Register version in version manager
+            await version_manager.register_version("agent", agent_name, agent_config.version)
+            
+            # Add to FAISS index
             await self._store(agent_config)
             
-            # Save json file
+            # Persist to JSON
             await self.save_to_json()
             # Save contract to file
             await self.save_contract()
-
+            
             logger.info(f"| 📝 Registered agent config: {agent_name}: {agent_config.version}")
             return agent_config
-
+        
         except Exception as e:
             logger.error(f"| ❌ Failed to register agent: {e}")
             raise
 
-    async def get(self, name: str) -> Optional[Agent]:
-        """Get an agent instance by name."""
-        agent_config = self._agent_configs.get(name)
+    async def get(self, agent_name: str) -> Optional[Agent]:
+        """Get agent configuration by name
+        
+        Args:
+            agent_name: Agent name
+            
+        Returns:
+            Agent: Agent instance or None if not found
+        """
+        agent_config = self._agent_configs.get(agent_name)
         if agent_config is None:
             return None
         return agent_config.instance if agent_config.instance is not None else None
-
-    async def get_info(self, name: str) -> Optional[AgentConfig]:
-        """Get an agent configuration by name."""
-        return self._agent_configs.get(name)
-
+    
+    async def get_info(self, agent_name: str) -> Optional[AgentConfig]:
+        """Get agent info by name
+        
+        Args:
+            agent_name: Agent name
+            
+        Returns:
+            AgentConfig: Agent info or None if not found
+        """
+        return self._agent_configs.get(agent_name)
+    
     async def list(self) -> List[str]:
-        """Get list of registered agents."""
-        return list(self._agent_configs.keys())
+        """Get list of registered agents
+        
+        Returns:
+            List[str]: List of agent names
+        """
+        return [name for name in self._agent_configs.keys()]
 
     async def update(
         self,
-        agent_name: str,
-        agent: Union[Agent, Type[Agent]],
+        agent_cls: Type[Agent],
         agent_config_dict: Optional[Dict[str, Any]] = None,
         new_version: Optional[str] = None,
         description: Optional[str] = None,
     ) -> AgentConfig:
-        """Update an existing agent with new configuration and create a new version."""
-
-        original_config = self._agent_configs.get(agent_name)
-        if original_config is None:
-            raise ValueError(
-                f"Agent {agent_name} not found. Use register() to register a new agent."
-            )
-
-        if isinstance(agent, Agent):
-            agent_instance = agent
-            agent_cls = type(agent_instance)
-            new_description = agent_instance.description
-        elif isinstance(agent, type) and issubclass(agent, Agent):
-            agent_cls = agent
-            init_config = agent_config_dict or {}
-            if "workdir" not in init_config:
-                init_config["workdir"] = config.workdir
+        """Update an existing agent with new configuration and create a new version
+        
+        Args:
+            agent_cls: New agent class with updated implementation
+            agent_config_dict: Configuration dict for agent initialization
+                   If None, will try to get from global config
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            AgentConfig: Updated agent configuration
+        """
+        try:
+            if agent_config_dict is None:
+                # Fallback to global config by class name
+                agent_config_key = inflection.underscore(agent_cls.__name__)
+                agent_config_dict = getattr(config, agent_config_key, {})
+            
+            # Instantiate agent immediately (update is a runtime operation)
             try:
-                temp_instance = agent_cls(**init_config)
-                new_description = temp_instance.description
-                agent_instance = None
-            except Exception:
-                new_description = getattr(agent_cls, "description", original_config.description)
-                agent_instance = None
-        else:
-            raise TypeError(f"Expected Agent instance or subclass, got {type(agent)!r}")
-
-        if new_version is None:
-            new_version = await version_manager.generate_next_version(
-                "agent", agent_name, "patch"
-            )
-
-        if agent_instance is not None:
-            metadata = getattr(agent_instance, "metadata", {}) or {}
-        else:
-            metadata = original_config.metadata or {}
-
-        if agent_instance is not None:
+                agent_instance = agent_cls(**agent_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create agent instance for {agent_cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate agent {agent_cls.__name__} with provided config: {e}")
+            
+            agent_name = agent_instance.name
+            
+            # Check if agent exists
+            original_config = self._agent_configs.get(agent_name)
+            if original_config is None:
+                raise ValueError(f"Agent {agent_name} not found. Use register() to register a new agent.")
+            
+            agent_description = agent_instance.description
+            agent_metadata = agent_instance.metadata
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                # Get current version from version_manager and generate next patch version
+                new_version = await version_manager.generate_next_version("agent", agent_name, "patch")
+            
+            # Get agent code
+            agent_code = dynamic_manager.get_source_code(agent_cls)
+            if not agent_code:
+                logger.warning(f"| ⚠️ Agent {agent_name} is dynamic but source code cannot be extracted")
+            
+            # Get agent parameters and build properties using dynamic_manager methods
+            agent_parameters = dynamic_manager.get_parameters(agent_cls)
+            agent_function_calling = dynamic_manager.build_function_calling(agent_name, agent_description, agent_parameters)
+            agent_text = dynamic_manager.build_text_representation(agent_name, agent_description, agent_parameters)
+            agent_args_schema = dynamic_manager.build_args_schema(agent_name, agent_parameters)
+            
+            # --- Build AgentConfig ---
             updated_config = AgentConfig(
-                name=agent_name,
-                description=description or new_description,
-                version=new_version,
-                cls=agent_cls,
-                config={},
-                instance=agent_instance,
-                metadata=metadata,
-                function_calling=getattr(agent_instance, "function_calling", None),
-                text=getattr(agent_instance, "text", None),
-                args_schema=getattr(agent_instance, "args_schema", None),
-                code=original_config.code,
-            )
-        else:
-            updated_config = AgentConfig(
-                name=agent_name,
-                description=description or new_description,
+                name=agent_name,  # Keep same name
+                description=agent_description,
+                metadata=agent_metadata,
                 version=new_version,
                 cls=agent_cls,
                 config=agent_config_dict or {},
-                instance=None,
-                metadata=metadata,
-                function_calling=original_config.function_calling,
-                text=original_config.text,
-                args_schema=original_config.args_schema,
-                code=original_config.code,
+                instance=agent_instance,
+                function_calling=agent_function_calling,
+                text=agent_text,
+                args_schema=agent_args_schema,
+                code=agent_code,
             )
-
-        self._agent_configs[agent_name] = updated_config
-
-        if agent_name not in self._agent_history_versions:
-            self._agent_history_versions[agent_name] = {}
-        self._agent_history_versions[agent_name][updated_config.version] = updated_config
-
-        await version_manager.register_version(
-            "agent",
-            agent_name,
-            new_version,
-            description=description or f"Updated from {original_config.version}",
-        )
-
-        await self._store(updated_config)
+            
+            # Update the agent config (replaces current version)
+            self._agent_configs[agent_name] = updated_config
+            
+            # Store in version history
+            if agent_name not in self._agent_history_versions:
+                self._agent_history_versions[agent_name] = {}
+            self._agent_history_versions[agent_name][updated_config.version] = updated_config
+            
+            # Register new version record to version manager
+            await version_manager.register_version(
+                "agent", 
+                agent_name, 
+                new_version,
+                description=description or f"Updated from {original_config.version}"
+            )
+            
+            # Update embedding index
+            await self._store(updated_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 🔄 Updated agent {agent_name} from v{original_config.version} to v{new_version}")
+            return updated_config
         
-        # Save json file
-        await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
-
-        logger.info(
-            f"| 🔄 Updated agent {agent_name} from v{original_config.version} to v{new_version}"
-        )
-        return updated_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to update agent: {e}")
+            raise
 
     async def copy(
         self,
         agent_name: str,
         new_name: Optional[str] = None,
         new_version: Optional[str] = None,
-        **override_config: Any,
+        new_config: Optional[Dict[str, Any]] = None,
     ) -> AgentConfig:
-        """Copy an existing agent configuration."""
-
-        original_config = self._agent_configs.get(agent_name)
-        if original_config is None:
-            raise ValueError(f"Agent {agent_name} not found")
-
-        if new_name is None:
-            new_name = agent_name
-
-        if new_version is None:
-            if new_name == agent_name:
-                new_version = await version_manager.generate_next_version(
-                    "agent", new_name, "patch"
-                )
-            else:
-                new_version = await version_manager.get_or_generate_version(
-                    "agent", new_name
-                )
-
-        new_config_dict = original_config.model_dump()
-        new_config_dict["name"] = new_name
-        new_config_dict["version"] = new_version
-
-        if override_config:
-            if "type" in override_config:
-                new_config_dict["type"] = override_config.pop("type")
-            if "description" in override_config:
-                new_config_dict["description"] = override_config.pop("description")
-            if "args_schema" in override_config:
-                new_config_dict["args_schema"] = override_config.pop("args_schema")
-            if "metadata" in override_config:
-                if "metadata" in new_config_dict:
-                    new_config_dict["metadata"].update(override_config.pop("metadata"))
-                else:
-                    new_config_dict["metadata"] = override_config.pop("metadata")
-
-            if "config" in new_config_dict:
-                new_config_dict["config"].update(override_config)
-            else:
-                new_config_dict["config"] = override_config
-
-        new_config_dict["instance"] = None
-
-        new_config = AgentConfig(**new_config_dict)
-
-        self._agent_configs[new_name] = new_config
-
-        if new_name not in self._agent_history_versions:
-            self._agent_history_versions[new_name] = {}
-        self._agent_history_versions[new_name][new_version] = new_config
-
-        await version_manager.register_version(
-            "agent",
-            new_name,
-            new_version,
-            description=f"Copied from {agent_name}@{original_config.version}",
-        )
-
-        await self._store(new_config)
+        """Copy an existing agent configuration
         
-        # Save json file
-        await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
-
-        logger.info(
-            f"| 📋 Copied agent {agent_name}@{original_config.version} to {new_name}@{new_version}"
-        )
-        return new_config
+        Args:
+            agent_name: Name of the agent to copy
+            new_name: New name for the copied agent. If None, uses original name.
+            new_version: New version for the copied agent. If None, increments version.
+            new_config: New configuration dict for the copied agent. If None, uses original config.
+            
+        Returns:
+            AgentConfig: New agent configuration
+        """
+        try:
+            original_config = self._agent_configs.get(agent_name)
+            if original_config is None:
+                raise ValueError(f"Agent {agent_name} not found")
+            
+            if original_config.cls is None:
+                raise ValueError(f"Cannot copy agent {agent_name}: no class provided")
+            
+            # Determine new name
+            if new_name is None:
+                new_name = agent_name
+            
+            # Prepare config dict (merge original config with new config)
+            agent_config_dict = original_config.config.copy() if original_config.config else {}
+            if new_config:
+                # Merge new config into original config
+                agent_config_dict.update(new_config)
+            
+            # Instantiate agent instance (copy is a runtime operation)
+            try:
+                agent_instance = original_config.cls(**agent_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create agent instance for {original_config.cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate agent {original_config.cls.__name__} with provided config: {e}")
+            
+            # Apply name override if provided (after instantiation)
+            if new_name != agent_name:
+                agent_instance.name = new_name
+            
+            agent_description = agent_instance.description
+            agent_metadata = agent_instance.metadata
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                if new_name == agent_name:
+                    # If copying with same name, get next version from version_manager
+                    new_version = await version_manager.generate_next_version("agent", new_name, "patch")
+                else:
+                    # If copying with different name, get or generate version for new name
+                    new_version = await version_manager.get_version("agent", new_name)
+            
+            # Get agent code
+            agent_code = dynamic_manager.get_source_code(original_config.cls)
+            if not agent_code:
+                logger.warning(f"| ⚠️ Agent {new_name} is dynamic but source code cannot be extracted")
+            
+            # Get agent parameters and build properties using dynamic_manager methods
+            agent_parameters = dynamic_manager.get_parameters(original_config.cls)
+            agent_function_calling = dynamic_manager.build_function_calling(new_name, agent_description, agent_parameters)
+            agent_text = dynamic_manager.build_text_representation(new_name, agent_description, agent_parameters)
+            agent_args_schema = dynamic_manager.build_args_schema(new_name, agent_parameters)
+            
+            # --- Build AgentConfig ---
+            new_agent_config = AgentConfig(
+                name=new_name,
+                description=agent_description,
+                metadata=agent_metadata,
+                version=new_version,
+                cls=original_config.cls,
+                config=agent_config_dict,
+                instance=agent_instance,
+                function_calling=agent_function_calling,
+                text=agent_text,
+                args_schema=agent_args_schema,
+                code=agent_code,
+            )
+            
+            # Register new agent
+            self._agent_configs[new_name] = new_agent_config
+            
+            # Store in version history
+            if new_name not in self._agent_history_versions:
+                self._agent_history_versions[new_name] = {}
+            self._agent_history_versions[new_name][new_version] = new_agent_config
+            
+            # Register version record to version manager
+            await version_manager.register_version(
+                "agent", 
+                new_name, 
+                new_version,
+                description=f"Copied from {agent_name}@{original_config.version}"
+            )
+            
+            # Register to embedding index
+            await self._store(new_agent_config)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 📋 Copied agent {agent_name}@{original_config.version} to {new_name}@{new_version}")
+            return new_agent_config
+        
+        except Exception as e:
+            logger.error(f"| ❌ Failed to copy agent: {e}")
+            raise
 
     async def unregister(self, agent_name: str) -> bool:
-        """Unregister an agent."""
+        """Unregister an agent
+        
+        Args:
+            agent_name: Name of the agent to unregister
+            
+        Returns:
+            True if unregistered successfully, False otherwise
+        """
         if agent_name not in self._agent_configs:
             logger.warning(f"| ⚠️ Agent {agent_name} not found")
             return False
-
+        
         agent_config = self._agent_configs[agent_name]
+        
+        # Remove from configs
         del self._agent_configs[agent_name]
 
-        # Save json file
+        # Persist to JSON after unregister
         await self.save_to_json()
         # Save contract to file
         await self.save_contract()
-
+        
         logger.info(f"| 🗑️ Unregistered agent {agent_name}@{agent_config.version}")
         return True
 
     async def save_to_json(self, file_path: Optional[str] = None) -> str:
-        """Save all agent configurations with version history to JSON."""
-
+        """Save all agent configurations with version history to JSON.
+        
+        Only saves basic configuration fields (name, description, version, config, etc.).
+        Instance is not saved as it's runtime state and will be recreated via build() on load.
+        
+        Args:
+            file_path: File path to save to
+            
+        Returns:
+            Path to saved file
+        """
         file_path = file_path if file_path is not None else self.save_path
-
+        
         async with file_lock(file_path):
+            # Ensure parent directory exists
             parent_dir = os.path.dirname(file_path)
-            if parent_dir:
+            if parent_dir:  # Only create if there's a directory component
                 os.makedirs(parent_dir, exist_ok=True)
-
-            save_data: Dict[str, Any] = {
+            
+            # Prepare save data - save all versions for each agent
+            save_data = {
                 "metadata": {
                     "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "num_agents": len(self._agent_configs),
-                    "num_versions": sum(
-                        len(versions) for versions in self._agent_history_versions.values()
-                    ),
+                    "num_versions": sum(len(versions) for versions in self._agent_history_versions.values()),
                 },
-                "agents": {},
+                "agents": {}
             }
-
+            
             for agent_name, version_map in self._agent_history_versions.items():
                 try:
                     versions_data: Dict[str, Dict[str, Any]] = {}
-                    for version_str, agent_config in version_map.items():
-                        config_dict = agent_config.model_dump(
-                            mode="json", exclude={"cls", "instance", "args_schema"}
-                        )
-
-                        # Save class name for loading from code
-                        if agent_config.cls is not None:
-                            config_dict["class_name"] = agent_config.cls.__name__
-
-                        if agent_config.args_schema is not None:
-                            args_schema_info = serialize_args_schema(
-                                agent_config.args_schema
-                            )
-                            if args_schema_info:
-                                config_dict["args_schema"] = args_schema_info
-
+                    for _, agent_config in version_map.items():
+                        config_dict = agent_config.model_dump()
                         versions_data[agent_config.version] = config_dict
-
+                    
+                    # Get current_version from active config if it exists
+                    # If not in active configs, use the latest version from history
                     current_version = None
                     if agent_name in self._agent_configs:
                         current_config = self._agent_configs[agent_name]
                         if current_config is not None:
                             current_version = current_config.version
-
+                    
+                    # If not found in active configs, use latest version from history
                     if current_version is None and version_map:
+                        # Find latest version by comparing version strings
                         latest_version_str = None
                         for version_str in version_map.keys():
                             if latest_version_str is None:
                                 latest_version_str = version_str
-                            elif (
-                                version_manager.compare_versions(
-                                    version_str, latest_version_str
-                                )
-                                > 0
-                            ):
+                            elif version_manager.compare_versions(version_str, latest_version_str) > 0:
                                 latest_version_str = version_str
                         current_version = latest_version_str
 
@@ -912,189 +856,147 @@ class AgentContextManager(BaseModel):
     async def load_from_json(
         self, file_path: Optional[str] = None, auto_initialize: bool = True
     ) -> bool:
-        """Load agent configurations with version history from JSON."""
-
+        """Load agent configurations with version history from JSON.
+        
+        Loads basic configuration only (instance is not saved, must be created via build()).
+        Only the latest version will be instantiated by default if auto_initialize=True.
+        
+        Args:
+            file_path: File path to load from
+            auto_initialize: Whether to automatically create instance via build() after loading
+            
+        Returns:
+            True if loaded successfully, False otherwise
+        """
+        
         file_path = file_path if file_path is not None else self.save_path
-
+        
         async with file_lock(file_path):
             if not os.path.exists(file_path):
                 logger.warning(f"| ⚠️ Agent file not found: {file_path}")
                 return False
-
+            
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     load_data = json.load(f)
-
+                
                 agents_data = load_data.get("agents", {})
                 loaded_count = 0
-
+                
                 for agent_name, agent_data in agents_data.items():
                     try:
+                        # Expected format: multiple versions stored as a dict {version_str: config_dict}
                         versions_data = agent_data.get("versions")
                         if not isinstance(versions_data, dict):
-                            logger.warning(
-                                f"| ⚠️ Agent {agent_name} has invalid format for 'versions' (expected dict), skipping"
-                            )
+                            logger.warning(f"| ⚠️ Agent {agent_name} has invalid format for 'versions' (expected dict), skipping")
                             continue
-
+                        
                         current_version_str = agent_data.get("current_version")
-
-                        version_configs: List[AgentConfig] = []
-                        latest_config: Optional[AgentConfig] = None
-                        latest_version: Optional[str] = None
-
+                        
+                        # Load all versions
+                        version_configs = []
+                        latest_config = None
+                        latest_version = None
+                        
                         for version_str, config_dict in versions_data.items():
-                            cls = None
-                            config_dict_copy = config_dict.copy()
-
-                            if "code" in config_dict_copy and config_dict_copy["code"]:
-                                try:
-                                    class_name = config_dict_copy.get("config", {}).get(
-                                        "type"
-                                    )
-                                    if not class_name:
-                                        tree = ast.parse(config_dict_copy["code"])
-                                        for node in ast.walk(tree):
-                                            if isinstance(node, ast.ClassDef):
-                                                class_name = node.name
-                                                break
-
-                                    if class_name:
-                                        cls = dynamic_manager.load_class(
-                                            config_dict_copy["code"],
-                                            class_name,
-                                            Agent,
-                                            context="agent",
-                                        )
-                                        logger.debug(
-                                            f"| ✅ Loaded agent class {class_name} from code for {agent_name}"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"| ⚠️ Cannot determine class name from code for {agent_name}"
-                                        )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"| ⚠️ Failed to load class from code for {agent_name}: {e}"
-                                    )
-
-                            if "version" not in config_dict_copy:
-                                config_dict_copy["version"] = version_str
-
-                            args_schema = None
-                            if "args_schema" in config_dict_copy:
-                                args_schema_info = config_dict_copy.pop("args_schema")
-                                try:
-                                    args_schema = deserialize_args_schema(args_schema_info)
-                                except Exception as e:
-                                    logger.warning(
-                                        f"| ⚠️ Failed to restore args_schema for {agent_name}@{version_str}: {e}"
-                                    )
-
-                            config_dict_copy.pop("cls", None)
-
-                            agent_config = AgentConfig(**config_dict_copy)
-
-                            if cls is not None:
-                                agent_config.cls = cls
-                            if args_schema is not None:
-                                agent_config.args_schema = args_schema
-
-                            version_configs.append(agent_config)
-
+                            # Ensure version field is present
+                            if "version" not in config_dict:
+                                config_dict["version"] = version_str
+                            
+                            try:
+                                agent_config = AgentConfig.model_validate(config_dict)
+                                version_configs.append(agent_config)
+                            except Exception as e:
+                                logger.warning(f"| ⚠️ Failed to load agent config for {agent_name}@{version_str}: {e}")
+                                continue
+                            
+                            # Track latest version
                             if latest_config is None or (
-                                current_version_str
-                                and agent_config.version == current_version_str
+                                current_version_str and agent_config.version == current_version_str
                             ) or (
-                                not current_version_str
-                                and (
-                                    latest_version is None
-                                    or version_manager.compare_versions(
-                                        agent_config.version, latest_version
-                                    )
-                                    > 0
+                                not current_version_str and (
+                                    latest_version is None or 
+                                    version_manager.compare_versions(agent_config.version, latest_version) > 0
                                 )
                             ):
                                 latest_config = agent_config
                                 latest_version = agent_config.version
-
+                        
+                        # Store all versions in history (dict-based)
                         self._agent_history_versions[agent_name] = {
                             cfg.version: cfg for cfg in version_configs
                         }
-
+                        
+                        # Only set latest version as active
                         if latest_config:
                             self._agent_configs[agent_name] = latest_config
-
+                            
+                            # Register all versions to version manager (only version records)
                             for agent_config in version_configs:
-                                await version_manager.register_version(
-                                    "agent", agent_name, agent_config.version
-                                )
-
+                                await version_manager.register_version("agent", agent_name, agent_config.version)
+                            
+                            # Create instance if requested (instance is not saved in JSON, must be created via build)
                             if auto_initialize and latest_config.cls is not None:
                                 await self.build(latest_config)
-
+                            
                             loaded_count += 1
                     except Exception as e:
                         logger.error(f"| ❌ Failed to load agent {agent_name}: {e}")
                         continue
-
-                logger.info(
-                    f"| 📂 Loaded {loaded_count} agents with version history from {file_path}"
-                )
+                
+                logger.info(f"| 📂 Loaded {loaded_count} agents with version history from {file_path}")
                 return True
-
+                
             except Exception as e:
                 logger.error(f"| ❌ Failed to load agents from {file_path}: {e}")
                 return False
 
-    def _get_full_module_source(self, cls: Type[Agent]) -> str:
-        """Get the full source code of the module containing the class."""
-        try:
-            module = inspect.getmodule(cls)
-            if module is None:
-                return inspect.getsource(cls)
-
-            file_path = inspect.getfile(module)
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read()
-        except (OSError, TypeError, IOError, AttributeError) as e:
-            logger.debug(
-                f"| ⚠️ Failed to read module file for {cls.__name__}, falling back to inspect.getsource: {e}"
-            )
-            try:
-                return inspect.getsource(cls)
-            except Exception:
-                logger.warning(f"| ⚠️ Failed to get source code for {cls.__name__}")
-                return ""
-
     async def restore(
         self, agent_name: str, version: str, auto_initialize: bool = True
     ) -> Optional[AgentConfig]:
-        """Restore a specific version of an agent from history."""
-
+        """Restore a specific version of an agent from history
+        
+        Args:
+            agent_name: Name of the agent
+            version: Version string to restore
+            auto_initialize: Whether to automatically initialize the restored agent
+            
+        Returns:
+            AgentConfig of the restored version, or None if not found
+        """
+        # Look up version from dict-based history (O(1) lookup)
         version_config = None
         if agent_name in self._agent_history_versions:
             version_config = self._agent_history_versions[agent_name].get(version)
-
+        
         if version_config is None:
             logger.warning(f"| ⚠️ Version {version} not found for agent {agent_name}")
             return None
-
+        
+        # Create a copy to avoid modifying the history
         restored_config = AgentConfig(**version_config.model_dump())
+        
+        # Set as current active config
         self._agent_configs[agent_name] = restored_config
-
+        
+        # Update version manager current version
         version_history = await version_manager.get_version_history("agent", agent_name)
         if version_history:
+            # Check if version exists in version history, if not register it
+            if version not in version_history.versions:
+                await version_manager.register_version("agent", agent_name, version)
             version_history.current_version = version
-
+        else:
+            # If version history doesn't exist, register the version first
+            await version_manager.register_version("agent", agent_name, version)
+        
+        # Initialize if requested
         if auto_initialize and restored_config.cls is not None:
             await self.build(restored_config)
-
-        # Save json file
+        
+        # Persist to JSON (current_version changes)
         await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
-
+        
         logger.info(f"| 🔄 Restored agent {agent_name} to version {version}")
         return restored_config
     
@@ -1105,13 +1007,13 @@ class AgentContextManager(BaseModel):
             for index, agent_name in enumerate(agent_names):
                 agent_info = await self.get_info(agent_name)
                 text = agent_info.text
-                contract.append(f"{index + 1:04d}: {text}")
+                contract.append(f"{index + 1:04d}\n{text}\n")
         else:
             for index, agent_name in enumerate(self._agent_configs.keys()):
                 agent_info = await self.get_info(agent_name)
                 text = agent_info.text
-                contract.append(f"{index + 1:04d}: {text}")
-        contract_text = "\n".join(contract)
+                contract.append(f"{index + 1:04d}\n{text}\n")
+        contract_text = "---\n".join(contract)
         with open(self.contract_path, "w", encoding="utf-8") as f:
             f.write(contract_text)
         logger.info(f"| 📝 Saved {len(contract)} agents contract to {self.contract_path}")
@@ -1121,25 +1023,34 @@ class AgentContextManager(BaseModel):
         with open(self.contract_path, "r", encoding="utf-8") as f:
             contract_text = f.read()
         return contract_text
-
-    async def cleanup(self) -> None:
-        """Cleanup all active agents and resources."""
+    
+    async def cleanup(self):
+        """Cleanup all active agents."""
         try:
+            # Clear all agent configs and version history
             self._agent_configs.clear()
             self._agent_history_versions.clear()
-
+                
+            # Clean up Faiss service (async)
             if self._faiss_service is not None:
                 await self._faiss_service.cleanup()
-
             logger.info("| 🧹 Agent context manager cleaned up")
+            
         except Exception as e:
             logger.error(f"| ❌ Error during agent context manager cleanup: {e}")
-
-    async def __call__(self, name: str, input: Dict[str, Any], **kwargs: Any) -> Any:
-        """Call an agent by name."""
-
+            
+    async def __call__(self, name: str, input: Dict[str, Any]) -> Any:
+        """Call an agent by name
+        
+        Args:
+            name: Agent name
+            input: Input for the agent
+            
+        Returns:
+            Agent result
+        """
         agent = await self.get(name)
         if agent is None:
             raise ValueError(f"Agent {name} not found")
-        return await agent(**input, **kwargs)
+        return await agent(**input)
 

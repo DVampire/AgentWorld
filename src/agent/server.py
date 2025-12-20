@@ -65,15 +65,15 @@ class ACPServer(BaseModel):
         return await self.agent_context_manager.load_contract()
         
     async def register(self, 
-                       agent: Union[Agent, Type[Agent]],
-                       config: Optional[Dict[str, Any]] = None,
+                       agent_cls: Type[Agent],
+                       agent_config_dict: Optional[Dict[str, Any]] = None,
                        override: bool = False,
                        version: Optional[str] = None) -> AgentConfig:
-        """Register an agent class or instance asynchronously.
+        """Register an agent class asynchronously.
         
         Args:
-            agent: Agent class or instance to register
-            config: Configuration dict for agent initialization (required when agent is a class)
+            agent_cls: Agent class to register
+            agent_config_dict: Configuration dict for agent initialization
             override: Whether to override existing registration
             version: Optional version string
             
@@ -81,8 +81,8 @@ class ACPServer(BaseModel):
             AgentConfig: Agent configuration
         """
         agent_config = await self.agent_context_manager.register(
-            agent, 
-            agent_config_dict=config, 
+            agent_cls, 
+            agent_config_dict=agent_config_dict, 
             override=override,
             version=version
         )
@@ -127,16 +127,15 @@ class ACPServer(BaseModel):
         self._registered_configs.clear()
     
     async def update(self, 
-                     agent_name: str, agent: Union[Agent, Type[Agent]], 
-                     config: Optional[Dict[str, Any]] = None,
+                     agent_cls: Type[Agent],
+                     agent_config_dict: Optional[Dict[str, Any]] = None,
                      new_version: Optional[str] = None, 
                      description: Optional[str] = None) -> AgentConfig:
         """Update an existing agent with new configuration and create a new version
         
         Args:
-            agent_name: Name of the agent to update
-            agent: New agent class or instance with updated implementation
-            config: Configuration dict for agent initialization (required when agent is a class)
+            agent_cls: New agent class with updated implementation
+            agent_config_dict: Configuration dict for agent initialization
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
             
@@ -144,26 +143,29 @@ class ACPServer(BaseModel):
             AgentConfig: Updated agent configuration
         """
         agent_config = await self.agent_context_manager.update(
-            agent_name, agent, agent_config_dict=config, new_version=new_version, description=description
+            agent_cls, agent_config_dict=agent_config_dict, new_version=new_version, description=description
         )
         self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
-    async def copy(self, agent_name: str, new_name: Optional[str] = None,
-                  new_version: Optional[str] = None, **override_config) -> AgentConfig:
+    async def copy(self, 
+                  agent_name: str,
+                  new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, 
+                  new_config: Optional[Dict[str, Any]] = None) -> AgentConfig:
         """Copy an existing agent
         
         Args:
             agent_name: Name of the agent to copy
             new_name: New name for the copied agent. If None, uses original name.
             new_version: New version for the copied agent. If None, increments version.
-            **override_config: Configuration overrides
+            new_config: New configuration dict for the copied agent. If None, uses original config.
             
         Returns:
             AgentConfig: New agent configuration
         """
         agent_config = await self.agent_context_manager.copy(
-            agent_name, new_name, new_version, **override_config
+            agent_name, new_name, new_version, new_config
         )
         self._registered_configs[agent_config.name] = agent_config
         return agent_config
