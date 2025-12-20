@@ -177,7 +177,7 @@ class A2ETransformer:
             
             from src.message.types import HumanMessage
             response = await model_manager(
-                model="gpt-4.1",
+                model="openrouter/gemini-3-flash-preview",
                 messages=[HumanMessage(content=prompt)],
                 response_format=DynamicComposedArgs
             )
@@ -203,7 +203,7 @@ class A2ETransformer:
             )
             
             # Register the environment class
-            await ecp.register(ComposedEnvironment, override=True)
+            await ecp.register(ComposedEnvironment, env_config_dict=None, override=True)
             
             logger.info(f"| ✅ A2E: Environment {env_name} created with {len(selected_agent_infos)} agents")
             

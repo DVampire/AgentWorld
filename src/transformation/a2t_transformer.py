@@ -105,7 +105,7 @@ class A2TTransformer:
                 
                 WrappedToolClass = create_wrapped_tool_class(agent_info, agent_instance)
 
-                await tcp.register(WrappedToolClass, config={}, override=True)
+                await tcp.register(WrappedToolClass, tool_config_dict={}, override=True)
                 logger.info(f"| ✅ ACP to TCP transformation completed: {agent_info.name}")
                 
             logger.info(f"| ✅ ACP to TCP transformation completed: {len(selected_agent_infos)} tools")

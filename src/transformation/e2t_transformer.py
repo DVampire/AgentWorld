@@ -158,7 +158,7 @@ class E2TTransformer:
                 for action_name, action_config in actions.items():
                     
                     WrappedToolClass = create_wrapped_tool_class(action_config, env_config, env_name)
-                    await tcp.register(WrappedToolClass, config={}, override=True)
+                    await tcp.register(WrappedToolClass, tool_config_dict={}, override=True)
                     logger.info(f"| ✅ E2T: Tool {env_name}.{action_name} added to TCP")
                         
             return E2TResponse(

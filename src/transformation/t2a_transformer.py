@@ -137,7 +137,7 @@ class T2ATransformer:
             )
             
             # Step 4: Register the agent class
-            await acp.register(ComposedAgent, config={"workdir": config.workdir}, override=True)
+            await acp.register(ComposedAgent, agent_config_dict={"workdir": config.workdir}, override=True)
             
             logger.info(f"| ✅ T2A: Agent {agent_name} created with {len(selected_tool_infos)} tools")
             

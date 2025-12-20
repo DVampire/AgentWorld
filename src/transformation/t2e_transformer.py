@@ -190,7 +190,7 @@ class T2ETransformer:
             )
             
             # Step 5: Register the environment class
-            await ecp.register(ComposedEnvironment, override=True)
+            await ecp.register(ComposedEnvironment, env_config_dict=None, override=True)
             
             logger.info(f"| ✅ T2E: Environment {env_name} created with {len(selected_tool_infos)} tools")
             
