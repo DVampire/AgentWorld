@@ -29,11 +29,13 @@ class ToolContextManager(BaseModel):
     
     base_dir: str = Field(default=None, description="The base directory to use for the tools")
     save_path: str = Field(default=None, description="The path to save the tools")
+    contract_path: str = Field(default=None, description="The path to save the tool contract")
     
     def __init__(self, 
                  base_dir: Optional[str] = None,
                  save_path: Optional[str] = None,
-                 model_name: str = "openrouter/gpt-4.1",
+                 contract_path: Optional[str] = None,
+                 model_name: str = "openrouter/gemini-3-flash-preview",
                  embedding_model_name: str = "openrouter/text-embedding-3-large",
                  **kwargs):
         """Initialize the tool context manager.
@@ -50,12 +52,18 @@ class ToolContextManager(BaseModel):
             self.base_dir = assemble_project_path(base_dir)
         else:
             self.base_dir = assemble_project_path(os.path.join(config.workdir, "tool"))
+        logger.info(f"| 📁 Tool context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
         if save_path is not None:
             self.save_path = assemble_project_path(save_path)
         else:
             self.save_path = os.path.join(self.base_dir, "tool.json")
-        logger.info(f"| 📁 Tool context manager base directory: {self.base_dir} and save path: {self.save_path}")
+        logger.info(f"| 📁 Tool context manager save path: {self.save_path}.")
+        if contract_path is not None:
+            self.contract_path = assemble_project_path(contract_path)
+        else:
+            self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 Tool context manager contract path: {self.contract_path}.")
 
         self._tool_configs: Dict[str, ToolConfig] = {}  # Current active configs (latest version)
         # Tool version history, e.g., {"tool_name": {"1.0.0": ToolConfig, "1.0.1": ToolConfig}}
@@ -133,6 +141,8 @@ class ToolContextManager(BaseModel):
         
         # Save tool configs to json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract(tool_names=tool_names)
         
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -594,6 +604,8 @@ class ToolContextManager(BaseModel):
             
             # Persist to JSON
             await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
             
             logger.info(f"| 📝 Registered tool config: {tool_name}: {tool_config.version}")
             return tool_config
@@ -763,6 +775,8 @@ class ToolContextManager(BaseModel):
         
         # Persist to JSON
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 🔄 Updated tool {tool_name} from v{original_config.version} to v{new_version}")
         return updated_config
@@ -845,6 +859,8 @@ class ToolContextManager(BaseModel):
         
         # Persist to JSON
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 📋 Copied tool {tool_name}@{original_config.version} to {new_name}@{new_version}")
         return new_config
@@ -869,6 +885,8 @@ class ToolContextManager(BaseModel):
 
         # Persist to JSON after unregister
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 🗑️ Unregistered tool {tool_name}@{tool_config.version}")
         return True
@@ -1177,6 +1195,35 @@ class ToolContextManager(BaseModel):
         
         logger.info(f"| 🔄 Restored tool {tool_name} to version {version}")
         return restored_config
+    
+    async def save_contract(self, tools_names: Optional[List[str]] = None):
+        """Save the contract for a tool"""
+        contract = []
+        if tools_names is not None:
+            for index, tool_name in enumerate(tools_names):
+                tool_info = await self.get_info(tool_name)
+                text = tool_info.text
+                contract.append(f"{index + 1:04d}: {text}")
+        else:
+            for index, tool_name in enumerate(self._tool_configs.keys()):
+                tool_info = await self.get_info(tool_name)
+                text = tool_info.text
+                contract.append(f"{index + 1:04d}: {text}")
+        contract_text = "\n".join(contract)
+        with open(self.contract_path, "w", encoding="utf-8") as f:
+            f.write(contract_text)
+        logger.info(f"| 📝 Saved {len(contract)} tools contract to {self.contract_path}")
+        
+    async def load_contract(self) -> str:
+        """Load the contract for a tool"""
+        with open(self.contract_path, "r", encoding="utf-8") as f:
+            contract_text = f.read()
+        return contract_text
+
+    @property
+    async def contract(self) -> str:
+        """Get the contract for all tools"""
+        return await self.load_contract()
     
     async def cleanup(self):
         """Cleanup all active tools."""

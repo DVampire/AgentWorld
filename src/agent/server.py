@@ -20,6 +20,7 @@ class ACPServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the agents")
     save_path: str = Field(default=None, description="The path to save the agents")
+    contract_path: str = Field(default=None, description="The path to save the agent contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the ACP Server."""
@@ -37,13 +38,15 @@ class ACPServer(BaseModel):
         self.base_dir = assemble_project_path(os.path.join(config.workdir, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "agent.json")
-        logger.info(f"| 📁 ACP Server base directory: {self.base_dir} and save path: {self.save_path}")
+        self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 ACP Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
         
         # Initialize agent context manager
         self.agent_context_manager = AgentContextManager(
             base_dir=self.base_dir,
             save_path=self.save_path,
-            model_name="openrouter/gpt-4.1",
+            contract_path=self.contract_path,
+            model_name="openrouter/gemini-3-flash-preview",
             embedding_model_name="openrouter/text-embedding-3-large",
         )
         await self.agent_context_manager.initialize(agent_names=agent_names)
@@ -56,6 +59,11 @@ class ACPServer(BaseModel):
                 self._registered_configs[agent_name] = agent_config
         
         logger.info("| ✅ Agents initialization completed")
+        
+    @property
+    async def contract(self) -> str:
+        """Get the contract for all agents"""
+        return await self.agent_context_manager.contract
         
     async def register(self, 
                        agent: Union[Agent, Type[Agent]],

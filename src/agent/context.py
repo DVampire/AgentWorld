@@ -33,18 +33,16 @@ class AgentContextManager(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    base_dir: str = Field(
-        default=None, description="The base directory to use for the agents"
-    )
-    save_path: str = Field(
-        default=None, description="The path to save the agents configuration JSON"
-    )
+    base_dir: str = Field(default=None, description="The base directory to use for the agents")
+    save_path: str = Field(default=None, description="The path to save the agents configuration JSON")
+    contract_path: str = Field(default=None, description="The path to save the agent contract")
 
     def __init__(
         self,
         base_dir: Optional[str] = None,
         save_path: Optional[str] = None,
-        model_name: str = "openrouter/gpt-4.1",
+        contract_path: Optional[str] = None,
+        model_name: str = "openrouter/gemini-3-flash-preview",
         embedding_model_name: str = "openrouter/text-embedding-3-large",
         **kwargs: Any,
     ):
@@ -53,6 +51,7 @@ class AgentContextManager(BaseModel):
         Args:
             base_dir: Base directory for storing agent data
             save_path: Path to save agent configurations
+            contract_path: Path to save agent contract
             model_name: The model name used for embedding text (via FaissService)
             embedding_model_name: The embedding model name (kept for parity with tools)
         """
@@ -63,15 +62,17 @@ class AgentContextManager(BaseModel):
         else:
             self.base_dir = assemble_project_path(os.path.join(config.workdir, "agent"))
         os.makedirs(self.base_dir, exist_ok=True)
-
+        logger.info(f"| 📁 Agent context manager base directory: {self.base_dir}.")
         if save_path is not None:
             self.save_path = assemble_project_path(save_path)
         else:
             self.save_path = os.path.join(self.base_dir, "agent.json")
-
-        logger.info(
-            f"| 📁 Agent context manager base directory: {self.base_dir} and save path: {self.save_path}"
-        )
+        logger.info(f"| 📁 Agent context manager save path: {self.save_path}.")
+        if contract_path is not None:
+            self.contract_path = assemble_project_path(contract_path)
+        else:
+            self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 Agent context manager contract path: {self.contract_path}.")
 
         # Current active configs (latest version)
         self._agent_configs: Dict[str, AgentConfig] = {}
@@ -159,6 +160,8 @@ class AgentContextManager(BaseModel):
 
         # Save agent configs to json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract(agent_names=agent_names)
 
         # Register async cleanup callback
         async_atexit_register(self.cleanup)
@@ -607,7 +610,11 @@ class AgentContextManager(BaseModel):
             )
 
             await self._store(agent_config)
+            
+            # Save json file
             await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
 
             logger.info(f"| 📝 Registered agent config: {agent_name}: {agent_config.version}")
             return agent_config
@@ -719,7 +726,11 @@ class AgentContextManager(BaseModel):
         )
 
         await self._store(updated_config)
+        
+        # Save json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
 
         logger.info(
             f"| 🔄 Updated agent {agent_name} from v{original_config.version} to v{new_version}"
@@ -792,7 +803,11 @@ class AgentContextManager(BaseModel):
         )
 
         await self._store(new_config)
+        
+        # Save json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
 
         logger.info(
             f"| 📋 Copied agent {agent_name}@{original_config.version} to {new_name}@{new_version}"
@@ -808,7 +823,10 @@ class AgentContextManager(BaseModel):
         agent_config = self._agent_configs[agent_name]
         del self._agent_configs[agent_name]
 
+        # Save json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
 
         logger.info(f"| 🗑️ Unregistered agent {agent_name}@{agent_config.version}")
         return True
@@ -1072,10 +1090,42 @@ class AgentContextManager(BaseModel):
         if auto_initialize and restored_config.cls is not None:
             await self.build(restored_config)
 
+        # Save json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
 
         logger.info(f"| 🔄 Restored agent {agent_name} to version {version}")
         return restored_config
+    
+    async def save_contract(self, agent_names: Optional[List[str]] = None):
+        """Save the contract for an agent"""
+        contract = []
+        if agent_names is not None:
+            for index, agent_name in enumerate(agent_names):
+                agent_info = await self.get_info(agent_name)
+                text = agent_info.text
+                contract.append(f"{index + 1:04d}: {text}")
+        else:
+            for index, agent_name in enumerate(self._agent_configs.keys()):
+                agent_info = await self.get_info(agent_name)
+                text = agent_info.text
+                contract.append(f"{index + 1:04d}: {text}")
+        contract_text = "\n".join(contract)
+        with open(self.contract_path, "w", encoding="utf-8") as f:
+            f.write(contract_text)
+        logger.info(f"| 📝 Saved {len(contract)} agents contract to {self.contract_path}")
+        
+    async def load_contract(self) -> str:
+        """Load the contract for an agent"""
+        with open(self.contract_path, "r", encoding="utf-8") as f:
+            contract_text = f.read()
+        return contract_text
+    
+    @property
+    async def contract(self) -> str:
+        """Get the contract for all agents"""
+        return await self.load_contract()
 
     async def cleanup(self) -> None:
         """Cleanup all active agents and resources."""

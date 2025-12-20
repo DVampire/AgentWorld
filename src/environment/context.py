@@ -28,11 +28,12 @@ class EnvironmentContextManager(BaseModel):
     
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
     save_path: str = Field(default=None, description="The path to save the environments")
-    
+    contract_path: str = Field(default=None, description="The path to save the environment contract")
     def __init__(self, 
                  base_dir: Optional[str] = None,
                  save_path: Optional[str] = None, 
-                 model_name: str = "openrouter/gpt-4.1",
+                 contract_path: Optional[str] = None,
+                 model_name: str = "openrouter/gemini-3-flash-preview",
                  embedding_model_name: str = "openrouter/text-embedding-3-large",
                  **kwargs):
         """Initialize the environment context manager.
@@ -40,6 +41,7 @@ class EnvironmentContextManager(BaseModel):
         Args:
             base_dir: Base directory for storing environment data
             save_path: Path to save environment configurations
+            contract_path: Path to save environment contract
             model_name: The model to use for the environments
             embedding_model_name: The model to use for the environment embeddings
         """
@@ -51,13 +53,17 @@ class EnvironmentContextManager(BaseModel):
         else:
             self.base_dir = assemble_project_path(os.path.join(config.workdir, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
-        
+        logger.info(f"| 📁 Environment context manager base directory: {self.base_dir}.")    
         if save_path is not None:
             self.save_path = assemble_project_path(save_path)
         else:
             self.save_path = os.path.join(self.base_dir, "environment.json")
-        
-        logger.info(f"| 📁 Environment context manager base directory: {self.base_dir} and save path: {self.save_path}")
+        logger.info(f"| 📁 Environment context manager save path: {self.save_path}.")
+        if contract_path is not None:
+            self.contract_path = assemble_project_path(contract_path)
+        else:
+            self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 Environment context manager contract path: {self.contract_path}.")
 
         self._environment_configs: Dict[str, EnvironmentConfig] = {}  # Current active configs (latest version)
         # Environment version history, e.g., {"env_name": {"1.0.0": EnvironmentConfig, "1.0.1": EnvironmentConfig}}
@@ -137,6 +143,8 @@ class EnvironmentContextManager(BaseModel):
         
         # Save environment configs to json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract(env_names=env_names)
         
         # Register cleanup callback
         async_atexit_register(self.cleanup)
@@ -463,7 +471,7 @@ class EnvironmentContextManager(BaseModel):
             
             # Generate rules if not already generated
             if not env_config.rules:
-                env_config.rules = self._generate_rules(env_config)
+                env_config.rules = await instance.rules()
             
             # Store metadata
             self._environment_configs[env_config.name] = env_config
@@ -544,7 +552,7 @@ class EnvironmentContextManager(BaseModel):
             
             # Generate rules if not already generated
             if not env_config.rules:
-                env_config.rules = self._generate_rules(env_config)
+                env_config.rules = await instance.rules()
             
             # Store metadata
             self._environment_configs[env_config.name] = env_config
@@ -554,75 +562,6 @@ class EnvironmentContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Failed to create environment {env_config.name}: {e}")
             raise
-    
-    def _generate_rules(self, env_config: EnvironmentConfig) -> str:
-        """Generate environment rules from environment config.
-        
-        Args:
-            env_config: Environment configuration
-            
-        Returns:
-            str: Generated environment rules
-        """
-        metadata = env_config.metadata if env_config.metadata else {}
-        has_vision = metadata.get('has_vision', False)
-        additional_rules = metadata.get('additional_rules', None)
-        env_name = env_config.name
-        actions = env_config.actions
-        
-        # Start building the rules
-        rules_parts = [f"<environment_{inflection.underscore(env_name)}>"]
-        
-        # Add state section
-        rules_parts.append("<state>")
-        if additional_rules and 'state' in additional_rules:
-            rules_parts.append(additional_rules['state'])
-        else:
-            rules_parts.append(f"The environment state about {env_name}.")
-        rules_parts.append("</state>")
-        
-        # Add vision section
-        rules_parts.append("<vision>")
-        if additional_rules and 'vision' in additional_rules:
-            rules_parts.append(additional_rules['vision'])
-        else:
-            if has_vision:
-                rules_parts.append("The environment vision information.")
-            else:
-                rules_parts.append("No vision available.")
-        rules_parts.append("</vision>")
-        
-        # Add additional rules if provided (for backward compatibility)
-        if additional_rules and 'additional_rules' in additional_rules:
-            rules_parts.append("<additional_rules>")
-            rules_parts.append(additional_rules['additional_rules'])
-            rules_parts.append("</additional_rules>")
-        
-        # Add interaction section with actions
-        rules_parts.append("<interaction>")
-        
-        if additional_rules and 'interaction' in additional_rules:
-            # Use custom interaction rules
-            rules_parts.append(additional_rules['interaction'])
-        else:
-            # Use default interaction rules
-            rules_parts.append("Available actions:")
-            
-            # Sort actions by name for consistent output
-            sorted_actions = sorted(actions.items(), key=lambda x: x[0])
-            
-            for i, (action_name, action_config) in enumerate(sorted_actions, 1):
-                rules_parts.append(f"{i}. {action_name}: {action_config.description}")
-            
-            rules_parts.append("Input format: JSON string with action-specific parameters.")
-            rules_parts.append("Example: {\"name\": \"action_name\", \"args\": {\"action-specific parameters\"}}")
-        
-        rules_parts.append("</interaction>")
-        
-        # Close the environment tag
-        rules_parts.append(f"</environment_{inflection.underscore(env_name)}>")
-        
-        return "\n".join(rules_parts)
     
     async def register(self, env: Union[Environment, Type[Environment]], *, override: bool = False, **kwargs: Any) -> EnvironmentConfig:
         """Register an environment class or instance.
@@ -762,9 +701,17 @@ class EnvironmentContextManager(BaseModel):
                     code=env_code
                 )
             
-            # Generate rules if we have enough information
-            if env_config.instance or (env_config.actions and metadata):
-                env_config.rules = self._generate_rules(env_config)
+            # Generate rules if we have instance, or try to create temporary instance
+            if env_config.instance:
+                env_config.rules = await env_config.instance.rules()
+            elif env_config.cls and env_config.config is not None:
+                # Try to create temporary instance to generate rules
+                try:
+                    temp_instance = env_config.cls(**env_config.config)
+                    env_config.rules = await temp_instance.rules()
+                except Exception as e:
+                    logger.debug(f"| ⚠️ Failed to create temporary instance for rules generation: {e}")
+                    env_config.rules = ""  # Leave empty, will be generated when instance is created
             
             # Store environment config
             self._environment_configs[env_name] = env_config
@@ -980,7 +927,18 @@ class EnvironmentContextManager(BaseModel):
             )
         
         # Generate rules
-        updated_config.rules = self._generate_rules(updated_config)
+        if updated_config.instance:
+            updated_config.rules = updated_config.instance.rules
+        elif updated_config.cls and updated_config.config is not None:
+            # Try to create temporary instance to generate rules
+            try:
+                temp_instance = updated_config.cls(**updated_config.config)
+                updated_config.rules = temp_instance.rules
+            except Exception as e:
+                logger.debug(f"| ⚠️ Failed to create temporary instance for rules generation: {e}")
+                updated_config.rules = ""  # Leave empty, will be generated when instance is created
+        else:
+            updated_config.rules = ""  # Leave empty, will be generated when instance is created
         
         # Update the environment config (replaces current version)
         self._environment_configs[env_name] = updated_config
@@ -1119,6 +1077,8 @@ class EnvironmentContextManager(BaseModel):
 
         # Persist to JSON after unregister
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 🗑️ Unregistered environment {env_name}@{env_config.version}")
         return True
@@ -1495,9 +1455,40 @@ class EnvironmentContextManager(BaseModel):
         
         # Persist to JSON (current_version changes)
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 🔄 Restored environment {env_name} to version {version}")
         return restored_config
+    
+    async def save_contract(self, env_names: Optional[List[str]] = None):
+        """Save the contract for an environment"""
+        contract = []
+        if env_names is not None:
+            for index, env_name in enumerate(env_names):
+                env_info = await self.get_info(env_name)
+                text = env_info.rules
+                contract.append(f"{index + 1:04d}: {text}")
+        else:
+            for index, env_name in enumerate(self._environment_configs.keys()):
+                env_info = await self.get_info(env_name)
+                text = env_info.rules
+                contract.append(f"{index + 1:04d}: {text}")
+        contract_text = "\n".join(contract)
+        with open(self.contract_path, "w", encoding="utf-8") as f:
+            f.write(contract_text)
+        logger.info(f"| 📝 Saved {len(contract)} environments contract to {self.contract_path}")
+    
+    async def load_contract(self) -> str:
+        """Load the contract for an environment"""
+        with open(self.contract_path, "r", encoding="utf-8") as f:
+            contract_text = f.read()
+        return contract_text
+    
+    @property
+    async def contract(self) -> str:
+        """Get the contract for all environments"""
+        return await self.load_contract()
     
     async def cleanup(self):
         """Cleanup all active environments."""

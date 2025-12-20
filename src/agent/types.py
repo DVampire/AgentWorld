@@ -87,7 +87,6 @@ class AgentConfig(BaseModel):
         description="Source code for dynamically generated agent classes (used when cls cannot be imported from a module)",
     )
 
-    # Optional default representations, aligned with `ToolConfig`
     function_calling: Optional[Dict[str, Any]] = Field(
         default=None, description="Default function calling representation"
     )
@@ -565,20 +564,9 @@ class Agent(BaseModel):
         """Get the tool context."""
         tool_context = "<tool_context>"
 
-        # Only get tools specified in config, not all registered tools
-        tool_names = config.tool_names
-        tool_configs = await asyncio.gather(
-            *[tcp.get_info(tool_name) for tool_name in tool_names]
-        )
-        # Filter out None values and get text
-        tool_list = [
-            tool.text for tool in tool_configs if tool is not None and tool.text is not None
-        ]
-        tool_list_string = "\n".join(tool_list)
-
         tool_context += dedent(f"""
             <available_tools>
-            {tool_list_string}
+            {tcp.contract}
             </available_tools>
         """)
 

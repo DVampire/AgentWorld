@@ -19,6 +19,7 @@ class TCPServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the tools")
     save_path: str = Field(default=None, description="The path to save the tools")
+    contract_path: str = Field(default=None, description="The path to save the tool contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the TCP Server."""
@@ -36,18 +37,25 @@ class TCPServer(BaseModel):
         self.base_dir = assemble_project_path(os.path.join(config.workdir, "tool"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "tool.json")
-        logger.info(f"| 📁 TCP Server base directory: {self.base_dir} and save path: {self.save_path}")
+        self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 TCP Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
         
         # Initialize tool context manager
         self.tool_context_manager = ToolContextManager(
             base_dir=self.base_dir,
             save_path=self.save_path,
-            model_name="openrouter/gpt-4.1",
+            contract_path=self.contract_path,
+            model_name="openrouter/gemini-3-flash-preview",
             embedding_model_name="openrouter/text-embedding-3-large",
         )
         await self.tool_context_manager.initialize(tool_names=tool_names)
         
         logger.info("| ✅ Tools initialization completed")
+        
+    @property
+    async def contract(self) -> str:
+        """Get the contract for all tools"""
+        return await self.tool_context_manager.contract
     
     async def register(self, 
                        tool: Union[Tool, Type[Tool]],

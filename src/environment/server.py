@@ -19,6 +19,7 @@ class ECPServer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the environments")
     save_path: str = Field(default=None, description="The path to save the environments")
+    contract_path: str = Field(default=None, description="The path to save the environment contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the ECP Server."""
@@ -38,13 +39,15 @@ class ECPServer(BaseModel):
         self.base_dir = assemble_project_path(os.path.join(config.workdir, "environment"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "environment.json")
-        logger.info(f"| 📁 ECP Server base directory: {self.base_dir} and save path: {self.save_path}")
+        self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 ECP Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
         
         # Initialize environment context manager
         self.environment_context_manager = EnvironmentContextManager(
             base_dir=self.base_dir,
             save_path=self.save_path,
-            model_name="openrouter/gpt-4.1",
+            contract_path=self.contract_path,
+            model_name="openrouter/gemini-3-flash-preview",
             embedding_model_name="openrouter/text-embedding-3-large"
         )
         await self.environment_context_manager.initialize(env_names=env_names)
@@ -57,6 +60,11 @@ class ECPServer(BaseModel):
                 self._registered_configs[env_name] = env_config
         
         logger.info("| ✅ Environments initialization completed")
+        
+    @property
+    async def contract(self) -> str:
+        """Get the contract for all environments"""
+        return await self.environment_context_manager.contract
     
     def action(self, 
                name: str = None, 
