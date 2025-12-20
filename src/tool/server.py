@@ -52,10 +52,9 @@ class TCPServer(BaseModel):
         
         logger.info("| ✅ Tools initialization completed")
         
-    @property
-    async def contract(self) -> str:
+    async def get_contract(self) -> str:
         """Get the contract for all tools"""
-        return await self.tool_context_manager.contract
+        return await self.tool_context_manager.load_contract()
     
     async def register(self, 
                        tool: Union[Tool, Type[Tool]],

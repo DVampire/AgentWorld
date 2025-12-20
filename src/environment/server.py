@@ -61,10 +61,9 @@ class ECPServer(BaseModel):
         
         logger.info("| ✅ Environments initialization completed")
         
-    @property
-    async def contract(self) -> str:
+    async def get_contract(self) -> str:
         """Get the contract for all environments"""
-        return await self.environment_context_manager.contract
+        return await self.environment_context_manager.load_contract()
     
     def action(self, 
                name: str = None, 

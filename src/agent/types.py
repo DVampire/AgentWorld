@@ -528,7 +528,8 @@ class Agent(BaseModel):
         environment_context = "<environment_context>"
         # Only iterate over environments specified in config, not all registered environments
         for env_name in config.env_names:
-            rule_string = ecp.get_info(env_name).rules
+            env_info = await ecp.get_info(env_name)
+            rule_string = env_info.rules
             rule_string = dedent(f"""
                 <rules>
                 {rule_string}
@@ -566,7 +567,7 @@ class Agent(BaseModel):
 
         tool_context += dedent(f"""
             <available_tools>
-            {tcp.contract}
+            {await tcp.get_contract()}
             </available_tools>
         """)
 

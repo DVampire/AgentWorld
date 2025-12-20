@@ -158,11 +158,6 @@ class E2TTransformer:
                 for action_name, action_config in actions.items():
                     
                     WrappedToolClass = create_wrapped_tool_class(action_config, env_config, env_name)
-                    
-                    # Don't pass action_config and env_config in config - they contain non-serializable functions
-                    # WrappedTool.__init__ will get them from closure if not in config
-                    # The args_schema, function_calling, and text will be correctly retrieved from action_config
-                    # when the tool instance is created, and saved in ToolConfig
                     await tcp.register(WrappedToolClass, config={}, override=True)
                     logger.info(f"| ✅ E2T: Tool {env_name}.{action_name} added to TCP")
                         

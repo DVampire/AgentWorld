@@ -471,7 +471,7 @@ class EnvironmentContextManager(BaseModel):
             
             # Generate rules if not already generated
             if not env_config.rules:
-                env_config.rules = await instance.rules()
+                env_config.rules = instance.rules
             
             # Store metadata
             self._environment_configs[env_config.name] = env_config
@@ -552,7 +552,7 @@ class EnvironmentContextManager(BaseModel):
             
             # Generate rules if not already generated
             if not env_config.rules:
-                env_config.rules = await instance.rules()
+                env_config.rules = instance.rules
             
             # Store metadata
             self._environment_configs[env_config.name] = env_config
@@ -703,12 +703,12 @@ class EnvironmentContextManager(BaseModel):
             
             # Generate rules if we have instance, or try to create temporary instance
             if env_config.instance:
-                env_config.rules = await env_config.instance.rules()
+                env_config.rules = env_config.instance.rules
             elif env_config.cls and env_config.config is not None:
                 # Try to create temporary instance to generate rules
                 try:
                     temp_instance = env_config.cls(**env_config.config)
-                    env_config.rules = await temp_instance.rules()
+                    env_config.rules = temp_instance.rules
                 except Exception as e:
                     logger.debug(f"| ⚠️ Failed to create temporary instance for rules generation: {e}")
                     env_config.rules = ""  # Leave empty, will be generated when instance is created
@@ -1467,12 +1467,40 @@ class EnvironmentContextManager(BaseModel):
         if env_names is not None:
             for index, env_name in enumerate(env_names):
                 env_info = await self.get_info(env_name)
+                if env_info is None:
+                    logger.warning(f"| ⚠️ Environment {env_name} not found, skipping")
+                    continue
+                # Get rules from config, or generate from instance if empty
                 text = env_info.rules
+                if not text and env_info.instance:
+                    text = env_info.instance.rules
+                elif not text and env_info.cls and env_info.config is not None:
+                    # Try to create temporary instance to generate rules
+                    try:
+                        temp_instance = env_info.cls(**env_info.config)
+                        text = temp_instance.rules
+                    except Exception as e:
+                        logger.debug(f"| ⚠️ Failed to generate rules for {env_name}: {e}")
+                        text = ""
                 contract.append(f"{index + 1:04d}: {text}")
         else:
             for index, env_name in enumerate(self._environment_configs.keys()):
                 env_info = await self.get_info(env_name)
+                if env_info is None:
+                    logger.warning(f"| ⚠️ Environment {env_name} not found, skipping")
+                    continue
+                # Get rules from config, or generate from instance if empty
                 text = env_info.rules
+                if not text and env_info.instance:
+                    text = env_info.instance.rules
+                elif not text and env_info.cls and env_info.config is not None:
+                    # Try to create temporary instance to generate rules
+                    try:
+                        temp_instance = env_info.cls(**env_info.config)
+                        text = temp_instance.rules
+                    except Exception as e:
+                        logger.debug(f"| ⚠️ Failed to generate rules for {env_name}: {e}")
+                        text = ""
                 contract.append(f"{index + 1:04d}: {text}")
         contract_text = "\n".join(contract)
         with open(self.contract_path, "w", encoding="utf-8") as f:
@@ -1484,11 +1512,6 @@ class EnvironmentContextManager(BaseModel):
         with open(self.contract_path, "r", encoding="utf-8") as f:
             contract_text = f.read()
         return contract_text
-    
-    @property
-    async def contract(self) -> str:
-        """Get the contract for all environments"""
-        return await self.load_contract()
     
     async def cleanup(self):
         """Cleanup all active environments."""

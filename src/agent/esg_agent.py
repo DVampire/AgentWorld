@@ -112,8 +112,8 @@ class ESGAgent(Agent):
         
         # Only iterate over environments specified in config
         for env_name in config.env_names:
-            agent_info = await ecp.get_info(env_name)
-            rule_string = agent_info.rules
+            env_info = await ecp.get_info(env_name)
+            rule_string = env_info.rules
             rule_string = dedent(f"""
                 <rules>
                 {rule_string}

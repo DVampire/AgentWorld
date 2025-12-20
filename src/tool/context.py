@@ -1196,11 +1196,11 @@ class ToolContextManager(BaseModel):
         logger.info(f"| 🔄 Restored tool {tool_name} to version {version}")
         return restored_config
     
-    async def save_contract(self, tools_names: Optional[List[str]] = None):
+    async def save_contract(self, tool_names: Optional[List[str]] = None):
         """Save the contract for a tool"""
         contract = []
-        if tools_names is not None:
-            for index, tool_name in enumerate(tools_names):
+        if tool_names is not None:
+            for index, tool_name in enumerate(tool_names):
                 tool_info = await self.get_info(tool_name)
                 text = tool_info.text
                 contract.append(f"{index + 1:04d}: {text}")
@@ -1219,11 +1219,6 @@ class ToolContextManager(BaseModel):
         with open(self.contract_path, "r", encoding="utf-8") as f:
             contract_text = f.read()
         return contract_text
-
-    @property
-    async def contract(self) -> str:
-        """Get the contract for all tools"""
-        return await self.load_contract()
     
     async def cleanup(self):
         """Cleanup all active tools."""

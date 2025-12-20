@@ -252,7 +252,8 @@ class OperatorBrowserAgent(Agent):
         # Add environment rules to system modules
         environment_rules = ""
         for env_name in ecp.list():
-            environment_rules += f"{ecp.get_info(env_name).rules}\n"
+            env_info = await ecp.get_info(env_name)
+            environment_rules += f"{env_info.rules}\n"
         system_modules.update(dict(
             environment_rules=environment_rules,
         ))

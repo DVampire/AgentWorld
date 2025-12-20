@@ -225,8 +225,9 @@ class OnlineTradingAgent(Agent):
         
         record_observation = {}
         
-        for env_name in ecp.list():
-            rule_string = ecp.get_info(env_name).rules
+        for env_name in await ecp.list():
+            env_info = await ecp.get_info(env_name)
+            rule_string = env_info.rules
             rule_string = dedent(f"""
                 <rules>
                 {rule_string}

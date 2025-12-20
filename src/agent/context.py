@@ -1121,11 +1121,6 @@ class AgentContextManager(BaseModel):
         with open(self.contract_path, "r", encoding="utf-8") as f:
             contract_text = f.read()
         return contract_text
-    
-    @property
-    async def contract(self) -> str:
-        """Get the contract for all agents"""
-        return await self.load_contract()
 
     async def cleanup(self) -> None:
         """Cleanup all active agents and resources."""

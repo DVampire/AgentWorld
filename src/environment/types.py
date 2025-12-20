@@ -70,7 +70,7 @@ class Environment(BaseModel):
         raise NotImplementedError("Get state method not implemented")
     
     @property
-    async def rules(self) -> str:
+    def rules(self) -> str:
         """Generate environment rules from environment instance.
         
         Returns:

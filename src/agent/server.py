@@ -60,10 +60,9 @@ class ACPServer(BaseModel):
         
         logger.info("| ✅ Agents initialization completed")
         
-    @property
-    async def contract(self) -> str:
+    async def get_contract(self) -> str:
         """Get the contract for all agents"""
-        return await self.agent_context_manager.contract
+        return await self.agent_context_manager.load_contract()
         
     async def register(self, 
                        agent: Union[Agent, Type[Agent]],

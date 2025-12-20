@@ -120,7 +120,7 @@ class VersionManager(BaseModel):
     base_dir: str = Field(default=None, description="The base directory to use for the version histories")
     save_path: str = Field(default=None, description="The path to save version histories")
     
-    def __init__(self, **kwargs):
+    def __init__(self, base_dir: Optional[str] = None, save_path: Optional[str] = None, **kwargs):
         """Initialize version manager"""
         super().__init__(**kwargs)
         
@@ -132,13 +132,23 @@ class VersionManager(BaseModel):
             "prompt": {},
             "memory": {}
         }
+        
+        if base_dir is not None:
+            self.base_dir = assemble_project_path(base_dir)
+        else:
+            self.base_dir = assemble_project_path(os.path.join(config.workdir, "version"))
+        if save_path is not None:
+            self.save_path = assemble_project_path(save_path)
+        else:
+            self.save_path = os.path.join(self.base_dir, "version.json")
+        os.makedirs(self.base_dir, exist_ok=True)
+        
+        logger.info(f"| 📁 Version manager base directory: {self.base_dir} and save path: {self.save_path}")
 
     async def initialize(self):
         """Initialize version manager (for backward compatibility)"""
-        self.base_dir = assemble_project_path(os.path.join(config.workdir, "version"))
-        os.makedirs(self.base_dir, exist_ok=True)
-        self.save_path = os.path.join(self.base_dir, "version.json")
-        logger.info(f"| 📁 Version manager base directory: {self.base_dir} and save path: {self.save_path}")
+        logger.info(f"| 📁 Version manager initialized.")
+
     
     async def register_version(self, component_type: str, name: str, version: str,
                         description: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> ComponentVersionHistory:
