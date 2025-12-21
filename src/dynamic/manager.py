@@ -692,8 +692,10 @@ class DynamicModuleManager:
         
         return cls
     
-    def load_function(self, code: str, function_name: Optional[str] = None,
-                     module_name: Optional[str] = None) -> Any:
+    def load_function(self, 
+                      code: str, 
+                      function_name: Optional[str] = None,
+                      module_name: Optional[str] = None) -> Any:
         """Dynamically load a function from source code.
         
         Args:

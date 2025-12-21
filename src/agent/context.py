@@ -399,6 +399,11 @@ class AgentContextManager(BaseModel):
             
             # Instantiate agent instance
             agent_instance = agent_config.cls(**agent_config.config) if agent_config.config else agent_config.cls()
+            
+            # Initialize agent if it has an initialize method
+            if hasattr(agent_instance, "initialize"):
+                await agent_instance.initialize()
+            
             agent_config.instance = agent_instance
             
             # Store agent metadata

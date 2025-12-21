@@ -232,12 +232,12 @@ class ECPServer(BaseModel):
         """Call an environment action
         
         Args:
-            name: Name of the environment
-            action: Name of the action
-            input: Input for the action
+            name (str): Name of the environment
+            action (str): Name of the action
+            input (Dict[str, Any]): Input for the action
             
         Returns:
-            Action result
+            Any: Action result
         """
         return await self.environment_context_manager(name, action, input)
 

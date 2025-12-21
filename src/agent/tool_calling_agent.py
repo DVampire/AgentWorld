@@ -131,9 +131,9 @@ class ToolCallingAgent(Agent):
         all_tcp_tools = await tcp.list()  # Get all tools registered in TCP (including from E2T)
         # Combine config tools and all TCP tools, removing duplicates
         tool_names = list(set(config_tool_names + all_tcp_tools))
-        tools = await asyncio.gather(*[tcp.get(tool_name) for tool_name in tool_names])
+        tool_configs = await asyncio.gather(*[tcp.get_info(tool_name) for tool_name in tool_names])
         tcp_args_schema = {
-            tool_name: tool.args_schema for tool_name, tool in zip(tool_names, tools) if tool is not None
+            tool_config.name: tool_config.args_schema for tool_config in tool_configs if tool_config is not None
         }
         agent_args_schema = self.think_output_builder.schemas
         

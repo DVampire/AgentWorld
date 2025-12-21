@@ -6,6 +6,7 @@ Converts ACP agents to TCP tools.
 import asyncio
 from typing import Any, Dict
 from typing import Optional, List
+from pydantic import ConfigDict
 
 from src.logger import logger
 from src.tool.server import tcp
@@ -14,18 +15,21 @@ from src.agent.server import acp
 from src.transformation.types import A2TRequest, A2TResponse
 
 
-def create_wrapped_tool_class(agent_info, agent_instance):
+def create_wrapped_tool_class(agent_config, agent_instance):
     class WrappedTool(Tool):
-        name: str = agent_info.name
-        description: str = agent_info.description
-        enabled: bool = True
+        model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+        
+        name: str = agent_config.name
+        description: str = agent_config.description
+        metadata: Dict[str, Any] = agent_config.metadata
+        version: str = agent_config.version
         
         def __init__(self, **kwargs):
             super().__init__(**kwargs)
             # Get agent info and instance from config if available
             # This allows the tool to work when instantiated from the registered class
             config = kwargs.get('config', {}) or {}
-            self._agent_info = config.get('agent_info', agent_info)
+            self._agent_config = config.get('agent_config', agent_config)
             self._agent_instance = config.get('agent_instance', agent_instance)
         
         async def __call__(self, task: str, files: Optional[List[str]] = None, **kwargs) -> ToolResponse:
@@ -34,9 +38,6 @@ def create_wrapped_tool_class(agent_info, agent_instance):
             Args:
                 task (str): The task to complete
                 files (Optional[List[str]]): The files to attach to the task
-                
-            Returns:
-                ToolResponse: The response from the tool call
             """
             try:
                 # Extract task and files from input
@@ -81,38 +82,38 @@ class A2TTransformer:
         try:
             logger.info("| 🔧 ACP to TCP transformation")
             
-            selected_agent_infos = []
+            selected_agent_configs = []
             for agent_name in request.agent_names:
-                agent_info = await acp.get_info(agent_name)
+                agent_config = await acp.get_info(agent_name)
                 
-                if agent_info:
-                    selected_agent_infos.append(agent_info)
+                if agent_config:
+                    selected_agent_configs.append(agent_config)
                 else:
                     logger.warning(f"| ⚠️ Agent {agent_name} not found in ACP")
                     
-            if not selected_agent_infos:
+            if not selected_agent_configs:
                 return A2TResponse(
                     success=False,
                     message="No valid agents found for transformation"
                 )
                 
-            for agent_info in selected_agent_infos:
+            for agent_config in selected_agent_configs:
                 # Get agent instance
-                agent_instance = agent_info.instance
+                agent_instance = agent_config.instance
                 if agent_instance is None:
-                    logger.warning(f"| ⚠️ Agent {agent_info.name} has no instance")
+                    logger.warning(f"| ⚠️ Agent {agent_config.name} has no instance")
                     continue
                 
-                WrappedToolClass = create_wrapped_tool_class(agent_info, agent_instance)
+                WrappedToolClass = create_wrapped_tool_class(agent_config, agent_instance)
 
-                await tcp.register(WrappedToolClass, tool_config_dict={}, override=True)
-                logger.info(f"| ✅ ACP to TCP transformation completed: {agent_info.name}")
+                await tcp.register(WrappedToolClass, config={}, override=True)
+                logger.info(f"| ✅ ACP to TCP transformation completed: {agent_config.name}")
                 
-            logger.info(f"| ✅ ACP to TCP transformation completed: {len(selected_agent_infos)} tools")
+            logger.info(f"| ✅ ACP to TCP transformation completed: {len(selected_agent_configs)} tools")
             
             return A2TResponse(
                 success=True,
-                message=f"Successfully converted {len(selected_agent_infos)} agents to tools"
+                message=f"Successfully converted {len(selected_agent_configs)} agents to tools"
             )
             
         except Exception as e:

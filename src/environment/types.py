@@ -208,8 +208,8 @@ class ActionConfig(BaseModel):
         metadata = data.get("metadata")
         version = data.get("version")
         
-        function = None
         code = data.get("code")
+        function = None
         
         args_schema = dynamic_manager.deserialize_args_schema(data.get("args_schema"))
         function_calling = data.get("function_calling")
@@ -224,7 +224,8 @@ class ActionConfig(BaseModel):
             code=code,
             args_schema=args_schema,
             function_calling=function_calling,
-            text=text)
+            text=text
+        )
 
 class EnvironmentConfig(BaseModel):
     """Environment configuration"""
@@ -296,6 +297,16 @@ class EnvironmentConfig(BaseModel):
         
         actions = {name: ActionConfig.model_validate(action_config) for name, action_config in data.get("actions", {}).items()}
         
+        # If cls_ is loaded, restore function references for actions from the class
+        if cls_ is not None:
+            for action_name, action_config in actions.items():
+                # First try direct attribute access (most common case where action_name == method_name)
+                if hasattr(cls_, action_name):
+                    attr = getattr(cls_, action_name)
+                    if hasattr(attr, '_action_name') and getattr(attr, '_action_name') == action_name:
+                        action_config.function = attr
+                        continue
+        
         return cls(name=name,
             description=description,
             metadata=metadata,
@@ -305,7 +316,8 @@ class EnvironmentConfig(BaseModel):
             config=config,
             instance=instance,
             code=code,
-            actions=actions)
+            actions=actions
+            )
     
 class ScreenshotInfo(BaseModel):
     """Screenshot information"""

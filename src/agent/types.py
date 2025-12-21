@@ -26,15 +26,8 @@ from src.model import model_manager
 from src.prompt import prompt_manager
 from src.tool.server import tcp
 from src.utils import (
-    PYTHON_TYPE_FIELD,
-    annotation_to_types,
-    build_args_schema,
-    build_function_calling,
-    build_text_representation,
-    default_parameters_schema,
     dedent,
-    get_file_info,
-    parse_docstring_descriptions,
+    get_file_info
 )
 
 class InputArgs(BaseModel):
@@ -69,24 +62,18 @@ class ACPResponse(BaseModel):
 
 class AgentConfig(BaseModel):
     """Agent configuration for registration, similar to `ToolConfig`."""
-
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str
-    description: str
+    name: str = Field(description="The name of the agent")
+    description: str = Field(description="The description of the agent")
     version: str = Field(default="1.0.0", description="Version of the agent")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     cls: Optional[Any] = None
-    config: Optional[Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="The initialization configuration of the agent",
-    )
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict,description="The initialization configuration of the agent",)
     instance: Optional[Any] = None
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    code: Optional[str] = Field(
-        default=None,
-        description="Source code for dynamically generated agent classes (used when cls cannot be imported from a module)",
-    )
+    
+    code: Optional[str] = Field(default=None, description="Source code for dynamically generated agent classes (used when cls cannot be imported from a module)")
 
     function_calling: Optional[Dict[str, Any]] = Field(
         default=None, description="Default function calling representation"
@@ -269,106 +256,7 @@ class Agent(BaseModel):
     name: str = Field(description="The name of the agent.")
     description: str = Field(description="The description of the agent.")
     metadata: Dict[str, Any] = Field(description="The metadata of the agent.")
-
-    @staticmethod
-    def default_parameters_schema() -> Dict[str, Any]:
-        """Default empty-parameters schema, same as tools."""
-        return default_parameters_schema()
-
-    @property
-    def parameter_schema(self) -> Dict[str, Any]:
-        """JSONSchema-like schema built from the agent's `__call__` signature."""
-        schema = self._build_parameter_schema()
-        return dict(schema)
-
-    @property
-    def function_calling(self) -> Dict[str, Any]:
-        """OpenAI-compatible function-calling representation for the agent."""
-        schema = self.parameter_schema
-        return build_function_calling(self.name, self.description, schema)
-
-    @property
-    def args_schema(self) -> Type[BaseModel]:
-        """Return a BaseModel type for the agent's input parameters."""
-        schema = self.parameter_schema
-        return build_args_schema(self.name, schema)
-
-    @property
-    def text(self) -> str:
-        """Human-readable text representation of the agent and its arguments."""
-        schema = self.parameter_schema
-        return build_text_representation(
-            self.name,
-            self.description,
-            schema,
-            entity_type="Agent",
-        )
-
-    def _build_parameter_schema(self) -> Dict[str, Any]:
-        """Build parameter schema from `__call__` signature and docstring."""
-        import inspect
-
-        try:
-            signature = inspect.signature(self.__class__.__call__)
-        except (TypeError, ValueError):
-            return self.default_parameters_schema()
-
-        # Get type hints
-        try:
-            hints = get_type_hints(self.__class__.__call__)
-        except Exception:
-            hints = {}
-
-        # Get docstring for descriptions
-        docstring = inspect.getdoc(self.__class__.__call__) or ""
-        doc_descriptions = parse_docstring_descriptions(docstring)
-
-        properties: Dict[str, Any] = {}
-        required: List[str] = []
-
-        for name, param in signature.parameters.items():
-            if name == "self":
-                continue
-
-            # Skip VAR_KEYWORD (**kwargs) and VAR_POSITIONAL (*args) parameters
-            if param.kind in (
-                inspect.Parameter.VAR_POSITIONAL,
-                inspect.Parameter.VAR_KEYWORD,
-            ):
-                continue
-
-            # Get type annotation
-            annotation = hints.get(name, param.annotation)
-            json_type, python_type = annotation_to_types(annotation)
-
-            # Determine if required
-            is_required = param.default is inspect._empty
-
-            # Build schema
-            field_schema: Dict[str, Any] = {
-                "type": json_type,
-                "description": doc_descriptions.get(name, ""),
-            }
-            field_schema[PYTHON_TYPE_FIELD] = python_type
-
-            if not is_required:
-                field_schema["default"] = param.default
-
-            properties[name] = field_schema
-            if is_required:
-                required.append(name)
-
-        if not properties:
-            return self.default_parameters_schema()
-
-        result: Dict[str, Any] = {
-            "type": "object",
-            "properties": properties,
-            "additionalProperties": False,
-        }
-        if required:
-            result["required"] = required
-        return result
+    version: str = Field(default="1.0.0", description="Version of the agent")
 
     def __init__(
         self,
@@ -419,10 +307,10 @@ class Agent(BaseModel):
         self.think_output_builder = ThinkOutputBuilder()
 
         self.tool_names = config.tool_names
-        # Get all tools asynchronously
-        tools = await asyncio.gather(*[tcp.get(tool_name) for tool_name in self.tool_names])
+        # Get all tool configs asynchronously
+        tool_configs = await asyncio.gather(*[tcp.get_info(tool_name) for tool_name in self.tool_names])
         args_schema = {
-            tool_name: tool.args_schema for tool_name, tool in zip(self.tool_names, tools)
+            tool_name: tool_config.args_schema for tool_name, tool_config in zip(self.tool_names, tool_configs) if tool_config is not None
         }
         self.think_output_builder.register(args_schema)
         self.ThinkOutput = self.think_output_builder.build()

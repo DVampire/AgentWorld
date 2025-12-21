@@ -421,6 +421,11 @@ class EnvironmentContextManager(BaseModel):
                 raise ValueError(f"Cannot create environment {env_config.name}: no class provided. Class should be loaded during initialization.")
             
             env_instance = env_config.cls(**env_config.config) if env_config.config else env_config.cls()
+            
+            # Initialize environment if it has an initialize method
+            if hasattr(env_instance, "initialize"):
+                await env_instance.initialize()
+                
             env_config.instance = env_instance
             
             # Generate rules if not already generated

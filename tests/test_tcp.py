@@ -19,7 +19,7 @@ from src.memory import memory_manager
 from src.prompt import prompt_manager
 from src.model import model_manager
 from src.version import version_manager
-# from src.environment import ecp
+from src.environment import ecp
 from src.tool import tcp
 
 def parse_args():
@@ -189,10 +189,10 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
-    # # Initialize environments
-    # logger.info("| 🎮 Initializing environments...")
-    # await ecp.initialize(config.env_names)
-    # logger.info(f"| ✅ Environments initialized: {await ecp.list()}")
+    # Initialize environments
+    logger.info("| 🎮 Initializing environments...")
+    await ecp.initialize(config.env_names)
+    logger.info(f"| ✅ Environments initialized: {await ecp.list()}")
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
@@ -201,8 +201,8 @@ async def main():
     
     # await test_browser_tool()
     # await test_deep_researcher_tool()
-    # await test_bash_tool()
-    # logger.info("| 🚪 Test completed")
+    await test_bash_tool()
+    logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":
     asyncio.run(main())

@@ -109,7 +109,7 @@ class ToolContextManager(BaseModel):
             if tool_name in tool_configs:
                 registry_config = tool_configs[tool_name]
                 # Compare versions: only override if code version is strictly greater
-                if await version_manager.compare_versions(code_config.version, registry_config.version) > 0:
+                if version_manager.compare_versions(code_config.version, registry_config.version) > 0:
                     logger.info(f"| 🔄 Overriding tool {tool_name} from registry (v{registry_config.version}) with code version (v{code_config.version})")
                     tool_configs[tool_name] = code_config
                 else:
@@ -385,6 +385,11 @@ class ToolContextManager(BaseModel):
             
             # Instantiate tool instance
             tool_instance = tool_config.cls(**tool_config.config) if tool_config.config else tool_config.cls()
+            
+            # Initialize tool if it has an initialize method
+            if hasattr(tool_instance, "initialize"):
+                await tool_instance.initialize()
+            
             tool_config.instance = tool_instance
             
             # Store tool metadata
