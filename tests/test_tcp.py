@@ -43,7 +43,7 @@ async def test_browser_tool():
     """Test the browser tool directly."""
     
     # Test parameters
-    task = "Go to google.com and search for 'python programming' get the first result."
+    task = "Search the 'python programming' and get the first result."
     base_dir = "workdir/test_browser_tool"
     
     print("🧪 Testing browser tool...")

@@ -15,7 +15,9 @@ from src.logger import logger
 from src.registry import TOOL
 
 
-_BROWSER_TOOL_DESCRIPTION = """Use the browser to interact with the internet to complete the task."""
+_BROWSER_TOOL_DESCRIPTION = """Use the browser to interact with the internet to complete the task.
+- If you want to navigate to a search website, bing (https://www.bing.com/) is the best option.
+"""
 
 @TOOL.register_module(force=True)
 class BrowserTool(Tool):
@@ -27,7 +29,7 @@ class BrowserTool(Tool):
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     
     model_name: str = Field(
-        default="openrouter/gemini-3-flash-preview",
+        default="openrouter/gpt-4.1",
         description="The model to use for the browser."
     )
     
@@ -98,18 +100,16 @@ class BrowserTool(Tool):
             except Exception as e:
                 res = ToolResponse(success=False, message=f"Task completed but error extracting results: {str(e)}")
 
+            # Close the agent
+            agent.close()
+            
             return res
 
         except Exception as e:
+            # Close the agent
+            agent.close()
+            
             return ToolResponse(success=False, message=f"Error in browser tool: {str(e)}")
-        finally:
-            # Ensure proper cleanup
-            if agent:
-                try:
-                    # Close the agent
-                    await agent.close()
-                except Exception as e:
-                    raise e
                     
     
     async def __call__(self, task: str, **kwargs) -> ToolResponse:

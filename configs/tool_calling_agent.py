@@ -45,7 +45,7 @@ mdify_tool.update(
 )
 #-----------------BROWSER TOOL CONFIG-----------------
 browser_tool.update(
-    model_name=model_name,
+    model_name="openrouter/gpt-4.1",
     base_dir=f"{workdir}/tool/browser",
 )
 #-----------------DEEP RESEARCHER TOOL CONFIG-----------------
