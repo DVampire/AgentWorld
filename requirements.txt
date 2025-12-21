@@ -63,6 +63,7 @@ html2text
 faiss-cpu>=1.12.0
 scrapy>=2.13.3
 beautifulsoup4>=4.13.5
+browser-use>=0.11.2
 
 # GitHub integration
 PyGithub>=2.8.1

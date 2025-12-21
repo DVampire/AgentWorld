@@ -199,9 +199,9 @@ async def main():
     await version_manager.initialize()
     logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
-    # await test_browser_tool()
+    await test_browser_tool()
     # await test_deep_researcher_tool()
-    await test_bash_tool()
+    # await test_bash_tool()
     logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":

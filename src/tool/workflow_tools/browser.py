@@ -3,7 +3,8 @@
 import os
 from typing import Optional, Dict, Any
 from pydantic import Field, ConfigDict
-from browser_use import Agent, ChatOpenAI
+from browser_use import Agent
+from browser_use.llm import ChatOpenAI
 
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
@@ -48,27 +49,28 @@ class BrowserTool(Tool):
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| Browser tool base directory: {self.base_dir}")
-                
-    async def __call__(self, task: str, **kwargs) -> ToolResponse:
+    
+    async def _call_agent(self, task: str, **kwargs) -> ToolResponse:
         """Use the browser to interact with the internet to complete the task.
 
         Args:
+            browser (Browser): The browser to use.
             task (str): The task to complete.
         """
-        
         agent = None
         try:
             try:
+                
                 agent = Agent(
                     task=task,
                     llm=ChatOpenAI(
                         model=self.model_name.split("/")[-1],
-                        base_url=os.getenv("OPENROUTER_BASE_URL"),
+                        base_url=os.getenv("OPENROUTER_API_BASE"),
                         api_key=os.getenv("OPENROUTER_API_KEY"),
                     ),
                     page_extraction_llm=ChatOpenAI(
                         model=self.model_name.split("/")[-1],
-                        base_url=os.getenv("OPENROUTER_BASE_URL"),
+                        base_url=os.getenv("OPENROUTER_API_BASE"),
                         api_key=os.getenv("OPENROUTER_API_KEY"),
                     ),
                     file_system_path=self.base_dir if self.base_dir else None,
@@ -107,4 +109,14 @@ class BrowserTool(Tool):
                     # Close the agent
                     await agent.close()
                 except Exception as e:
-                    logger.warning(f"Error during browser cleanup: {e}")
+                    raise e
+                    
+    
+    async def __call__(self, task: str, **kwargs) -> ToolResponse:
+        """Use the browser to interact with the internet to complete the task.
+
+        Args:
+            task (str): The task to complete.
+        """
+        await self._call_agent(task = task, **kwargs)
+        
