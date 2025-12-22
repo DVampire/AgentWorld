@@ -37,7 +37,7 @@ class WebSearcherTool(Tool):
     fetch_content: bool = Field(default=True, description="Whether to fetch content from the search results")
     summarize_pages: bool = Field(default=True, description="Whether to summarize each page based on the query")
     merge_summaries: bool = Field(default=True, description="Whether to merge all summaries into a final report")
-    model_name: str = Field(default="o3", description="The model to use for summarization")
+    model_name: str = Field(default="openrouter/gemini-3-flash-preview", description="The model to use for summarization")
     search_tools: Dict[str, Any] = Field(default=None, description="The search tools to use")
     content_fetcher: WebFetcherTool = Field(default=None, description="The content fetcher to use")
 
@@ -48,7 +48,7 @@ class WebSearcherTool(Tool):
             self.model_name = model_name
         # Initialize search engines and content fetcher
         self.search_tools = {
-            "firecrawl_search": FirecrawlSearch(),
+            # "firecrawl_search": FirecrawlSearch(),
             "brave_search": BraveSearch(),
         }
         self.content_fetcher = WebFetcherTool()

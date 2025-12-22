@@ -12,6 +12,9 @@ from .workflow_tools import (BrowserTool,
                             DeepAnalyzerTool)
 from .esg_tools import (RetrieverTool,
                         PlotterTool)
+from .other_tools import (
+    ReformulatorTool
+)
 from .server import TCPServer, tcp
 
 
@@ -33,4 +36,5 @@ __all__ = [
     "DeepAnalyzerTool",
     "RetrieverTool",
     "PlotterTool",
+    "ReformulatorTool",
 ]

@@ -87,6 +87,15 @@ binance-sdk-spot
 binance-connector
 websocket-client
 
+# tushare
+tushare>=1.4.24
+
+# alpaca
+alpaca-py>=0.43.0
+
+# akshare
+akshare>=1.17.44
+
 # Hyperliquid dependencies
 hyperliquid-python-sdk
 

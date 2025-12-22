@@ -21,6 +21,8 @@ from .url_utils import fetch_url
 from .file_utils import get_file_info, file_lock
 from .env_utils import get_env
 from .screenshot_utils import ScreenshotService
+from .download_utils import (get_jsonparsed_data, 
+                             generate_intervals)
 
 
 __all__ = [
@@ -57,4 +59,6 @@ __all__ = [
     "dedent",
     "ScreenshotService",
     "file_lock",
+    "get_jsonparsed_data",
+    "generate_intervals",
 ]

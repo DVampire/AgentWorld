@@ -4,6 +4,7 @@ from .collate_fn import MultiAssetPriceTextCollateFn, SingleAssetPriceTextCollat
 from .scaler import StandardScaler
 from .scaler import WindowedScaler
 from .dataloader import DataLoader
+from .esg import ESGDataset
 
 __all__ = [
     'MultiAssetDataset',
@@ -13,4 +14,5 @@ __all__ = [
     'StandardScaler',
     'WindowedScaler',
     'DataLoader',
+    'ESGDataset',
 ]

@@ -15,8 +15,9 @@ workdir = f"workdir/{tag}"
 log_path = "agent.log"
 
 use_local_proxy = True
-version = "0.1.0"
+version = "1.0.0"
 model_name = "openrouter/gemini-3-flash-preview"
+concurrency = 1
 
 env_names = []
 memory_names = [
@@ -36,6 +37,7 @@ tool_names = [
     'browser',
     'deep_researcher',
     'deep_analyzer',
+    "reformulator",
 ]
 
 #-----------------RETRIEVER TOOL CONFIG-----------------
