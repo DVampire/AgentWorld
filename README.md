@@ -125,6 +125,8 @@ cd libs/
 git clone git@github.com:browser-use/browser-use.git
 cd browser-use
 pip install -e .
+pip install playwright
+playwright install
 ```
 
 3. **Set up environment variables:**
