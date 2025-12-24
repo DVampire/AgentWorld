@@ -1,6 +1,7 @@
 """Browser tool for interacting with the browser."""
 
 import os
+import uuid
 from typing import Optional, Dict, Any
 from pydantic import Field, ConfigDict
 from browser_use import Agent
@@ -10,7 +11,8 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from src.utils import assemble_project_path
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.workflow_tools.report import Report
 from src.logger import logger
 from src.registry import TOOL
 
@@ -34,7 +36,7 @@ class BrowserTool(Tool):
     )
     
     base_dir: str = Field(
-        default=None,
+        default="workdir/browser",
         description="The base directory to use for the browser."
     )
     
@@ -47,6 +49,8 @@ class BrowserTool(Tool):
         
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
+        else:
+            self.base_dir = assemble_project_path(self.base_dir)
             
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
@@ -118,5 +122,66 @@ class BrowserTool(Tool):
         Args:
             task (str): The task to complete.
         """
-        await self._call_agent(task = task, **kwargs)
+        try:
+            logger.info(f"🌐 Starting browser task: {task}")
+            
+            # Create file path for markdown report
+            md_filename = f"browser_{uuid.uuid4().hex[:8]}.md"
+            file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+            
+            # Initialize Report instance
+            report = Report(
+                title="Browser Task Report",
+                model_name=self.model_name
+            )
+            
+            # Add initial task information
+            task_content = f"## Browser Task\n\n{task}\n\n"
+            await report.add_item(task_content)
+            
+            # Execute browser agent
+            response = await self._call_agent(task=task, **kwargs)
+            
+            # Extract result message
+            if isinstance(response, ToolResponse):
+                result_message = response.message
+                success = response.success
+            else:
+                result_message = str(response)
+                success = True
+            
+            # Add result to report
+            result_content = f"## Browser Execution Result\n\n{result_message}\n\n"
+            await report.add_item(result_content)
+            
+            # Generate final report
+            if file_path:
+                final_report_content = await report.complete(file_path)
+                logger.info(f"✅ Browser report saved to: {file_path}")
+                
+                message = f"Browser task completed successfully!\n\nTask: {task}\n\nResult: {result_message}\n\nReport saved to: {file_path}"
+                
+                return ToolResponse(
+                    success=success,
+                    message=message,
+                    extra=ToolExtra(
+                        file_path=file_path,
+                        data={
+                            "task": task,
+                            "file_path": file_path,
+                            "result": result_message
+                        }
+                    )
+                )
+            else:
+                message = f"Browser task completed successfully!\n\nTask: {task}\n\nResult: {result_message}"
+                
+                return ToolResponse(
+                    success=success,
+                    message=message
+                )
+                
+        except Exception as e:
+            logger.error(f"❌ Error in browser tool: {e}")
+            return ToolResponse(success=False, message=f"Error in browser tool: {str(e)}")
         

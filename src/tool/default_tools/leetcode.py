@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, ClassVar
 from pydantic import Field
 
 from src.logger import logger
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
 
 _LEETCODE_DESCRIPTION = """Fetch LeetCode problem information by problem slug or ID.
@@ -45,7 +45,6 @@ class LeetCodeTool(Tool):
                 return ToolResponse(
                     success=False,
                     message="Either 'slug' or 'problem_id' must be provided",
-                    extra={"error": "missing_parameter"}
                 )
             
             # If only problem_id is provided, we need to get the slug first
@@ -54,8 +53,7 @@ class LeetCodeTool(Tool):
                 if not slug:
                     return ToolResponse(
                         success=False,
-                        message=f"Problem with ID {problem_id} not found",
-                        extra={"problem_id": problem_id, "error": "not_found"}
+                        message=f"Problem with ID {problem_id} not found"
                     )
             
             # Fetch problem details using GraphQL
@@ -64,8 +62,7 @@ class LeetCodeTool(Tool):
             if not problem_data:
                 return ToolResponse(
                     success=False,
-                    message=f"Failed to fetch problem details for slug: {slug}",
-                    extra={"slug": slug, "error": "fetch_failed"}
+                    message=f"Failed to fetch problem details for slug: {slug}"
                 )
             
             # Format the response
@@ -74,19 +71,21 @@ class LeetCodeTool(Tool):
             return ToolResponse(
                 success=True,
                 message=formatted_response,
-                extra={
-                    "slug": slug,
-                    "problem_id": problem_id,
-                    "data": problem_data
-                }
+                extra=ToolExtra(
+                    file_path=None,
+                    data={
+                        "slug": slug,
+                        "problem_id": problem_id,
+                        "problem_data": problem_data
+                    }
+                )
             )
             
         except Exception as e:
             logger.error(f"Error fetching LeetCode problem: {e}")
             return ToolResponse(
                 success=False,
-                message=f"Error fetching LeetCode problem: {str(e)}",
-                extra={"error": str(e), "error_type": type(e).__name__}
+                message=f"Error fetching LeetCode problem: {str(e)}"
             )
 
     async def _get_slug_by_id(self, problem_id: int) -> Optional[str]:

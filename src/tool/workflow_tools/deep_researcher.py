@@ -12,10 +12,10 @@ from src.utils import make_file_url
 from src.utils import assemble_project_path
 from src.utils import dedent
 from src.message.types import HumanMessage, SystemMessage
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.tool.default_tools.web_searcher import WebSearcherTool
 from src.registry import TOOL
-from src.tool.types import Report
+from src.tool.workflow_tools.report import Report
 
 
 _DEEP_RESEARCHER_DESCRIPTION = """Deep research tool that performs multi-round web search and content analysis.
@@ -135,106 +135,110 @@ class DeepResearcherTool(Tool):
             image (Optional[str]): Optional image absolute path to analyze along with the task
             filter_year (Optional[int]): Optional year filter for search results
         """
-        try:
-            logger.info(f"🔍 Starting deep research for task: {task}")
+        # try:
+        logger.info(f"🔍 Starting deep research for task: {task}")
+        
+        # Reset research history
+        self.research_history = []
+        
+        # Create file path
+        md_filename = f"research_{uuid.uuid4().hex[:8]}.md"
+        self.file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+        
+        # Reset report for new research task
+        self.report = Report(
+            title="Research Report",
+            model_name=self.model_name
+        )
+        
+        # Add initial task information as first item
+        task_content = f"## Research Task\n\n{task}\n\n"
+        if image:
+            task_content += f"## Image\n\n{image}\n\n"
+        
+        await self.report.add_item(content=task_content)
+        
+        final_evaluation = None
+        
+        # Execute multiple search rounds
+        for round_num in range(1, self.max_rounds + 1):
+            logger.info(f"📋 Starting round {round_num}/{self.max_rounds}")
             
-            # Reset research history
-            self.research_history = []
+            # Generate search query
+            query = await self._generate_search_query(task, round_num, image)
+            logger.info(f"| ✅ Generated query for round {round_num}: {query}")
             
-            # Create file path
-            md_filename = f"research_{uuid.uuid4().hex[:8]}.md"
-            self.file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+            # Execute parallel searches: web_searcher and LLM models
+            search_results = await self._parallel_search(task, query, filter_year)
             
-            # Reset report for new research task
-            self.report = Report(
-                title="Research Report",
-                model_name=self.model_name
+            if not search_results:
+                logger.warning(f"| ❌ All searches failed in round {round_num}")
+                # Add empty result to report
+                empty_content = f"## Round {round_num}\n\n### Search Query\n\n{query}\n\n### Search Results\n\nNo search results found.\n\n"
+                await self.report.add_item(content=empty_content)
+                continue
+            
+            # Merge all search results
+            merged_summary = self._merge_search_results(search_results)
+            logger.info(f"| ✅ Merged {len(search_results)} search results: {merged_summary[:1000]}...")
+            
+            # Record round information
+            round_info = {
+                "round_number": round_num,
+                "query": query,
+                "summary": merged_summary,
+            }
+            self.research_history.append(round_info)
+            
+            # Check if answer is found
+            evaluation = await self._evaluate_completeness(task, merged_summary)
+            
+            # Add round content to report
+            round_content = f"## Round {round_num}\n\n### Search Query\n\n{query}\n\n### Search Results\n\n{merged_summary}\n\n"
+            if evaluation:
+                round_content += f"### Evaluation\n\n"
+                round_content += f"- **Answer Found**: {'Yes' if evaluation.is_complete else 'No'}\n"
+                round_content += f"- **Reasoning**: {evaluation.reasoning}\n\n"
+            
+            await self.report.add_item(content=round_content)
+            
+            if evaluation.is_complete:
+                logger.info(f"✅ Answer found in round {round_num}: {evaluation.reasoning[:100]}...")
+                final_evaluation = evaluation
+                break
+            
+            logger.info(f"| ⏭️ Round {round_num} completed, continuing to next round")
+        
+        # Finalize report and generate summary
+        answer_found = final_evaluation.is_complete if final_evaluation else False
+        
+        if self.file_path:
+            # Generate final report using Report.complete()
+            # This will merge all items, renumber citations and references, and generate the final markdown
+            final_report_content = await self.report.complete(self.file_path)
+            
+            # Generate summary from the final report
+            summary = await self._generate_summary(
+                task, final_report_content, answer_found, final_evaluation
             )
             
-            # Add initial task information as first item
-            task_content = f"## Research Task\n\n{task}\n\n"
-            if image:
-                task_content += f"## Image\n\n{image}\n\n"
-            
-            await self.report.add_item(task_content)
-            
-            final_evaluation = None
-            
-            # Execute multiple search rounds
-            for round_num in range(1, self.max_rounds + 1):
-                logger.info(f"📋 Starting round {round_num}/{self.max_rounds}")
-                
-                # Generate search query
-                query = await self._generate_search_query(task, round_num, image)
-                logger.info(f"| ✅ Generated query for round {round_num}: {query}")
-                
-                # Execute parallel searches: web_searcher and LLM models
-                search_results = await self._parallel_search(task, query, filter_year)
-                
-                if not search_results:
-                    logger.warning(f"| ❌ All searches failed in round {round_num}")
-                    # Add empty result to report
-                    empty_content = f"## Round {round_num}\n\n### Search Query\n\n{query}\n\n### Search Results\n\nNo search results found.\n\n"
-                    await self.report.add_item(empty_content)
-                    continue
-                
-                # Merge all search results
-                merged_summary = self._merge_search_results(search_results)
-                logger.info(f"| ✅ Merged {len(search_results)} search results: {merged_summary[:1000]}...")
-                
-                # Record round information
-                round_info = {
-                    "round_number": round_num,
-                    "query": query,
-                    "summary": merged_summary,
+            # Build evaluation info for extra
+            evaluation_info = None
+            if final_evaluation:
+                evaluation_info = {
+                    "is_complete": final_evaluation.is_complete,
+                    "reasoning": final_evaluation.reasoning,
                 }
-                self.research_history.append(round_info)
-                
-                # Check if answer is found
-                evaluation = await self._evaluate_completeness(task, merged_summary)
-                
-                # Add round content to report
-                round_content = f"## Round {round_num}\n\n### Search Query\n\n{query}\n\n### Search Results\n\n{merged_summary}\n\n"
-                if evaluation:
-                    round_content += f"### Evaluation\n\n"
-                    round_content += f"- **Answer Found**: {'Yes' if evaluation.is_complete else 'No'}\n"
-                    round_content += f"- **Reasoning**: {evaluation.reasoning}\n\n"
-                
-                await self.report.add_item(round_content)
-                
-                if evaluation.is_complete:
-                    logger.info(f"✅ Answer found in round {round_num}: {evaluation.reasoning[:100]}...")
-                    final_evaluation = evaluation
-                    break
-                
-                logger.info(f"| ⏭️ Round {round_num} completed, continuing to next round")
             
-            # Finalize report and generate summary
-            answer_found = final_evaluation.is_complete if final_evaluation else False
+            message = f"Deep research summary: {summary}\n\nReport saved to: {self.file_path}"
             
-            if self.file_path:
-                # Generate final report using Report.complete()
-                # This will merge all items, renumber citations and references, and generate the final markdown
-                final_report_content = await self.report.complete(self.file_path)
-                
-                # Generate summary from the final report
-                summary = await self._generate_summary(
-                    task, final_report_content, answer_found, final_evaluation
-                )
-                
-                # Build evaluation info for extra
-                evaluation_info = None
-                if final_evaluation:
-                    evaluation_info = {
-                        "is_complete": final_evaluation.is_complete,
-                        "reasoning": final_evaluation.reasoning,
-                    }
-                
-                # Return with summary
-                return ToolResponse(
-                    success=answer_found,
-                    message=summary,
-                    extra={
+            # Return with summary
+            return ToolResponse(
+                success=answer_found,
+                message=message,
+                extra=ToolExtra(
+                    file_path=self.file_path,
+                    data={
                         "task": task,
                         "rounds": len(self.research_history),
                         "history": self.research_history,
@@ -243,29 +247,37 @@ class DeepResearcherTool(Tool):
                         "evaluation": evaluation_info
                     }
                 )
+            )
+        else:
+            # Fallback if MD file path is not available (shouldn't happen normally)
+            if answer_found and final_evaluation:
+                final_message = f"{self.research_history[-1]['summary']}\n\n## Evaluation\n\n{final_evaluation.reasoning}"
+            elif self.research_history:
+                final_message = f"Research incomplete after {self.max_rounds} rounds.\n\n{self.research_history[-1]['summary']}"
             else:
-                # Fallback if MD file path is not available (shouldn't happen normally)
-                if answer_found and final_evaluation:
-                    final_message = f"{self.research_history[-1]['summary']}\n\n## Evaluation\n\n{final_evaluation.reasoning}"
-                elif self.research_history:
-                    final_message = f"Research incomplete after {self.max_rounds} rounds.\n\n{self.research_history[-1]['summary']}"
-                else:
-                    final_message = "No search results found in any round."
-                
-                return ToolResponse(
-                    success=answer_found,
-                    message=final_message,
-                    extra={
+                final_message = "No search results found in any round."
+            
+            message = f"Deep research summary: {final_message}\n\nReport saved to: {self.file_path}"
+            
+            return ToolResponse(
+                success=answer_found,
+                message=message,
+                extra=ToolExtra(
+                    file_path=self.file_path,
+                    data={
                         "task": task,
                         "rounds": len(self.research_history),
                         "history": self.research_history,
+                        "file_path": self.file_path,
                         "answer_found": answer_found,
+                        "evaluation": evaluation_info
                     }
                 )
+            )
             
-        except Exception as e:
-            logger.error(f"❌ Error in deep research: {e}")
-            return ToolResponse(success=False, message=f"Error during deep research: {e}")
+        # except Exception as e:
+        #     logger.error(f"❌ Error in deep research: {e}")
+        #     return ToolResponse(success=False, message=f"Error during deep research: {e}")
 
     async def _generate_search_query(self, task: str, round_num: int, image: Optional[str] = None) -> str:
         """Generate search query using LLM based on task, image, and round number."""
@@ -488,8 +500,8 @@ class DeepResearcherTool(Tool):
         )
 
         # Extract summary text
-        if summary_response.extra and "parsed_model" in summary_response.extra:
-            research_summary = summary_response.extra["parsed_model"]
+        if summary_response.extra and hasattr(summary_response.extra, 'parsed_model') and summary_response.extra.parsed_model:
+            research_summary = summary_response.extra.parsed_model
             summary_text = research_summary.summary
             # Verify answer_found matches
             if research_summary.answer_found != answer_found:
@@ -530,8 +542,8 @@ class DeepResearcherTool(Tool):
                 response_format=CompletenessEvaluation
             )
             
-            if response and response.extra and "parsed_model" in response.extra:
-                evaluation = response.extra["parsed_model"]
+            if response and response.extra and hasattr(response.extra, 'parsed_model') and response.extra.parsed_model:
+                evaluation = response.extra.parsed_model
                 logger.info(f"| Evaluation: is_complete={evaluation.is_complete}, reasoning={evaluation.reasoning[:100]}...")
                 return evaluation
             

@@ -8,10 +8,11 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 import tempfile
 
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.utils import assemble_project_path
 from src.utils import file_lock
 from src.registry import TOOL
+from src.logger import logger
 
 class Step(BaseModel):
     """Step model for todo management."""
@@ -292,10 +293,19 @@ class TodoTool(Tool):
         await self._save_steps()
         await self._sync_to_markdown()
         
-        if after_step_id:
-            return ToolResponse(success=True, message=f"✅ Added step {step_id} after {after_step_id}: {task} (priority: {priority})")
-        else:
-            return ToolResponse(success=True, message=f"✅ Added step {step_id}: {task} (priority: {priority})")
+        message = f"✅ Added step {step_id} after {after_step_id}: {task} (priority: {priority})"
+        logger.info(f"| ✅ {message}")
+        return ToolResponse(success=True, message=message, extra=ToolExtra(
+            file_path=self.todo_file,
+            data={
+                "step_id": step_id,
+                "after_step_id": after_step_id,
+                "task": task,
+                "priority": priority,
+                "category": category,
+                "parameters": parameters
+            }
+        ))
     
     async def _complete_step(self, step_id: str, status: str, result: Optional[str] = None) -> ToolResponse:
         """Mark step as completed."""
@@ -327,7 +337,20 @@ class TodoTool(Tool):
         await self._save_steps()
         await self._sync_to_markdown()
         
-        return ToolResponse(success=True, message=f"✅ Completed step {step_id} with status: {status}")
+        return ToolResponse(
+            success=True, 
+            message=f"✅ Completed step {step_id} with status: {status}",
+            extra=ToolExtra(
+                file_path=self.todo_file,
+                data={
+                    "step_id": step_id,
+                    "status": status,
+                    "result": result,
+                    "updated_at": step.updated_at,
+                    "step_name": step.name
+                }
+            )
+        )
     
     async def _update_step(self, step_id: str, task: Optional[str] = None, parameters: Optional[Dict[str, Any]] = None) -> ToolResponse:
         """Update step information."""
@@ -356,7 +379,22 @@ class TodoTool(Tool):
         await self._save_steps()
         await self._sync_to_markdown()
         
-        return ToolResponse(success=True, message=f"✅ Updated step {step_id}")
+        return ToolResponse(
+            success=True, 
+            message=f"✅ Updated step {step_id}",
+            extra=ToolExtra(
+                file_path=self.todo_file,
+                data={
+                    "step_id": step_id,
+                    "updated_fields": {
+                        "task": task if task else None,
+                        "parameters": parameters if parameters is not None else None
+                    },
+                    "updated_at": step.updated_at,
+                    "step_name": step.name
+                }
+            )
+        )
     
     async def _list_steps(self) -> ToolResponse:
         """List all steps with their status."""
@@ -391,7 +429,19 @@ class TodoTool(Tool):
                 result += f", Updated: {step.updated_at}"
             result += "\n\n"
         
-        return ToolResponse(success=True, message=result) 
+        return ToolResponse(
+            success=True, 
+            message=result,
+            extra=ToolExtra(
+                file_path=self.todo_file,
+                data={
+                    "total_steps": len(self.steps),
+                    "steps": [step.model_dump() for step in self.steps],
+                    "pending_count": len([s for s in self.steps if s.status == "pending"]),
+                    "completed_count": len([s for s in self.steps if s.status in ["success", "failed"]])
+                }
+            )
+        ) 
     
     async def _clear_completed(self) -> ToolResponse:
         """Remove all completed steps from the todo list."""
@@ -407,7 +457,18 @@ class TodoTool(Tool):
         await self._save_steps()
         await self._sync_to_markdown()
         
-        return ToolResponse(success=True, message=f"✅ Removed {len(completed_steps)} completed step(s)")
+        return ToolResponse(
+            success=True, 
+            message=f"✅ Removed {len(completed_steps)} completed step(s)",
+            extra=ToolExtra(
+                file_path=self.todo_file,
+                data={
+                    "removed_count": len(completed_steps),
+                    "removed_steps": [step.model_dump() for step in completed_steps],
+                    "remaining_steps": len(self.steps)
+                }
+            )
+        )
     
     async def _show_todo_file(self) -> ToolResponse:
         """Show the complete todo.md file content."""
@@ -416,7 +477,18 @@ class TodoTool(Tool):
         
         with open(self.todo_file, 'r', encoding='utf-8') as f:
             content = f.read()
-        return ToolResponse(success=True, message=f"📄 Todo.md content:\n\n```markdown\n{content}\n```")
+        return ToolResponse(
+            success=True, 
+            message=f"📄 Todo.md content:\n\n```markdown\n{content}\n```",
+            extra=ToolExtra(
+                file_path=self.todo_file,
+                data={
+                    "content": content,
+                    "file_size": len(content),
+                    "total_steps": len(self.steps)
+                }
+            )
+        )
     
     async def _export_todo_file(self, export_path: str) -> ToolResponse:
         """Export todo.md file to a specified path."""
@@ -441,7 +513,19 @@ class TodoTool(Tool):
             with open(export_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
-            return ToolResponse(success=True, message=f"✅ Successfully exported todo.md to: {export_path}")
+            return ToolResponse(
+                success=True, 
+                message=f"✅ Successfully exported todo.md to: {export_path}",
+                extra=ToolExtra(
+                    file_path=[self.todo_file, export_path],
+                    data={
+                        "source_file": self.todo_file,
+                        "export_path": export_path,
+                        "file_size": len(content),
+                        "total_steps": len(self.steps)
+                    }
+                )
+            )
             
         except Exception as e:
             return ToolResponse(success=False, message=f"Error exporting todo.md: {str(e)}")

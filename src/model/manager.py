@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
-from src.model.types import ModelConfig, LLMResponse
+from src.model.types import ModelConfig, LLMResponse, LLMExtra
 from src.model.openai.chat import ChatOpenAI
 from src.model.openai.response import ResponseOpenAI
 from src.model.openai.transcribe import TranscribeOpenAI
@@ -794,8 +794,7 @@ class ModelManager:
             logger.error(f"Model invocation failed: {e}")
             return LLMResponse(
                 success=False,
-                message=str(e),
-                extra={"error": str(e), "model": current_model}
+                message=str(e)
             )
     
     async def get_model_config(self, model: str) -> Optional[ModelConfig]:

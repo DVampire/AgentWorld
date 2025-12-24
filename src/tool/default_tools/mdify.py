@@ -5,7 +5,7 @@ import os
 from typing import Any, Optional, Dict
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.tool.default_tools.markdown.mdconvert import MarkitdownConverter
 from src.logger import logger
 from src.registry import TOOL
@@ -124,15 +124,27 @@ class MdifyTool(Tool):
             response_content += f"Output format: {output_format}\n"
             if saved_path:
                 response_content += f"Saved to: {saved_path}\n"
-            response_content += "\n--- Converted Content ---\n"
             response_content += result
             
-            return ToolResponse(success=True, message=response_content, extra={"saved_path": saved_path})
+            message = response_content
+            logger.info(f"| ✅ Converted file {file_path} to {output_format} and saved to {saved_path}")
+            return ToolResponse(success=True, message=message, extra=ToolExtra(
+                file_path=saved_path,
+                data={
+                    "file_name": file_name,
+                    "file_size": file_size,
+                    "file_ext": file_ext,
+                    "output_format": output_format,
+                    "saved_path": saved_path
+                }
+            ))
             
         except asyncio.TimeoutError:
-            return ToolResponse(success=False, message=f"Error: Conversion timed out after {self.timeout} seconds")
+            return ToolResponse(success=False, 
+                                message=f"Error: Conversion timed out after {self.timeout} seconds")
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error during conversion: {str(e)}")
+            return ToolResponse(success=False, 
+                                message=f"Error during conversion: {str(e)}")
 
     def _convert_file(self, file_path: str, output_format: str) -> Optional[str]:
         """Convert file to markdown (synchronous helper method)."""

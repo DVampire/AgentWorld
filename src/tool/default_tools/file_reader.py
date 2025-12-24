@@ -4,7 +4,7 @@ import os
 from typing import Optional, Dict, Any
 from pydantic import Field
 
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
 from src.logger import logger
 
@@ -109,13 +109,25 @@ class FileReaderTool(Tool):
                         return ToolResponse(
                             success=True,
                             message=f"File: {file_path}\nNote: start_line ({start_line}) exceeds file length ({total_lines} lines). No content to display.",
-                            extra={"path": file_path, "content": "", "total_lines": total_lines}
+                            extra=ToolExtra(
+                                file_path=file_path,
+                                data={
+                                    "content": "",
+                                    "total_lines": total_lines
+                                }
+                            )
                         )
                     # Empty range
                     return ToolResponse(
                         success=True,
                         message=f"File: {file_path}\nNote: Line range {start_line}-{end_line} is empty or invalid. File has {total_lines} lines.",
-                        extra={"path": file_path, "content": "", "total_lines": total_lines}
+                        extra=ToolExtra(
+                            file_path=file_path,
+                            data={
+                                "content": "",
+                                "total_lines": total_lines
+                            }
+                        )
                     )
                 
                 # Extract lines
@@ -136,13 +148,15 @@ class FileReaderTool(Tool):
                 return ToolResponse(
                     success=True,
                     message=f"File: {file_path}\nLines: {start_idx + 1}-{end_idx} (of {total_lines} total){adjusted_note}\n\n{numbered_content}",
-                    extra={
-                        "path": file_path,
-                        "content": content,
-                        "start_line": start_idx + 1,
-                        "end_line": end_idx,
-                        "total_lines": total_lines
-                    }
+                    extra=ToolExtra(
+                        file_path=file_path,
+                        data={
+                            "content": content,
+                            "start_line": start_idx + 1,
+                            "end_line": end_idx,
+                            "total_lines": total_lines
+                        }
+                    )
                 )
             else:
                 # Return full content
@@ -152,16 +166,20 @@ class FileReaderTool(Tool):
                 numbered_content = ""
                 for i, line in enumerate(lines, start=1):
                     numbered_content += f"{i:6}|{line}"
+                    
+                message = f"File: {file_path}\nTotal lines: {total_lines}\n\n{numbered_content}"
                 
                 logger.info(f"| 📖 Read file {file_path} ({total_lines} lines)")
                 return ToolResponse(
                     success=True,
-                    message=f"File: {file_path}\nTotal lines: {total_lines}\n\n{numbered_content}",
-                    extra={
-                        "path": file_path,
-                        "content": content,
-                        "total_lines": total_lines
-                    }
+                    message=message,
+                    extra=ToolExtra(
+                        file_path=file_path,
+                        data={
+                            "content": content,
+                            "total_lines": total_lines
+                        }
+                    )
                 )
                 
         except UnicodeDecodeError:

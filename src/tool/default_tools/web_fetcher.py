@@ -5,7 +5,7 @@ from typing import Dict, Any
 
 from src.utils import fetch_url
 from src.logger import logger
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
 
 _WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text content.
@@ -39,18 +39,38 @@ class WebFetcherTool(Tool):
                 return ToolResponse(
                     success=False, 
                     message=f"Failed to fetch content from {url}",
-                    extra={"url": url, "status": "failed"}
+                    extra=ToolExtra(
+                        data={
+                            "url": url,
+                            "status": "failed"
+                        }
+                    )
                 )
             formatted = f"Title: {res.title}\nContent: {res.markdown}"
             return ToolResponse(
                 success=True,
                 message=formatted,
-                extra={"url": url, "status": "success", "content_length": len(formatted)}
+                extra=ToolExtra(
+                    data={
+                        "url": url,
+                        "status": "success",
+                        "content_length": len(formatted),
+                        "title": res.title,
+                        "markdown_length": len(res.markdown) if res.markdown else 0
+                    }
+                )
             )
         except Exception as e:
             logger.error(f"Error fetching content: {e}")
             return ToolResponse(
                 success=False,
                 message=f"Failed to fetch content: {e}",
-                extra={"url": url, "status": "error", "error_type": type(e).__name__}
+                extra=ToolExtra(
+                    data={
+                        "url": url,
+                        "status": "error",
+                        "error_type": type(e).__name__,
+                        "error_message": str(e)
+                    }
+                )
             )

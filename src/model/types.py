@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Union, Literal
 from pydantic import BaseModel, ConfigDict, Field
+
 
 class ModelConfig(BaseModel):
     """Configuration container describing a single LLM/provider pairing."""
@@ -30,6 +32,15 @@ class ModelConfig(BaseModel):
         description="Fallback model name to use if the primary model fails due to policy/content filter errors.",
     )
 
+
+class LLMExtra(BaseModel):
+    """LLM Extra Response"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    file_path: Optional[str] = Field(default=None, description="The file path of the content")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="The data of the content")
+    parsed_model: Optional[BaseModel] = Field(default=None, description="The parsed model of the content")
+
 class LLMResponse(BaseModel):
     """
     Wrapper for LLM responses that normalizes output from different APIs.
@@ -37,8 +48,8 @@ class LLMResponse(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     success: bool = Field(description="Whether the model call was successful")
-    message: Union[str, BaseModel] = Field(description="The message from the model call")
-    extra: Optional[Dict[str, Any]] = Field(default=None, description="The extra data from the model call")
-
-__all__ = ["ModelConfig", "LLMResponse"]
+    message: str = Field(description="The message from the model call")
+    extra: Optional[LLMExtra] = Field(default=None, description="The extra data from the model call")
+    
+__all__ = ["ModelConfig", "LLMResponse", "LLMExtra"]
 

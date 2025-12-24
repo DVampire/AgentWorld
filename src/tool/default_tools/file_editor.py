@@ -3,7 +3,7 @@
 import os
 from typing import Optional, List, Dict, Any
 from pydantic import Field
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
 from src.logger import logger
 
@@ -226,17 +226,21 @@ class FileEditorTool(Tool):
                 elif result['action'] == 'replace':
                     result_msg += f"  {i}. Replaced lines {result['start_line']}-{result['end_line']} ({result['lines_removed']} lines) with {result['lines_added']} lines\n"
             
+            message = result_msg
+            
             logger.info(f"| ✏️ Edited file {file_path}: {len(edit_results)} operations")
             return ToolResponse(
                 success=True,
-                message=result_msg,
-                extra={
-                    "path": file_path,
-                    "original_lines": original_lines,
-                    "new_lines": new_lines,
-                    "edits_applied": len(edit_results),
-                    "edit_results": edit_results
-                }
+                message=message,
+                extra=ToolExtra(
+                    file_path=file_path,
+                    data={
+                        "original_lines": original_lines,
+                        "new_lines": new_lines,
+                        "edits_applied": len(edit_results),
+                        "edit_results": edit_results
+                    }
+                )
             )
                 
         except UnicodeDecodeError:

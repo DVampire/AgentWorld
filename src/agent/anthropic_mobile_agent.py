@@ -138,7 +138,7 @@ class AnthropicMobileAgent(Agent):
             messages=messages,
             response_format=SessionInfo
         )
-        result = model_response.extra["parsed_model"]
+        result = model_response.extra.parsed_model
         
         timestamp = datetime.now().isoformat()
         

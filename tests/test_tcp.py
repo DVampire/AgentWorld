@@ -24,7 +24,7 @@ from src.tool import tcp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "esg_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -43,7 +43,7 @@ async def test_browser_tool():
     """Test the browser tool directly."""
     
     # Test parameters
-    task = "Search the 'python programming' and get the first result."
+    task = "Search the latest news about Apple."
     base_dir = "workdir/test_browser_tool"
     
     print("🧪 Testing browser tool...")
@@ -82,7 +82,7 @@ async def test_deep_researcher_tool():
     """Test the deep researcher tool directly."""
     
     # Test parameters
-    task = "Search for the latest news about Apple on Google."
+    task = "Search for the latest news about Apple."
     
     print("🧪 Testing deep researcher tool...")
     print(f"Task: {task}")
@@ -199,8 +199,8 @@ async def main():
     await version_manager.initialize()
     logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
-    await test_browser_tool()
-    # await test_deep_researcher_tool()
+    # await test_browser_tool()
+    await test_deep_researcher_tool()
     # await test_bash_tool()
     logger.info("| 🚪 Test completed")
     

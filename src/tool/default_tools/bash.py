@@ -4,7 +4,7 @@ from re import T
 from pydantic import Field
 from typing import Dict, Any
 
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.registry import TOOL
 
 _BASH_TOOL_DESCRIPTION = """Execute bash commands in the shell. 
@@ -72,7 +72,10 @@ class BashTool(Tool):
             if exit_code != 0:
                 result.append(f"Exit code: {exit_code}")
             
-            return ToolResponse(success=True, message="\n\n".join(result) if result else f"Command completed with exit code: {exit_code}")
+            # Format the result
+            message = "\n\n".join(result) if result else f"Command completed with exit code: {exit_code}"
+            
+            return ToolResponse(success=True, message=message)
             
         except Exception as e:
             return ToolResponse(success=False, message=f"Error executing command: {str(e)}")

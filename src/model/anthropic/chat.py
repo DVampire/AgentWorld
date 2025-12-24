@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 import json
 from src.logger import logger
-from src.model.types import LLMResponse
+from src.model.types import LLMResponse, LLMExtra
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
 from src.utils import truncate_dict
@@ -298,28 +298,28 @@ class ChatAnthropic(BaseModel):
             return LLMResponse(
                 success=False,
                 message=f"Rate limit error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                extra=LLMExtra(data={"error": str(e), "model": self.name})
             )
         except APIConnectionError as e:
             logger.error(f"API connection error: {e}")
             return LLMResponse(
                 success=False,
                 message=f"API connection error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                extra=LLMExtra(data={"error": str(e), "model": self.name})
             )
         except APIError as e:
             logger.error(f"API error: {e}")
             return LLMResponse(
                 success=False,
                 message=f"API error: {str(e)}",
-                extra={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name}
+                extra=LLMExtra(data={"error": str(e), "status_code": getattr(e, 'status_code', None), "model": self.name})
             )
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return LLMResponse(
                 success=False,
                 message=f"Unexpected error: {str(e)}",
-                extra={"error": str(e), "model": self.name}
+                extra=LLMExtra(data={"error": str(e), "model": self.name})
             )
 
     async def _format_response(
@@ -342,7 +342,7 @@ class ChatAnthropic(BaseModel):
                 return LLMResponse(
                     success=False,
                     message="No content in response",
-                    extra={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)}
+                    extra=LLMExtra(data={"raw_response": response.model_dump() if hasattr(response, 'model_dump') else str(response)})
                 )
 
             # Extract text content and tool calls
@@ -398,12 +398,14 @@ class ChatAnthropic(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                extra = {
-                    "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
-                    "functions": functions,
-                    "usage": usage,
-                    "stop_reason": stop_reason,
-                }
+                extra = LLMExtra(
+                    data={
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                        "functions": functions,
+                        "usage": usage,
+                        "stop_reason": stop_reason,
+                    }
+                )
 
                 return LLMResponse(
                     success=True,
@@ -417,7 +419,7 @@ class ChatAnthropic(BaseModel):
                     return LLMResponse(
                         success=False,
                         message="Empty response content from model",
-                        extra={"raw_response": response}
+                        extra=LLMExtra(data={"raw_response": response})
                     )
 
                 # Try to parse JSON from message text
@@ -438,12 +440,14 @@ class ChatAnthropic(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    extra = {
-                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
-                        "parsed_model": parsed_model,
-                        "usage": usage,
-                        "stop_reason": stop_reason,
-                    }
+                    extra = LLMExtra(
+                        parsed_model=parsed_model,
+                        data={
+                            "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                            "usage": usage,
+                            "stop_reason": stop_reason,
+                        }
+                    )
 
                     return LLMResponse(
                         success=True,
@@ -454,22 +458,24 @@ class ChatAnthropic(BaseModel):
                     return LLMResponse(
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        extra={"error": str(e), "content": message_text}
+                        extra=LLMExtra(data={"error": str(e), "content": message_text})
                     )
                 except Exception as e:
                     return LLMResponse(
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        extra={"error": str(e), "content": message_text}
+                        extra=LLMExtra(data={"error": str(e), "content": message_text})
                     )
 
             # Default: return content as string
             else:
-                extra = {
-                    "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
-                    "usage": usage,
-                    "stop_reason": stop_reason,
-                }
+                extra = LLMExtra(
+                    data={
+                        "raw_response": response.model_dump() if hasattr(response, 'model_dump') else response,
+                        "usage": usage,
+                        "stop_reason": stop_reason,
+                    }
+                )
 
                 return LLMResponse(
                     success=True,
@@ -482,6 +488,6 @@ class ChatAnthropic(BaseModel):
             return LLMResponse(
                 success=False,
                 message=f"Failed to format response: {e}",
-                extra={"error": str(e)}
+                extra=LLMExtra(data={"error": str(e)})
             )
 

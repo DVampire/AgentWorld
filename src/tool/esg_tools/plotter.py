@@ -10,7 +10,7 @@ from src.registry import TOOL
 from src.logger import logger
 from src.model import model_manager
 from src.utils import assemble_project_path
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.message import HumanMessage, SystemMessage
 from src.tool.default_tools.python_interpreter import PythonInterpreterTool
 
@@ -150,8 +150,8 @@ class PlotterTool(Tool):
             response_format=CodeGeneration
         )
 
-        if response.extra and "parsed_model" in response.extra:
-            code_generation = response.extra["parsed_model"]
+        if response.extra and response.extra.parsed_model:
+            code_generation = response.extra.parsed_model
             return code_generation.code
         else:
             # Fallback: extract code from message
@@ -227,8 +227,8 @@ class PlotterTool(Tool):
             response_format=CodeGeneration
         )
 
-        if response.extra and "parsed_model" in response.extra:
-            code_generation = response.extra["parsed_model"]
+        if response.extra and response.extra.parsed_model:
+            code_generation = response.extra.parsed_model
             return code_generation.code
         else:
             # Fallback: extract code from message
@@ -348,7 +348,14 @@ class PlotterTool(Tool):
             return ToolResponse(
                 success=True,
                 message=f"Plot successfully generated!\n\nCSV file (absolute path): {csv_abs_path}\nPNG file (absolute path): {png_abs_path}",
-                extra={"csv_path": csv_abs_path, "png_path": png_abs_path}
+                extra=ToolExtra(
+                    file_path=png_abs_path,
+                    data={
+                        "csv_path": csv_abs_path,
+                        "png_path": png_abs_path,
+                        "input_type": "csv_file" if not needs_conversion else ("markdown_table" if self._is_markdown_table(input_data) else "text_data")
+                    }
+                )
             )
 
         except Exception as e:

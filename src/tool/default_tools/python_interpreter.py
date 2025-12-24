@@ -8,7 +8,8 @@ from src.tool.default_tools.executor import (
     BASE_BUILTIN_MODULES,
     BASE_PYTHON_TOOLS,
 )
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.logger import logger
 from src.registry import TOOL
 
 _PYTHON_INTERPRETER_TOOL_DESCRIPTION = """Execute Python code and return the output.
@@ -74,7 +75,11 @@ class PythonInterpreterTool(Tool):
             self.python_evaluator.state = {}
             code_output = self.python_evaluator(code)
             output = f"Stdout:\n{code_output.logs}\nOutput: {str(code_output.output)}"
-            return ToolResponse(success=True, message=output)
+            
+            message = output
+            
+            logger.info(f"| ✅ Executed Python code: {code}")
+            return ToolResponse(success=True, message=message)
 
         except Exception as e:
             return ToolResponse(success=False, message=f"Error: {str(e)}")

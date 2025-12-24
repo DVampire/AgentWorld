@@ -78,7 +78,7 @@ class InterdayTradingAgent(Agent):
                 messages=messages,
                 response_format=self.ThinkOutput
             )
-            think_output = model_response.extra["parsed_model"]
+            think_output = model_response.extra.parsed_model
             
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal
@@ -187,7 +187,7 @@ class InterdayTradingAgent(Agent):
             messages=messages,
             response_format=SessionInfo
         )
-        result = model_response.extra["parsed_model"]
+        result = model_response.extra.parsed_model
         
         timestamp = datetime.now().isoformat()
         

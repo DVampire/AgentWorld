@@ -4,9 +4,16 @@ from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
 import asyncio
 
 from src.tool.default_tools.web_fetcher import WebFetcherTool
-from src.tool.default_tools.search import FirecrawlSearch, SearchItem, BraveSearch
+from src.tool.default_tools.search import (
+    FirecrawlSearch, 
+    SearchItem, 
+    BraveSearch, 
+    BingSearch, 
+    GoogleSearch, 
+    DDGSSearch
+)
 from src.logger import logger
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.model import model_manager
 from src.message.types import HumanMessage, SystemMessage
 from src.utils import dedent
@@ -49,7 +56,8 @@ class WebSearcherTool(Tool):
         # Initialize search engines and content fetcher
         self.search_tools = {
             # "firecrawl_search": FirecrawlSearch(),
-            "brave_search": BraveSearch(),
+            # "bing_search": BingSearch(),
+            "ddgs_search": DDGSSearch(),
         }
         self.content_fetcher = WebFetcherTool()
 
@@ -94,27 +102,34 @@ class WebSearcherTool(Tool):
                     return ToolResponse(
                         success=False,
                         message=f"Error: All search tools failed to return results after multiple retries.",
-                        extra={
-                            "query": query,
-                            "status": "failed",
-                            "results": [],
-                            "total_results": 0,
-                            "language": lang,
-                            "country": country,
-                            "search_tools_used": [],
-                        }
+                        extra=ToolExtra(
+                            data={
+                                "query": query,
+                                "status": "failed",
+                                "results": [],
+                                "total_results": 0,
+                                "language": lang,
+                                "country": country,
+                                "search_tools_used": [],
+                                "retries": self.max_retries
+                            }
+                        )
                     )
             
             if not results:
                 return ToolResponse(
                     success=False,
                     message="No search results found.",
-                    extra={
-                        "query": query,
-                        "status": "failed",
-                        "results": [],
-                        "total_results": 0,
-                    }
+                    extra=ToolExtra(
+                        data={
+                            "query": query,
+                            "status": "failed",
+                            "results": [],
+                            "total_results": 0,
+                            "language": lang,
+                            "country": country
+                        }
+                    )
                 )
 
             logger.info(f"| ✅ Found {len(results)} search results from multiple engines")
@@ -157,32 +172,27 @@ class WebSearcherTool(Tool):
                     if result.get("summary"):
                         output_lines.append(f"   Summary: {result['summary']}")
                 output_message = "\n".join(output_lines)
+                
+            message = f"Web search results for query: {query}\n\n{output_message}"
 
             return ToolResponse(
                 success=True,
-                message=output_message,
-                extra={
-                    "query": query,
-                    "status": "success",
-                    "results": results,
-                    "total_results": len(results),
-                    "language": lang,
-                    "country": country,
-                    "search_engines_used": search_engines_used,
-                    "merged_summary": merged_summary,
-                }
+                message=message,
+                extra=ToolExtra(
+                    data={
+                        "query": query,
+                        "num_results": len(results),
+                        "search_engines_used": search_engines_used,
+                        "merged_summary": merged_summary,
+                    }
+                )
             )
 
         except Exception as e:
             logger.error(f"| ❌ Error in web search: {e}")
             return ToolResponse(
                 success=False,
-                message=f"Error during web search: {e}",
-                extra={
-                    "query": query,
-                    "status": "error",
-                    "error": str(e),
-                }
+                message=f"Error during web search: {e}"
             )
 
     async def _try_all_engines(
@@ -519,13 +529,13 @@ class WebSearcherTool(Tool):
             if isinstance(result, ToolResponse):
                 if not result.success:
                     raise ValueError(f"Search tool failed: {result.message}")
-                if result.extra and "data" in result.extra:
-                    return result.extra["data"]
+                if result.extra:
+                    search_items = result.extra.data.get("search_items", [])
+                    return search_items
                 else:
-                    raise ValueError(f"Search tool returned invalid response: missing data in extra")
+                    raise ValueError(f"Search tool returned invalid response: missing extra")
             else:
-                # Fallback: assume result is directly the data
-                return result if isinstance(result, list) else []
+                raise ValueError(f"Search tool returned invalid response: result is not a ToolResponse")
         
         try:
             return await _do_search()

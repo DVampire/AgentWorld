@@ -2,7 +2,7 @@
 from typing import List, Dict, Any, Optional
 from pydantic import Field, BaseModel
 
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.message.types import SystemMessage, HumanMessage
 from src.model import model_manager
 from src.logger import logger
@@ -104,19 +104,19 @@ class ReformulatorTool(Tool):
                 )
             
             # Extract final answer from structured response
-            if response.extra and "parsed_model" in response.extra:
-                reformulated_answer = response.extra["parsed_model"]
+            if response.extra and response.extra.parsed_model:
+                reformulated_answer = response.extra.parsed_model
                 final_answer = reformulated_answer.final_answer
                 logger.info(f"> Reformulated answer: {final_answer}")
                 
-                return ToolResponse(
-                    success=True,
-                    message=final_answer,
-                    extra={
-                        "original_response": response.message,
-                        "parsed_model": reformulated_answer
-                    }
-                )
+                message = f"Reformulated answer: {final_answer}"
+                return ToolResponse(success=True, 
+                                    message=message, 
+                                    extra=ToolExtra(
+                                        data={"original_response": response.message},
+                                        parsed_model=reformulated_answer
+                                    )
+                                )
             else:
                 # Fallback: parse from text response
                 response_text = str(response.message)
@@ -127,11 +127,14 @@ class ReformulatorTool(Tool):
                 
                 logger.info(f"> Reformulated answer (fallback): {final_answer}")
                 
-                return ToolResponse(
-                    success=True,
-                    message=final_answer,
-                    extra={"original_response": response_text}
-                )
+                message = f"Reformulated answer (fallback): {final_answer}"
+                
+                return ToolResponse(success=True, 
+                                    message=message, 
+                                    extra=ToolExtra(
+                                        data={"original_response": response_text}
+                                    )
+                                )
             
         except Exception as e:
             logger.error(f"Error in reformulator tool: {e}")

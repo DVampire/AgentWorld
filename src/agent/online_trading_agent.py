@@ -339,7 +339,7 @@ class OnlineTradingAgent(Agent):
                 messages=messages,
                 response_format=self.ThinkOutput
             )
-            think_output = model_response.extra["parsed_model"]
+            think_output = model_response.extra.parsed_model
             
             thinking = think_output.thinking
             memory = think_output.memory

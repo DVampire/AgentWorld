@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 import json
 from src.logger import logger
-from src.model.types import LLMResponse
+from src.model.types import LLMResponse, LLMExtra
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.google.serializer import GoogleChatSerializer
 from src.utils import truncate_dict
@@ -302,7 +302,7 @@ class ChatGoogle(BaseModel):
             return LLMResponse(
                 success=False,
                 message=f"API error: {error_msg}",
-                extra={"error": error_msg, "status_code": status_code, "model": self.name}
+                extra=LLMExtra(data={"error": error_msg, "status_code": status_code, "model": self.name})
             )
 
     async def _format_response(
@@ -326,7 +326,7 @@ class ChatGoogle(BaseModel):
                 return LLMResponse(
                     success=False,
                     message="No candidates in response",
-                    extra={"raw_response": str(response)}
+                    extra=LLMExtra(data={"raw_response": str(response)})
                 )
 
             # Extract content and function calls
@@ -401,12 +401,14 @@ class ChatGoogle(BaseModel):
 
                 formatted_message = "\n".join(formatted_lines)
 
-                extra = {
-                    "raw_response": str(response),
-                    "functions": functions,
-                    "usage": usage,
-                    "finish_reason": finish_reason,
-                }
+                extra = LLMExtra(
+                    data={
+                        "raw_response": str(response),
+                        "functions": functions,
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                    }
+                )
 
                 return LLMResponse(
                     success=True,
@@ -420,7 +422,7 @@ class ChatGoogle(BaseModel):
                     return LLMResponse(
                         success=False,
                         message="Empty response content from model",
-                        extra={"raw_response": str(response)}
+                        extra=LLMExtra(data={"raw_response": str(response)})
                     )
 
                 # Try to parse JSON from message text
@@ -441,12 +443,14 @@ class ChatGoogle(BaseModel):
                     formatted_message += ",\n".join(f"    {line}" for line in field_lines)
                     formatted_message += "\n)"
 
-                    extra = {
-                        "raw_response": str(response),
-                        "parsed_model": parsed_model,
-                        "usage": usage,
-                        "finish_reason": finish_reason,
-                    }
+                    extra = LLMExtra(
+                        parsed_model=parsed_model,
+                        data={
+                            "raw_response": str(response),
+                            "usage": usage,
+                            "finish_reason": finish_reason,
+                        }
+                    )
 
                     return LLMResponse(
                         success=True,
@@ -457,22 +461,24 @@ class ChatGoogle(BaseModel):
                     return LLMResponse(
                         success=False,
                         message=f"Failed to parse JSON from response: {e}",
-                        extra={"error": str(e), "content": message_text}
+                        extra=LLMExtra(data={"error": str(e), "content": message_text})
                     )
                 except Exception as e:
                     return LLMResponse(
                         success=False,
                         message=f"Failed to validate response against schema: {e}",
-                        extra={"error": str(e), "content": message_text}
+                        extra=LLMExtra(data={"error": str(e), "content": message_text})
                     )
 
             # Default: return content as string
             else:
-                extra = {
-                    "raw_response": str(response),
-                    "usage": usage,
-                    "finish_reason": finish_reason,
-                }
+                extra = LLMExtra(
+                    data={
+                        "raw_response": str(response),
+                        "usage": usage,
+                        "finish_reason": finish_reason,
+                    }
+                )
 
                 return LLMResponse(
                     success=True,
@@ -485,6 +491,6 @@ class ChatGoogle(BaseModel):
             return LLMResponse(
                 success=False,
                 message=f"Failed to format response: {e}",
-                extra={"error": str(e)}
+                extra=LLMExtra(data={"error": str(e)})
             )
 

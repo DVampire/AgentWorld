@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.tool.default_tools.search.types import SearchItem, SearchToolArgs
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.logger import logger
 from src.registry import TOOL
 
@@ -167,9 +167,22 @@ class BraveSearch(Tool):
                 "title": item.title,
                 "url": item.url,
                 "description": item.description or ""
-            } for item in search_items], ensure_ascii=False, indent=2)
+            } for item in search_items], ensure_ascii=False, indent=4)
             
-            return ToolResponse(success=True, message=results_json, extra={"data": search_items})
+            message = f"Brave search results for query: {query}\n\n{results_json}"
+            
+            return ToolResponse(success=True, message=message, extra=ToolExtra(
+                data={
+                    "query": query,
+                    "num_results": len(search_items),
+                    "search_items": search_items,
+                    "engine": "brave"
+                }
+            ))
             
         except Exception as e:
-            return ToolResponse(success=False, message=f"Error in asynchronous execution: {str(e)}")
+            logger.error(f"Error in Brave search: {e}")
+            return ToolResponse(
+                success=False, 
+                message=f"Error in Brave search: {str(e)}",
+            )

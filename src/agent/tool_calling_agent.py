@@ -160,7 +160,7 @@ class ToolCallingAgent(Agent):
                 messages=messages,
                 response_format=self.ThinkOutput
             )
-            think_output = think_output.extra["parsed_model"]
+            think_output = think_output.extra.parsed_model
             
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal

@@ -187,7 +187,7 @@ class IntradayDayAnalysisAgent(Agent):
                 messages=messages,
                 response_format=self.day_analysis_output_schema
             )
-            response = model_response.extra["parsed_model"]
+            response = model_response.extra.parsed_model
             
             trend_type = response.trend_type
             confidence = response.confidence
@@ -463,7 +463,7 @@ class IntradayMinuteTradingAgent(Agent):
                 messages=messages,
                 response_format=self.MinuteTradingOutput
             )
-            minute_trading_output = model_response.extra["parsed_model"]
+            minute_trading_output = model_response.extra.parsed_model
             
             analysis = minute_trading_output.analysis
             position_check = minute_trading_output.position_check
@@ -611,7 +611,7 @@ class IntradayTradingAgent(Agent):
             messages=messages,
             response_format=SessionInfo
         )
-        result = model_response.extra["parsed_model"]
+        result = model_response.extra.parsed_model
         
         timestamp = datetime.now().isoformat()
         

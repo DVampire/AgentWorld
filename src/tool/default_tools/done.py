@@ -6,7 +6,7 @@ from src.registry import TOOL
 
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
 Use this tool to signal that a task or subtask has been finished.
-Provide a brief summary of what was accomplished.
+Provide the result of the task in the result parameter.
 """
 
 @TOOL.register_module(force=True)
@@ -28,4 +28,7 @@ class DoneTool(Tool):
         Args:
             result (str): Summary of the accomplished task.
         """
-        return ToolResponse(success=True, message=f"✅ Task completed: {result}")
+        
+        message = f"✅ Task completed with result: {result}"
+        
+        return ToolResponse(success=True, message=message)

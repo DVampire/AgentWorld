@@ -4,6 +4,7 @@ import os
 import re
 import asyncio
 import urllib.request
+import uuid
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from urllib.parse import urlparse
@@ -14,7 +15,8 @@ from src.utils import assemble_project_path
 from src.utils import get_file_info
 from src.utils import fetch_url
 from src.utils import encode_file_base64
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.workflow_tools.report import Report
 
 from src.logger import logger
 from src.model import model_manager
@@ -112,7 +114,7 @@ class DeepAnalyzerTool(Tool):
         description="Next summary ID for auto-increment"
     )
     base_dir: str = Field(
-        default=None,
+        default="workdir/deep_analyzer",
         description="The base directory to use for the deep analyzer."
     )
     file_model_name: str = Field(
@@ -128,7 +130,13 @@ class DeepAnalyzerTool(Tool):
             self.model_name = model_name
         
         if base_dir is not None:
-            self.base_dir = base_dir
+            self.base_dir = assemble_project_path(base_dir)
+        else:
+            self.base_dir = assemble_project_path(self.base_dir)
+        
+        # Create base directory if it doesn't exist
+        if self.base_dir:
+            os.makedirs(self.base_dir, exist_ok=True)
         
         # Initialize tools
         self.mdify_tool = MdifyTool(base_dir=self.base_dir)
@@ -136,6 +144,9 @@ class DeepAnalyzerTool(Tool):
         # Initialize summary ID counter
         if not hasattr(self, 'next_summary_id'):
             self.next_summary_id = 1
+        
+        # File path (will be set in __call__)
+        self.file_path = None
     
     def _get_next_summary_id(self) -> int:
         """Get next summary ID and increment counter."""
@@ -290,8 +301,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=FileTypeClassification
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    classification = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    classification = response.extra.parsed_model
                     path_classifications = classification.files
                 else:
                     # Fallback: use file extension
@@ -396,6 +407,27 @@ class DeepAnalyzerTool(Tool):
             if files:
                 logger.info(f"| 📂 Attached files: {files}")
             
+            # Create file path for markdown report
+            md_filename = f"analysis_{uuid.uuid4().hex[:8]}.md"
+            self.file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+            
+            # Initialize Report instance
+            report = Report(
+                title="Deep Analysis Report",
+                model_name=self.model_name
+            )
+            
+            # Add initial task information
+            task_content = f"## Analysis Task\n\n{task}\n\n"
+            if files:
+                task_content += f"## Files\n\n"
+                for file_path in files:
+                    file_display = file_path if self._is_url(file_path) else os.path.basename(file_path)
+                    task_content += f"- {file_display}\n"
+                task_content += "\n"
+            
+            await report.add_item(task_content)
+            
             # Maintain summaries list in __call__
             summaries: List[Summary] = []
             
@@ -411,39 +443,115 @@ class DeepAnalyzerTool(Tool):
             # If no files or no valid files, analyze task directly
             if not valid_files:
                 logger.info(f"| 📝 No files or no valid files, analyzing task directly")
-                await self._analyze_task_only(task, summaries)
+                await self._analyze_task_only(task, summaries, report)
                 
                 # Check if answer found
                 summary = await self._summarize_summaries(task, summaries)
                 if summary.found_answer:
-                    return ToolResponse(success=True, message=f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}")
+                    answer_content = f"## Final Answer\n\n**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
+                    await report.add_item(answer_content)
+                    
+                    if self.file_path:
+                        final_report_content = await report.complete(self.file_path)
+                        logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                        
+                        message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {self.file_path}"
+                        
+                        return ToolResponse(
+                            success=True,
+                            message=message,
+                            extra=ToolExtra(
+                                file_path=self.file_path,
+                                data={
+                                    "task": task,
+                                    "answer_found": True,
+                                    "answer": summary.answer,
+                                    "file_path": self.file_path
+                                }
+                            )
+                        )
+                    else:
+                        message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}"
+                        return ToolResponse(success=True, message=message)
                 else:
                     summaries.append(summary)
                     result = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries])
-                    return ToolResponse(success=False, message=result)
+                    
+                    if self.file_path:
+                        final_report_content = await report.complete(self.file_path)
+                        logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                        
+                        message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries]) + "\n\nReport saved to: {self.file_path}"
+                        
+                        return ToolResponse(
+                            success=False,
+                            message=message,
+                            extra=ToolExtra(
+                                file_path=self.file_path,
+                                data={
+                                    "task": task,
+                                    "answer_found": False,
+                                    "file_path": self.file_path
+                                }
+                            )
+                        )
+                    else:
+                        message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries])
+                        return ToolResponse(success=False, message=message)
             
             # Step 1: Get overall file information summary before detailed analysis
             logger.info(f"| 📊 Getting overall file information summary...")
             summary = await self._get_overall_file_summary(task, valid_files)
-            if summary.found_answer:
-                return ToolResponse(success=True, message=f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}")
-            else:
+            if summary and summary.found_answer:
+                answer_content = f"## Final Answer\n\n**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
+                await report.add_item(answer_content)
+                
+                if self.file_path:
+                    final_report_content = await report.complete(self.file_path)
+                    logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                    
+                    message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {self.file_path}"
+                    
+                    return ToolResponse(
+                        success=True,
+                        message=message,
+                        extra=ToolExtra(
+                            file_path=self.file_path,
+                            data={
+                                "task": task,
+                                "answer_found": True,
+                                "answer": summary.answer,
+                                "file_path": self.file_path
+                            }
+                        )
+                    )
+                else:
+                    message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}"
+                    return ToolResponse(success=True, message=message)
+            elif summary:
                 summaries.append(summary)
+                summary_content = f"## File Information Summary\n\n{summary.summary}\n\n"
+                await report.add_item(summary_content)
             
             # Use LLM to classify file types
             logger.info(f"| 🔍 Classifying {len(valid_files)} files by type...")
             file_classifications = await self._classify_files(valid_files)
             
             # Log classifications
+            classification_content = "## File Classifications\n\n"
             for file_info in file_classifications:
                 file_display = file_info.file if self._is_url(file_info.file) else os.path.basename(file_info.file)
                 logger.info(f"| 📋 {file_display}: {file_info.file_type}")
+                classification_content += f"- **{file_display}**: {file_info.file_type}\n"
+            classification_content += "\n"
+            await report.add_item(classification_content)
             
             # Main analysis loop with max_rounds
             for round_num in range(1, self.max_rounds + 1):
                 logger.info(f"| 🔄 Main analysis round {round_num}/{self.max_rounds}")
                 
                 round_summaries: List[Summary] = []
+                round_content = f"## Round {round_num}\n\n"
                 
                 # Process each file in this round
                 for file_info in file_classifications:
@@ -452,6 +560,8 @@ class DeepAnalyzerTool(Tool):
                     
                     file_display = file if self._is_url(file) else os.path.basename(file)
                     logger.info(f"| 📄 Processing {file_type} file: {file_display}")
+                    
+                    round_content += f"### Processing {file_type} file: {file_display}\n\n"
                     
                     # Analyze based on file type
                     if file_type == "text":
@@ -465,18 +575,100 @@ class DeepAnalyzerTool(Tool):
                     elif file_type == "video":
                         await self._analyze_video_file(task, file, round_summaries)
                     
+                    # Add summaries from this file to round content
+                    for s in round_summaries:
+                        round_content += f"- {s.summary}\n"
+                        if s.found_answer:
+                            round_content += f"  **Answer Found**: {s.answer}\n"
+                    round_content += "\n"
+                    
                     # Check if answer found after processing this file
                     round_summary = await self._summarize_summaries(task, round_summaries)
                     if round_summary.found_answer:
-                        return ToolResponse(success=True, message=f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}")
+                        round_content += f"### Round {round_num} Summary\n\n**Answer Found**: Yes\n\n**Answer**: {round_summary.answer}\n\n"
+                        await report.add_item(round_content)
+                        
+                        if self.file_path:
+                            final_report_content = await report.complete(self.file_path)
+                            logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                            
+                            message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}, Report saved to: {self.file_path}"
+                            
+                            return ToolResponse(
+                                success=True,
+                                message=message,
+                                extra=ToolExtra(
+                                    file_path=self.file_path,
+                                    data={
+                                        "task": task,
+                                        "round": round_num,
+                                        "answer_found": True,
+                                        "answer": round_summary.answer,
+                                        "file_path": self.file_path
+                                    }
+                                )
+                            )
+                        else:
+                            message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}"
+                            return ToolResponse(success=True, message=message)
                     else:
                         summaries.append(round_summary)
+                
+                # Add round summary to content
+                round_summary = await self._summarize_summaries(task, round_summaries)
+                round_content += f"### Round {round_num} Summary\n\n{round_summary.summary}\n\n"
+                if round_summary.found_answer:
+                    round_content += f"**Answer Found**: Yes\n\n**Answer**: {round_summary.answer}\n\n"
+                else:
+                    round_content += f"**Answer Found**: No\n\n"
+                
+                await report.add_item(round_content)
             
+            # Final summary
             final_summary = await self._summarize_summaries(task, summaries)
+            final_content = f"## Final Summary\n\n{final_summary.summary}\n\n"
             if final_summary.found_answer:
-                return ToolResponse(success=True, message=f"Answer found from all file analysis.\n\nTask: {task}\n\nAnswer: {final_summary.answer}")
+                final_content += f"**Answer Found**: Yes\n\n**Answer**: {final_summary.answer}\n\n"
             else:
-                return ToolResponse(success=False, message=f"Analysis completed after {self.max_rounds} rounds but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries[-10:]]))
+                final_content += f"**Answer Found**: No\n\n"
+            await report.add_item(final_content)
+            
+            if self.file_path:
+                final_report_content = await report.complete(self.file_path)
+                logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                
+                # Build message parts separately to avoid f-string backslash issue
+                status_text = 'Answer found' if final_summary.found_answer else 'No definitive answer found'
+                if final_summary.found_answer:
+                    answer_text = f'Answer: {final_summary.answer}'
+                else:
+                    summaries_list = [f'- {s.summary}' for s in summaries[-10:]]
+                    answer_text = 'Summaries:\n' + '\n'.join(summaries_list)
+                
+                message = f"Analysis completed after {self.max_rounds} rounds.\n\nTask: {task}\n\n{status_text}.\n\n{answer_text}"
+                message += f"\n\nReport saved to: {self.file_path}"
+                
+                return ToolResponse(
+                    success=final_summary.found_answer,
+                    message=message,
+                    extra=ToolExtra(
+                        file_path=self.file_path,
+                        data={
+                            "task": task,
+                            "rounds": self.max_rounds,
+                            "answer_found": final_summary.found_answer,
+                            "answer": final_summary.answer if final_summary.found_answer else None,
+                            "file_path": self.file_path
+                        }
+                    )
+                )
+            else:
+                if final_summary.found_answer:
+                    message = f"Answer found from all file analysis.\n\nTask: {task}\n\nAnswer: {final_summary.answer}"
+                    return ToolResponse(success=True, message=message)
+                else:
+                    message = f"Analysis completed after {self.max_rounds} rounds but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries[-10:]])
+                    return ToolResponse(success=False, message=message)
             
         except Exception as e:
             logger.error(f"| ❌ Error in deep analysis: {e}")
@@ -547,7 +739,7 @@ class DeepAnalyzerTool(Tool):
             ]
             
             response = await model_manager(model=self.model_name, messages=messages, response_format=SummaryResponse)
-            summary_response = response.extra["parsed_model"]
+            summary_response = response.extra.parsed_model
             summary = Summary(
                 id=self._get_next_summary_id(),
                 summary=summary_response.summary,
@@ -600,8 +792,8 @@ class DeepAnalyzerTool(Tool):
                 response_format=SummaryResponse
             )
             
-            if response.extra and "parsed_model" in response.extra:
-                summary_response = response.extra["parsed_model"]
+            if response.extra and response.extra.parsed_model:
+                summary_response = response.extra.parsed_model
                 return Summary(
                     id=self._get_next_summary_id(),
                     summary=summary_response.summary,
@@ -627,7 +819,7 @@ class DeepAnalyzerTool(Tool):
                 answer=None
             )
     
-    async def _analyze_task_only(self, task: str, summaries: List[Summary]) -> None:
+    async def _analyze_task_only(self, task: str, summaries: List[Summary], report: Optional[Report] = None) -> None:
         """Analyze task without files (text games, math problems, logic puzzles, etc.)."""
         try:
             logger.info(f"| 🧠 Analyzing task directly (no files)")
@@ -661,8 +853,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=Summary
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    summary = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    summary = response.extra.parsed_model
                     # Assign ID to parsed summary
                     summary.id = self._get_next_summary_id()
                 else:
@@ -677,6 +869,15 @@ class DeepAnalyzerTool(Tool):
                 
                 summaries.append(summary)
                 
+                # Add round content to report if provided
+                if report:
+                    round_content = f"## Round {round_num}\n\n{summary.summary}\n\n"
+                    if summary.found_answer:
+                        round_content += f"**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
+                    else:
+                        round_content += f"**Answer Found**: No\n\n"
+                    await report.add_item(round_content)
+                
                 # Check if we found the answer
                 if summary.found_answer:
                     logger.info(f"| ✅ Answer found in round {round_num}, early stopping.")
@@ -686,7 +887,14 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing task: {e}")
-            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing task: {e}", found_answer=False, answer=None))
+            error_summary = Summary(id=self._get_next_summary_id(), summary=f"Error analyzing task: {e}", found_answer=False, answer=None)
+            summaries.append(error_summary)
+            
+            # Add error to report if provided
+            if report:
+                error_content = f"## Error\n\nError analyzing task: {e}\n\n"
+                await report.add_item(error_content)
+            
             return None
     
     async def _analyze_text_file(self, task: str, file: str, summaries: List[Summary]) -> None:
@@ -797,8 +1005,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=SummaryResponse
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    summary_response = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    summary_response = response.extra.parsed_model
                     summary = Summary(
                         id=self._get_next_summary_id(),
                         summary=summary_response.summary,
@@ -902,8 +1110,8 @@ class DeepAnalyzerTool(Tool):
                 response_format=Summary
             )
             
-            if response.extra and "parsed_model" in response.extra:
-                parsed_summary = response.extra["parsed_model"]
+            if response.extra and response.extra.parsed_model:
+                parsed_summary = response.extra.parsed_model
                 # Assign ID to parsed summary
                 parsed_summary.id = self._get_next_summary_id()
                 return parsed_summary
@@ -977,8 +1185,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=SummaryResponse
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    summary_response = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    summary_response = response.extra.parsed_model
                     summary = Summary(
                         id=self._get_next_summary_id(),
                         summary=summary_response.summary,
@@ -1035,8 +1243,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=Summary
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    summary = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    summary = response.extra.parsed_model
                     # Assign ID to parsed summary
                     summary.id = self._get_next_summary_id()
                 else:
@@ -1124,8 +1332,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=SummaryResponse
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    summary_response = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    summary_response = response.extra.parsed_model
                     summary = Summary(
                         id=self._get_next_summary_id(),
                         summary=summary_response.summary,
@@ -1220,8 +1428,8 @@ class DeepAnalyzerTool(Tool):
                     response_format=SummaryResponse
                 )
                 
-                if response.extra and "parsed_model" in response.extra:
-                    summary_response = response.extra["parsed_model"]
+                if response.extra and response.extra.parsed_model:
+                    summary_response = response.extra.parsed_model
                     summary = Summary(
                         id=self._get_next_summary_id(),
                         summary=summary_response.summary,

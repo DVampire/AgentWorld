@@ -168,8 +168,10 @@ When searching the web for information, follow this priority order:
    - **Priority 3**: `browser`: Search the web for specific information - use only if `deep_researcher` fails to find sufficient information
    - `deep_analyzer`: Conduct multi-step analysis of ESG data and documents (task="...", files=[...])
    - `python_interpreter`: Process and analyze data programmatically
-   - **MANDATORY Pairing Rule**: When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also call `report` (action="add", content="...") in the SAME tool array. These tools must always be paired with report add, they cannot be called independently.
+   - **MANDATORY Pairing Rule**: When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also call `report` (action="add", file_path="...", content="...") in the SAME tool array. These tools must always be paired with report add, they cannot be called independently.
+   - **File Path Extraction**: When `retriever`, `browser`, `deep_researcher`, or `deep_analyzer` tools return results, they will include a file path in their response message (e.g., "Report saved to: /path/to/file.md"). You MUST extract this file path and pass it to the `report` tool's `file_path` parameter. The file path is typically found in the message text (look for "Report saved to:" or "saved to:" patterns) or in the tool's extra data.
    - The `content` parameter in `report` tool MUST contain the original text from the collected data without any reduction or modification, preserve the raw data exactly as retrieved.
+   - The `file_path` parameter in `report` tool should be the markdown file path returned by the data retrieval tool (if it's a .md file, the content will be read and added; if it's another file type, it will be added as a reference).
 
 2. **Visualization Phase** (when appropriate):
    - `plotter`: Create visualizations of ESG trends (input_data="...", output_filename="...")
@@ -283,15 +285,17 @@ You must ALWAYS respond with valid JSON in this exact format:
 Then provide the final answer directly in your response based on the retrieved information.
 
 **For Report Generation Tasks:**
-- When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also include `report` (action="add", content="...") in the SAME tool array
+- When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also include `report` (action="add", file_path="...", content="...") in the SAME tool array
 - These tools cannot be called independently, they must always be paired together
+- **IMPORTANT**: After calling `retriever`, `browser`, `deep_researcher`, or `deep_analyzer`, extract the file path from their response message (look for "Report saved to:" pattern) and pass it to `report` tool's `file_path` parameter
 - Example for Report task:
 ```json
 "tool": [
   {"name": "retriever", "args": {"query": "...", "mode": "hybrid", "top_k": 10}},
-  {"name": "report", "args": {"action": "add", "content": "## Findings\\n\\n[Your analysis here]..."}}
+  {"name": "report", "args": {"action": "add", "file_path": "/path/to/retrieval_abc123.md", "content": "## Findings\\n\\n[Your analysis here]..."}}
 ]
 ```
+- Note: The `file_path` should be extracted from the previous tool's response message (e.g., if retriever returns "Report saved to: /path/to/file.md", use that path in report's file_path parameter)
 
 **Incorrect Examples (DO NOT DO THIS):**
 - QA task using report: `{"name": "report", "args": {...}}` ❌
