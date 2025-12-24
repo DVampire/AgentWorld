@@ -9,6 +9,7 @@ from .mobile import MobilePrompt
 from .online_trading import OnlineTradingPrompt
 from .offline_trading import OfflineTradingPrompt
 from .tool_calling import ToolCallingPrompt
+from .self_reflection_optimizer import ReflectionOptimizerReflectionPrompt, ReflectionOptimizerImprovementPrompt
 
 __all__ = [
     "AnthropicMobilePrompt",
@@ -23,4 +24,6 @@ __all__ = [
     "IntradayDayAnalysisPrompt",
     "IntradayMinuteTradingPrompt",
     "ToolCallingPrompt",
+    "ReflectionOptimizerReflectionPrompt",
+    "ReflectionOptimizerImprovementPrompt",
 ]

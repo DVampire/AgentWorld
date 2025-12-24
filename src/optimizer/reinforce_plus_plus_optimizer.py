@@ -4,12 +4,12 @@ from collections import defaultdict, deque
 import random
 import math
 import tiktoken
-from src.optimizers.textgrad.variable import Variable
-from src.optimizers.textgrad import logger
-from src.optimizers.textgrad.engine import EngineLM, get_engine
-from src.optimizers.textgrad.config import validate_engine_or_get_default
-from src.optimizers.textgrad.optimizer import Optimizer
-from src.optimizers.textgrad.loss import MultiFieldEvaluation
+from src.optimizer.textgrad.variable import Variable
+from src.optimizer.textgrad import logger
+from src.optimizer.textgrad.engine import EngineLM, get_engine
+from src.optimizer.textgrad.config import validate_engine_or_get_default
+from src.optimizer.textgrad.optimizer import Optimizer
+from src.optimizer.textgrad.loss import MultiFieldEvaluation
 
 DEFAULT_EVALUATION_SYSTEM_PROMPT = (
     "You are an expert mathematics competition grader. You carefully analyse "

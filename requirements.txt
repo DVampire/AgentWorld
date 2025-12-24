@@ -111,3 +111,5 @@ watchdog>=6.0.0
 pipmaster>=1.0.10
 graspologic>=3.4.4
 nano-vectordb>=0.0.4.3
+pylatexenc>=2.10
+mathruler>=0.1.0

@@ -8,10 +8,9 @@ from typing import List, Dict, Tuple, Optional, Any
 
 from src.logger import logger
 import src.optimizer.textgrad as tg
-from src.optimizer.types import BaseOptimizer
+from src.optimizer.types import Optimizer
 
-
-class TextGradOptimizer(BaseOptimizer):
+class TextGradOptimizer(Optimizer):
     """Optimizer that leverages TextGrad to improve agent prompts."""
     
     def __init__(self, agent):

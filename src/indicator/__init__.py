@@ -8,6 +8,8 @@ from .macd import MACD
 from .obv import OBV
 from .rsi import RSI
 from .sma import SMA
+from .alpha158 import Alpha158
+from .crypto import Crypto
 
 __all__ = [
     "ATR",
@@ -20,4 +22,6 @@ __all__ = [
     "OBV",
     "RSI",
     "SMA",
+    "Alpha158",
+    "Crypto",
 ]

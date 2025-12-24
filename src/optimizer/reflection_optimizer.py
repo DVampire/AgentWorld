@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple, Optional, Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.logger import logger
-from src.optimizer.types import BaseOptimizer
+from src.optimizer.types import Optimizer
 
 
 REFLECTION_SYSTEM_PROMPT = """You are an expert at analyzing agent execution results and identifying areas for prompt improvement.
@@ -79,7 +79,7 @@ Requirements:
 Please provide ONLY the improved prompt text, without any additional commentary or explanation."""
 
 
-class ReflectionOptimizer(BaseOptimizer):
+class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
     
     def __init__(self, agent, log_dir: str):

@@ -23,6 +23,7 @@ from .env_utils import get_env
 from .screenshot_utils import ScreenshotService
 from .download_utils import (get_jsonparsed_data, 
                              generate_intervals)
+from .hub_utils import push_to_hub_folder
 
 
 __all__ = [
@@ -61,4 +62,5 @@ __all__ = [
     "file_lock",
     "get_jsonparsed_data",
     "generate_intervals",
+    "push_to_hub_folder",
 ]

@@ -325,7 +325,7 @@ async def main():
     
     # Initialize model manager
     await model_manager.initialize()
-    logger.info(f"| Model manager initialized: {model_manager.list()}")
+    logger.info(f"| Model manager initialized: {await model_manager.list()}")
     
     # Initialize tools
     await tcp.initialize(tool_names=config.tool_names)
