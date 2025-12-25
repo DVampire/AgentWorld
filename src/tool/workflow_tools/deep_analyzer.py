@@ -102,7 +102,7 @@ class DeepAnalyzerTool(Tool):
     max_steps: int = Field(default=3, description="Maximum steps for image analysis without finding answer")
     
     model_name: str = Field(
-        default="o3",
+        default="openrouter/gemini-3-flash-preview",
         description="The model to use for the deep analyzer."
     )
     mdify_tool: MdifyTool = Field(
@@ -118,7 +118,7 @@ class DeepAnalyzerTool(Tool):
         description="The base directory to use for the deep analyzer."
     )
     file_model_name: str = Field(
-        default="gemini-2.5-flash",
+        default="openrouter/gemini-3-flash-preview",
         description="The model to use for the file analysis."
     )
 

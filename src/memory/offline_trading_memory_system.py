@@ -159,7 +159,10 @@ class OfflineTradingCombinedMemory:
                 messages=messages,
                 response_format=ProcessDecision
             )
-            processed_decision_response = response.extra["parsed_model"]
+            if not response.extra or not response.extra.parsed_model:
+                logger.warning("Response does not contain parsed_model")
+                return False
+            processed_decision_response = response.extra.parsed_model
             should_process = processed_decision_response.should_process
             reason = processed_decision_response.reason
             
@@ -241,10 +244,10 @@ class OfflineTradingCombinedMemory:
             if not response.success:
                 raise ValueError(f"Model call failed: {response.message}")
             
-            if not response.extra or "parsed_model" not in response.extra:
+            if not response.extra or not response.extra.parsed_model:
                 raise ValueError(f"Response does not contain parsed_model. Response: {response.message}")
             
-            combined_memory_output_response = response.extra["parsed_model"]
+            combined_memory_output_response = response.extra.parsed_model
             
             new_summaries = combined_memory_output_response.summaries
             new_insights = combined_memory_output_response.insights

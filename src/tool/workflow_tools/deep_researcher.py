@@ -68,7 +68,7 @@ class DeepResearcherTool(Tool):
         description="Whether to use LLM to search the web."
     )
     search_llm_models: List[str] = Field(
-        default=["o3-deep-research", "sonar-deep-research"],
+        default=["openrouter/o3-deep-research", "openrouter/sonar-deep-research"],
         description="The LLM models to use for searching the web."
     )
     base_dir: str = Field(
@@ -332,43 +332,15 @@ class DeepResearcherTool(Tool):
         return response.message.strip()
 
     async def _parallel_search(self, task: str, query: str, filter_year: Optional[int]) -> List[Dict[str, Any]]:
-        """Execute parallel searches using web_searcher and LLM models."""
+        """Execute parallel searches using either web_searcher or LLM models based on use_llm_search flag."""
         search_tasks = []
         
-        # Add web_searcher task
-        async def web_search_task():
-            try:
-                response = await self.web_searcher(
-                    query=query,
-                    num_results=self.num_results,
-                    filter_year=filter_year
-                )
-                if response.success:
-                    return {
-                        "source": "web_searcher",
-                        "summary": response.message.strip(),
-                        "success": True
-                    }
-                else:
-                    return {
-                        "source": "web_searcher",
-                        "summary": None,
-                        "success": False,
-                        "error": response.message
-                    }
-            except Exception as e:
-                logger.warning(f"Web searcher failed: {e}")
-                return {
-                    "source": "web_searcher",
-                    "summary": None,
-                    "success": False,
-                    "error": str(e)
-                }
-        
-        search_tasks.append(web_search_task())
-        
-        # Add LLM search tasks if enabled
-        if self.use_llm_search and self.search_llm_models:
+        if self.use_llm_search:
+            # Use LLM search: parallel search with multiple LLM models
+            if not self.search_llm_models:
+                logger.warning("use_llm_search is True but no search_llm_models configured")
+                return []
+            
             for model_name in self.search_llm_models:
                 # Create a closure to capture model_name correctly
                 def create_llm_task(model):
@@ -391,6 +363,38 @@ class DeepResearcherTool(Tool):
                     return llm_search_task
                 
                 search_tasks.append(create_llm_task(model_name)())
+        else:
+            # Use web_searcher
+            async def web_search_task():
+                try:
+                    response = await self.web_searcher(
+                        query=query,
+                        num_results=self.num_results,
+                        filter_year=filter_year
+                    )
+                    if response.success:
+                        return {
+                            "source": "web_searcher",
+                            "summary": response.message.strip(),
+                            "success": True
+                        }
+                    else:
+                        return {
+                            "source": "web_searcher",
+                            "summary": None,
+                            "success": False,
+                            "error": response.message
+                        }
+                except Exception as e:
+                    logger.warning(f"Web searcher failed: {e}")
+                    return {
+                        "source": "web_searcher",
+                        "summary": None,
+                        "success": False,
+                        "error": str(e)
+                    }
+            
+            search_tasks.append(web_search_task())
         
         # Execute all searches in parallel
         results = await asyncio.gather(*search_tasks, return_exceptions=True)

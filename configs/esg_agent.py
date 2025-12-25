@@ -56,12 +56,15 @@ plotter_tool.update(
 )
 #-----------------BROWSER TOOL CONFIG-----------------
 browser_tool.update(
+    model_name="openrouter/gpt-4.1",
     base_dir=f"{workdir}/tool/browser",
 )
 #-----------------DEEP RESEARCHER TOOL CONFIG-----------------
 deep_researcher_tool.update(
     model_name="openrouter/gemini-3-flash-preview",
     base_dir=f"{workdir}/tool/deep_researcher",
+    use_llm_search = True, # Only use LLM search if search_llm_models is provided
+    search_llm_models = ["openrouter/gemini-3-flash-preview-plugins"]
 )
 
 #-----------------DEEP ANALYZER TOOL CONFIG-----------------
