@@ -157,7 +157,7 @@ class OpenRouterCompletions:
         }
         
         # Add plugins if provided
-        if plugins:
+        if plugins is not None:
             payload["plugins"] = plugins
         
         # Add other parameters from kwargs
@@ -252,7 +252,7 @@ class OpenRouterClient:
             x_title=x_title,
             default_headers=default_headers,
             timeout=timeout,
-            http_client=http_client,
+            http_client=http_client
         )
         
         # Create chat namespace for compatibility with OpenAI SDK (client.chat.completions.create)

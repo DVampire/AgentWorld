@@ -45,6 +45,20 @@ class ModelManager:
         self.default_reasoning: Dict[str, Any] = {
             "reasoning_effort": "high"
         }
+        self.default_plugins: Optional[List[Dict[str, Any]]] = [
+            {
+                "id": "file-parser",
+                "pdf": {
+                    "engine": "mistral-ocr"
+                }
+            },
+            {
+                "id": "web", "max_results": 10
+            },
+            { 
+                "id": "response-healing"
+            }
+        ]
     
     async def initialize(self):
         """Initialize the manager and register default models."""
@@ -415,6 +429,34 @@ class ModelManager:
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/gemini-2.5-flash",
+            },
+            {
+                "model_name": "openrouter/gemini-2.5-flash-plugins",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-2.5-flash",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "plugins": self.default_plugins,
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-2.5-flash",
+            },
+            {
+                "model_name": "openrouter/gemini-3-flash-preview-plugins",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3-flash-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "plugins": self.default_plugins,
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
             }
         ]
         
@@ -428,6 +470,7 @@ class ModelManager:
                 api_base=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
                 api_key=os.getenv("OPENROUTER_API_KEY"),
                 reasoning=model.get("reasoning") if model.get("reasoning") else None,
+                plugins=model.get("plugins") if model.get("plugins") else self.default_plugins,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
                 supports_streaming=True,
@@ -585,6 +628,7 @@ class ModelManager:
                     api_key=config.api_key,
                     base_url=config.api_base,
                     reasoning=config.reasoning if config.reasoning else None,
+                    plugins=config.plugins if config.plugins else None,
                     temperature=config.temperature or self.default_temperature,
                     max_completion_tokens=config.max_completion_tokens or self.max_tokens,
                     http_referer=os.getenv("OPENROUTER_HTTP_REFERER"),
@@ -676,6 +720,7 @@ class ModelManager:
         tools: Optional[List["Tool"]] = None,
         response_format: Optional[Union[BaseModel, Dict]] = None,
         stream: bool = False,
+        plugins: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """
@@ -733,6 +778,7 @@ class ModelManager:
                     tools=tools,
                     response_format=response_format,
                     stream=stream,
+                    plugins=plugins,
                     **kwargs,
                 )
             
@@ -779,6 +825,7 @@ class ModelManager:
                             tools=tools,
                             response_format=response_format,
                             stream=stream,
+                            plugins=plugins,
                             **kwargs,
                         )
                     logger.info(f"| Fallback model {fallback_model} succeeded")

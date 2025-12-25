@@ -55,7 +55,8 @@ class ChatOpenAI(BaseModel):
     service_tier: Optional[Literal['auto', 'default', 'flex', 'priority', 'scale']] = None
     top_p: Optional[float] = None
     max_completion_tokens: Optional[int] = 16384
-
+    plugins: Optional[List[Dict[str, Any]]] = None
+    
     # Client initialization parameters
     api_key: Optional[str] = None
     organization: Optional[str] = None

@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
 from src.model.types import LLMResponse, LLMExtra
-from src.message.types import Message, HumanMessage, ContentPartPdf
+from src.message.types import Message
 from src.model.openrouter.serializer import OpenRouterChatSerializer
 from src.model.openrouter.rest import OpenRouterClient
 from typing import TYPE_CHECKING
@@ -59,7 +59,6 @@ class ChatOpenRouter(BaseModel):
     
     # OpenRouter plugins (for PDF parsing, etc.)
     plugins: Optional[List[Dict[str, Any]]] = None
-    pdf_engine: Optional[str] = "mistral-ocr"  # "pdf-text" or "mistral-ocr"
 
     # Client initialization parameters
     api_key: Optional[str] = None
@@ -194,16 +193,6 @@ class ChatOpenRouter(BaseModel):
 
         return reasoning
 
-    def _has_pdf_content(self, messages: List[Message]) -> bool:
-        """Check if messages contain PDF content."""
-        for message in messages:
-            if isinstance(message, HumanMessage):
-                if isinstance(message.content, list):
-                    for part in message.content:
-                        if isinstance(part, ContentPartPdf):
-                            return True
-        return False
-
     async def _build_params(
         self,
         messages: List[Message],
@@ -282,24 +271,12 @@ class ChatOpenRouter(BaseModel):
         if stream:
             params['stream'] = True
         
-        # Handle plugins (for PDF parsing, etc.)
-        # Auto-detect PDF content and add plugins if not provided
-        has_pdf = self._has_pdf_content(messages)
+        # Handle plugins
         plugins_to_use = None
         if plugins is not None:
             plugins_to_use = plugins
         elif self.plugins is not None:
             plugins_to_use = self.plugins
-        elif has_pdf:
-            # Auto-add PDF parser plugin if PDF content is detected
-            plugins_to_use = [
-                {
-                    "id": "file-parser",
-                    "pdf": {
-                        "engine": self.pdf_engine or "mistral-ocr"
-                    }
-                }
-            ]
         
         # Merge additional kwargs
         params.update(kwargs)

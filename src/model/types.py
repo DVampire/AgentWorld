@@ -18,6 +18,7 @@ class ModelConfig(BaseModel):
     reasoning: Optional[Dict[str, Any]] = Field(default={
         "reasoning_effort": "high"
     }, description="Reasoning configuration.")
+    plugins: Optional[List[Dict[str, Any]]] = Field(default=None, description="Plugins to use for the model.")
     max_completion_tokens: Optional[int] = Field(default=None, description="Maximum completion tokens for chat/completions models.")
     max_output_tokens: Optional[int] = Field(default=None, description="Maximum output tokens for responses API models.")
     supports_streaming: bool = Field(default=True, description="Whether streaming is supported.")

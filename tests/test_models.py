@@ -167,8 +167,7 @@ async def test_pdf():
     logger.info(f"| --------------------------------------------------")
     logger.info(f"| Testing PDF with different models")
     models = [
-        "openrouter/gemini-2.5-flash",
-        # "google/gemini-2.5-flash",
+        "openrouter/gemini-3-flash-preview-plugins"
     ]
     
     messages = [
@@ -299,6 +298,26 @@ async def test_tool_calling():
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
     logger.info(f"| --------------------------------------------------")
 
+async def test_search():
+    logger.info(f"| --------------------------------------------------")
+    logger.info(f"| Testing search with different models")
+    models = [
+        "openrouter/gemini-3-flash-preview-plugins"
+    ]
+    
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content=[
+            ContentPartText(text="Please search the web for the latest news about the AAPL stock."),
+        ]),
+    ]
+    
+    for model in models:
+        logger.info(f"| Testing {model}")
+        response = await model_manager(model=model, messages=messages)
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+    logger.info(f"| --------------------------------------------------")
+
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
@@ -332,13 +351,13 @@ async def main():
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
     # await test_chat()
-    await test_response_format()
+    # await test_response_format()
     # await test_tool_calling()
     # await test_transcription()
     # await test_embedding()
     # await test_video()
     # await test_pdf()
-
+    await test_search()
 
 if __name__ == "__main__":
     asyncio.run(main())
