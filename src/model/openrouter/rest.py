@@ -159,6 +159,11 @@ class OpenRouterCompletions:
         # Add plugins if provided
         if plugins is not None:
             payload["plugins"] = plugins
+            
+        # Add usage parameters
+        payload["usage"] = {
+            "include": True
+        }
         
         # Add other parameters from kwargs
         for key, value in kwargs.items():

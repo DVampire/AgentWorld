@@ -470,7 +470,7 @@ class ModelManager:
                 api_base=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
                 api_key=os.getenv("OPENROUTER_API_KEY"),
                 reasoning=model.get("reasoning") if model.get("reasoning") else None,
-                plugins=model.get("plugins") if model.get("plugins") else self.default_plugins,
+                plugins=model.get("plugins") if model.get("plugins") else None,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
                 supports_streaming=True,

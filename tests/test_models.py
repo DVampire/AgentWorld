@@ -41,12 +41,12 @@ async def test_chat():
     logger.info(f"| Testing chat with different models")
     models = [
         # OpenAI models
-        "openrouter/gpt-4o",
+        # "openrouter/gpt-4o",
         "openrouter/gpt-4.1",
         "openrouter/gpt-5",
-        "openrouter/gpt-5.1",
-        "openrouter/gpt-5.2",
-        "openrouter/o3",
+        # "openrouter/gpt-5.1",
+        # "openrouter/gpt-5.2",
+        # "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
         # "openai/gpt-5",
@@ -67,7 +67,7 @@ async def test_chat():
         # Gemini models
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
-        # "openrouter/gemini-3-flash-preview",
+        "openrouter/gemini-3-flash-preview",
         # "openrouter/gemini-3-pro-preview",
         # "google/gemini-2.5-flash",
         # "google/gemini-2.5-pro",
@@ -350,14 +350,14 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
-    # await test_chat()
+    await test_chat()
     # await test_response_format()
     # await test_tool_calling()
     # await test_transcription()
     # await test_embedding()
     # await test_video()
     # await test_pdf()
-    await test_search()
+    # await test_search()
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -105,11 +105,9 @@ class ChatGoogle(BaseModel):
     def _get_usage(self, response) -> Optional[Dict[str, Any]]:
         """Extract usage information from Google Gemini response."""
         if hasattr(response, 'usage_metadata') and response.usage_metadata is not None:
-            return {
-                'input_tokens': getattr(response.usage_metadata, 'prompt_token_count', 0),
-                'output_tokens': getattr(response.usage_metadata, 'candidates_token_count', 0),
-            }
-        return None
+            return response.usage_metadata.model_dump()
+        else:
+            return None
 
     async def _build_params(
         self,

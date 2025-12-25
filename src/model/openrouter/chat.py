@@ -139,26 +139,10 @@ class ChatOpenRouter(BaseModel):
     def _get_usage(self, response: ChatCompletion) -> Optional[Dict[str, Any]]:
         """Extract usage information from response."""
         if response.usage is not None:
-            completion_tokens = response.usage.completion_tokens
-            completion_token_details = response.usage.completion_tokens_details
-
-            if completion_token_details is not None:
-                reasoning_tokens = completion_token_details.reasoning_tokens
-                if reasoning_tokens is not None:
-                    completion_tokens += reasoning_tokens
-
-            usage = {
-                'prompt_tokens': response.usage.prompt_tokens,
-                'completion_tokens': completion_tokens,
-                'total_tokens': response.usage.total_tokens,
-            }
-
-            if response.usage.prompt_tokens_details is not None:
-                usage['prompt_cached_tokens'] = response.usage.prompt_tokens_details.cached_tokens
+            usage = response.usage.model_dump()
+            return usage
         else:
-            usage = None
-
-        return usage
+            return None
 
     def _get_reasoning(self, message) -> Optional[str]:
         """Extract reasoning information from message."""

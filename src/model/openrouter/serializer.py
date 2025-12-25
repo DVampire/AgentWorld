@@ -338,7 +338,15 @@ class OpenRouterChatSerializer:
         elif isinstance(message, SystemMessage):
             system_result: ChatCompletionSystemMessageParam = {
                 'role': 'system',
-                'content': OpenRouterChatSerializer._serialize_system_content(message.content),
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': OpenRouterChatSerializer._serialize_system_content(message.content),
+                        "cache_control": {
+                            "type": "ephemeral"
+                        }
+                    }
+                ],
             }
             if message.name is not None:
                 system_result['name'] = message.name

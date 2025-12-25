@@ -120,11 +120,9 @@ class ChatAnthropic(BaseModel):
     def _get_usage(self, response) -> Optional[Dict[str, Any]]:
         """Extract usage information from Anthropic response."""
         if hasattr(response, 'usage') and response.usage is not None:
-            return {
-                'input_tokens': response.usage.input_tokens,
-                'output_tokens': response.usage.output_tokens,
-            }
-        return None
+            return response.usage.model_dump()
+        else:
+            return None
 
     async def _build_params(
         self,
