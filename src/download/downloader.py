@@ -12,6 +12,7 @@ from src.download.alpaca import AlpacaPriceDownloader, AlpacaNewsDownloader
 from src.download.akshare import AkSharePriceDownloader, AkShareNewsDownloader
 from src.download.tushare import TuSharePriceDownloader, TuShareNewsDownloader
 from src.download.binance import BinancePriceDownloader
+from src.download.leetcode import LeetCodeDownloader
 from src.registry import DOWNLOADER
 from src.config import config
 from src.logger import logger
@@ -442,3 +443,52 @@ class SymbolInfoDownloader(AbstractDownloader):
             await downloader.run()
         else:
             raise ValueError(f"Source {self.source} is not supported for symbol information download.")
+
+@DOWNLOADER.register_module(force=True)
+class CodeDownloader(AbstractDownloader):
+    """Downloader for code problems from various platforms (LeetCode, etc.)."""
+    def __init__(self,
+                 source: str = "leetcode",
+                 start_id: int = 1,
+                 end_id: int = 10,
+                 output_dir: Optional[str] = None,
+                 output_jsonl: Optional[str] = None,
+                 leetcode_cookie: Optional[str] = None,
+                 headless: bool = True,
+                 max_scroll_attempts: int = 20,
+                 **kwargs):
+        super().__init__()
+        
+        self.source = source
+        self.start_id = start_id
+        self.end_id = end_id
+        self.output_dir = output_dir
+        self.output_jsonl = output_jsonl
+        self.leetcode_cookie = leetcode_cookie
+        self.headless = headless
+        self.max_scroll_attempts = max_scroll_attempts
+        
+        self.workdir = config.workdir
+        os.makedirs(self.workdir, exist_ok=True)
+
+    async def run(self):
+        if self.source == "leetcode":
+            logger.info(f"| Downloading LeetCode problems from {self.start_id} to {self.end_id}...")
+            # Use workdir as base if output_dir not specified
+            if not self.output_dir:
+                self.output_dir = os.path.join(self.workdir, "leetcode_problems")
+            if not self.output_jsonl:
+                self.output_jsonl = os.path.join(self.output_dir, "leetcode_index.jsonl")
+            
+            downloader = LeetCodeDownloader(
+                start_id=self.start_id,
+                end_id=self.end_id,
+                output_dir=self.output_dir,
+                output_jsonl=self.output_jsonl,
+                leetcode_cookie=self.leetcode_cookie or os.getenv("LEETCODE_COOKIE"),
+                headless=self.headless,
+                max_scroll_attempts=self.max_scroll_attempts
+            )
+            await downloader.run()
+        else:
+            raise ValueError(f"Source {self.source} is not supported for code problem download.")

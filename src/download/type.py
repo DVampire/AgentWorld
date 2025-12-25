@@ -3,7 +3,7 @@ from typing import Any, Optional, Dict
 from pydantic import BaseModel, Field, ConfigDict
 
 
-class AbstractDownloader(BaseModel, ABC):
+class AbstractDownloader(BaseModel):
     """Abstract base class for data downloaders using Pydantic BaseModel.
     
     This class provides a base interface for all downloader implementations,
@@ -22,7 +22,6 @@ class AbstractDownloader(BaseModel, ABC):
         """
         super().__init__(**kwargs)
 
-    @abstractmethod
     async def run_task(self, task: Any):
         """
         Run a single task.
@@ -34,7 +33,6 @@ class AbstractDownloader(BaseModel, ABC):
         """
         pass
 
-    @abstractmethod
     async def run(self, *args, **kwargs):
         """
         Run the downloader.
