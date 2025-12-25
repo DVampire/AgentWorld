@@ -294,7 +294,7 @@ class TodoTool(Tool):
         await self._sync_to_markdown()
         
         message = f"✅ Added step {step_id} after {after_step_id}: {task} (priority: {priority})"
-        logger.info(f"| ✅ {message}")
+        logger.info(f"| {message}")
         return ToolResponse(success=True, message=message, extra=ToolExtra(
             file_path=self.todo_file,
             data={

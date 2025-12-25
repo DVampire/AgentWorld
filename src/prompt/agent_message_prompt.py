@@ -8,7 +8,7 @@ from PIL import Image
 from src.logger import logger
 from src.utils import make_file_url, assemble_project_path
 from src.message import HumanMessage, ImageURL, ContentPartImage, ContentPartText
-from src.optimizer.protocol.variable import Variable
+from src.optimizer.types import Variable
 from src.prompt.types import PromptConfig
 
 class AgentMessagePrompt:

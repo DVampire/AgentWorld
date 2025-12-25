@@ -919,7 +919,8 @@ class DeepAnalyzerTool(Tool):
             
             # Convert to markdown using mdify_tool (automatically saves to base_dir)
             mdify_response = await self.mdify_tool(file_path=local_file_path, output_format="markdown")
-            saved_path = mdify_response.extra["saved_path"]
+            if mdify_response.extra and mdify_response.extra.file_path:
+                saved_path = mdify_response.extra.file_path
             
             # Read all lines once
             with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -1050,7 +1051,8 @@ class DeepAnalyzerTool(Tool):
                 
                 # Convert to markdown using mdify_tool (automatically saves to base_dir)
                 mdify_response = await self.mdify_tool(file_path=file, output_format="markdown")
-                saved_path = mdify_response.extra["saved_path"]
+                if mdify_response.extra and mdify_response.extra.file_path:
+                    saved_path = mdify_response.extra.file_path
             
             # Read all lines once
             with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -1473,7 +1475,13 @@ class DeepAnalyzerTool(Tool):
                 
                 # Convert to markdown using mdify_tool (automatically saves to base_dir)
                 mdify_response = await self.mdify_tool(file_path=local_file_path, output_format="markdown")
-                saved_path = mdify_response.extra["saved_path"]
+                # Get saved_path from ToolExtra: check file_path first, then data dict
+                if mdify_response.extra and mdify_response.extra.file_path:
+                    saved_path = mdify_response.extra.file_path
+                elif mdify_response.extra and mdify_response.extra.data:
+                    saved_path = mdify_response.extra.data.get("saved_path")
+                else:
+                    raise ValueError("mdify_tool did not return saved_path in extra")
             
             # Read all lines once
             with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:

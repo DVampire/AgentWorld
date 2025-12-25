@@ -24,7 +24,7 @@ from src.transformation import transformation
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "esg_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -76,25 +76,20 @@ async def main():
     await acp.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents initialized: {await acp.list()}")
     
-    # Initialize transformation server
-    logger.info("| 🔧 Initializing transformation server...")
-    await transformation.transform(type="e2t", env_names=config.env_names)
-    logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
-    
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
     logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
     # # Example task
-    task = "帮我生成一个简单的python脚本并保存为prime.py，计算100以内的质数，并返回一个列表。"
+    task = "Visualize AAPL's ESG ratings during 2015-2023 and analyze its ESG performance"
     files = []
     
     logger.info(f"| 📋 Task: {task}")
     logger.info(f"| 📂 Files: {files}")
     
     input = {
-        "name": "tool_calling",
+        "name": "esg_agent",
         "input": {
             "task": task,
             "files": files

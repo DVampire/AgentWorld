@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 
 from src.logger import logger
 from src.message import SystemMessage
-from src.optimizer.protocol.variable import Variable
+from src.optimizer.types import Variable
 from src.prompt.types import PromptConfig
 
 class SystemPrompt:

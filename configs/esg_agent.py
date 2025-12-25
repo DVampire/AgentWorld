@@ -8,6 +8,7 @@ with read_base():
     from .tools.browser import browser_tool
     from .tools.deep_researcher import deep_researcher_tool
     from .tools.deep_analyzer import deep_analyzer_tool
+    from .tools.mdify import mdify_tool
     from .memory.general_memory_system import memory_system as general_memory_system
 
 tag = "esg_agent"
@@ -72,6 +73,10 @@ deep_analyzer_tool.update(
 report_tool.update(
     model_name=model_name,
     base_dir=f"{workdir}/tool/report",
+)
+#-----------------MDIFY TOOL CONFIG-----------------
+mdify_tool.update(
+    base_dir=f"{workdir}/tool/mdify",
 )
 #-----------------GENERAL MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
