@@ -83,6 +83,8 @@ class ReformulatorTool(Tool):
                 - If you are asked for a string, don't use articles or abbreviations (e.g. for cities), unless specified otherwise. Don't output any final sentence punctuation such as '.', '!', or '?'.
                 - If you are asked for a comma separated list, apply the above rules depending on whether the elements are numbers or strings.
                 - If you are unable to determine the final answer, output 'Unable to determine'
+            
+                Reformulated answer is:
             """)
             
             messages = [
@@ -109,7 +111,7 @@ class ReformulatorTool(Tool):
                 final_answer = reformulated_answer.final_answer
                 logger.info(f"> Reformulated answer: {final_answer}")
                 
-                message = f"Reformulated answer: {final_answer}"
+                message = final_answer
                 return ToolResponse(success=True, 
                                     message=message, 
                                     extra=ToolExtra(
@@ -127,7 +129,7 @@ class ReformulatorTool(Tool):
                 
                 logger.info(f"> Reformulated answer (fallback): {final_answer}")
                 
-                message = f"Reformulated answer (fallback): {final_answer}"
+                message = final_answer
                 
                 return ToolResponse(success=True, 
                                     message=message, 
