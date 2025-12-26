@@ -3,6 +3,7 @@
 import os
 import json
 import re
+import uuid
 from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -12,6 +13,7 @@ from src.utils import assemble_project_path, dedent
 from src.model import model_manager
 from src.message import HumanMessage, SystemMessage
 from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.utils import file_lock
 
 
 class ContentItem(BaseModel):
@@ -395,10 +397,11 @@ class Report(BaseModel):
         # Replace [number] with [number](url) if not already in that format
         report_content = re.sub(r'\[(\d+)\](?!\()', add_url_to_citation, report_content)
         
-        # Step 10: Write report to file
+        # Step 10: Write report to file with file lock for concurrent safety
         os.makedirs(os.path.dirname(report_path), exist_ok=True)
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(report_content)
+        async with file_lock(report_path):
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
         
         return report_content
 
@@ -446,18 +449,13 @@ class ReportTool(Tool):
         description="The base directory for saving reports."
     )
     
-    # Internal state
-    _report_path: Optional[str] = None
-    _report: Optional[Report] = None
-
     def __init__(
         self, 
         base_dir: Optional[str] = None, 
         model_name: Optional[str] = None,
-        title: str = "Analysis Report",
         **kwargs
     ):
-        """Initialize the report tool and create necessary files."""
+        """Initialize the report tool."""
         super().__init__(**kwargs)
         
         if model_name is not None:
@@ -471,20 +469,15 @@ class ReportTool(Tool):
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
         
-        # Set up file path
-        self._report_path = os.path.join(self.base_dir, "report.md")
-        
-        # Initialize Report instance
-        self._report = Report(
-            title=title,
-            model_name=self.model_name
-        )
+        # Note: file_path and report are created per-call in __call__
+        # to avoid race conditions when multiple coroutines call this tool concurrently
 
     async def __call__(
         self,
         action: str,
         file_path: Optional[str] = None,
         content: Optional[Union[str, Dict[str, Any]]] = None,
+        title: Optional[str] = None,
         **kwargs
     ) -> ToolResponse:
         """Execute report action.
@@ -493,8 +486,20 @@ class ReportTool(Tool):
             action (str): The action to perform. action must be one of: add, complete.
             file_path (Optional[str]): Path to a markdown file to add. File content will be read and added.
             content (Optional[Union[str, Dict[str, Any]]]): Content to add as string or dictionary.
+            title (Optional[str]): Title for the report. If not provided, uses default "Analysis Report".
         """
         try:
+            # Create per-call local variables to avoid race conditions in concurrent calls
+            # Each call gets its own file_path and report instance
+            md_filename = f"report_{uuid.uuid4().hex[:8]}.md"
+            report_file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+            
+            report_title = title if title is not None else "Analysis Report"
+            report = Report(
+                title=report_title,
+                model_name=self.model_name
+            )
+            
             logger.info(f"| 📝 ReportTool action: {action}")
 
             if action == "add":
@@ -503,10 +508,10 @@ class ReportTool(Tool):
                         success=False,
                         message="At least one of 'content' or 'file_path' is required for add action."
                     )
-                return await self._add_content(file_path=file_path, content=content)
+                return await self._add_content(report=report, report_file_path=report_file_path, file_path=file_path, content=content)
 
             elif action == "complete":
-                return await self._complete_report()
+                return await self._complete_report(report=report, report_file_path=report_file_path)
 
             else:
                 return ToolResponse(
@@ -522,7 +527,7 @@ class ReportTool(Tool):
                 message=f"Error in report action '{action}': {str(e)}\n{traceback.format_exc()}"
             )
 
-    async def _add_content(self, file_path: Optional[str] = None, content: Optional[Union[str, Dict[str, Any]]] = None) -> ToolResponse:
+    async def _add_content(self, report: Report, report_file_path: Optional[str], file_path: Optional[str] = None, content: Optional[Union[str, Dict[str, Any]]] = None) -> ToolResponse:
         """Add new content to the report using Report.add_item().
         
         Args:
@@ -559,7 +564,7 @@ class ReportTool(Tool):
             # If it's not a markdown file, just pass it as file_path (will be added as reference)
             if is_markdown_file:
                 # Markdown file: read content and pass file_path to add_item
-                report_item = await self._report.add_item(file_path=resolved_file_path, content=content)
+                report_item = await report.add_item(file_path=resolved_file_path, content=content)
             else:
                 # Non-markdown file: pass file_path but don't read content (will be added as reference)
                 # Create a note about the attached file
@@ -571,9 +576,9 @@ class ReportTool(Tool):
                     else:
                         combined_content = file_note
                 
-                report_item = await self._report.add_item(file_path=resolved_file_path, content=combined_content)
+                report_item = await report.add_item(file_path=resolved_file_path, content=combined_content)
             
-            item_id = len(self._report.items)
+            item_id = len(report.items)
             logger.info(f"| ✅ Content added: ID={item_id}, Summary={report_item.content.summary[:100]}...")
             
             # Build success message
@@ -585,13 +590,13 @@ class ReportTool(Tool):
                 success=True,
                 message="\n".join(message_parts),
                 extra=ToolExtra(
-                    file_path=self._report_path,
+                    file_path=report_file_path,
                     data={
                         "id": item_id,
                         "summary": report_item.content.summary,
                         "reference_ids": report_item.content.reference_ids,
                         "references": [{"id": ref.id, "description": ref.description, "url": ref.url} for ref in report_item.references],
-                        "total_items": len(self._report.items),
+                        "total_items": len(report.items),
                         "source_file_path": resolved_file_path if resolved_file_path else None
                     }
                 )
@@ -605,32 +610,32 @@ class ReportTool(Tool):
                 message=f"Error adding content: {str(e)}\n{traceback.format_exc()}"
             )
 
-    async def _complete_report(self) -> ToolResponse:
+    async def _complete_report(self, report: Report, report_file_path: Optional[str]) -> ToolResponse:
         """Complete and optimize the entire report using Report.complete()."""
         try:
-            if not self._report.items:
+            if not report or not report.items:
                 return ToolResponse(
                     success=False,
                     message="Report is empty. Add content first using the 'add' action."
                 )
             
-            logger.info(f"| 📊 Completing report with {len(self._report.items)} items...")
+            logger.info(f"| 📊 Completing report with {len(report.items)} items...")
             
             # Use Report.complete() to generate final report with renumbered citations and references
-            final_report_content = await self._report.complete(self._report_path)
+            final_report_content = await report.complete(report_file_path)
             
             logger.info(f"| ✅ Report completion successful ({len(final_report_content)} chars)")
             
             return ToolResponse(
                 success=True,
-                message=f"📝 Report completed successfully!\n\nPath: {self._report_path}\n\nThe entire report has been generated with properly numbered citations and references.",
+                message=f"📝 Report completed successfully!\n\nPath: {report_file_path}\n\nThe entire report has been generated with properly numbered citations and references.",
                 extra=ToolExtra(
-                    file_path=self._report_path,
+                    file_path=report_file_path,
                     data={
-                        "path": self._report_path,
-                        "items_count": len(self._report.items),
+                        "path": report_file_path,
+                        "items_count": len(report.items),
                         "report_length": len(final_report_content),
-                        "title": self._report.title
+                        "title": report.title
                     }
                 )
             )

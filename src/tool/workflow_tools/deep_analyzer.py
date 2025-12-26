@@ -145,8 +145,8 @@ class DeepAnalyzerTool(Tool):
         if not hasattr(self, 'next_summary_id'):
             self.next_summary_id = 1
         
-        # File path (will be set in __call__)
-        self.file_path = None
+        # Note: file_path is created per-call in __call__
+        # to avoid race conditions when multiple coroutines call this tool concurrently
     
     def _get_next_summary_id(self) -> int:
         """Get next summary ID and increment counter."""
@@ -407,9 +407,10 @@ class DeepAnalyzerTool(Tool):
             if files:
                 logger.info(f"| 📂 Attached files: {files}")
             
+            # Create per-call local variables to avoid race conditions in concurrent calls
             # Create file path for markdown report
             md_filename = f"analysis_{uuid.uuid4().hex[:8]}.md"
-            self.file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+            file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
             # Initialize Report instance
             report = Report(
@@ -451,22 +452,22 @@ class DeepAnalyzerTool(Tool):
                     answer_content = f"## Final Answer\n\n**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
                     await report.add_item(answer_content)
                     
-                    if self.file_path:
-                        final_report_content = await report.complete(self.file_path)
-                        logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                    if file_path:
+                        final_report_content = await report.complete(file_path)
+                        logger.info(f"✅ Analysis report saved to: {file_path}")
                         
-                        message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {self.file_path}"
+                        message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {file_path}"
                         
                         return ToolResponse(
                             success=True,
                             message=message,
                             extra=ToolExtra(
-                                file_path=self.file_path,
+                                file_path=file_path,
                                 data={
                                     "task": task,
                                     "answer_found": True,
                                     "answer": summary.answer,
-                                    "file_path": self.file_path
+                                    "file_path": file_path
                                 }
                             )
                         )
@@ -477,21 +478,21 @@ class DeepAnalyzerTool(Tool):
                     summaries.append(summary)
                     result = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries])
                     
-                    if self.file_path:
-                        final_report_content = await report.complete(self.file_path)
-                        logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                    if file_path:
+                        final_report_content = await report.complete(file_path)
+                        logger.info(f"✅ Analysis report saved to: {file_path}")
                         
-                        message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries]) + "\n\nReport saved to: {self.file_path}"
+                        message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries]) + "\n\nReport saved to: {file_path}"
                         
                         return ToolResponse(
                             success=False,
                             message=message,
                             extra=ToolExtra(
-                                file_path=self.file_path,
+                                file_path=file_path,
                                 data={
                                     "task": task,
                                     "answer_found": False,
-                                    "file_path": self.file_path
+                                    "file_path": file_path
                                 }
                             )
                         )
@@ -506,22 +507,22 @@ class DeepAnalyzerTool(Tool):
                 answer_content = f"## Final Answer\n\n**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
                 await report.add_item(answer_content)
                 
-                if self.file_path:
-                    final_report_content = await report.complete(self.file_path)
-                    logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                if file_path:
+                    final_report_content = await report.complete(file_path)
+                    logger.info(f"✅ Analysis report saved to: {file_path}")
                     
-                    message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {self.file_path}"
+                    message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {file_path}"
                     
                     return ToolResponse(
                         success=True,
                         message=message,
                         extra=ToolExtra(
-                            file_path=self.file_path,
+                            file_path=file_path,
                             data={
                                 "task": task,
                                 "answer_found": True,
                                 "answer": summary.answer,
-                                "file_path": self.file_path
+                                "file_path": file_path
                             }
                         )
                     )
@@ -588,23 +589,23 @@ class DeepAnalyzerTool(Tool):
                         round_content += f"### Round {round_num} Summary\n\n**Answer Found**: Yes\n\n**Answer**: {round_summary.answer}\n\n"
                         await report.add_item(round_content)
                         
-                        if self.file_path:
-                            final_report_content = await report.complete(self.file_path)
-                            logger.info(f"✅ Analysis report saved to: {self.file_path}")
+                        if file_path:
+                            final_report_content = await report.complete(file_path)
+                            logger.info(f"✅ Analysis report saved to: {file_path}")
                             
-                            message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}, Report saved to: {self.file_path}"
+                            message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}, Report saved to: {file_path}"
                             
                             return ToolResponse(
                                 success=True,
                                 message=message,
                                 extra=ToolExtra(
-                                    file_path=self.file_path,
+                                    file_path=file_path,
                                     data={
                                         "task": task,
                                         "round": round_num,
                                         "answer_found": True,
                                         "answer": round_summary.answer,
-                                        "file_path": self.file_path
+                                        "file_path": file_path
                                     }
                                 )
                             )
@@ -633,9 +634,9 @@ class DeepAnalyzerTool(Tool):
                 final_content += f"**Answer Found**: No\n\n"
             await report.add_item(final_content)
             
-            if self.file_path:
-                final_report_content = await report.complete(self.file_path)
-                logger.info(f"✅ Analysis report saved to: {self.file_path}")
+            if file_path:
+                final_report_content = await report.complete(file_path)
+                logger.info(f"✅ Analysis report saved to: {file_path}")
                 
                 # Build message parts separately to avoid f-string backslash issue
                 status_text = 'Answer found' if final_summary.found_answer else 'No definitive answer found'
@@ -646,19 +647,19 @@ class DeepAnalyzerTool(Tool):
                     answer_text = 'Summaries:\n' + '\n'.join(summaries_list)
                 
                 message = f"Analysis completed after {self.max_rounds} rounds.\n\nTask: {task}\n\n{status_text}.\n\n{answer_text}"
-                message += f"\n\nReport saved to: {self.file_path}"
+                message += f"\n\nReport saved to: {file_path}"
                 
                 return ToolResponse(
                     success=final_summary.found_answer,
                     message=message,
                     extra=ToolExtra(
-                        file_path=self.file_path,
+                        file_path=file_path,
                         data={
                             "task": task,
                             "rounds": self.max_rounds,
                             "answer_found": final_summary.found_answer,
                             "answer": final_summary.answer if final_summary.found_answer else None,
-                            "file_path": self.file_path
+                            "file_path": file_path
                         }
                     )
                 )
