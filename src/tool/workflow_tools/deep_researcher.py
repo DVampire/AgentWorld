@@ -190,7 +190,7 @@ class DeepResearcherTool(Tool):
                     round_content += f"- **Answer Found**: {'Yes' if evaluation.is_complete else 'No'}\n"
                     round_content += f"- **Reasoning**: {evaluation.reasoning}\n\n"
                 
-                await self.report.add_item(content=round_content)
+                await report.add_item(content=round_content)
                 
                 if evaluation.is_complete:
                     logger.info(f"✅ Answer found in round {round_num}: {evaluation.reasoning[:100]}...")
