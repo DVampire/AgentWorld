@@ -5,15 +5,13 @@ classes/functions from source code strings. Useful for dynamically generated cod
 that doesn't exist in the filesystem.
 """
 
-from .manager import (
+from .server import (
     DynamicModuleManager,
     dynamic_manager
 )
-from .types import DynamicModuleInfo
 
 __all__ = [
     "DynamicModuleManager",
-    "DynamicModuleInfo",
     "dynamic_manager",
 ]
 
