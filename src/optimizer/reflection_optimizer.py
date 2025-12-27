@@ -68,7 +68,7 @@ class ReflectionOptimizer(Optimizer):
         
         try:
             response = await model_manager(model=self.model_name, messages=messages)
-            reflection_text = response.content if hasattr(response, 'content') else str(response)
+            reflection_text = response.message if hasattr(response, 'message') else str(response)
             
             logger.info(f"| ✅ Reflection analysis generated ({len(reflection_text)} chars)")
             logger.info(f"| Reflection analysis:\n{reflection_text}\n")
@@ -113,7 +113,7 @@ class ReflectionOptimizer(Optimizer):
         
         try:
             response = await model_manager(model=self.model_name, messages=messages)
-            improved_text = response.content if hasattr(response, 'content') else str(response)
+            improved_text = response.message if hasattr(response, 'message') else str(response)
             
             # Strip potential Markdown code fences.
             improved_text = improved_text.strip()
