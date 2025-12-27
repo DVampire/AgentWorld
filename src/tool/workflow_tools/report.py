@@ -4,6 +4,7 @@ import os
 import json
 import re
 import uuid
+import asyncio
 from typing import Optional, Dict, Any, List, Union
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -39,7 +40,6 @@ class ReportItem(BaseModel):
     
     content: ContentItem = Field(description="The content of the item")
     references: List[ReferenceItem] = Field(description="The references of the item")
-    
 
 class Report(BaseModel):
     """Report"""
@@ -48,11 +48,14 @@ class Report(BaseModel):
     title: str = Field(description="The title of the report")
     items: List[ReportItem] = Field(default=[], description="The items of the report")
     model_name: str = Field(default="openrouter/gemini-3-flash-preview", description="The model to use for extraction")
+    report_file_path: Optional[str] = Field(default=None, description="The file path where the report will be saved")
 
-    def __init__(self, model_name: str = None, **kwargs):
+    def __init__(self, model_name: str = None, report_file_path: Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
         if model_name is not None:
             self.model_name = model_name
+        if report_file_path is not None:
+            self.report_file_path = report_file_path
         
     async def add_item(self, file_path: Optional[str] = None, content: Optional[Union[str, Dict[str, Any]]] = None):
         """Add a new item to the report by extracting ReportItem from content.
@@ -145,7 +148,7 @@ class Report(BaseModel):
         
         return report_item
     
-    async def complete(self, report_path: str):
+    async def complete(self):
         """Complete the report by optimizing the content and references.
         
         This method:
@@ -153,13 +156,16 @@ class Report(BaseModel):
         2. Merges and deduplicates all references
         3. Renumbers citations in content and references
         4. Uses LLM to generate a complete markdown report
-        5. Writes the report to the specified path
+        5. Writes the report to the file path specified during initialization
         
-        Args:
-            report_path: Path to write the final markdown report file
+        Raises:
+            ValueError: If report_file_path is not set or report has no items
         """
         if not self.items:
             raise ValueError("Cannot complete report: no items found")
+        
+        if not self.report_file_path:
+            raise ValueError("Cannot complete report: report_file_path is not set")
         
         # Step 1: Collect all unique references from all items
         # Deduplicate by both description and URL to handle similar references
@@ -398,9 +404,9 @@ class Report(BaseModel):
         report_content = re.sub(r'\[(\d+)\](?!\()', add_url_to_citation, report_content)
         
         # Step 10: Write report to file with file lock for concurrent safety
-        os.makedirs(os.path.dirname(report_path), exist_ok=True)
-        async with file_lock(report_path):
-            with open(report_path, 'w', encoding='utf-8') as f:
+        os.makedirs(os.path.dirname(self.report_file_path), exist_ok=True)
+        async with file_lock(self.report_file_path):
+            with open(self.report_file_path, 'w', encoding='utf-8') as f:
                 f.write(report_content)
         
         return report_content
@@ -413,6 +419,7 @@ _REPORT_DESCRIPTION = """Report tool for managing and refining markdown reports.
 📋 Actions:
 - add: Add new content to the report
   - args: 
+    - report_id (str) - REQUIRED: Unique identifier for the report. Use the same report_id across multiple calls to maintain state.
     - file_path (Optional[str]) - Path to a markdown file to add (file content will be read and added)
     - content (Optional[Union[str, Dict[str, Any]]]) - The content to add as string or dictionary
     - At least one of content or file_path must be provided
@@ -420,12 +427,16 @@ _REPORT_DESCRIPTION = """Report tool for managing and refining markdown reports.
   - Appends content to report.md
 
 - complete: Complete and optimize the entire report
+  - args:
+    - report_id (str) - REQUIRED: Unique identifier for the report. Must match the report_id used in previous 'add' calls.
   - Reads all summaries and optimizes content for coherence and logic
   - Updates report.md with optimized content
 
 💡 Workflow:
-1. Use `add` multiple times to incrementally add content (from strings or dictionaries or files)
-2. Use `complete` to optimize the entire report with LLM
+1. Use `add` multiple times with the SAME `report_id` to incrementally add content (from strings or dictionaries or files)
+2. Use `complete` with the SAME `report_id` to optimize the entire report with LLM
+
+⚠️ IMPORTANT: You MUST use the same `report_id` for all calls to the same report. Different `report_id` values create separate reports.
 """
 
 
@@ -469,55 +480,127 @@ class ReportTool(Tool):
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
         
-        # Note: file_path and report are created per-call in __call__
-        # to avoid race conditions when multiple coroutines call this tool concurrently
+        # Per-report_id cache and locks for concurrent safety (similar to memory system)
+        # Key: report_id (str), Value: Report instance
+        self._report_cache: Dict[str, Report] = {}
+        # Key: report_id (str), Value: asyncio.Lock for that report
+        self._report_locks: Dict[str, asyncio.Lock] = {}
+        # Lock for managing the cache dictionaries themselves
+        self._cache_lock = asyncio.Lock()
+    
+    def _get_report_file_path(self, report_id: str) -> Optional[str]:
+        """Generate a fixed report file path based on report_id.
+        
+        Args:
+            report_id: The unique report identifier
+            
+        Returns:
+            The report file path, or None if base_dir is not set
+        """
+        if not self.base_dir:
+            return None
+        # Create a safe filename from report_id
+        safe_id = re.sub(r'[^\w\s-]', '', report_id).strip().replace(' ', '_')
+        if not safe_id:
+            safe_id = "report"
+        md_filename = f"{safe_id}.md"
+        return os.path.join(self.base_dir, md_filename)
+    
+    async def _get_or_create_report(self, report_id: str) -> tuple[Report, asyncio.Lock]:
+        """Get or create a Report instance for the given report_id with proper locking.
+        
+        Args:
+            report_id: The unique identifier for the report
+            
+        Returns:
+            tuple[Report, asyncio.Lock]: The report instance and its lock
+        """
+        async with self._cache_lock:
+            # Get or create lock for this report_id
+            if report_id not in self._report_locks:
+                self._report_locks[report_id] = asyncio.Lock()
+            
+            # Get or create report for this report_id
+            if report_id not in self._report_cache:
+                # Generate report_file_path based on report_id
+                report_file_path = self._get_report_file_path(report_id)
+                # Use report_id as the title
+                self._report_cache[report_id] = Report(
+                    title=report_id,
+                    model_name=self.model_name,
+                    report_file_path=report_file_path
+                )
+                logger.info(f"| 📝 Created new report cache for id: {report_id} (file_path: {report_file_path})")
+            else:
+                logger.info(f"| 📂 Using existing report cache for id: {report_id} (items: {len(self._report_cache[report_id].items)})")
+            
+            return self._report_cache[report_id], self._report_locks[report_id]
+    
+    async def _cleanup_report(self, report_id: str):
+        """Remove report from cache after completion."""
+        async with self._cache_lock:
+            if report_id in self._report_cache:
+                del self._report_cache[report_id]
+                logger.info(f"| 🧹 Removed report from cache: {report_id}")
+            if report_id in self._report_locks:
+                del self._report_locks[report_id]
 
     async def __call__(
         self,
         action: str,
+        report_id: str,
         file_path: Optional[str] = None,
         content: Optional[Union[str, Dict[str, Any]]] = None,
-        title: Optional[str] = None,
         **kwargs
     ) -> ToolResponse:
         """Execute report action.
 
         Args:
             action (str): The action to perform. action must be one of: add, complete.
-            file_path (Optional[str]): Path to a markdown file to add. File content will be read and added.
+            report_id (str): Unique identifier for the report. Use the same report_id across multiple calls to maintain state.
+            file_path (Optional[str]): Path to a file to add. If it's a .md file, the content will be read and added. If it's not a .md file, it will be added as a reference/attachment.
             content (Optional[Union[str, Dict[str, Any]]]): Content to add as string or dictionary.
-            title (Optional[str]): Title for the report. If not provided, uses default "Analysis Report".
         """
         try:
-            # Create per-call local variables to avoid race conditions in concurrent calls
-            # Each call gets its own file_path and report instance
-            md_filename = f"report_{uuid.uuid4().hex[:8]}.md"
-            report_file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
-            
-            report_title = title if title is not None else "Analysis Report"
-            report = Report(
-                title=report_title,
-                model_name=self.model_name
-            )
-            
-            logger.info(f"| 📝 ReportTool action: {action}")
-
-            if action == "add":
-                if not content and not file_path:
-                    return ToolResponse(
-                        success=False,
-                        message="At least one of 'content' or 'file_path' is required for add action."
-                    )
-                return await self._add_content(report=report, report_file_path=report_file_path, file_path=file_path, content=content)
-
-            elif action == "complete":
-                return await self._complete_report(report=report, report_file_path=report_file_path)
-
-            else:
+            if not report_id:
                 return ToolResponse(
                     success=False,
-                    message=f"Unknown action: {action}. Valid actions: add, complete"
+                    message="report_id is required. Please provide a unique identifier for the report."
                 )
+            
+            if not self.base_dir:
+                return ToolResponse(
+                    success=False,
+                    message="Cannot create report: base_dir is not set."
+                )
+            
+            # Get or create report instance and its lock based on report_id
+            # report_file_path is set during Report initialization
+            report, report_lock = await self._get_or_create_report(report_id)
+            
+            # Use the lock to ensure thread-safe access to this specific report
+            async with report_lock:
+                logger.info(f"| 📝 ReportTool action: {action} (report_id: {report_id}, report_file_path: {report.report_file_path}, items: {len(report.items)})")
+
+                if action == "add":
+                    if not content and not file_path:
+                        return ToolResponse(
+                            success=False,
+                            message="At least one of 'content' or 'file_path' is required for add action."
+                        )
+                    return await self._add_content(report=report, file_path=file_path, content=content)
+
+                elif action == "complete":
+                    result = await self._complete_report(report=report)
+                    # Clean up cache after completion
+                    await self._cleanup_report(report_id)
+                    return result
+
+                else:
+                    return ToolResponse(
+                        success=False,
+                        message=f"Unknown action: {action}. Valid actions: add, complete"
+                    )
 
         except Exception as e:
             logger.error(f"| ❌ Error in ReportTool: {e}")
@@ -527,10 +610,11 @@ class ReportTool(Tool):
                 message=f"Error in report action '{action}': {str(e)}\n{traceback.format_exc()}"
             )
 
-    async def _add_content(self, report: Report, report_file_path: Optional[str], file_path: Optional[str] = None, content: Optional[Union[str, Dict[str, Any]]] = None) -> ToolResponse:
+    async def _add_content(self, report: Report, file_path: Optional[str] = None, content: Optional[Union[str, Dict[str, Any]]] = None) -> ToolResponse:
         """Add new content to the report using Report.add_item().
         
         Args:
+            report: The report instance to add content to.
             file_path (Optional[str]): Path to a file to add. 
                 - If it's a .md file, the content will be read and added.
                 - If it's not a .md file, it will be added as a reference/attachment.
@@ -590,7 +674,7 @@ class ReportTool(Tool):
                 success=True,
                 message="\n".join(message_parts),
                 extra=ToolExtra(
-                    file_path=report_file_path,
+                    file_path=report.report_file_path,
                     data={
                         "id": item_id,
                         "summary": report_item.content.summary,
@@ -610,7 +694,7 @@ class ReportTool(Tool):
                 message=f"Error adding content: {str(e)}\n{traceback.format_exc()}"
             )
 
-    async def _complete_report(self, report: Report, report_file_path: Optional[str]) -> ToolResponse:
+    async def _complete_report(self, report: Report) -> ToolResponse:
         """Complete and optimize the entire report using Report.complete()."""
         try:
             if not report or not report.items:
@@ -619,20 +703,26 @@ class ReportTool(Tool):
                     message="Report is empty. Add content first using the 'add' action."
                 )
             
+            if not report.report_file_path:
+                return ToolResponse(
+                    success=False,
+                    message="Report file path is not set. Cannot complete report."
+                )
+            
             logger.info(f"| 📊 Completing report with {len(report.items)} items...")
             
             # Use Report.complete() to generate final report with renumbered citations and references
-            final_report_content = await report.complete(report_file_path)
+            final_report_content = await report.complete()
             
             logger.info(f"| ✅ Report completion successful ({len(final_report_content)} chars)")
             
             return ToolResponse(
                 success=True,
-                message=f"📝 Report completed successfully!\n\nPath: {report_file_path}\n\nThe entire report has been generated with properly numbered citations and references.",
+                message=f"📝 Report completed successfully!\n\nPath: {report.report_file_path}\n\nThe entire report has been generated with properly numbered citations and references.",
                 extra=ToolExtra(
-                    file_path=report_file_path,
+                    file_path=report.report_file_path,
                     data={
-                        "path": report_file_path,
+                        "path": report.report_file_path,
                         "items_count": len(report.items),
                         "report_length": len(final_report_content),
                         "title": report.title

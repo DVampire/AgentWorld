@@ -158,7 +158,9 @@ When searching the web for information, follow this priority order:
    - Ensure the answer is clear, concise, and properly formatted
 
 3. **Completion Phase:**
-   - After providing the final answer, call `done` to complete the task
+   - **REQUIRED**: Before calling `done`, you MUST call `reformulator` tool to reformulate and finalize your answer
+   - The `reformulator` tool helps ensure your answer is clear, concise, and properly formatted
+   - After calling `reformulator` and receiving the reformulated answer, then call `done` to complete the task
 
 **Workflow for Report Generation Tasks:**
 
@@ -168,34 +170,44 @@ When searching the web for information, follow this priority order:
    - **Priority 3**: `browser`: Search the web for specific information - use only if `deep_researcher` fails to find sufficient information
    - `deep_analyzer`: Conduct multi-step analysis of ESG data and documents (task="...", files=[...])
    - `python_interpreter`: Process and analyze data programmatically
-   - **MANDATORY Pairing Rule**: When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also call `report` (action="add", file_path="...", content="...") in the SAME tool array. These tools must always be paired with report add, they cannot be called independently.
-   - **Report Tool Parameters**: The `report` tool has two key parameters when using action="add":
-     - `content` (required): Contains the original text from the collected data without any reduction or modification. Preserve the raw data exactly as retrieved.
-     - `file_path` (required): The file path returned by the data retrieval tool. This MUST be extracted from the tool's response and passed to `report`.
-   - **File Path Extraction and Usage**: When `retriever`, `browser`, `deep_researcher`, or `deep_analyzer` tools return results, they will include a file path in their response message (e.g., "Report saved to: /path/to/file.md"). You MUST:
+   - **REQUIRED Pairing Rule**: When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also call `report` (action="add", report_id="...", file_path="...", content="...") in the SAME tool array. These tools cannot be called independently.
+   - **Report Tool Parameters**: The `report` tool has the following parameters when using action="add":
+     - `report_id` (required): Unique identifier for the report. You MUST use the SAME `report_id` for all calls to the same report throughout the entire task. Choose a descriptive ID like "esg_analysis_2023" or "company_report_aapl".
+     - `content` (optional): Contains the original text from the collected data without any reduction or modification. Preserve the raw data exactly as retrieved.
+     - `file_path` (optional): The file path returned by the data retrieval tool. This MUST be extracted from the tool's response and passed to `report`. At least one of `content` or `file_path` must be provided.
+   - **File Path Extraction and Usage**: When data retrieval tools return results, they will include a file path in their response message (e.g., "Report saved to: /path/to/file.md"). You MUST:
      - Extract the file path from the tool's response message (look for "Report saved to:" or "saved to:" patterns) or from the tool's extra data
-     - **ALWAYS pass this file path to the `report` tool's `file_path` parameter** when calling `report` with action="add"
+     - **REQUIRED**: Pass this file path to the `report` tool's `file_path` parameter when calling `report` with action="add"
      - If the file path is a .md file, the content will be read and added; if it's another file type, it will be added as a reference
-     - **CRITICAL**: If any data retrieval tool returns a file path in its response, you MUST use `report` (action="add", file_path="...", content="...") to add it to the report. Never ignore file paths returned by data retrieval tools.
+     - **DO NOT** ignore file paths returned by data retrieval tools
+   - **Report ID Consistency**: You MUST use the SAME `report_id` for all `report` calls (both "add" and "complete") within the same task. Different `report_id` values create separate reports.
 
 2. **Visualization Phase** (when appropriate):
    - `plotter`: Create visualizations of ESG trends (input_data="...", output_filename="...")
-   - `report`: Add visualization images and analysis to the report (action="add", content="...")
+   - `report`: Add visualization images and analysis to the report (action="add", report_id="...", content="...")
+   - **REQUIRED**: Use the SAME `report_id` as used in the Data Collection Phase
    - **Report File Path Requirements:**
-     - **MUST use absolute paths** for all file references in report content (images, links, attachments, etc.)
+     - **REQUIRED**: Use absolute paths for all file references in report content (images, links, attachments, etc.)
      - Example: If `plotter` tool returns PNG file at `/path/to/workdir/esg_agent/tool/plotter/chart.png`, 
        use that full absolute path in markdown: `![Chart](/path/to/workdir/esg_agent/tool/plotter/chart.png)`
-     - ❌ **DO NOT use** relative paths like `chart.png`, `./chart.png`, or `../plotter/chart.png`
-     - ✅ **ALWAYS use** absolute paths like `/full/path/to/chart.png`
+     - **DO NOT** use relative paths like `chart.png`, `./chart.png`, or `../plotter/chart.png`
+     - **MUST** use absolute paths like `/full/path/to/chart.png`
 
 3. **Finalization Phase:**
-   - `report`: Optimize and finalize the entire report (action="complete")
-   - `done`: Complete the task
+   - `report`: Optimize and finalize the entire report (action="complete", report_id="...")
+   - **REQUIRED**: Call `report` (action="complete", report_id="...") before calling `done`
+   - **REQUIRED**: Use the SAME `report_id` as used in all previous `report` calls (Data Collection and Visualization phases)
+   - **DO NOT** use `reformulator` tool for Report tasks - reformulator is only for QA tasks
+   - After calling `report` (action="complete", report_id="..."), then call `done` to complete the task
 
 **Key Principles:**
-- For QA tasks: Directly provide the final answer based on collected information, DO NOT use `report`
-- For Report tasks: Use `report` to document findings
-- Never collect data without documenting it in report tasks - every data retrieval must be immediately followed by adding findings to the report in the same step
+- **QA tasks**: 
+  - **DO NOT** use `report` tool
+  - **REQUIRED**: Call `reformulator` before `done`
+- **Report tasks**: 
+  - **REQUIRED**: Call `report` (action="complete") before `done`
+  - **DO NOT** use `reformulator` tool
+- **REQUIRED**: In Report tasks, every data retrieval must be immediately followed by adding findings to the report in the same step
 </tool_use_rules>
 
 <todo_rules>
@@ -224,6 +236,51 @@ You have access to a `todo` tool for task planning. Use it strategically based o
 EXAMPLE_RULES = """
 <example_rules>
 You will be provided with few shot examples of good or bad patterns. Use them as reference but never copy them directly.
+
+**Tool Array Examples:**
+
+**For Question-Answer Tasks:**
+- Use `retriever`, `browser`, `deep_researcher`, `deep_analyzer`, or `python_interpreter` to gather information
+- **DO NOT** use `report` tool for QA tasks
+- After gathering sufficient information, directly provide the final answer in your response
+- **REQUIRED**: Before calling `done`, call `reformulator` tool to reformulate your answer
+- Example for QA task completion:
+```json
+"tool": [
+  {"name": "reformulator", "args": {"task": "...", "data": [...]}},
+  {"name": "done", "args": {"result": "..."}}
+]
+```
+- The `reformulator` tool takes the task and conversation history (`data`) to produce a final, well-formatted answer
+- After receiving the reformulated answer from `reformulator`, call `done` with the reformulated result
+
+**For Report Generation Tasks:**
+- **REQUIRED**: When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also include `report` (action="add", report_id="...", file_path="...", content="...") in the SAME tool array
+- These tools cannot be called independently
+- **Report Tool Parameters** (when action="add"):
+  - `report_id` (required): Unique identifier for the report. Use the SAME `report_id` for all report calls in this task.
+  - `file_path` (optional): Extract the file path from the data retrieval tool's response message (look for "Report saved to:" or "saved to:" patterns) and pass it to this parameter
+  - `content` (optional): Contains the original text from the collected data without any reduction or modification
+  - At least one of `content` or `file_path` must be provided
+- **REQUIRED**: Extract file paths from data retrieval tool responses and pass them to `report` tool's `file_path` parameter
+- **REQUIRED**: Use the SAME `report_id` for all `report` calls (both "add" and "complete") throughout the task
+- Example for Report task:
+```json
+"tool": [
+  {"name": "retriever", "args": {"query": "...", "mode": "hybrid", "top_k": 10}},
+  {"name": "report", "args": {"action": "add", "report_id": "esg_analysis_2023", "file_path": "/path/to/retrieval_abc123.md", "content": "## Findings\\n\\n[Your analysis here]..."}}
+]
+```
+- Note: Extract the `file_path` from the previous tool's response message (e.g., if retriever returns "Report saved to: /path/to/file.md", use that exact path in report's `file_path` parameter)
+- For completion: `{"name": "report", "args": {"action": "complete", "report_id": "esg_analysis_2023"}}`
+
+**Incorrect Examples (DO NOT DO THIS):**
+- QA task using report: `{"name": "report", "args": {...}}` ❌
+- Report task without report pairing: `{"name": "retriever", "args": {...}}` ❌ (missing report)
+- Report task without report_id: `{"name": "report", "args": {"action": "add", "content": "..."}}` ❌ (missing report_id)
+- Report task with different report_id values: `{"name": "report", "args": {"action": "add", "report_id": "report1", ...}}` then `{"name": "report", "args": {"action": "complete", "report_id": "report2"}}` ❌ (must use same report_id)
+- Calling `done` without `reformulator` in QA tasks ❌
+- Calling `done` without `report` (action="complete", report_id="...") in Report tasks ❌
 </example_rules>
 """
 
@@ -242,7 +299,8 @@ You must reason explicitly and systematically at every step in your `thinking` b
 - Track what information has been collected and whether it's sufficient to answer the question
 - When sufficient information is gathered, directly provide the final answer formatted according to the question's requirements
 - Verify the answer format matches the question requirements (e.g., single letter for multiple-choice, number for calculations, True/False for boolean questions)
-- Before calling `done`, ensure the answer is clear, concise, and properly formatted
+- **REQUIRED**: Before calling `done`, call `reformulator` tool to reformulate and finalize your answer
+- After calling `reformulator` and receiving the reformulated answer, then call `done` to complete the task
 
 **For Report Generation Tasks, exhibit these reasoning patterns:**
 - Analyze <agent_history> to track progress toward the ESG analysis goal and identify what ESG data has been collected
@@ -251,7 +309,10 @@ You must reason explicitly and systematically at every step in your `thinking` b
 - Detect when you are stuck (repeating similar tool calls or not making progress) and consider alternative ESG data sources or analysis approaches
 - Before finalizing the report, verify ESG data accuracy, consistency, and completeness
 - Maintain concise, actionable memory for future reasoning by remembering key ESG metrics, trends, and data sources identified
-- Before finishing, verify that all required ESG data has been collected, analyzed, and documented in the report, and confirm readiness to call `done`
+- **REQUIRED**: Before calling `done`, call `report` (action="complete", report_id="...") to finalize the report
+- **REQUIRED**: Use the SAME `report_id` as used in all previous `report` calls (Data Collection and Visualization phases)
+- **DO NOT** use `reformulator` tool for Report tasks - reformulator is only for QA tasks
+- After calling `report` (action="complete", report_id="..."), then call `done` to complete the task
 - Always align reasoning with the ESG analysis <task> and user intent to ensure the analysis addresses the specific ESG questions or requirements
 
 **Common reasoning patterns for both task types:**
@@ -274,40 +335,6 @@ You must ALWAYS respond with valid JSON in this exact format:
     {"name": "tool_name", "args": {tool-specific parameters}}
   ]
 }
-
-**Tool Array Rules:**
-
-**For Question-Answer Tasks:**
-- Use `retriever`, `browser`, `deep_researcher`, `deep_analyzer`, or `python_interpreter` to gather information
-- **DO NOT use `report` tool** for QA tasks
-- After gathering sufficient information, directly provide the final answer in your response
-- Example for QA task:
-```json
-"tool": [
-  {"name": "retriever", "args": {"query": "...", "mode": "hybrid", "top_k": 10}}
-]
-```
-Then provide the final answer directly in your response based on the retrieved information.
-
-**For Report Generation Tasks:**
-- When calling any data retrieval tool (`retriever`, `browser`, `deep_researcher`, or `deep_analyzer`), you MUST also include `report` (action="add", file_path="...", content="...") in the SAME tool array
-- These tools cannot be called independently, they must always be paired together
-- **Report Tool Parameters** (when action="add"):
-  - `file_path` (required): Extract the file path from the data retrieval tool's response message (look for "Report saved to:" or "saved to:" patterns) and pass it to this parameter. **MUST be extracted from the tool's response, never omit this parameter.**
-  - `content` (required): Contains the original text from the collected data without any reduction or modification
-- **IMPORTANT**: If any data retrieval tool returns a file path in its response, you MUST extract it and pass it to `report` tool's `file_path` parameter. Never ignore file paths returned by data retrieval tools.
-- Example for Report task:
-```json
-"tool": [
-  {"name": "retriever", "args": {"query": "...", "mode": "hybrid", "top_k": 10}},
-  {"name": "report", "args": {"action": "add", "file_path": "/path/to/retrieval_abc123.md", "content": "## Findings\\n\\n[Your analysis here]..."}}
-]
-```
-- Note: The `file_path` MUST be extracted from the previous tool's response message (e.g., if retriever returns "Report saved to: /path/to/file.md", use that exact path in report's `file_path` parameter)
-
-**Incorrect Examples (DO NOT DO THIS):**
-- QA task using report: `{"name": "report", "args": {...}}` ❌
-- Report task without report pairing: `{"name": "retriever", "args": {...}}` ❌ (missing report)
 </output>
 """
 

@@ -415,7 +415,8 @@ class DeepAnalyzerTool(Tool):
             # Initialize Report instance
             report = Report(
                 title="Deep Analysis Report",
-                model_name=self.model_name
+                model_name=self.model_name,
+                report_file_path=file_path
             )
             
             # Add initial task information
@@ -453,7 +454,7 @@ class DeepAnalyzerTool(Tool):
                     await report.add_item(answer_content)
                     
                     if file_path:
-                        final_report_content = await report.complete(file_path)
+                        final_report_content = await report.complete()
                         logger.info(f"✅ Analysis report saved to: {file_path}")
                         
                         message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {file_path}"
@@ -479,7 +480,7 @@ class DeepAnalyzerTool(Tool):
                     result = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries])
                     
                     if file_path:
-                        final_report_content = await report.complete(file_path)
+                        final_report_content = await report.complete()
                         logger.info(f"✅ Analysis report saved to: {file_path}")
                         
                         message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries]) + "\n\nReport saved to: {file_path}"
@@ -508,7 +509,7 @@ class DeepAnalyzerTool(Tool):
                 await report.add_item(answer_content)
                 
                 if file_path:
-                    final_report_content = await report.complete(file_path)
+                    final_report_content = await report.complete()
                     logger.info(f"✅ Analysis report saved to: {file_path}")
                     
                     message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {file_path}"
@@ -590,7 +591,7 @@ class DeepAnalyzerTool(Tool):
                         await report.add_item(round_content)
                         
                         if file_path:
-                            final_report_content = await report.complete(file_path)
+                            final_report_content = await report.complete()
                             logger.info(f"✅ Analysis report saved to: {file_path}")
                             
                             message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}, Report saved to: {file_path}"
@@ -635,7 +636,7 @@ class DeepAnalyzerTool(Tool):
             await report.add_item(final_content)
             
             if file_path:
-                final_report_content = await report.complete(file_path)
+                final_report_content = await report.complete()
                 logger.info(f"✅ Analysis report saved to: {file_path}")
                 
                 # Build message parts separately to avoid f-string backslash issue

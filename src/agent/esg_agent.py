@@ -382,25 +382,6 @@ class ESGAgent(Agent):
         if step_number >= self.max_steps:
             logger.warning(f"| 🛑 Reached max ESG analysis steps ({self.max_steps}), stopping...")
             final_result = "Reached maximum number of ESG analysis steps"
-            
-        # Reformulate final result
-        reformulator_tool = await tcp.get("reformulator")
-        if reformulator_tool:
-            data = [
-               message.text for message in messages
-            ]
-            try:
-                response = await reformulator_tool(task=task, data=data)
-                if response.success:
-                    final_result = response.message
-                else:
-                    logger.error(f"| ❌ Failed to reformulate final result: {response.message}")
-                    final_result = "Failed to reformulate final result"
-            except Exception as e:
-                logger.error(f"| ❌ Error reformulating final result: {e}")
-                # Keep the original final_result if reformulation fails
-        else:
-            logger.warning("| ⚠️ Reformulator tool not found, skipping reformulation")
         
         # Add task end event
         await memory_manager.add_event(

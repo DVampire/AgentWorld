@@ -271,6 +271,7 @@ async def main():
     # Get tasks to run (filter out completed ones)
     save_path = os.path.join(config.workdir, "answers.jsonl")
     tasks_to_run = await get_tasks_to_run(save_path, dataset)
+    tasks_to_run = [task for task in tasks_to_run if int(task.get("task")) == 3][:1]
     
     # Sort tasks by task_id
     tasks_to_run = list(sorted(tasks_to_run, key=lambda x: x.get("task_id", "")))

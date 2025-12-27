@@ -133,7 +133,8 @@ class BrowserTool(Tool):
             # Initialize Report instance
             report = Report(
                 title="Browser Task Report",
-                model_name=self.model_name
+                model_name=self.model_name,
+                report_file_path=file_path
             )
             
             # Add initial task information
@@ -157,7 +158,7 @@ class BrowserTool(Tool):
             
             # Generate final report
             if file_path:
-                final_report_content = await report.complete(file_path)
+                final_report_content = await report.complete()
                 logger.info(f"✅ Browser report saved to: {file_path}")
                 
                 message = f"Browser task completed successfully!\n\nTask: {task}\n\nResult: {result_message}\n\nReport saved to: {file_path}"

@@ -5,8 +5,6 @@ import re
 import json
 import uuid
 from typing import Optional, Dict, Any
-import pandas as pd
-from tabulate import tabulate
 from pydantic import Field, ConfigDict
 
 from dotenv import load_dotenv
@@ -175,7 +173,8 @@ class RetrieverTool(Tool):
             # Initialize Report instance
             report = Report(
                 title="Retrieval Report",
-                model_name=self.model_name
+                model_name=self.model_name,
+                report_file_path=file_path
             )
             
             # Add initial query information
@@ -206,7 +205,7 @@ class RetrieverTool(Tool):
                 await report.add_item(no_result_content)
                 
                 if file_path:
-                    final_report_content = await report.complete(file_path)
+                    final_report_content = await report.complete()
                     logger.info(f"✅ Retrieval report saved to: {file_path}")
                 
                 return ToolResponse(
@@ -228,7 +227,7 @@ class RetrieverTool(Tool):
                 
                 # Generate final report
                 if file_path:
-                    final_report_content = await report.complete(file_path)
+                    final_report_content = await report.complete()
                     logger.info(f"✅ Retrieval report saved to: {file_path}")
                     
                     # Generate summary message
@@ -273,7 +272,7 @@ class RetrieverTool(Tool):
                 await report.add_item(error_content)
                 
                 if file_path:
-                    final_report_content = await report.complete(file_path)
+                    final_report_content = await report.complete()
                     logger.info(f"✅ Retrieval report saved to: {file_path}")
                 
                 message = f"Retrieved content (parse warning): {str(content)}"

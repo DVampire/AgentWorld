@@ -138,7 +138,8 @@ class DeepResearcherTool(Tool):
             report_title = title if title is not None else "Research Report"
             report = Report(
                 title=report_title,
-                model_name=self.model_name
+                model_name=self.model_name,
+                report_file_path=file_path
             )
             
             # Add initial task information as first item
@@ -205,7 +206,7 @@ class DeepResearcherTool(Tool):
             if file_path:
                 # Generate final report using Report.complete()
                 # This will merge all items, renumber citations and references, and generate the final markdown
-                final_report_content = await report.complete(file_path)
+                final_report_content = await report.complete()
                 
                 # Generate summary from the final report
                 summary = await self._generate_summary(
