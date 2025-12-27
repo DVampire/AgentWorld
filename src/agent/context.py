@@ -131,6 +131,11 @@ class AgentContextManager(BaseModel):
                         f"| 📌 Keeping agent {agent_name} from registry (v{registry_config.version}), "
                         f"code version (v{code_config.version}) is not greater"
                     )
+                    # If versions are equal, update the history with registry config (which has real class, not dynamic)
+                    if version_manager.compare_versions(code_config.version, registry_config.version) == 0:
+                        # Replace the code config in history with registry config to preserve real class reference
+                        if agent_name in self._agent_history_versions:
+                            self._agent_history_versions[agent_name][registry_config.version] = registry_config
             else:
                 agent_configs[agent_name] = code_config
 

@@ -82,6 +82,11 @@ class PromptContextManager(BaseModel):
                     prompt_configs[prompt_name] = code_config
                 else:
                     logger.info(f"| 📌 Keeping prompt {prompt_name} from registry (v{registry_config.version}), code version (v{code_config.version}) is not greater")
+                    # If versions are equal, update the history with registry config (which has real class, not dynamic)
+                    if version_manager.compare_versions(code_config.version, registry_config.version) == 0:
+                        # Replace the code config in history with registry config to preserve real class reference
+                        if prompt_name in self._prompt_history_versions:
+                            self._prompt_history_versions[prompt_name][registry_config.version] = registry_config
             else:
                 # New prompt from code, add it
                 prompt_configs[prompt_name] = code_config
