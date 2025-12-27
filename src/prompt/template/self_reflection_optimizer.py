@@ -1,6 +1,6 @@
 from src.registry import PROMPT
 from src.prompt.types import Prompt
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from pydantic import Field, ConfigDict
 
 # ---------------------Reflection Prompt---------------------
@@ -129,21 +129,28 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
 }
 
 @PROMPT.register_module(force=True)
-class ReflectionOptimizerReflectionPrompt(Prompt):
-    """Prompt template for self-reflection optimizer."""
+class ReflectionOptimizerReflectionSystemPrompt(Prompt):
+    """System prompt template for self-reflection optimizer."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="reflection_optimizer_reflection_prompt", description="The name of the prompt")
-    description: str = Field(default="Prompt for self-reflection optimizer", description="The description of the prompt")
+    type: str = Field(default='system_prompt', description="The type of the prompt")
+    name: str = Field(default="reflection_optimizer_reflection", description="The name of the prompt")
+    description: str = Field(default="System prompt for self-reflection optimizer", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
-    @property
-    def system_prompt(self) -> Dict[str, Any]:
-        return REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT
+    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT, description="System prompt information")
+
+@PROMPT.register_module(force=True)
+class ReflectionOptimizerReflectionAgentMessagePrompt(Prompt):
+    """Agent message prompt template for self-reflection optimizer."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    @property
-    def agent_message_prompt(self) -> Dict[str, Any]:
-        return REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="reflection_optimizer_reflection", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for self-reflection optimizer", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT, description="Agent message prompt information")
 # ---------------------Reflection Prompt---------------------
 
 # ---------------------Improvement Prompt---------------------
@@ -289,18 +296,25 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
 }
 
 @PROMPT.register_module(force=True)
-class ReflectionOptimizerImprovementPrompt(Prompt):
-    """Prompt template for self-improvement optimizer."""
+class ReflectionOptimizerImprovementSystemPrompt(Prompt):
+    """System prompt template for self-improvement optimizer."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="reflection_optimizer_improvement_prompt", description="The name of the prompt")
-    description: str = Field(default="Prompt for self-improvement optimizer", description="The description of the prompt")
+    type: str = Field(default='system_prompt', description="The type of the prompt")
+    name: str = Field(default="reflection_optimizer_improvement", description="The name of the prompt")
+    description: str = Field(default="System prompt for self-improvement optimizer", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
-    @property
-    def system_prompt(self) -> Dict[str, Any]:
-        return REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT
+    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT, description="System prompt information")
+
+@PROMPT.register_module(force=True)
+class ReflectionOptimizerImprovementAgentMessagePrompt(Prompt):
+    """Agent message prompt template for self-improvement optimizer."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    @property
-    def agent_message_prompt(self) -> Dict[str, Any]:
-        return REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="reflection_optimizer_improvement", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for self-improvement optimizer", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT, description="Agent message prompt information")

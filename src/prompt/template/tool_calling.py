@@ -1,6 +1,6 @@
 from src.registry import PROMPT
 from src.prompt.types import Prompt
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from pydantic import Field, ConfigDict
 
 AGENT_PROFILE = """
@@ -328,18 +328,25 @@ AGENT_MESSAGE_PROMPT = {
 }
 
 @PROMPT.register_module(force=True)
-class ToolCallingPrompt(Prompt):
-    """Prompt template for tool-calling agents."""
+class ToolCallingSystemPrompt(Prompt):
+    """System prompt template for tool-calling agents."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
+    type: str = Field(default='system_prompt', description="The type of the prompt")
     name: str = Field(default="tool_calling", description="The name of the prompt")
-    description: str = Field(default="Prompt for tool-calling agents", description="The description of the prompt")
+    description: str = Field(default="System prompt for tool-calling agents", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
-    @property
-    def system_prompt(self) -> Dict[str, Any]:
-        return SYSTEM_PROMPT
+    prompt_config: Dict[str, Any] = Field(default=SYSTEM_PROMPT, description="System prompt information")
     
-    @property
-    def agent_message_prompt(self) -> Dict[str, Any]:
-        return AGENT_MESSAGE_PROMPT
+@PROMPT.register_module(force=True)
+class ToolCallingAgentMessagePrompt(Prompt):
+    """Agent message prompt template for tool-calling agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="tool_calling", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for tool-calling agents", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    prompt_config: Dict[str, Any] = Field(default=AGENT_MESSAGE_PROMPT, description="Agent message prompt information")

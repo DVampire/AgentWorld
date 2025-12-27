@@ -28,7 +28,4 @@ class DoneTool(Tool):
         Args:
             result (str): Summary of the accomplished task.
         """
-        
-        message = f"✅ Task completed with result: {result}"
-        
-        return ToolResponse(success=True, message=message)
+        return ToolResponse(success=True, message=result)

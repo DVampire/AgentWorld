@@ -12,6 +12,8 @@ from src.utils import assemble_project_path
 from src.logger import logger
 from src.prompt.types import PromptConfig, Prompt
 from src.prompt.context import PromptContextManager
+from src.message.types import Message
+from src.optimizer.types import Variable
 
 class PromptManager(BaseModel):
     """Prompt Manager for managing prompt registration and lifecycle with version management."""
@@ -19,6 +21,7 @@ class PromptManager(BaseModel):
     
     base_dir: str = Field(default=None, description="The base directory to use for the prompts")
     save_path: str = Field(default=None, description="The path to save the prompts")
+    contract_path: str = Field(default=None, description="The path to save the prompt contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
         """Initialize the Prompt Manager."""
@@ -34,21 +37,16 @@ class PromptManager(BaseModel):
         self.base_dir = assemble_project_path(os.path.join(config.workdir, "prompt"))
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "prompt.json")
-        logger.info(f"| 📁 Prompt Manager base directory: {self.base_dir} and save path: {self.save_path}")
+        self.contract_path = os.path.join(self.base_dir, "contract.md")
+        logger.info(f"| 📁 Prompt Manager base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
         
         # Initialize prompt context manager
         self.prompt_context_manager = PromptContextManager(
             base_dir=self.base_dir,
             save_path=self.save_path,
+            contract_path=self.contract_path,
         )
         await self.prompt_context_manager.initialize(prompt_names=prompt_names)
-        
-        # Sync registered_configs from context manager after initialization
-        prompt_names_list = await self.prompt_context_manager.list()
-        for prompt_name in prompt_names_list:
-            prompt_config = await self.prompt_context_manager.get_info(prompt_name)
-            if prompt_config and prompt_name not in self._registered_configs:
-                self._registered_configs[prompt_name] = prompt_config
         
         logger.info("| ✅ Prompts initialization completed")
     
@@ -75,14 +73,14 @@ class PromptManager(BaseModel):
         """
         return await self.prompt_context_manager.list()
     
-    async def get(self, prompt_name: str) -> Optional[Dict[str, Any]]:
-        """Get prompt template dictionary by name
+    async def get(self, prompt_name: str) -> Optional[Prompt]:
+        """Get prompt instance by name
         
         Args:
             prompt_name: Prompt name
             
         Returns:
-            Dict[str, Any]: Prompt template dictionary or None if not found
+            Prompt: Prompt instance or None if not found
         """
         return await self.prompt_context_manager.get(prompt_name)
     
@@ -157,17 +155,18 @@ class PromptManager(BaseModel):
             del self._registered_configs[prompt_name]
         return success
     
-    async def restore(self, prompt_name: str, version: str) -> Optional[PromptConfig]:
+    async def restore(self, prompt_name: str, version: str, auto_initialize: bool = True) -> Optional[PromptConfig]:
         """Restore a specific version of a prompt from history
         
         Args:
             prompt_name: Name of the prompt
             version: Version string to restore
+            auto_initialize: Whether to automatically initialize the restored prompt
             
         Returns:
             PromptConfig of the restored version, or None if not found
         """
-        prompt_config = await self.prompt_context_manager.restore(prompt_name, version)
+        prompt_config = await self.prompt_context_manager.restore(prompt_name, version, auto_initialize)
         if prompt_config:
             self._registered_configs[prompt_config.name] = prompt_config
         return prompt_config
@@ -180,7 +179,7 @@ class PromptManager(BaseModel):
         """Get a system message using SystemPrompt.
         
         Args:
-            prompt_name: Name of the prompt (e.g., "tool_calling_system_prompt"). 
+            prompt_name: Name of the prompt (e.g., "tool_calling"). 
                         If None, will try to infer from kwargs or use default.
             modules: Modules to render in the template
             reload: Whether to reload the prompt
@@ -205,7 +204,7 @@ class PromptManager(BaseModel):
         """Get an agent message using AgentMessagePrompt.
         
         Args:
-            prompt_name: Name of the prompt (e.g., "tool_calling_agent_message_prompt").
+            prompt_name: Name of the prompt (e.g., "tool_calling").
                         If None, will try to infer from kwargs or use default.
             modules: Modules to render in the template
             reload: Whether to reload the prompt
@@ -221,6 +220,46 @@ class PromptManager(BaseModel):
             reload=reload,
             **kwargs
         )
+        
+    async def get_messages(self,
+        prompt_name: Optional[str] = None,
+        system_modules: Dict[str, Any] = None,
+        agent_modules: Dict[str, Any] = None,
+        **kwargs
+    ) -> List[Message]:
+        """Get a system and agent message using SystemPrompt and AgentMessagePrompt.
+        
+        Args:
+            prompt_name (str): Name of the prompt (e.g., "tool_calling_system_prompt").
+            system_modules (Dict[str, Any]): Modules to render in the system prompt
+            agent_modules (Dict[str, Any]): Modules to render in the agent message prompt
+            **kwargs (Any): Additional arguments (may include prompt_name for backward compatibility)
+            
+        Returns:
+            List[Message]: List of system and agent messages
+        """
+        return await self.prompt_context_manager.get_messages(
+            prompt_name=prompt_name,
+            system_modules=system_modules,
+            agent_modules=agent_modules,
+            **kwargs
+        )
+    
+    async def get_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+        """Get all variables from a prompt.
+        
+        Args:
+            prompt_name (str): Name of the prompt (e.g., "tool_calling").
+        """
+        return await self.prompt_context_manager.get_variables(prompt_name=prompt_name)
+    
+    async def get_contract(self) -> str:
+        """Get the contract for all prompts
+        
+        Returns:
+            str: Contract text content
+        """
+        return await self.prompt_context_manager.load_contract()
 
 
 # Global Prompt Manager instance

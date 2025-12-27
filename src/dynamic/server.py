@@ -629,6 +629,8 @@ class DynamicModuleManager:
                 context = "tool"
             elif 'agent' in base_name:
                 context = "agent"
+            elif 'prompt' in base_name:
+                context = "prompt"
         
         # Load code into module first (needed to find classes)
         if module_name is None:
@@ -657,15 +659,15 @@ class DynamicModuleManager:
                 elif len(candidate_classes) == 1:
                     class_name = candidate_classes[0][0]
                 else:
-                    # Multiple candidates - prefer classes with @AGENT/@TOOL decorator or matching naming patterns
+                    # Multiple candidates - prefer classes with @AGENT/@TOOL/@PROMPT decorator or matching naming patterns
                     preferred = []
                     for name, cls in candidate_classes:
                         try:
                             source = inspect.getsource(cls)
-                            if '@AGENT' in source or '@TOOL' in source or name.endswith('Agent') or name.endswith('Tool'):
+                            if '@AGENT' in source or '@TOOL' in source or '@PROMPT' in source or name.endswith('Agent') or name.endswith('Tool') or name.endswith('Prompt'):
                                 preferred.append((name, cls))
                         except:
-                            if name.endswith('Agent') or name.endswith('Tool'):
+                            if name.endswith('Agent') or name.endswith('Tool') or name.endswith('Prompt'):
                                 preferred.append((name, cls))
                     
                     if preferred:

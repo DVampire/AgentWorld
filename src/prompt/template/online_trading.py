@@ -1,6 +1,6 @@
 from src.registry import PROMPT
 from src.prompt.types import Prompt
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from pydantic import Field, ConfigDict
 
 AGENT_PROFILE = """
@@ -402,18 +402,25 @@ AGENT_MESSAGE_PROMPT = {
 }
 
 @PROMPT.register_module(force=True)
-class OnlineTradingPrompt(Prompt):
-    """Prompt template for online trading agents."""
+class OnlineTradingSystemPrompt(Prompt):
+    """System prompt template for online trading agents."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
+    type: str = Field(default='system_prompt', description="The type of the prompt")
     name: str = Field(default="online_trading", description="The name of the prompt")
-    description: str = Field(default="Prompt for online trading agents", description="The description of the prompt")
+    description: str = Field(default="System prompt for online trading agents", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
-    @property
-    def system_prompt(self) -> Dict[str, Any]:
-        return SYSTEM_PROMPT
+    prompt_config: Dict[str, Any] = Field(default=SYSTEM_PROMPT, description="System prompt information")
+
+@PROMPT.register_module(force=True)
+class OnlineTradingAgentMessagePrompt(Prompt):
+    """Agent message prompt template for online trading agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    @property
-    def agent_message_prompt(self) -> Dict[str, Any]:
-        return AGENT_MESSAGE_PROMPT
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="online_trading", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for online trading agents", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    prompt_config: Dict[str, Any] = Field(default=AGENT_MESSAGE_PROMPT, description="Agent message prompt information")

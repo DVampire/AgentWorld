@@ -588,35 +588,49 @@ MINUTE_TRADING_MESSAGE_PROMPT = {
 }
 
 @PROMPT.register_module(force=True)
-class IntradayDayAnalysisPrompt(Prompt):
-    """Prompt template for intraday trading agents."""
+class IntradayDayAnalysisSystemPrompt(Prompt):
+    """System prompt template for intraday day analysis agents."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
+    type: str = Field(default='system_prompt', description="The type of the prompt")
     name: str = Field(default="intraday_day_analysis", description="The name of the prompt")
-    description: str = Field(default="Prompt for intraday day analysis agents", description="The description of the prompt")
+    description: str = Field(default="System prompt for intraday day analysis agents", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
-    @property
-    def system_prompt(self) -> Dict[str, Any]:
-        return DAY_ANALYSIS_SYSTEM_PROMPT
-    
-    @property
-    def agent_message_prompt(self) -> Dict[str, Any]:
-        return DAY_ANALYSIS_MESSAGE_PROMPT
-    
+    prompt_config: Dict[str, Any] = Field(default=DAY_ANALYSIS_SYSTEM_PROMPT, description="System prompt information")
+
 @PROMPT.register_module(force=True)
-class IntradayMinuteTradingPrompt(Prompt):
-    """Prompt template for intraday minute trading agents."""
+class IntradayDayAnalysisAgentMessagePrompt(Prompt):
+    """Agent message prompt template for intraday day analysis agents."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="intraday_minute_trading", description="The name of the prompt")
-    description: str = Field(default="Prompt for intraday minute trading agents", description="The description of the prompt")
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="intraday_day_analysis", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for intraday day analysis agents", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
-    @property
-    def system_prompt(self) -> Dict[str, Any]:
-        return MINUTE_TRADING_SYSTEM_PROMPT
+    prompt_config: Dict[str, Any] = Field(default=DAY_ANALYSIS_MESSAGE_PROMPT, description="Agent message prompt information")
+
+@PROMPT.register_module(force=True)
+class IntradayMinuteTradingSystemPrompt(Prompt):
+    """System prompt template for intraday minute trading agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    @property
-    def agent_message_prompt(self) -> Dict[str, Any]:
-        return MINUTE_TRADING_MESSAGE_PROMPT
+    type: str = Field(default='system_prompt', description="The type of the prompt")
+    name: str = Field(default="intraday_minute_trading", description="The name of the prompt")
+    description: str = Field(default="System prompt for intraday minute trading agents", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    prompt_config: Dict[str, Any] = Field(default=MINUTE_TRADING_SYSTEM_PROMPT, description="System prompt information")
+
+@PROMPT.register_module(force=True)
+class IntradayMinuteTradingAgentMessagePrompt(Prompt):
+    """Agent message prompt template for intraday minute trading agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="intraday_minute_trading", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for intraday minute trading agents", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+    
+    prompt_config: Dict[str, Any] = Field(default=MINUTE_TRADING_MESSAGE_PROMPT, description="Agent message prompt information")

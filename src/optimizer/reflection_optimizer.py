@@ -1,19 +1,18 @@
-from typing import List, Optional, Any
+from typing import List, Optional
 from pydantic import ConfigDict, Field
 
 from src.logger import logger
 from src.optimizer.types import Optimizer
-from src.prompt import prompt_manager
 from src.model import model_manager
-
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     prompt_name: str = Field(default="reflection_optimizer", description="The name of the prompt")
+    model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
     
-    def __init__(self, agent):
+    def __init__(self, agent, model_name: str = "openrouter/gpt-4o", ):
         """
         Initialize the optimizer.
 
@@ -21,48 +20,45 @@ class ReflectionOptimizer(Optimizer):
             agent: Agent instance.
         """
         super().__init__(agent=agent)
+        if model_name:
+            self.model_name = model_name
+        
     
-    async def _generate_reflection(self, task: str, prompt_text: str, execution_result: str, model_name: str = "gpt-4o") -> str:
+    async def _generate_reflection(self, task: str, prompt_text: str, execution_result: str) -> str:
         """
         Generate the reflection analysis.
 
         Args:
-            task: Task description.
-            prompt_text: Current prompt text.
-            execution_result: Agent execution result.
-            model_name: Model name to use for reflection.
+            task (str): Task description.
+            prompt_text (str): Current prompt text.
+            execution_result (str): Agent execution result.
 
         Returns:
-            str: Reflection output.
+            str: Reflection analysis.
         """
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+        
         # Ensure prompt_manager is initialized
         if not hasattr(prompt_manager, 'prompt_context_manager'):
             await prompt_manager.initialize()
         
-        # Get system message and agent message from prompt manager
-        system_message = await prompt_manager.get_system_message(
-            prompt_name=f"{self.prompt_name}_reflection_system_prompt"
+        system_modules = {}
+        agent_message_modules = {
+            "task": task,
+            "variable_to_improve": prompt_text,
+            "execution_result": str(execution_result)[:2000]  # Clamp length.
+        }
+        messages = await prompt_manager.get_messages(
+            prompt_name=f"{self.prompt_name}_reflection",
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
         )
-        
-        agent_message = await prompt_manager.get_agent_message(
-            prompt_name=f"{self.prompt_name}_reflection_agent_message_prompt",
-            modules={
-                "task": task,
-                "variable_to_improve": prompt_text,
-                "execution_result": str(execution_result)[:2000]  # Clamp length.
-            },
-            reload=True
-        )
-        
-        messages = [
-            system_message,
-            agent_message
-        ]
         
         logger.info(f"| 🤔 Generating reflection analysis...")
         
         try:
-            response = await model_manager(model=model_name, messages=messages)
+            response = await model_manager(model=self.model_name, messages=messages)
             reflection_text = response.content if hasattr(response, 'content') else str(response)
             
             logger.info(f"| ✅ Reflection analysis generated ({len(reflection_text)} chars)")
@@ -73,47 +69,41 @@ class ReflectionOptimizer(Optimizer):
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_prompt(self, task: str, current_prompt: str, reflection_analysis: str, model_name: str = "gpt-4o") -> str:
+    async def _improve_prompt(self, task: str, current_prompt: str, reflection_analysis: str) -> str:
         """
         Improve the prompt using the reflection analysis.
 
         Args:
-            task: Task description.
-            current_prompt: Current prompt text.
-            reflection_analysis: Reflection analysis output.
-            model_name: Model name to use for improvement.
+            task (str): Task description.
+            current_prompt (str): Current prompt text.
+            reflection_analysis (str): Reflection analysis output.
 
         Returns:
-            str: Improved prompt text.
+            str: Improved prompt.
         """
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+        
         # Ensure prompt_manager is initialized
         if not hasattr(prompt_manager, 'prompt_context_manager'):
             await prompt_manager.initialize()
-        
-        # Get system message and agent message from prompt manager
-        system_message = await prompt_manager.get_system_message(
-            prompt_name=f"{self.prompt_name}_improvement_system_prompt",
+            
+        system_modules = {}
+        agent_message_modules = {
+            "task": task,
+            "current_variable": current_prompt,
+            "reflection_analysis": reflection_analysis
+        }
+        messages = await prompt_manager.get_messages(
+            prompt_name=f"{self.prompt_name}_improvement",
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
         )
-        
-        agent_message = await prompt_manager.get_agent_message(
-            prompt_name=f"{self.prompt_name}_improvement_agent_message_prompt",
-            modules={
-                "task": task,
-                "current_variable": current_prompt,
-                "reflection_analysis": reflection_analysis
-            },
-            reload=True
-        )
-        
-        messages = [
-            system_message,
-            agent_message
-        ]
         
         logger.info(f"| ✨ Generating improved prompt...")
         
         try:
-            response = await model_manager(model=model_name, messages=messages)
+            response = await model_manager(model=self.model_name, messages=messages)
             improved_text = response.content if hasattr(response, 'content') else str(response)
             
             # Strip potential Markdown code fences.
@@ -166,9 +156,6 @@ class ReflectionOptimizer(Optimizer):
             logger.warning("| ⚠️ No optimizable variables found (require_grad=True). Skipping optimization.")
             return
         
-        # 2. Model name for reflection and improvement.
-        model_name = "gpt-4o"
-        
         # 3. Run the optimization loop.
         for opt_step in range(optimization_steps):
             logger.info(f"\n| {'='*60}")
@@ -201,7 +188,6 @@ class ReflectionOptimizer(Optimizer):
                         task=task,
                         prompt_text=current_value,
                         execution_result=agent_result,
-                        model_name=model_name
                     )
                     
                     # 3.2.2 Improve the prompt based on the reflection.
@@ -209,7 +195,6 @@ class ReflectionOptimizer(Optimizer):
                         task=task,
                         current_prompt=current_value,
                         reflection_analysis=reflection_analysis,
-                        model_name=model_name
                     )
                     
                     # 3.2.3 Update the variable value.

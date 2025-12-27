@@ -1,8 +1,6 @@
 """Prompt Context Manager for managing prompt lifecycle and resources with version management."""
 
-import asyncio
 import atexit
-import importlib
 import os
 import json
 import inspect
@@ -17,7 +15,9 @@ from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
 from src.prompt.types import PromptConfig, Prompt
 from src.registry import PROMPT
-
+from src.message.types import Message
+from src.optimizer.types import Variable
+from src.dynamic import dynamic_manager
 
 class PromptContextManager(BaseModel):
     """Global context manager for all prompts with version management."""
@@ -25,16 +25,19 @@ class PromptContextManager(BaseModel):
     
     base_dir: str = Field(default=None, description="The base directory to use for the prompts")
     save_path: str = Field(default=None, description="The path to save the prompts")
+    contract_path: str = Field(default=None, description="The path to save the prompt contract")
     
     def __init__(self, 
                  base_dir: Optional[str] = None,
                  save_path: Optional[str] = None,
+                 contract_path: Optional[str] = None,
                  **kwargs):
         """Initialize the prompt context manager.
         
         Args:
             base_dir: Base directory for storing prompt data
             save_path: Path to save prompt configurations
+            contract_path: Path to save prompt contract
         """
         super().__init__(**kwargs)
         
@@ -49,7 +52,14 @@ class PromptContextManager(BaseModel):
             self.save_path = assemble_project_path(save_path)
         else:
             self.save_path = os.path.join(self.base_dir, "prompt.json")
+        
+        if contract_path is not None:
+            self.contract_path = assemble_project_path(contract_path)
+        else:
+            self.contract_path = os.path.join(self.base_dir, "contract.md")
+        
         logger.info(f"| 📁 Prompt context manager base directory: {self.base_dir} and save path: {self.save_path}")
+        logger.info(f"| 📁 Prompt context manager contract path: {self.contract_path}")
         
         self._prompt_configs: Dict[str, PromptConfig] = {}  # Current active configs (latest version)
         # Prompt version history, e.g., {"prompt_name": {"1.0.0": PromptConfig, "1.0.1": PromptConfig}}
@@ -92,15 +102,42 @@ class PromptContextManager(BaseModel):
                 prompt_configs[prompt_name] = code_config
         
         # Filter prompts by names if provided
+        # prompt_names are base names like "tool_calling", need to match both system_prompt and agent_message_prompt
         if prompt_names is not None:
-            prompt_configs = {name: prompt_configs[name] for name in prompt_names if name in prompt_configs}
+            filtered_configs = {}
+            for base_name in prompt_names:
+                # Match system_prompt
+                system_prompt_name = f"{base_name}_system_prompt"
+                if system_prompt_name in prompt_configs:
+                    filtered_configs[system_prompt_name] = prompt_configs[system_prompt_name]
+                # Match agent_message_prompt
+                agent_message_prompt_name = f"{base_name}_agent_message_prompt"
+                if agent_message_prompt_name in prompt_configs:
+                    filtered_configs[agent_message_prompt_name] = prompt_configs[agent_message_prompt_name]
+            prompt_configs = filtered_configs
         
         # Store all prompts
         for prompt_name, prompt_config in prompt_configs.items():
             self._prompt_configs[prompt_name] = prompt_config
         
+        # Build all prompts concurrently with a concurrency limit
+        prompt_names = list(prompt_configs.keys())
+        tasks = [
+            self.build(prompt_configs[name]) for name in prompt_names
+        ]
+        results = await gather_with_concurrency(tasks, max_concurrency=10, return_exceptions=True)
+
+        for prompt_name, result in zip(prompt_names, results):
+            if isinstance(result, Exception):
+                logger.error(f"| ❌ Failed to initialize prompt {prompt_name}: {result}")
+                continue
+            self._prompt_configs[prompt_name] = result
+            logger.info(f"| 🔧 Prompt {prompt_name} initialized")
+        
         # Save prompt configs to json file
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract(prompt_names=prompt_names)
         
         logger.info(f"| ✅ Prompts initialization completed")
     
@@ -117,69 +154,59 @@ class PromptContextManager(BaseModel):
             try:
                 # Create prompt instance to get properties
                 prompt_instance = prompt_cls()
-                prompt_name = prompt_instance.name
-                prompt_description = prompt_instance.description
                 
-                # Get system_prompt and agent_message_prompt from class properties
-                system_prompt_dict = prompt_instance.system_prompt
-                agent_message_prompt_dict = prompt_instance.agent_message_prompt
+                # Initialize prompt if it has an initialize method
+                if hasattr(prompt_instance, "initialize"):
+                    await prompt_instance.initialize()
+                
+                # Get prompt_config from instance
+                prompt_config_dict = prompt_instance.prompt_config
+                if prompt_config_dict is None:
+                    raise ValueError(f"Prompt class {prompt_cls.__name__} must have 'prompt_config' field")
+                
+                # Use name from prompt_config_dict if available, otherwise use prompt_instance.name
+                prompt_type = prompt_config_dict.get('type', prompt_instance.type)
+                prompt_name = prompt_config_dict.get('name', prompt_instance.name)
+                prompt_description = prompt_config_dict.get('description', prompt_instance.description)
                 
                 # Get or generate version from version_manager
                 prompt_version = await version_manager.get_version("prompt", prompt_name)
                 
-                # Get full module source code (including imports)
-                prompt_code = self._get_full_module_source(prompt_cls)
+                prompt_template = prompt_config_dict.get('template', '')
+                prompt_variables = prompt_config_dict.get('variables', [])
+                prompt_metadata = prompt_config_dict.get('metadata', {})
                 
-                # Create PromptConfig for system_prompt
-                system_prompt_name = system_prompt_dict.get('name', f"{prompt_name}_system_prompt")
-                system_prompt_config = PromptConfig(
-                    name=system_prompt_name,
-                    type=system_prompt_dict.get('type', 'system_prompt'),
-                    description=system_prompt_dict.get('description', ''),
+                # Get source code for the prompt class
+                prompt_code = dynamic_manager.get_full_module_source(prompt_cls)
+                
+                # Create PromptConfig
+                prompt_config = PromptConfig(
+                    name=prompt_name,
+                    type=prompt_type,
+                    description=prompt_description,
                     version=prompt_version,
-                    template=system_prompt_dict.get('template', ''),
-                    variables=system_prompt_dict.get('variables', []),
+                    template=prompt_template,
+                    variables=prompt_variables,
                     cls=prompt_cls,
-                    instance=prompt_instance,
+                    instance=prompt_instance,  # Instance will be built when needed
                     config={},
-                    metadata=system_prompt_dict.get('metadata', {}),
+                    metadata=prompt_metadata,
+                    code=prompt_code,
                 )
                 
-                # Create PromptConfig for agent_message_prompt
-                agent_message_prompt_name = agent_message_prompt_dict.get('name', f"{prompt_name}_agent_message_prompt")
-                agent_message_prompt_config = PromptConfig(
-                    name=agent_message_prompt_name,
-                    type=agent_message_prompt_dict.get('type', 'agent_message_prompt'),
-                    description=agent_message_prompt_dict.get('description', ''),
-                    version=prompt_version,
-                    template=agent_message_prompt_dict.get('template', ''),
-                    variables=agent_message_prompt_dict.get('variables', []),
-                    cls=prompt_cls,
-                    instance=prompt_instance,
-                    config={},
-                    metadata=agent_message_prompt_dict.get('metadata', {}),
-                )
-                
-                # Store prompt configs
-                prompt_configs[system_prompt_name] = system_prompt_config
-                prompt_configs[agent_message_prompt_name] = agent_message_prompt_config
+                # Store prompt config
+                prompt_configs[prompt_name] = prompt_config
                 
                 # Store in version history (by version string)
-                if system_prompt_name not in self._prompt_history_versions:
-                    self._prompt_history_versions[system_prompt_name] = {}
-                self._prompt_history_versions[system_prompt_name][prompt_version] = system_prompt_config
+                if prompt_name not in self._prompt_history_versions:
+                    self._prompt_history_versions[prompt_name] = {}
+                self._prompt_history_versions[prompt_name][prompt_version] = prompt_config
                 
-                if agent_message_prompt_name not in self._prompt_history_versions:
-                    self._prompt_history_versions[agent_message_prompt_name] = {}
-                self._prompt_history_versions[agent_message_prompt_name][prompt_version] = agent_message_prompt_config
-                
-                logger.info(f"| 📝 Registered prompt: {system_prompt_name} and {agent_message_prompt_name} ({prompt_cls.__name__})")
+                logger.info(f"| 📝 Registered prompt: {prompt_name} ({prompt_cls.__name__})")
                 
             except Exception as e:
                 logger.error(f"| ❌ Failed to register prompt class {prompt_cls.__name__}: {e}")
                 raise
-        
-        import src.prompt.template  # noqa: F401
         
         # Get all registered prompt classes from PROMPT registry
         prompt_classes = list(PROMPT._module_dict.values())
@@ -257,22 +284,10 @@ class PromptContextManager(BaseModel):
                 version_map: Dict[str, PromptConfig] = {}
                 current_config: Optional[PromptConfig] = None  # Active config for current_version
                 
-                for version_str, version_data in versions.items():
-                    name = version_data.get("name", "")
-                    prompt_type = version_data.get("type", "prompt")
-                    description = version_data.get("description", "")
-                    version = version_data.get("version", version_str)
-                    template = version_data.get("template", "")
-                    variables = version_data.get("variables", [])
-                    metadata = version_data.get("metadata", {})
-                    
-                    # Ensure version field is present
-                    if "version" not in version_data:
-                        version_data["version"] = version_str
-                    
-                    # Create PromptConfig
-                    prompt_config = PromptConfig(**version_data)
-                    
+                for _, version_data in versions.items():
+                    # Create PromptConfig using model_validate to handle cls and code
+                    prompt_config = PromptConfig.model_validate(version_data)
+                    version = prompt_config.version
                     version_map[version] = prompt_config
                     
                     if version == current_version:
@@ -295,6 +310,7 @@ class PromptContextManager(BaseModel):
             prompt_name, version_map, current_config = result
             if not version_map:
                 continue
+            
             # Store all versions in history (mapped by version string)
             self._prompt_history_versions[prompt_name] = version_map
             # Active config: the one corresponding to current_version
@@ -304,40 +320,13 @@ class PromptContextManager(BaseModel):
                 # Fallback: if current_version is not found, use the last available version
                 logger.warning(f"| ⚠️ Prompt {prompt_name} current_version not found, using last available version")
                 prompt_configs[prompt_name] = list(version_map.values())[-1]
+            
+            # Register all versions to version manager
+            for prompt_config in version_map.values():
+                await version_manager.register_version("prompt", prompt_name, prompt_config.version)
         
         logger.info(f"| 📂 Loaded {len(prompt_configs)} prompts from {self.save_path}")
         return prompt_configs
-    
-    def _get_full_module_source(self, cls: Type[Prompt]) -> str:
-        """Get the full source code of the module containing the class, including all imports.
-        
-        Args:
-            cls: The prompt class
-            
-        Returns:
-            Full module source code as string, or class source if file reading fails
-        """
-        try:
-            # Get the module object
-            module = inspect.getmodule(cls)
-            if module is None:
-                # Fallback to inspect.getsource if module is not available
-                return inspect.getsource(cls)
-            
-            # Get the file path of the module
-            file_path = inspect.getfile(module)
-            
-            # Read the entire file to preserve all imports and context
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except (OSError, TypeError, IOError, AttributeError) as e:
-            # Fallback to inspect.getsource if file reading fails
-            logger.debug(f"| ⚠️ Failed to read module file for {cls.__name__}, falling back to inspect.getsource: {e}")
-            try:
-                return inspect.getsource(cls)
-            except Exception:
-                logger.warning(f"| ⚠️ Failed to get source code for {cls.__name__}")
-                return ""
     
     async def register(self, prompt: Union[Prompt, Dict[str, Any]], *, override: bool = False, **kwargs: Any) -> PromptConfig:
         """Register a prompt or prompt template dictionary.
@@ -355,8 +344,12 @@ class PromptContextManager(BaseModel):
                 prompt_name = prompt.name
                 prompt_type = prompt.type
                 prompt_description = prompt.description
-                prompt_template = prompt.template
-                prompt_variables = prompt.variables
+                # Get template and variables from prompt_config
+                prompt_config_dict = prompt.prompt_config
+                if prompt_config_dict is None:
+                    raise ValueError(f"Prompt instance must have 'prompt_config' field")
+                prompt_template = prompt_config_dict.get('template', '')
+                prompt_variables = prompt_config_dict.get('variables', [])
                 prompt_cls = type(prompt)
                 prompt_instance = prompt
             elif isinstance(prompt, dict):
@@ -379,6 +372,11 @@ class PromptContextManager(BaseModel):
             # Get or generate version from version_manager
             version = await version_manager.get_version("prompt", prompt_name)
             
+            # Get source code if cls is available
+            prompt_code = None
+            if prompt_cls is not None:
+                prompt_code = dynamic_manager.get_full_module_source(prompt_cls)
+            
             # Create PromptConfig
             prompt_config = PromptConfig(
                 name=prompt_name,
@@ -388,9 +386,10 @@ class PromptContextManager(BaseModel):
                 template=prompt_template,
                 variables=prompt_variables,
                 cls=prompt_cls,
-                instance=prompt_instance,
+                instance=None,  # Instance will be built when needed
                 config=kwargs if kwargs else {},
-                metadata=prompt.get('metadata', {}) if isinstance(prompt, dict) else {}
+                metadata=prompt.get('metadata', {}) if isinstance(prompt, dict) else {},
+                code=prompt_code
             )
             
             # Store metadata
@@ -404,11 +403,58 @@ class PromptContextManager(BaseModel):
             # Register version record to version manager
             await version_manager.register_version("prompt", prompt_name, prompt_config.version)
             
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
             logger.debug(f"| 📝 Registered prompt: {prompt_name} v{prompt_config.version}")
             return prompt_config
             
         except Exception as e:
             logger.error(f"| ❌ Failed to register prompt: {e}")
+            raise
+    
+    async def build(self, prompt_config: PromptConfig) -> PromptConfig:
+        """Create a prompt instance and store it.
+        
+        Args:
+            prompt_config: Prompt configuration
+            
+        Returns:
+            PromptConfig: Prompt configuration with instance
+        """
+        if prompt_config.name in self._prompt_configs:
+            existing_config = self._prompt_configs[prompt_config.name]
+            if existing_config.instance is not None:
+                return existing_config
+        
+        # Create new prompt instance
+        try:
+            # cls should already be loaded (either from registry or from code in _load_from_code)
+            if prompt_config.cls is None:
+                raise ValueError(f"Cannot create prompt {prompt_config.name}: no class provided. Class should be loaded during initialization.")
+            
+            if prompt_config.instance is None:
+                # Instantiate prompt instance
+                prompt_instance = prompt_config.cls(**prompt_config.config) if prompt_config.config else prompt_config.cls()
+                
+                # Initialize prompt if it has an initialize method
+                if hasattr(prompt_instance, "initialize"):
+                    await prompt_instance.initialize()
+            else:
+                prompt_instance = prompt_config.instance
+            
+            prompt_config.instance = prompt_instance
+            
+            # Store prompt metadata
+            self._prompt_configs[prompt_config.name] = prompt_config
+            
+            logger.info(f"| 🔧 Prompt {prompt_config.name} created and stored")
+            
+            return prompt_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to create prompt {prompt_config.name}: {e}")
             raise
     
     async def update(self, prompt_name: str, prompt: Union[Prompt, Dict[str, Any]], 
@@ -433,8 +479,12 @@ class PromptContextManager(BaseModel):
         # Get new prompt info
         if isinstance(prompt, Prompt):
             new_description = prompt.description
-            prompt_template = prompt.template
-            prompt_variables = prompt.variables
+            # Get template and variables from prompt_config
+            prompt_config_dict = prompt.prompt_config
+            if prompt_config_dict is None:
+                raise ValueError(f"Prompt instance must have 'prompt_config' field")
+            prompt_template = prompt_config_dict.get('template', original_config.template)
+            prompt_variables = prompt_config_dict.get('variables', original_config.variables)
             prompt_cls = type(prompt)
             prompt_instance = prompt
         elif isinstance(prompt, dict):
@@ -451,6 +501,13 @@ class PromptContextManager(BaseModel):
             # Get current version from version_manager and generate next patch version
             new_version = await version_manager.generate_next_version("prompt", prompt_name, "patch")
         
+        # Get source code if cls is available
+        prompt_code = None
+        if prompt_cls is not None:
+            prompt_code = dynamic_manager.get_full_module_source(prompt_cls)
+        elif original_config.code is not None:
+            prompt_code = original_config.code
+        
         # Create updated config
         if prompt_instance is not None:
             updated_config = PromptConfig(
@@ -462,8 +519,9 @@ class PromptContextManager(BaseModel):
                 variables=prompt_variables,
                 cls=prompt_cls,
                 config={},
-                instance=prompt_instance,
-                metadata=prompt.get('metadata', {}) if isinstance(prompt, dict) else original_config.metadata
+                instance=None,  # Instance will be built when needed
+                metadata=prompt.get('metadata', {}) if isinstance(prompt, dict) else original_config.metadata,
+                code=prompt_code
             )
         else:
             updated_config = PromptConfig(
@@ -476,7 +534,8 @@ class PromptContextManager(BaseModel):
                 cls=prompt_cls,
                 config=kwargs,
                 instance=None,
-                metadata=prompt.get('metadata', {}) if isinstance(prompt, dict) else original_config.metadata
+                metadata=prompt.get('metadata', {}) if isinstance(prompt, dict) else original_config.metadata,
+                code=prompt_code
             )
         
         # Update the prompt config (replaces current version)
@@ -494,6 +553,11 @@ class PromptContextManager(BaseModel):
             new_version,
             description=description or f"Updated from {original_config.version}"
         )
+        
+        # Persist to JSON
+        await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 📝 Updated prompt: {prompt_name} v{updated_config.version}")
         return updated_config
@@ -528,7 +592,7 @@ class PromptContextManager(BaseModel):
                 # If copying with different name, get or generate version for new name
                 new_version = await version_manager.get_or_generate_version("prompt", new_name)
         
-        # Create copy of config
+        # Create copy of config using model_dump and model_validate to handle cls and code
         new_config_dict = original_config.model_dump()
         new_config_dict["name"] = new_name
         new_config_dict["version"] = new_version
@@ -545,7 +609,8 @@ class PromptContextManager(BaseModel):
         # Clear instance (will be created on demand)
         new_config_dict["instance"] = None
         
-        new_config = PromptConfig(**new_config_dict)
+        # Use model_validate to ensure cls is loaded from code if needed
+        new_config = PromptConfig.model_validate(new_config_dict)
         
         # Register new prompt
         self._prompt_configs[new_name] = new_config
@@ -562,6 +627,11 @@ class PromptContextManager(BaseModel):
             new_version,
             description=f"Copied from {prompt_name}@{original_config.version}"
         )
+        
+        # Persist to JSON
+        await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 📋 Copied prompt {prompt_name}@{original_config.version} to {new_name}@{new_version}")
         return new_config
@@ -586,16 +656,19 @@ class PromptContextManager(BaseModel):
         
         # Persist to JSON after unregister
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 🗑️ Unregistered prompt {prompt_name}@{prompt_config.version}")
         return True
     
-    async def restore(self, prompt_name: str, version: str) -> Optional[PromptConfig]:
+    async def restore(self, prompt_name: str, version: str, auto_initialize: bool = True) -> Optional[PromptConfig]:
         """Restore a specific version of a prompt from history
         
         Args:
             prompt_name: Name of the prompt
             version: Version string to restore
+            auto_initialize: Whether to automatically initialize the restored prompt
             
         Returns:
             PromptConfig of the restored version, or None if not found
@@ -610,7 +683,8 @@ class PromptContextManager(BaseModel):
             return None
         
         # Create a copy to avoid modifying the history
-        restored_config = PromptConfig(**version_config.model_dump())
+        # Use model_validate to ensure cls is loaded from code if needed
+        restored_config = PromptConfig.model_validate(version_config.model_dump())
         
         # Set as current active config
         self._prompt_configs[prompt_name] = restored_config
@@ -618,31 +692,39 @@ class PromptContextManager(BaseModel):
         # Update version manager current version
         version_history = await version_manager.get_version_history("prompt", prompt_name)
         if version_history:
+            # Check if version exists in version history, if not register it
+            if version not in version_history.versions:
+                await version_manager.register_version("prompt", prompt_name, version)
             version_history.current_version = version
+        else:
+            # If version history doesn't exist, register the version first
+            await version_manager.register_version("prompt", prompt_name, version)
+        
+        # Initialize if requested
+        if auto_initialize and restored_config.cls is not None:
+            await self.build(restored_config)
         
         # Persist to JSON (current_version changes)
         await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
         
         logger.info(f"| 🔄 Restored prompt {prompt_name} to version {version}")
         return restored_config
     
-    async def get(self, name: str) -> Optional[Dict[str, Any]]:
-        """Get a prompt template dictionary by name
+    async def get(self, name: str) -> Optional[Prompt]:
+        """Get prompt instance by name
         
         Args:
             name: Name of the prompt
+            
+        Returns:
+            Prompt: Prompt instance or None if not found
         """
         prompt_config = self._prompt_configs.get(name)
-        if prompt_config:
-            return {
-                "name": prompt_config.name,
-                "type": prompt_config.type,
-                "description": prompt_config.description,
-                "template": prompt_config.template,
-                "variables": prompt_config.variables,
-                "metadata": prompt_config.metadata
-            }
-        return None
+        if prompt_config is None:
+            return None
+        return prompt_config.instance if prompt_config.instance is not None else None
     
     async def get_info(self, name: str) -> Optional[PromptConfig]:
         """Get a prompt configuration by name
@@ -692,8 +774,8 @@ class PromptContextManager(BaseModel):
                     # Serialize all versions for this prompt as a dict: {version_str: config_dict}
                     versions_data: Dict[str, Dict[str, Any]] = {}
                     for version_str, prompt_config in version_map.items():
-                        # Serialize prompt config (excluding non-serializable fields)
-                        config_dict = prompt_config.model_dump(mode="json", exclude={"cls", "instance"})
+                        # Serialize prompt config using custom model_dump (which handles cls and code)
+                        config_dict = prompt_config.model_dump()
                         
                         # Use version string as key
                         versions_data[prompt_config.version] = config_dict
@@ -731,11 +813,15 @@ class PromptContextManager(BaseModel):
             logger.info(f"| 💾 Saved {len(self._prompt_configs)} prompts with version history to {file_path}")
             return str(file_path)
     
-    async def load_from_json(self, file_path: Optional[str] = None) -> bool:
+    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
         """Load prompt configurations with version history from JSON.
+        
+        Loads basic configuration only (instance is not saved, must be created via build()).
+        Only the latest version will be instantiated by default if auto_initialize=True.
         
         Args:
             file_path: File path to load from
+            auto_initialize: Whether to automatically create instance via build() after loading
             
         Returns:
             True if loaded successfully, False otherwise
@@ -774,8 +860,8 @@ class PromptContextManager(BaseModel):
                             if "version" not in config_dict:
                                 config_dict["version"] = version_str
                             
-                            # Create PromptConfig
-                            prompt_config = PromptConfig(**config_dict)
+                            # Create PromptConfig using model_validate to handle cls and code
+                            prompt_config = PromptConfig.model_validate(config_dict)
                             
                             version_configs.append(prompt_config)
                             
@@ -804,6 +890,10 @@ class PromptContextManager(BaseModel):
                             for prompt_config in version_configs:
                                 await version_manager.register_version("prompt", prompt_name, prompt_config.version)
                             
+                            # Create instance if requested (instance is not saved in JSON, must be created via build)
+                            if auto_initialize and latest_config.cls is not None:
+                                await self.build(latest_config)
+                            
                             loaded_count += 1
                     except Exception as e:
                         logger.error(f"| ❌ Failed to load prompt {prompt_name}: {e}")
@@ -824,38 +914,15 @@ class PromptContextManager(BaseModel):
         """Get a system message using SystemPrompt.
         
         Args:
-            prompt_name: Name of the prompt (e.g., "tool_calling_system_prompt"). 
+            prompt_name: Name of the prompt (e.g., "tool_calling"). 
                         If None, will try to infer from kwargs or use default.
             modules: Modules to render in the template
             reload: Whether to reload the prompt
             **kwargs: Additional arguments (may include prompt_name for backward compatibility)
         """
-        from src.prompt.system_prompt import SystemPrompt
-        
-        # Support backward compatibility: if prompt_name not provided, try to get from kwargs or use default
-        if prompt_name is None:
-            prompt_name = kwargs.pop('prompt_name', None)
-            if prompt_name is None:
-                # Try to infer from prompt_name in modules or use default
-                if modules and 'prompt_name' in modules:
-                    base_name = modules['prompt_name']
-                    prompt_name = f"{base_name}_system_prompt"
-                else:
-                    prompt_name = "tool_calling_system_prompt"
-        
-        # Get prompt config
-        prompt_config = self._prompt_configs.get(prompt_name)
-        if prompt_config is None:
-            # Try to get from dict format
-            prompt_dict = await self.get(prompt_name)
-            if prompt_dict is None:
-                available = await self.list()
-                raise ValueError(f"Prompt {prompt_name} not found. Available prompts: {available}")
-            system_prompt = SystemPrompt(prompt_dict=prompt_dict)
-        else:
-            system_prompt = SystemPrompt(prompt_config=prompt_config)
-        
-        return await system_prompt.get_message(modules, reload, **kwargs)
+        prompt_name = f"{prompt_name}_system_prompt"
+        prompt_instance = await self.get(prompt_name)
+        return await prompt_instance.get_message(modules, reload, **kwargs)
     
     async def get_agent_message(self, 
                          prompt_name: Optional[str] = None,
@@ -865,38 +932,110 @@ class PromptContextManager(BaseModel):
         """Get an agent message using AgentMessagePrompt.
         
         Args:
-            prompt_name: Name of the prompt (e.g., "tool_calling_agent_message_prompt").
+            prompt_name: Name of the prompt (e.g., "tool_calling").
                         If None, will try to infer from kwargs or use default.
             modules: Modules to render in the template
             reload: Whether to reload the prompt
             **kwargs: Additional arguments (may include prompt_name for backward compatibility)
         """
-        from src.prompt.agent_message_prompt import AgentMessagePrompt
+        prompt_name = f"{prompt_name}_agent_message_prompt"
+        prompt_instance = await self.get(prompt_name)
+        return await prompt_instance.get_message(modules, reload, **kwargs)
+    
+    async def get_messages(
+            self,
+            prompt_name: Optional[str] = None,
+            system_modules: Dict[str, Any] = None,
+            agent_modules: Dict[str, Any] = None,
+            **kwargs
+        ) -> List[Message]:
+        """Get a system and agent message using SystemPrompt and AgentMessagePrompt.
         
-        # Support backward compatibility: if prompt_name not provided, try to get from kwargs or use default
-        if prompt_name is None:
-            prompt_name = kwargs.pop('prompt_name', None)
-            if prompt_name is None:
-                # Try to infer from prompt_name in modules or use default
-                if modules and 'prompt_name' in modules:
-                    base_name = modules['prompt_name']
-                    prompt_name = f"{base_name}_agent_message_prompt"
-                else:
-                    prompt_name = "tool_calling_agent_message_prompt"
+        Args:
+            prompt_name (str): Name of the prompt (e.g., "tool_calling").
+            system_modules(Dict[str, Any]): Modules to render in the system prompt
+            agent_modules(Dict[str, Any]): Modules to render in the agent message prompt
+            **kwargs(Any): Additional arguments (may include prompt_name for backward compatibility)
+        """
+        system_message = await self.get_system_message(prompt_name, 
+                                                       system_modules, 
+                                                       reload=False, 
+                                                       **kwargs)
+        agent_message = await self.get_agent_message(prompt_name, 
+                                                     agent_modules, 
+                                                     reload=True,
+                                                     **kwargs)
+        return [system_message, agent_message]
+    
+    async def get_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+        """Get all variables from system and agent prompts.
         
-        # Get prompt config
-        prompt_config = self._prompt_configs.get(prompt_name)
-        if prompt_config is None:
-            # Try to get from dict format
-            prompt_dict = await self.get(prompt_name)
-            if prompt_dict is None:
-                available = await self.list()
-                raise ValueError(f"Prompt {prompt_name} not found. Available prompts: {available}")
-            agent_message_prompt = AgentMessagePrompt(prompt_dict=prompt_dict)
+        Args:
+            prompt_name (str): Name of the prompt (e.g., "tool_calling").
+            
+        Returns:
+            List[Variable]: List of all variables from both prompts
+        """
+        system_prompt_name = f"{prompt_name}_system_prompt"
+        agent_prompt_name = f"{prompt_name}_agent_message_prompt"
+        system_prompt_instance = await self.get(system_prompt_name)
+        agent_prompt_instance = await self.get(agent_prompt_name)
+        variables: List[Variable] = []
+        
+        if system_prompt_instance is not None:
+            variables.extend(await system_prompt_instance.get_variable())
+        if agent_prompt_instance is not None:
+            variables.extend(await agent_prompt_instance.get_variable())
+        
+        return variables
+    
+    async def save_contract(self, prompt_names: Optional[List[str]] = None):
+        """Save the contract for prompts
+        
+        Args:
+            prompt_names: Optional list of prompt names to include in contract.
+                         If None, includes all registered prompts.
+        """
+        contract = []
+        if prompt_names is not None:
+            # Filter to include both system and agent message prompts
+            filtered_names = []
+            for base_name in prompt_names:
+                system_prompt_name = f"{base_name}_system_prompt"
+                agent_prompt_name = f"{base_name}_agent_message_prompt"
+                if system_prompt_name in self._prompt_configs:
+                    filtered_names.append(system_prompt_name)
+                if agent_prompt_name in self._prompt_configs:
+                    filtered_names.append(agent_prompt_name)
+            
+            for index, prompt_name in enumerate(filtered_names):
+                prompt_info = await self.get_info(prompt_name)
+                if prompt_info:
+                    # Format: name, type, description, template
+                    contract_text = f"Prompt: {prompt_info.name}\nType: {prompt_info.type}\nDescription: {prompt_info.description}\nTemplate:\n{prompt_info.template}\n"
+                    contract.append(f"{index + 1:04d}\n{contract_text}\n")
         else:
-            agent_message_prompt = AgentMessagePrompt(prompt_config=prompt_config)
+            for index, prompt_name in enumerate(self._prompt_configs.keys()):
+                prompt_info = await self.get_info(prompt_name)
+                if prompt_info:
+                    # Format: name, type, description, template
+                    contract_text = f"Prompt: {prompt_info.name}\nType: {prompt_info.type}\nDescription: {prompt_info.description}\nTemplate:\n{prompt_info.template}\n"
+                    contract.append(f"{index + 1:04d}\n{contract_text}\n")
         
-        return await agent_message_prompt.get_message(modules, reload, **kwargs)
+        contract_text = "---\n".join(contract)
+        with open(self.contract_path, "w", encoding="utf-8") as f:
+            f.write(contract_text)
+        logger.info(f"| 📝 Saved {len(contract)} prompts contract to {self.contract_path}")
+    
+    async def load_contract(self) -> str:
+        """Load the contract for prompts
+        
+        Returns:
+            str: Contract text content
+        """
+        with open(self.contract_path, "r", encoding="utf-8") as f:
+            contract_text = f.read()
+        return contract_text
     
     async def cleanup(self):
         """Cleanup all prompt instances and resources."""

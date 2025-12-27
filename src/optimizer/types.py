@@ -112,8 +112,6 @@ class Variable(BaseModel):
 
         return result
     
-    # ========== TextGrad Core Methods ==========
-    
     def get_value(self) -> str:
         """Get the complete value of the variable - through rendering template and sub-variables"""
         if self.template is None:

@@ -536,34 +536,17 @@ class Agent(BaseModel):
         """Build system+agent messages using prompt templates and context."""
 
         system_modules = self.prompt_modules.copy()
-        # Infer prompt name from agent's prompt_name
-        if self.prompt_name:
-            system_prompt_name = f"{self.prompt_name}_system_prompt"
-            agent_message_prompt_name = f"{self.prompt_name}_agent_message_prompt"
-        else:
-            system_prompt_name = "tool_calling_system_prompt"
-            agent_message_prompt_name = "tool_calling_agent_message_prompt"
-
-        system_message = await prompt_manager.get_system_message(
-            prompt_name=system_prompt_name,
-            modules=system_modules,
-            reload=False,
-        )
 
         agent_message_modules = self.prompt_modules.copy()
         agent_message_modules.update(await self._get_agent_context(task))
         agent_message_modules.update(await self._get_environment_context())
         agent_message_modules.update(await self._get_tool_context())
-        agent_message = await prompt_manager.get_agent_message(
-            prompt_name=agent_message_prompt_name,
-            modules=agent_message_modules,
-            reload=True,
+        
+        messages = await prompt_manager.get_messages(
+            prompt_name=self.prompt_name,
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
         )
-
-        messages = [
-            system_message,
-            agent_message,
-        ]
 
         return messages
 
