@@ -4,6 +4,7 @@ from pydantic import ConfigDict, Field
 from src.logger import logger
 from src.optimizer.types import Optimizer
 from src.model import model_manager
+from src.memory import memory_manager
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
@@ -11,17 +12,25 @@ class ReflectionOptimizer(Optimizer):
     
     prompt_name: str = Field(default="reflection_optimizer", description="The name of the prompt")
     model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
+    memory_name: Optional[str] = Field(default=None, description="Name of the optimizer memory system for recording optimization history")
     
-    def __init__(self, agent, model_name: str = "openrouter/gpt-4o", ):
+    def __init__(self, agent,
+                 model_name: str = "openrouter/gpt-4o", 
+                 memory_name: Optional[str] = "optimizer_memory_system",
+                 **kwargs
+                 ):
         """
         Initialize the optimizer.
 
         Args:
             agent: Agent instance.
+            model_name: Model name for optimization.
+            memory_name: Optional name of the optimizer memory system for recording optimization history.
         """
         super().__init__(agent=agent)
         if model_name:
             self.model_name = model_name
+        self.memory_name = memory_name
         
     
     async def _generate_reflection(self, task: str, prompt_text: str, execution_result: str) -> str:
@@ -148,12 +157,31 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| Task: {task}")
         logger.info(f"| Optimization iterations: {optimization_steps}\n")
         
+        # Initialize optimizer memory session if available
+        optimizer_memory = None
+        session_id = None
+        if self.memory_name:
+            try:
+                optimizer_memory = await memory_manager.get(self.memory_name)
+                agent_name = getattr(self.agent, 'name', 'unknown_agent')
+                session_id = await optimizer_memory.start_optimization_session(
+                    optimizer_type="ReflectionOptimizer",
+                    agent_name=agent_name,
+                    task=task
+                )
+                logger.info(f"| 📝 Started optimization memory session: {session_id}")
+            except Exception as e:
+                logger.warning(f"| ⚠️ Failed to initialize optimizer memory: {e}")
+                optimizer_memory = None
+        
         # 1. Extract optimizable variables.
         logger.info(f"| 📊 Extracting optimizable variables...")
         self.optimizable_vars, self.var_mapping = self.extract_optimizable_variables()
         
         if not self.optimizable_vars:
             logger.warning("| ⚠️ No optimizable variables found (require_grad=True). Skipping optimization.")
+            if optimizer_memory and session_id:
+                await optimizer_memory.end_optimization_session(session_id)
             return
         
         # 3. Run the optimization loop.
@@ -200,6 +228,22 @@ class ReflectionOptimizer(Optimizer):
                     # 3.2.3 Update the variable value.
                     self.set_variable_value(orig_var, improved_value)
                     logger.info(f"| ✅ Variable {var_name} updated")
+                    
+                    # 3.2.4 Record optimization history if memory is available
+                    if optimizer_memory and session_id:
+                        try:
+                            await optimizer_memory.record_optimization(
+                                variable_name=var_name,
+                                before_value=current_value,
+                                after_value=improved_value,
+                                execution_result=str(agent_result)[:2000] if agent_result else None,
+                                reflection_analysis=reflection_analysis[:2000] if reflection_analysis else None,
+                                variable_description=var_desc,
+                                optimization_step=opt_step + 1,
+                                session_id=session_id
+                            )
+                        except Exception as e:
+                            logger.warning(f"| ⚠️ Failed to record optimization history: {e}")
                 
                 # 3.3 Clear caches.
                 self.clear_prompt_caches()
@@ -212,6 +256,14 @@ class ReflectionOptimizer(Optimizer):
                 logger.error(f"| Traceback: {traceback.format_exc()}")
                 # Continue with the next iteration.
                 continue
+        
+        # End optimization memory session if available
+        if optimizer_memory and session_id:
+            try:
+                await optimizer_memory.end_optimization_session(session_id)
+                logger.info(f"| 📝 Ended optimization memory session: {session_id}")
+            except Exception as e:
+                logger.warning(f"| ⚠️ Failed to end optimization memory session: {e}")
         
         logger.info(f"| ✅ Reflection optimization completed!")
         logger.info(f"| {'='*60}")
