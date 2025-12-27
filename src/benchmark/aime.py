@@ -1,0 +1,3 @@
+class AIMEBenchmark(Benchmark):
+    pass
+
