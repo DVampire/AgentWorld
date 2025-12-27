@@ -4,6 +4,7 @@ from pydantic import ConfigDict, Field
 from src.logger import logger
 from src.optimizer.types import Optimizer
 from src.prompt import prompt_manager
+from src.model import model_manager
 
 
 class ReflectionOptimizer(Optimizer):
@@ -21,7 +22,7 @@ class ReflectionOptimizer(Optimizer):
         """
         super().__init__(agent=agent)
     
-    async def _generate_reflection(self, task: str, prompt_text: str, execution_result: str, model: Any) -> str:
+    async def _generate_reflection(self, task: str, prompt_text: str, execution_result: str, model_name: str = "gpt-4o") -> str:
         """
         Generate the reflection analysis.
 
@@ -29,7 +30,7 @@ class ReflectionOptimizer(Optimizer):
             task: Task description.
             prompt_text: Current prompt text.
             execution_result: Agent execution result.
-            model: LLM model instance.
+            model_name: Model name to use for reflection.
 
         Returns:
             str: Reflection output.
@@ -61,7 +62,7 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| 🤔 Generating reflection analysis...")
         
         try:
-            response = await model.ainvoke(messages)
+            response = await model_manager(model=model_name, messages=messages)
             reflection_text = response.content if hasattr(response, 'content') else str(response)
             
             logger.info(f"| ✅ Reflection analysis generated ({len(reflection_text)} chars)")
@@ -72,7 +73,7 @@ class ReflectionOptimizer(Optimizer):
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_prompt(self, task: str, current_prompt: str, reflection_analysis: str, model: Any) -> str:
+    async def _improve_prompt(self, task: str, current_prompt: str, reflection_analysis: str, model_name: str = "gpt-4o") -> str:
         """
         Improve the prompt using the reflection analysis.
 
@@ -80,7 +81,7 @@ class ReflectionOptimizer(Optimizer):
             task: Task description.
             current_prompt: Current prompt text.
             reflection_analysis: Reflection analysis output.
-            model: LLM model instance.
+            model_name: Model name to use for improvement.
 
         Returns:
             str: Improved prompt text.
@@ -112,7 +113,7 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| ✨ Generating improved prompt...")
         
         try:
-            response = await model.ainvoke(messages)
+            response = await model_manager(model=model_name, messages=messages)
             improved_text = response.content if hasattr(response, 'content') else str(response)
             
             # Strip potential Markdown code fences.
@@ -165,15 +166,8 @@ class ReflectionOptimizer(Optimizer):
             logger.warning("| ⚠️ No optimizable variables found (require_grad=True). Skipping optimization.")
             return
         
-        # 2. Retrieve the model.
-        # Use the agent's model for reflection and improvement.
-        model = getattr(self.agent, 'model', None)
-        if model is None:
-            raise ValueError("No model available. Please ensure agent has a model attribute with ainvoke method.")
-        
-        # Ensure the model exposes an `ainvoke` method.
-        if not hasattr(model, 'ainvoke'):
-            raise ValueError(f"Model {type(model)} does not have ainvoke method. Please use a LangChain-compatible model.")
+        # 2. Model name for reflection and improvement.
+        model_name = "gpt-4o"
         
         # 3. Run the optimization loop.
         for opt_step in range(optimization_steps):
@@ -185,7 +179,7 @@ class ReflectionOptimizer(Optimizer):
                 # 3.1 Execute the task.
                 logger.info(f"| 🔄 Executing task with current prompt...")
                 
-                agent_result = await self.agent.ainvoke(task, files=files)
+                agent_result = await self.agent(task=task, files=files)
                 
                 logger.info(f"| ✅ Task execution completed")
                 logger.info(f"| 📄 Result: {str(agent_result)[:200]}...")
@@ -207,7 +201,7 @@ class ReflectionOptimizer(Optimizer):
                         task=task,
                         prompt_text=current_value,
                         execution_result=agent_result,
-                        model=model
+                        model_name=model_name
                     )
                     
                     # 3.2.2 Improve the prompt based on the reflection.
@@ -215,7 +209,7 @@ class ReflectionOptimizer(Optimizer):
                         task=task,
                         current_prompt=current_value,
                         reflection_analysis=reflection_analysis,
-                        model=model
+                        model_name=model_name
                     )
                     
                     # 3.2.3 Update the variable value.
@@ -250,7 +244,7 @@ async def optimize_agent_with_reflection(
     Convenience wrapper that optimizes an agent prompt using Reflection.
 
     Args:
-        agent: Agent instance (must expose a model with an `ainvoke` method).
+        agent: Agent instance (must support `__call__` method).
         task: Task description.
         files: Optional list of attachments.
         optimization_steps: Number of optimization iterations (execute -> reflect -> improve).
