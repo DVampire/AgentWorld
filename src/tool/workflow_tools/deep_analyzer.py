@@ -10,18 +10,27 @@ from pydantic import BaseModel, Field, ConfigDict
 from urllib.parse import urlparse
 
 from src.utils import dedent
-from src.utils import make_file_url
 from src.utils import assemble_project_path
 from src.utils import get_file_info
 from src.utils import fetch_url
-from src.utils import encode_file_base64
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.tool.workflow_tools.report import Report
 
 from src.logger import logger
 from src.model import model_manager
 from src.tool.default_tools.mdify import MdifyTool
-from src.message import HumanMessage, SystemMessage
+from src.message import (
+    HumanMessage, SystemMessage, 
+    ContentPartText, 
+    ContentPartImage, 
+    ImageURL,
+    ContentPartAudio, 
+    AudioURL, 
+    ContentPartVideo, 
+    VideoURL, 
+    ContentPartPdf, 
+    PdfURL)
+from src.utils import make_file_url
 from src.registry import TOOL
 
 class FileTypeInfo(BaseModel):
@@ -301,12 +310,15 @@ class DeepAnalyzerTool(Tool):
                     response_format=FileTypeClassification
                 )
                 
-                if response.extra and response.extra.parsed_model:
+                if not response.success:
+                    logger.warning(f"LLM classification failed: {response.message}, using file extension fallback")
+                    path_classifications = self._classify_by_extension(path_files)
+                elif response.extra and response.extra.parsed_model:
                     classification = response.extra.parsed_model
                     path_classifications = classification.files
                 else:
                     # Fallback: use file extension
-                    logger.warning("LLM classification failed, using file extension fallback")
+                    logger.warning("LLM classification failed to parse response, using file extension fallback")
                     path_classifications = self._classify_by_extension(path_files)
             else:
                 path_classifications = []
@@ -741,16 +753,25 @@ class DeepAnalyzerTool(Tool):
             ]
             
             response = await model_manager(model=self.model_name, messages=messages, response_format=SummaryResponse)
-            summary_response = response.extra.parsed_model
-            summary = Summary(
-                id=self._get_next_summary_id(),
-                summary=summary_response.summary,
-                found_answer=summary_response.found_answer,
-                answer=summary_response.answer
-            )
             
-            logger.info(f"| ✅ Overall file summary generated")
-            return summary
+            if not response.success:
+                logger.warning(f"Model call failed: {response.message}")
+                return None
+            
+            if response.extra and response.extra.parsed_model:
+                summary_response = response.extra.parsed_model
+                summary = Summary(
+                    id=self._get_next_summary_id(),
+                    summary=summary_response.summary,
+                    found_answer=summary_response.found_answer,
+                    answer=summary_response.answer
+                )
+                
+                logger.info(f"| ✅ Overall file summary generated")
+                return summary
+            else:
+                logger.warning(f"Failed to parse response: {response.message}")
+                return None
             
         except Exception as e:
             logger.warning(f"Failed to generate overall file summary: {e}")
@@ -794,7 +815,15 @@ class DeepAnalyzerTool(Tool):
                 response_format=SummaryResponse
             )
             
-            if response.extra and response.extra.parsed_model:
+            if not response.success:
+                summary_text = response.message.strip() if response.message else "Model call failed"
+                return Summary(
+                    id=self._get_next_summary_id(),
+                    summary=summary_text,
+                    found_answer=False,
+                    answer=None
+                )
+            elif response.extra and response.extra.parsed_model:
                 summary_response = response.extra.parsed_model
                 return Summary(
                     id=self._get_next_summary_id(),
@@ -855,7 +884,15 @@ class DeepAnalyzerTool(Tool):
                     response_format=Summary
                 )
                 
-                if response.extra and response.extra.parsed_model:
+                if not response.success:
+                    summary_text = response.message.strip() if response.message else "Model call failed"
+                    summary = Summary(
+                        id=self._get_next_summary_id(),
+                        summary=summary_text,
+                        found_answer=False,
+                        answer=None
+                    )
+                elif response.extra and response.extra.parsed_model:
                     summary = response.extra.parsed_model
                     # Assign ID to parsed summary
                     summary.id = self._get_next_summary_id()
@@ -962,42 +999,32 @@ class DeepAnalyzerTool(Tool):
             # Step 1: Try LLM direct analysis first
             logger.info(f"| 📄 Step 1: Trying LLM direct analysis of PDF")
             
-            # Prepare PDF file_data for LLM
+            # Prepare PDF URL for LLM
             # For URLs: use the URL string directly (e.g., "https://bitcoin.org/bitcoin.pdf")
-            # For local files: convert to data URL using base64 encoding (e.g., "data:application/pdf;base64,...")
+            # For local files: convert to data URL using make_file_url (e.g., "data:application/pdf;base64,...")
             if self._is_url(file):
-                # URL: use directly as file_data
-                file_data = file
+                # URL: use directly
+                pdf_url_value = file
                 logger.info(f"| 📄 Using PDF URL: {file}")
             else:
-                # Local file: convert to data URL
-                file_data = make_file_url(file_path=assemble_project_path(file))
+                # Local file: convert to data URL using make_file_url
+                pdf_url_value = make_file_url(file_path=file)
                 logger.info(f"| 📄 Using local PDF file: {os.path.basename(file)}")
             
             # Build message with PDF file
-            message_content = [
-                {
-                    "type": "text",
-                    "text": dedent(f"""Analyze the following PDF document to answer the task.
+            pdf_url = PdfURL(url=pdf_url_value)
+            messages = [
+                SystemMessage(content="You are an expert at analyzing PDF documents and extracting key information."),
+                HumanMessage(content=[
+                    ContentPartText(text=dedent(f"""Analyze the following PDF document to answer the task.
                     
                     Task: {task}
                     
                     Extract key information from the PDF that helps answer the task.
                     If the PDF contains the answer to the task, clearly state it.
-                    """)
-                },
-                {
-                    "type": "file",
-                    "file": {
-                        "filename": "document.pdf",
-                        "file_data": file_data  # Can be URL string or data URL
-                    }
-                }
-            ]
-            
-            messages = [
-                SystemMessage(content="You are an expert at analyzing PDF documents and extracting key information."),
-                HumanMessage(content=message_content)
+                    """)),
+                    ContentPartPdf(pdf_url=pdf_url)
+                ])
             ]
             
             # Try LLM direct analysis
@@ -1114,7 +1141,15 @@ class DeepAnalyzerTool(Tool):
                 response_format=Summary
             )
             
-            if response.extra and response.extra.parsed_model:
+            if not response.success:
+                summary_text = response.message.strip() if response.message else "Model call failed"
+                return Summary(
+                    id=self._get_next_summary_id(),
+                    summary=summary_text,
+                    found_answer=False,
+                    answer=None
+                )
+            elif response.extra and response.extra.parsed_model:
                 parsed_summary = response.extra.parsed_model
                 # Assign ID to parsed summary
                 parsed_summary.id = self._get_next_summary_id()
@@ -1147,38 +1182,31 @@ class DeepAnalyzerTool(Tool):
             
             # Prepare image URL for LLM
             # For URLs: use the URL string directly (e.g., "https://example.com/image.jpg")
-            # For local files: convert to data URL using base64 encoding (e.g., "data:image/jpeg;base64,...")
+            # For local files: convert to data URL using make_file_url (e.g., "data:image/jpeg;base64,...")
             if is_url:
                 # URL: use directly
                 image_url_value = file
                 logger.info(f"| 🖼️ Using image URL: {file}")
             else:
-                # Local file: convert to data URL
-                image_url_value = make_file_url(file_path=assemble_project_path(file))
+                # Local file: convert to data URL using make_file_url
+                image_url_value = make_file_url(file_path=file)
                 logger.info(f"| 🖼️ Using local image file: {os.path.basename(file)}")
             
             # Build message with image
-            message_content = [
-                {
-                    "type": "text",
-                    "text": dedent(f"""Analyze the following image to answer the task.
+            image_url = ImageURL(url=image_url_value, detail="high")
+            messages = [
+                SystemMessage(content="You are an expert at analyzing images and extracting visual information."),
+                HumanMessage(content=[
+                    ContentPartText(text=dedent(f"""Analyze the following image to answer the task.
                     
                     Task: {task}
                     
                     Extract key information from the image that helps answer the task.
                     Focus on visual elements, text in images, patterns, and any relevant details.
                     If the image contains the answer to the task, clearly state it.
-                    """)
-                },
-                {
-                    "type": "image_url",
-                    "image_url": {"url": image_url_value}  # Can be URL string or data URL
-                }
-            ]
-            
-            messages = [
-                SystemMessage(content="You are an expert at analyzing images and extracting visual information."),
-                HumanMessage(content=message_content)
+                    """)),
+                    ContentPartImage(image_url=image_url)
+                ])
             ]
             
             # Try LLM direct analysis
@@ -1189,7 +1217,9 @@ class DeepAnalyzerTool(Tool):
                     response_format=SummaryResponse
                 )
                 
-                if response.extra and response.extra.parsed_model:
+                if not response.success:
+                    logger.warning(f"| ⚠️ LLM direct analysis failed: {response.message}, proceeding to multi-step analysis")
+                elif response.extra and response.extra.parsed_model:
                     summary_response = response.extra.parsed_model
                     summary = Summary(
                         id=self._get_next_summary_id(),
@@ -1216,29 +1246,19 @@ class DeepAnalyzerTool(Tool):
                 logger.info(f"| 🔄 Analyzing image step {step_num}/{self.max_steps}")
                 
                 # Build multimodal message with the image
-                message_content = [
-                    {"type": "text", "text": dedent(f"""Analyze the following image to answer the task.
-                    
-                    Task: {task}
-                    
-                    Extract key information from the image that helps answer the task.
-                    Focus on visual elements, text in images, patterns, and any relevant details.
-                    """)}
-                ]
-                
-                # Add the image
-                try:
-                    message_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": image_url_value}
-                    })
-                except Exception as e:
-                    logger.warning(f"Failed to process image {file}: {e}")
-                    return None
-                
+                image_url = ImageURL(url=image_url_value, detail="high")
                 messages = [
                     SystemMessage(content="You are an expert at analyzing images and extracting visual information."),
-                    HumanMessage(content=message_content)
+                    HumanMessage(content=[
+                        ContentPartText(text=dedent(f"""Analyze the following image to answer the task.
+                        
+                        Task: {task}
+                        
+                        Extract key information from the image that helps answer the task.
+                        Focus on visual elements, text in images, patterns, and any relevant details.
+                        """)),
+                        ContentPartImage(image_url=image_url)
+                    ])
                 ]
                 
                 response = await model_manager(
@@ -1247,7 +1267,15 @@ class DeepAnalyzerTool(Tool):
                     response_format=Summary
                 )
                 
-                if response.extra and response.extra.parsed_model:
+                if not response.success:
+                    summary_text = response.message.strip() if response.message else "Model call failed"
+                    summary = Summary(
+                        id=self._get_next_summary_id(),
+                        summary=summary_text,
+                        found_answer=False,
+                        answer=None
+                    )
+                elif response.extra and response.extra.parsed_model:
                     summary = response.extra.parsed_model
                     # Assign ID to parsed summary
                     summary.id = self._get_next_summary_id()
@@ -1298,34 +1326,23 @@ class DeepAnalyzerTool(Tool):
             file_info = get_file_info(local_file_path)
             logger.info(f"| 🎵 Processing audio file: {os.path.basename(local_file_path)} ({file_info.get('size', 'unknown')} bytes)")
             
-            # Encode audio file to base64
-            audio_base64 = encode_file_base64(file_path=assemble_project_path(local_file_path))
-            audio_format = os.path.splitext(local_file_path)[1][1:].lower()  # Get extension without dot
+            # Convert audio file to data URL using make_file_url
+            audio_url_value = make_file_url(file_path=local_file_path)
             
             # Build message with audio file
-            message_content = [
-                {
-                    "type": "text",
-                    "text": dedent(f"""Analyze the following audio file to answer the task.
+            audio_url = AudioURL(url=audio_url_value)
+            messages = [
+                SystemMessage(content="You are an expert at analyzing audio files, transcribing speech, and extracting key information."),
+                HumanMessage(content=[
+                    ContentPartText(text=dedent(f"""Analyze the following audio file to answer the task.
                     
                     Task: {task}
                     
                     Transcribe the audio and extract key information that helps answer the task.
                     If the audio contains the answer to the task, clearly state it.
-                    """)
-                },
-                {
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": audio_base64,
-                        "format": audio_format  # "mp3", "wav", "m4a", "ogg", "flac"
-                    }
-                }
-            ]
-            
-            messages = [
-                SystemMessage(content="You are an expert at analyzing audio files, transcribing speech, and extracting key information."),
-                HumanMessage(content=message_content)
+                    """)),
+                    ContentPartAudio(audio_url=audio_url)
+                ])
             ]
             
             # Try LLM direct analysis
@@ -1336,7 +1353,9 @@ class DeepAnalyzerTool(Tool):
                     response_format=SummaryResponse
                 )
                 
-                if response.extra and response.extra.parsed_model:
+                if not response.success:
+                    logger.warning(f"| ⚠️ LLM direct analysis failed: {response.message}")
+                elif response.extra and response.extra.parsed_model:
                     summary_response = response.extra.parsed_model
                     summary = Summary(
                         id=self._get_next_summary_id(),
@@ -1385,8 +1404,8 @@ class DeepAnalyzerTool(Tool):
                         summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to download video from URL: {file}", found_answer=False, answer=None))
                         return None
                     local_file_path = downloaded_path
-                    # For LLM analysis, convert to data URL
-                    video_url_value = make_file_url(file_path=assemble_project_path(local_file_path))
+                    # For LLM analysis, convert to data URL using make_file_url
+                    video_url_value = make_file_url(file_path=local_file_path)
                     logger.info(f"| 🎬 Using downloaded video file: {os.path.basename(local_file_path)}")
             else:
                 # Local file: check if exists
@@ -1394,34 +1413,27 @@ class DeepAnalyzerTool(Tool):
                     logger.warning(f"Video file not found: {file}")
                     return None
                 
-                # Local file: convert to data URL for LLM analysis
-                video_url_value = make_file_url(file_path=assemble_project_path(file))
+                # Local file: convert to data URL using make_file_url
+                video_url_value = make_file_url(file_path=file)
                 logger.info(f"| 🎬 Using local video file: {os.path.basename(file)}")
             
             # Step 1: Try LLM direct analysis first
             logger.info(f"| 🎬 Step 1: Trying LLM direct analysis of video")
             
             # Build message with video
-            message_content = [
-                {
-                    "type": "text",
-                    "text": dedent(f"""Analyze the following video to answer the task.
+            video_url = VideoURL(url=video_url_value)
+            messages = [
+                SystemMessage(content="You are an expert at analyzing videos and extracting key information."),
+                HumanMessage(content=[
+                    ContentPartText(text=dedent(f"""Analyze the following video to answer the task.
                     
                     Task: {task}
                     
                     Extract key information from the video that helps answer the task.
                     If the video contains the answer to the task, clearly state it.
-                    """)
-                },
-                {
-                    "type": "video_url",
-                    "video_url": {"url": video_url_value}  # Can be YouTube URL or data URL
-                }
-            ]
-            
-            messages = [
-                SystemMessage(content="You are an expert at analyzing videos and extracting key information."),
-                HumanMessage(content=message_content)
+                    """)),
+                    ContentPartVideo(video_url=video_url)
+                ])
             ]
             
             # Try LLM direct analysis
