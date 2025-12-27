@@ -23,12 +23,15 @@ sys.path.append(root)
 
 from src.config import config
 from src.logger import logger
-from src.models import model_manager
-from src.tools import tcp
-from src.environments import ecp
-from src.agents import acp
+from src.model import model_manager
+from src.version import version_manager
+from src.prompt import prompt_manager
+from src.memory import memory_manager
+from src.tool import tcp
+from src.environment import ecp
+from src.agent import acp
 from src.transformation import transformation
-from src.optimizers.reflection_optimizer import optimize_agent_with_reflection
+from src.optimizer.reflection_optimizer import optimize_agent_with_reflection
 
 
 def parse_args():
@@ -52,40 +55,52 @@ def parse_args():
 async def main():
     args = parse_args()
     
-    config.init_config(args.config, args)
-    logger.init_logger(config)
+    config.initialize(config_path=args.config, args=args)
+    logger.initialize(config=config)
     logger.info(f"| Config: {config.pretty_text}")
     
     # Initialize model manager
     logger.info("| 🧠 Initializing model manager...")
-    await model_manager.initialize(use_local_proxy=config.use_local_proxy)
-    logger.info(f"| ✅ Model manager initialized: {model_manager.list()}")
+    await model_manager.initialize()
+    logger.info(f"| ✅ Model manager initialized: {await model_manager.list()}")
+    
+    # Initialize prompt manager
+    logger.info("| 📁 Initializing prompt manager...")
+    await prompt_manager.initialize()
+    logger.info(f"| ✅ Prompt manager initialized: {await prompt_manager.list()}")
+    
+    # Initialize memory manager
+    logger.info("| 📁 Initializing memory manager...")
+    await memory_manager.initialize(memory_names=config.memory_names)
+    logger.info(f"| ✅ Memory manager initialized: {await memory_manager.list()}")
+    
+    # Initialize tools
+    logger.info("| 🛠️ Initializing tools...")
+    await tcp.initialize(tool_names=config.tool_names)
+    logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
-    # Initialize tools
-    logger.info("| 🛠️ Initializing tools...")
-    await tcp.initialize(config.tool_names)
-    logger.info(f"| ✅ Tools initialized: {tcp.list()}")
-    
     # Initialize agents
     logger.info("| 🤖 Initializing agents...")
-    await acp.initialize(config.agent_names)
-    logger.info(f"| ✅ Agents initialized: {acp.list()}")
+    await acp.initialize(agent_names=config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {await acp.list()}")
     
     # Transformation ECP to TCP
     logger.info("| 🔄 Transformation start...")
     await transformation.transform(type="e2t", env_names=config.env_names)
-    logger.info(f"| ✅ Transformation completed: {tcp.list()}")
+    logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
+    
+    # Initialize version manager, must after tool, agent, environment initialized
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Version manager initialized")
     
     # Get the agent instance; use the synchronous get_info() helper to access AgentInfo and then use .instance.
-    agent_info = acp.get_info("tool_calling")
-    if agent_info is None:
-        raise ValueError(f"Agent 'tool_calling' not found. Available agents: {acp.list()}")
-    agent = agent_info.instance
+    agent = await acp.get("tool_calling")
     
     # Example task; replace with the task you want to optimize.
     task = "How are you!"
@@ -94,7 +109,7 @@ async def main():
     logger.info(f"| 📋 Task: {task}")
     logger.info(f"| 📂 Files: {files}")
     logger.info(f"| 🤖 Using Reflection optimization method")
-    logger.info(f"| 💡 Reflection优化器会使用Agent自己的模型进行反思和改进")
+    logger.info(f"| 💡 Reflection optimizer uses the agent's own model for reflection and improvement")
     
     # Run the agent with Reflection optimization.
     # Note: the Reflection optimizer relies on the agent's own model for reflection, so no extra optimizer_model is required.
@@ -102,19 +117,24 @@ async def main():
         agent=agent,
         task=task,
         files=files,
-        optimization_steps=3,  # 优化迭代次数
-        log_dir=config.workdir  # 日志目录，优化过程会记录在这里
+        optimization_steps=3  # Number of optimization iterations
     )
     
-    # 最后用优化后的提示词再运行一次，展示最终结果
+    # Final run with optimized prompts to show the final result
     logger.info(f"\n| {'='*60}")
     logger.info(f"| 🎯 Final run with optimized prompts")
     logger.info(f"| {'='*60}\n")
     
-    final_result = await agent.ainvoke(task=task, files=files)
-    logger.info(f"| ✅ Final result: {final_result}")
-    
-    logger.info(f"\n| 📝 Optimization logs saved to: {config.workdir}/reflection_optimization.log")
+    input = {
+        "name": "tool_calling",
+        "input": {
+            "task": task,
+            "files": files
+        }
+    }
+    final_result = await acp(**input)
+    logger.info(f"| ✅ Final result: {str(final_result)[:200]}...")
+    logger.info(f"| Execution result: {str(final_result)[:500]}...\n")
 
 
 if __name__ == "__main__":
