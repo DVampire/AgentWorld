@@ -24,7 +24,7 @@ from src.tool import tcp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "esg_agent.py"), help="config file path")
+    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
 
     parser.add_argument(
         '--cfg-options',
@@ -162,6 +162,46 @@ async def test_bash_tool():
         import traceback
         traceback.print_exc()
         
+async def test_deep_analyzer_tool():
+    """Test the deep analyzer tool directly."""
+    
+    # Test parameters
+    task = "Analyze the pdf file."
+    files = [
+        os.path.join(root, "tests", "files", "pdf.pdf"),
+    ]
+    
+    print("🧪 Testing deep analyzer tool...")
+    print(f"Task: {task}")
+    
+    try:
+        # Invoke the deep analyzer tool
+        input = {
+            "name": "deep_analyzer",
+            "input": {
+                "task": task,
+                "files": files,
+            }
+        }
+        
+        result = await tcp(**input)
+        
+        print("\n📋 Deep analyzer tool result:")
+        print("=" * 50)
+        print(result)
+        print("=" * 50)
+        
+        if result and "Error" not in str(result):
+            print("✅ Deep analyzer tool test successful!")
+        else:
+            print("❌ Deep analyzer tool test failed!")
+            
+    except Exception as e:
+        print(f"❌ Error testing deep analyzer tool: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        
 async def main():
     args = parse_args()
     
@@ -200,8 +240,9 @@ async def main():
     logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
     # await test_browser_tool()
-    await test_deep_researcher_tool()
+    # await test_deep_researcher_tool()
     # await test_bash_tool()
+    await test_deep_analyzer_tool()
     logger.info("| 🚪 Test completed")
     
 if __name__ == "__main__":

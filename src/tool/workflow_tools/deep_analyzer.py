@@ -5,6 +5,7 @@ import re
 import asyncio
 import urllib.request
 import uuid
+import shutil
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from urllib.parse import urlparse
@@ -127,7 +128,7 @@ class DeepAnalyzerTool(Tool):
         description="The base directory to use for the deep analyzer."
     )
     file_model_name: str = Field(
-        default="openrouter/gemini-3-flash-preview",
+        default="openrouter/gemini-3-flash-preview-plugins",
         description="The model to use for the file analysis."
     )
 
@@ -956,10 +957,27 @@ class DeepAnalyzerTool(Tool):
             file_info = get_file_info(local_file_path)
             logger.info(f"| 📄 Processing text file: {os.path.basename(local_file_path)} ({file_info.get('size', 'unknown')} bytes)")
             
-            # Convert to markdown using mdify_tool (automatically saves to base_dir)
-            mdify_response = await self.mdify_tool(file_path=local_file_path, output_format="markdown")
-            if mdify_response.extra and mdify_response.extra.file_path:
-                saved_path = mdify_response.extra.file_path
+            # Check if file is already markdown format
+            _, ext = os.path.splitext(local_file_path.lower())
+            if ext == '.md':
+                # Already markdown, use directly (copy to base_dir for consistency)
+                logger.info(f"| 📄 File is already markdown format, using directly")
+                if self.base_dir:
+                    # Copy to base_dir for consistency with other file types
+                    base_name = os.path.splitext(os.path.basename(local_file_path))[0]
+                    saved_path = os.path.join(self.base_dir, f"{base_name}.md")
+                    shutil.copy2(local_file_path, saved_path)
+                else:
+                    saved_path = local_file_path
+            else:
+                # Convert to markdown using mdify_tool (automatically saves to base_dir)
+                mdify_response = await self.mdify_tool(file_path=local_file_path, output_format="markdown")
+                if mdify_response.extra and mdify_response.extra.file_path:
+                    saved_path = mdify_response.extra.file_path
+                else:
+                    logger.error(f"| ❌ Failed to convert file to markdown: {local_file_path}")
+                    summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to convert file to markdown: {local_file_path}", found_answer=False, answer=None))
+                    return None
             
             # Read all lines once
             with open(saved_path, 'r', encoding='utf-8', errors='ignore') as f:
