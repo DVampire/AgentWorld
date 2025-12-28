@@ -57,16 +57,28 @@ class BrowserTool(Tool):
             os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| Browser tool base directory: {self.base_dir}")
     
-    async def _call_agent(self, task: str, **kwargs) -> ToolResponse:
+    async def _call_agent(self, task: str, call_id: Optional[str] = None, **kwargs) -> ToolResponse:
         """Use the browser to interact with the internet to complete the task.
 
         Args:
-            browser (Browser): The browser to use.
             task (str): The task to complete.
+            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls.
         """
         agent = None
         try:
+            # Generate unique paths for this call to avoid conflicts in concurrent calls
+            if call_id is None:
+                call_id = uuid.uuid4().hex[:8]
+            
             try:
+                # Create unique subdirectory for this call to avoid file conflicts in concurrent calls
+                call_dir = os.path.join(self.base_dir, f"call_{call_id}") if self.base_dir else None
+                if call_dir:
+                    os.makedirs(call_dir, exist_ok=True)
+                
+                # Use unique paths for each call to avoid file conflicts
+                gif_path = os.path.join(call_dir, f"browser_{call_id}.gif") if call_dir else None
+                logs_path = os.path.join(call_dir, "logs") if call_dir else None
                 
                 agent = Agent(
                     task=task,
@@ -80,9 +92,9 @@ class BrowserTool(Tool):
                         base_url=os.getenv("OPENROUTER_API_BASE"),
                         api_key=os.getenv("OPENROUTER_API_KEY"),
                     ),
-                    file_system_path=self.base_dir if self.base_dir else None,
-                    generate_gif=os.path.join(self.base_dir, "browser.gif") if self.base_dir else None,
-                    save_conversation_path=os.path.join(self.base_dir, "logs") if self.base_dir else None,
+                    file_system_path=call_dir if call_dir else None,
+                    generate_gif=gif_path,
+                    save_conversation_path=logs_path,
                     max_steps=50,
                     verbose=True,
                 )
@@ -117,17 +129,22 @@ class BrowserTool(Tool):
             return ToolResponse(success=False, message=f"Error in browser tool: {str(e)}")
                     
     
-    async def __call__(self, task: str, **kwargs) -> ToolResponse:
+    async def __call__(self, task: str, call_id: Optional[str] = None, **kwargs) -> ToolResponse:
         """Use the browser to interact with the internet to complete the task.
 
         Args:
             task (str): The task to complete.
+            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
         """
         try:
             logger.info(f"🌐 Starting browser task: {task}")
             
+            # Generate unique call ID if not provided
+            if call_id is None:
+                call_id = uuid.uuid4().hex[:8]
+            
             # Create file path for markdown report
-            md_filename = f"browser_{uuid.uuid4().hex[:8]}.md"
+            md_filename = f"browser_{call_id}.md"
             file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
             # Initialize Report instance
@@ -141,8 +158,8 @@ class BrowserTool(Tool):
             task_content = f"## Browser Task\n\n{task}\n\n"
             await report.add_item(task_content)
             
-            # Execute browser agent
-            response = await self._call_agent(task=task, **kwargs)
+            # Execute browser agent with unique call_id
+            response = await self._call_agent(task=task, call_id=call_id, **kwargs)
             
             # Extract result message
             if isinstance(response, ToolResponse):

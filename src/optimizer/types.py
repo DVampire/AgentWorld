@@ -360,15 +360,40 @@ class Variable(BaseModel):
 class Optimizer(BaseModel):
     """Base optimizer that provides shared functionality such as variable extraction and cache management."""
     
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     agent: Any = Field(description="The agent instance to optimize.")
-    optimizable_vars: List[Any] = Field(default_factory=list, description="List of optimizable variables.")
-    var_mapping: Dict[Any, Any] = Field(default_factory=dict, description="Mapping from variable to prompt object.")
-    prompt_mapping: Dict[Any, Any] = Field(default_factory=dict, description="Mapping from variable to prompt object (used by certain optimizers).")
     
-    def __init__(self, agent, **kwargs):
+    def __init__(self,
+                 agent, 
+                 workdir: str,
+                 model_name: Optional[str] = None,
+                 prompt_name: Optional[str] = None,
+                 prompt_modules: Optional[Dict[str, Any]] = None,
+                 memory_name: Optional[str] = None,
+                 max_steps: int = 3,
+                 **kwargs
+                 ):
         super().__init__(agent=agent, **kwargs)
+        
+        # Set working directory
+        self.workdir = workdir
+
+        # Set prompt name and modules
+        self.prompt_name = prompt_name
+        self.memory_name = memory_name
+        self.model_name = model_name
+
+        # Setup prompt modules
+        self.prompt_modules = prompt_modules or {}
+        self.max_steps = max_steps if max_steps > 0 else int(1e8)
+        self.prompt_modules["workdir"] = self.workdir
+        
+        # Setup optimizable variables
+        self.optimizable_vars = []
+        self.var_mapping = {}
+        self.prompt_mapping = None
+        
     
     def find_prompt_objects_with_variables(self) -> List[Tuple[Any, str]]:
         """
@@ -554,9 +579,9 @@ class Optimizer(BaseModel):
             optimization_steps: Number of optimization iterations.
             **kwargs: Additional optimizer-specific parameters.
         """
-        pass
+        raise NotImplementedError(f"``optimize`` function for {type(self).__name__} is not implemented!")
     
     def close(self):
         """Close the optimizer and release resources."""
-        pass
+        raise NotImplementedError(f"``close`` function for {type(self).__name__} is not implemented!")
 

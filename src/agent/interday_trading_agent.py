@@ -6,7 +6,7 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
@@ -56,7 +56,7 @@ class InterdayTradingAgent(Agent):
         self.think_output_builder.register(tcp.args_schemas())
         self.ThinkOutput = self.think_output_builder.build()
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
         """Think and action for one step."""
         
         # If the new tool is added, rebuild the ThinkOutput model
@@ -71,6 +71,7 @@ class InterdayTradingAgent(Agent):
         
         done = False
         final_result = None
+        final_reasoning = None
         
         try:
             model_response = await model_manager(
@@ -106,15 +107,9 @@ class InterdayTradingAgent(Agent):
                     "name": tool_name,
                     "input": tool_args
                 }
-                response = await tcp(**input)
-                if isinstance(response, ToolResponse):
-                    tool_result = response.message
-                else:
-                    tool_result = str(response)
-                if isinstance(tool_result, ToolResponse):
-                    tool_result = tool_result.message
-                else:
-                    tool_result = str(tool_result)
+                tool_response = await tcp(**input)
+                tool_result = tool_response.message
+                tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)}...")
@@ -128,6 +123,7 @@ class InterdayTradingAgent(Agent):
                 if tool_name == "step" and "Environment status: done" in str(tool_result):
                     done = True
                     final_result = tool_result
+                    final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
                     break
             
             event_data = {
@@ -160,7 +156,12 @@ class InterdayTradingAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
-        return done, final_result
+        result = {
+            "done": done,
+            "final_result": final_result,
+            "final_reasoning": final_reasoning
+        }
+        return result
     
     async def _generate_session_info(self, task: str) -> SessionInfo:
         """Use the llm to generate a session id."""
@@ -321,7 +322,7 @@ class InterdayTradingAgent(Agent):
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None
-                  ) -> Any:
+                  ) -> AgentResponse:
         """
         Main entry point for interday trading agent through acp.
         
@@ -330,7 +331,7 @@ class InterdayTradingAgent(Agent):
             files (Optional[List[str]]): The files to attach to the task.
             
         Returns:
-            Any: The final result of the task.
+            AgentResponse: The response of the agent.
         """
         logger.info(f"| 🚀 Starting InterdayTradingAgent: {task}")
         
@@ -362,33 +363,36 @@ class InterdayTradingAgent(Agent):
         
         # Main loop
         step_number = 0
-        done = False
-        final_result = None
+        response = None
         
-        while not done and (self.max_steps == -1 or step_number < self.max_steps):
+        while self.max_steps == -1 or step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}")
             
             # Execute one step
-            done, final_result = await self._think_and_action(messages, task_id)
+            response = await self._think_and_action(messages, task_id)
             self.step_number += 1
             
             messages = await self._get_messages(task)
             
-            if done:
+            if response.done:
                 break
         
         # Handle max steps reached
         if self.max_steps > 0 and step_number >= self.max_steps:
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
-            final_result = "Reached maximum number of steps"
+            response = {
+                "done": False,
+                "final_result": "Reached maximum number of steps",
+                "final_reasoning": "Reached the maximum number of steps."
+            }
         
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="task_end",
-            data=dict(result=final_result),
+            data=response,
             agent_name=self.name,
             task_id=task_id
         )
@@ -398,4 +402,8 @@ class InterdayTradingAgent(Agent):
         
         logger.info(f"| ✅ Agent completed after {step_number} steps")
         
-        return final_result
+        return AgentResponse(
+            success=response["done"],
+            message=response["final_result"] if response["final_result"] else "",
+            extra=AgentExtra(data=response)
+        )

@@ -6,7 +6,7 @@ import asyncio
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
 from src.logger import logger
 from src.agent.server import acp
 from src.memory import memory_manager, SessionInfo, EventType
@@ -230,7 +230,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.error(f"Error getting user input: {e}")
             return None
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None) -> str:
+    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None) -> AgentResponse:
         """
         Main entry point for simple chat agent through acp.
         
@@ -240,7 +240,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             global_conversation_history (Optional[List[Dict]]): The global conversation history for multi-agent scenarios.
             
         Returns:
-            str: The final conversation result as a string.
+            AgentResponse: The response of the agent.
         """
         logger.info(f"| 💬 SimpleChatAgent starting multi-turn conversation: {task[:self.log_max_length]}...")
         
@@ -350,7 +350,17 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         
         logger.info(f"| ✅ Multi-turn conversation completed after {conversation_round} rounds")
         
-        return f"Conversation completed in {conversation_round} rounds"
+        result = f"Conversation completed in {conversation_round} rounds"
+        response = {
+            "done": True,
+            "final_result": result,
+            "final_reasoning": None
+        }
+        return AgentResponse(
+            success=response["done"],
+            message=response["final_result"],
+            extra=AgentExtra(data=response)
+        )
 
     def _format_global_history(self, global_history: List[Dict]) -> str:
         """Format global conversation history for the agent."""

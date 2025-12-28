@@ -419,7 +419,7 @@ _REPORT_DESCRIPTION = """Report tool for managing and refining markdown reports.
 📋 Actions:
 - add: Add new content to the report
   - args: 
-    - report_id (str) - REQUIRED: Unique identifier for the report. Use the same report_id across multiple calls to maintain state.
+    - call_id (str) - REQUIRED: Unique identifier for the report. Use the same call_id across multiple calls to maintain state.
     - file_path (Optional[str]) - Path to a markdown file to add (file content will be read and added)
     - content (Optional[Union[str, Dict[str, Any]]]) - The content to add as string or dictionary
     - At least one of content or file_path must be provided
@@ -428,15 +428,15 @@ _REPORT_DESCRIPTION = """Report tool for managing and refining markdown reports.
 
 - complete: Complete and optimize the entire report
   - args:
-    - report_id (str) - REQUIRED: Unique identifier for the report. Must match the report_id used in previous 'add' calls.
+    - call_id (str) - REQUIRED: Unique identifier for the report. Must match the call_id used in previous 'add' calls.
   - Reads all summaries and optimizes content for coherence and logic
   - Updates report.md with optimized content
 
 💡 Workflow:
-1. Use `add` multiple times with the SAME `report_id` to incrementally add content (from strings or dictionaries or files)
-2. Use `complete` with the SAME `report_id` to optimize the entire report with LLM
+1. Use `add` multiple times with the SAME `call_id` to incrementally add content (from strings or dictionaries or files)
+2. Use `complete` with the SAME `call_id` to optimize the entire report with LLM
 
-⚠️ IMPORTANT: You MUST use the same `report_id` for all calls to the same report. Different `report_id` values create separate reports.
+⚠️ IMPORTANT: You MUST use the same `call_id` for all calls to the same report. Different `call_id` values create separate reports.
 """
 
 
@@ -480,75 +480,75 @@ class ReportTool(Tool):
         if self.base_dir is not None:
             os.makedirs(self.base_dir, exist_ok=True)
         
-        # Per-report_id cache and locks for concurrent safety (similar to memory system)
-        # Key: report_id (str), Value: Report instance
+        # Per-call_id cache and locks for concurrent safety (similar to memory system)
+        # Key: call_id (str), Value: Report instance
         self._report_cache: Dict[str, Report] = {}
-        # Key: report_id (str), Value: asyncio.Lock for that report
+        # Key: call_id (str), Value: asyncio.Lock for that report
         self._report_locks: Dict[str, asyncio.Lock] = {}
         # Lock for managing the cache dictionaries themselves
         self._cache_lock = asyncio.Lock()
     
-    def _get_report_file_path(self, report_id: str) -> Optional[str]:
-        """Generate a fixed report file path based on report_id.
+    def _get_report_file_path(self, call_id: str) -> Optional[str]:
+        """Generate a fixed report file path based on call_id.
         
         Args:
-            report_id: The unique report identifier
+            call_id: The unique call identifier
             
         Returns:
             The report file path, or None if base_dir is not set
         """
         if not self.base_dir:
             return None
-        # Create a safe filename from report_id
-        safe_id = re.sub(r'[^\w\s-]', '', report_id).strip().replace(' ', '_')
+        # Create a safe filename from call_id
+        safe_id = re.sub(r'[^\w\s-]', '', call_id).strip().replace(' ', '_')
         if not safe_id:
             safe_id = "report"
         md_filename = f"{safe_id}.md"
         return os.path.join(self.base_dir, md_filename)
     
-    async def _get_or_create_report(self, report_id: str) -> tuple[Report, asyncio.Lock]:
-        """Get or create a Report instance for the given report_id with proper locking.
+    async def _get_or_create_report(self, call_id: str) -> tuple[Report, asyncio.Lock]:
+        """Get or create a Report instance for the given call_id with proper locking.
         
         Args:
-            report_id: The unique identifier for the report
+            call_id: The unique identifier for the call
             
         Returns:
             tuple[Report, asyncio.Lock]: The report instance and its lock
         """
         async with self._cache_lock:
-            # Get or create lock for this report_id
-            if report_id not in self._report_locks:
-                self._report_locks[report_id] = asyncio.Lock()
+            # Get or create lock for this call_id
+            if call_id not in self._report_locks:
+                self._report_locks[call_id] = asyncio.Lock()
             
-            # Get or create report for this report_id
-            if report_id not in self._report_cache:
-                # Generate report_file_path based on report_id
-                report_file_path = self._get_report_file_path(report_id)
-                # Use report_id as the title
-                self._report_cache[report_id] = Report(
-                    title=report_id,
+            # Get or create report for this call_id
+            if call_id not in self._report_cache:
+                # Generate report_file_path based on call_id
+                report_file_path = self._get_report_file_path(call_id)
+                # Use call_id as the title
+                self._report_cache[call_id] = Report(
+                    title=call_id,
                     model_name=self.model_name,
                     report_file_path=report_file_path
                 )
-                logger.info(f"| 📝 Created new report cache for id: {report_id} (file_path: {report_file_path})")
+                logger.info(f"| 📝 Created new report cache for id: {call_id} (file_path: {report_file_path})")
             else:
-                logger.info(f"| 📂 Using existing report cache for id: {report_id} (items: {len(self._report_cache[report_id].items)})")
+                logger.info(f"| 📂 Using existing report cache for id: {call_id} (items: {len(self._report_cache[call_id].items)})")
             
-            return self._report_cache[report_id], self._report_locks[report_id]
+            return self._report_cache[call_id], self._report_locks[call_id]
     
-    async def _cleanup_report(self, report_id: str):
+    async def _cleanup_report(self, call_id: str):
         """Remove report from cache after completion."""
         async with self._cache_lock:
-            if report_id in self._report_cache:
-                del self._report_cache[report_id]
-                logger.info(f"| 🧹 Removed report from cache: {report_id}")
-            if report_id in self._report_locks:
-                del self._report_locks[report_id]
+            if call_id in self._report_cache:
+                del self._report_cache[call_id]
+                logger.info(f"| 🧹 Removed report from cache: {call_id}")
+            if call_id in self._report_locks:
+                del self._report_locks[call_id]
 
     async def __call__(
         self,
         action: str,
-        report_id: str,
+        call_id: str,
         file_path: Optional[str] = None,
         content: Optional[Union[str, Dict[str, Any]]] = None,
         **kwargs
@@ -557,15 +557,15 @@ class ReportTool(Tool):
 
         Args:
             action (str): The action to perform. action must be one of: add, complete.
-            report_id (str): Unique identifier for the report. Use the same report_id across multiple calls to maintain state.
+            call_id (str): REQUIRED: Unique identifier for the report. Use the same call_id across multiple calls to maintain state.
             file_path (Optional[str]): Path to a file to add. If it's a .md file, the content will be read and added. If it's not a .md file, it will be added as a reference/attachment.
             content (Optional[Union[str, Dict[str, Any]]]): Content to add as string or dictionary.
         """
         try:
-            if not report_id:
+            if not call_id:
                 return ToolResponse(
                     success=False,
-                    message="report_id is required. Please provide a unique identifier for the report."
+                    message="call_id is required. Please provide a unique identifier for the report."
                 )
             
             if not self.base_dir:
@@ -574,13 +574,13 @@ class ReportTool(Tool):
                     message="Cannot create report: base_dir is not set."
                 )
             
-            # Get or create report instance and its lock based on report_id
+            # Get or create report instance and its lock based on call_id
             # report_file_path is set during Report initialization
-            report, report_lock = await self._get_or_create_report(report_id)
+            report, report_lock = await self._get_or_create_report(call_id)
             
             # Use the lock to ensure thread-safe access to this specific report
             async with report_lock:
-                logger.info(f"| 📝 ReportTool action: {action} (report_id: {report_id}, report_file_path: {report.report_file_path}, items: {len(report.items)})")
+                logger.info(f"| 📝 ReportTool action: {action} (call_id: {call_id}, report_file_path: {report.report_file_path}, items: {len(report.items)})")
 
                 if action == "add":
                     if not content and not file_path:
@@ -593,7 +593,7 @@ class ReportTool(Tool):
                 elif action == "complete":
                     result = await self._complete_report(report=report)
                     # Clean up cache after completion
-                    await self._cleanup_report(report_id)
+                    await self._cleanup_report(call_id)
                     return result
 
                 else:

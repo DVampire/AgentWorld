@@ -133,8 +133,15 @@ async def main():
         }
     }
     final_result = await acp(**input)
-    logger.info(f"| ✅ Final result: {str(final_result)[:200]}...")
-    logger.info(f"| Execution result: {str(final_result)[:500]}...\n")
+    # Extract message from AgentResponse
+    if hasattr(final_result, 'message'):
+        result_message = final_result.message
+    elif hasattr(final_result, 'extra') and final_result.extra and final_result.extra.data:
+        result_message = final_result.extra.data.get("final_result", str(final_result))
+    else:
+        result_message = str(final_result)
+    logger.info(f"| ✅ Final result: {result_message[:200]}...")
+    logger.info(f"| Execution result: {result_message[:500]}...\n")
 
 
 if __name__ == "__main__":

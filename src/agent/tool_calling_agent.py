@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
 
-from src.agent.types import Agent
+from src.agent.types import Agent, AgentResponse, AgentExtra
 from src.config import config
 from src.logger import logger
 from src.utils import dedent
@@ -121,7 +121,7 @@ class ToolCallingAgent(Agent):
             "environment_context": environment_context,
         }
         
-    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str):
+    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str)->Dict[str, Any]:
         """Think and tool calls for one step."""
         
         # If the new tool is added, rebuild the ThinkOutput model
@@ -145,6 +145,7 @@ class ToolCallingAgent(Agent):
         
         done = False
         final_result = None
+        final_reasoning = None
         
         record_tool = {
             "thinking": None,
@@ -194,13 +195,9 @@ class ToolCallingAgent(Agent):
                     "name": tool_name,
                     "input": tool_args
                 }
-                response = await tcp(**input)
-                if isinstance(response, ToolResponse):
-                    tool_result = response.message
-                    response_extra = response.extra if hasattr(response, 'extra') else None
-                else:
-                    tool_result = str(response)
-                    response_extra = response.get('extra') if isinstance(response, dict) else None
+                tool_response = await tcp(**input)
+                tool_result = tool_response.message
+                tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
                 logger.info(f"| ✅ Tool {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
@@ -211,15 +208,16 @@ class ToolCallingAgent(Agent):
                 tool_results.append(tool_dict)
                 
                 # Update record tool
-                tool_extra = {}
-                tool_extra.update(tool_dict)
-                if response_extra is not None:
-                    tool_extra['extra'] = response_extra
-                record_tool["tool"].append(tool_extra)
+                tool_extra_dict = {}
+                tool_extra_dict.update(tool_dict)
+                if tool_extra is not None:
+                    tool_extra_dict['extra'] = tool_extra.model_dump()
+                record_tool["tool"].append(tool_extra_dict)
                     
                 if tool_name == "done":
                     done = True
                     final_result = tool_result
+                    final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
                     break
             
             event_data = {
@@ -251,7 +249,7 @@ class ToolCallingAgent(Agent):
                     memory_name=memory_name,
                     step_number=self.step_number,
                     event_type="task_end",
-                    data=dict(result=final_result),
+                    data=dict(result=final_result, reasoning=final_reasoning),
                     agent_name=self.name,
                     task_id=task_id
                 )
@@ -259,12 +257,17 @@ class ToolCallingAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and tool step: {e}")
         
-        return done, final_result
+        result = {
+            "done": done,
+            "final_result": final_result,
+            "final_reasoning": final_reasoning
+        }
+        return result
         
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None
-                  ) -> Any:
+                  ) -> AgentResponse:
         """
         Main entry point for tool calling agent through acp.
         
@@ -273,7 +276,7 @@ class ToolCallingAgent(Agent):
             files (Optional[List[str]]): The files to attach to the task.
             
         Returns:
-            Any: The final result of the task.
+            AgentResponse: The response of the agent.
         """
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
@@ -331,15 +334,13 @@ class ToolCallingAgent(Agent):
         
         # Main loop
         step_number = 0
-        done = False
-        final_result = None
         
         while step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
             
             # Execute one step
-            done, final_result = await self._think_and_tool(messages, task_id)
+            response = await self._think_and_tool(messages, task_id)
             self.step_number += 1
             
             # Update tracer and save to json
@@ -352,13 +353,17 @@ class ToolCallingAgent(Agent):
             # Memory is automatically saved in add_event()
             messages = await self._get_messages(enhanced_task)
             
-            if done:
+            if response["done"]:
                 break
         
         # Handle max steps reached
         if step_number >= self.max_steps:
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
-            final_result = "Reached maximum number of steps"
+            response = {
+                "done": False,
+                "final_result": "The task has not been completed.",
+                "final_reasoning": "Reached the maximum number of steps."
+            }
         
         # Get memory system name
         memory_name = self.memory_name
@@ -368,7 +373,7 @@ class ToolCallingAgent(Agent):
             memory_name=memory_name,
             step_number=self.step_number,
             event_type="task_end",
-            data=dict(result=final_result),
+            data=response,
             agent_name=self.name,
             task_id=task_id
         )
@@ -381,4 +386,10 @@ class ToolCallingAgent(Agent):
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         
-        return final_result
+        return AgentResponse(
+            success=response["done"],
+            message=response["final_result"],
+            extra=AgentExtra(
+                data=response
+            )
+        )

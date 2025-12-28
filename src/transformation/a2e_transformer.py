@@ -10,6 +10,7 @@ from src.logger import logger
 from src.environment.types import Environment, EnvironmentConfig, ActionConfig, ActionResult
 from src.environment.server import ecp
 from src.agent.server import acp
+from src.agent.types import AgentResponse
 from src.model import model_manager
 from src.utils import dedent
 from src.transformation.types import A2ERequest, A2EResponse
@@ -52,8 +53,14 @@ def create_composed_environment_class(selected_agent_infos, env_name: str, env_d
                     # Call agent using __call__ method
                     result = await agent(task=task, files=files, **kwargs)
                     
-                    # Convert result to ActionResult if needed
-                    if isinstance(result, ActionResult):
+                    # Convert AgentResponse to ActionResult
+                    if isinstance(result, AgentResponse):
+                        return ActionResult(
+                            success=result.success,
+                            message=result.message,
+                            extra=result.extra.model_dump() if result.extra else None
+                        )
+                    elif isinstance(result, ActionResult):
                         return result
                     elif isinstance(result, dict):
                         return ActionResult(

@@ -183,7 +183,13 @@ async def answer_single_question(config, example, save_path):
         # Run agent 🚀
         final_result = await agent(task=task, files=files if files else None)
         
-        output = str(final_result) if final_result else None
+        # Extract message from AgentResponse
+        if hasattr(final_result, 'message'):
+            output = final_result.message
+        elif hasattr(final_result, 'extra') and final_result.extra and final_result.extra.data:
+            output = final_result.extra.data.get("final_result", str(final_result))
+        else:
+            output = str(final_result) if final_result else None
         iteration_limit_exceeded = agent.step_number >= agent.max_steps if hasattr(agent, 'step_number') and hasattr(agent, 'max_steps') else False
         
     except Exception as e:

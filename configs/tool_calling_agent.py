@@ -2,7 +2,7 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.tool_calling import tool_calling_agent
-    from .tools.browser import browser_tool
+    # from .tools.browser import browser_tool
     from .tools.deep_researcher import deep_researcher_tool
     from .tools.deep_analyzer import deep_analyzer_tool
     from .tools.mdify import mdify_tool
@@ -35,7 +35,7 @@ tool_names = [
     'mdify', 
     "deep_analyzer",
     "deep_researcher",
-    "browser",
+    # "browser",
     "plotter",
 ]
 
@@ -44,10 +44,10 @@ mdify_tool.update(
     base_dir=f"{workdir}/tool/mdify",
 )
 #-----------------BROWSER TOOL CONFIG-----------------
-browser_tool.update(
-    model_name="openrouter/gpt-4.1",
-    base_dir=f"{workdir}/tool/browser",
-)
+# browser_tool.update(
+#     model_name="openrouter/gpt-4.1",
+#     base_dir=f"{workdir}/tool/browser",
+# )
 #-----------------DEEP RESEARCHER TOOL CONFIG-----------------
 deep_researcher_tool.update(
     model_name="openrouter/o3",

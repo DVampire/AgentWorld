@@ -103,6 +103,11 @@ class ToolCallingAgentRunner:
     def __call__(self, system_prompt: str, question_text: str) -> str:
         task = self._compose_task(system_prompt, question_text)
         result = self._runtime.run(self._agent.ainvoke(task=task, files=[]))
+        # Extract message from AgentResponse
+        if hasattr(result, 'message'):
+            return result.message
+        elif hasattr(result, 'extra') and result.extra and result.extra.data:
+            return result.extra.data.get("final_result", str(result))
         return result if isinstance(result, str) else str(result)
 
     def close(self) -> None:

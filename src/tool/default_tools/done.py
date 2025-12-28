@@ -1,12 +1,13 @@
 """Done tool for indicating that the task has been completed."""
 from typing import Dict, Any
 from pydantic import Field
-from src.tool.types import Tool, ToolResponse
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from typing import Optional
 from src.registry import TOOL
 
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
 Use this tool to signal that a task or subtask has been finished.
-Provide the result of the task in the result parameter.
+Provide the `result` and `reasoning` of the task in the result and reasoning parameters.
 """
 
 @TOOL.register_module(force=True)
@@ -21,11 +22,15 @@ class DoneTool(Tool):
         """A tool for indicating that the task has been completed."""
         super().__init__(**kwargs)
 
-    async def __call__(self, result: str, **kwargs) -> ToolResponse:
+    async def __call__(self, 
+                       result: str,
+                       reasoning: str = None,
+                       **kwargs) -> ToolResponse:
         """
         Indicate that the task has been completed.
 
         Args:
-            result (str): Summary of the accomplished task.
+            result (str): The result of the task completion.
+            reasoning (str): The analysis or explanation of the task completion.
         """
-        return ToolResponse(success=True, message=result)
+        return ToolResponse(success=True, message=result, extra=ToolExtra(data={"result": result, "reasoning": reasoning}))

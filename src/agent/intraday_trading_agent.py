@@ -12,7 +12,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent
+from src.agent.types import Agent, AgentResponse, AgentExtra
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
@@ -484,11 +484,8 @@ class IntradayMinuteTradingAgent(Agent):
                 "name": tool_name,
                 "input": tool_args
             }
-            response = await tcp(**input)
-            if isinstance(response, ToolResponse):
-                tool_result = response.message
-            else:
-                tool_result = str(response)
+            tool_response = await tcp(**input)
+            tool_result = tool_response.message
             
             logger.info(f"| ✅ Action {tool_name} completed successfully")
             logger.info(f"| 📄 Results: {tool_result}")
@@ -621,7 +618,7 @@ class IntradayTradingAgent(Agent):
         return SessionInfo(session_id=session_id, description=description)
     
     
-    async def _think_and_action(self, data: Dict[str, Any], task_id: str) -> Tuple[bool, Any]:
+    async def _think_and_action(self, data: Dict[str, Any], task_id: str) -> Dict[str, Any]:
         """Think and action."""
         
         has_news = data['has_news']
@@ -641,14 +638,19 @@ class IntradayTradingAgent(Agent):
         # Get minute trading decision
         done, final_result = await self.minute_trading_agent(data, task_id, self.daily_trend_forecast)
         
-        return done, final_result
+        result = {
+            "done": done,
+            "final_result": final_result,
+            "final_reasoning": None
+        }
+        return result
         
     
     async def __call__(
         self, 
         task: str, 
         files: Optional[List[str]] = None
-    ) -> Any:
+    ) -> AgentResponse:
         """
         Main entry point for intraday trading agent through acp.
         
@@ -657,7 +659,7 @@ class IntradayTradingAgent(Agent):
             files (Optional[List[str]]): The files to attach to the task.
             
         Returns:
-            Any: The final result of the task.
+            AgentResponse: The response of the agent.
         """
         logger.info(f"| 🚀 Starting IntradayTradingAgent: {task}")
         
@@ -674,10 +676,9 @@ class IntradayTradingAgent(Agent):
         
         # Main loop
         step_number = 0
-        done = False
-        final_result = None
+        response = None
         
-        while not done and (self.max_steps == -1 or step_number < self.max_steps):
+        while self.max_steps == -1 or step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}")
             
@@ -685,16 +686,19 @@ class IntradayTradingAgent(Agent):
             data = state["extra"]
             
             # Execute one step
-            done, final_result = await self._think_and_action(data, task_id)
-            step_number += 1
+            response = await self._think_and_action(data, task_id)
             
-            if done:
+            if response.done:
                 break
         
         # Handle max steps reached
         if self.max_steps > 0 and step_number >= self.max_steps:
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
-            final_result = "Reached maximum number of steps"
+            response = {
+                "done": False,
+                "final_result": "Reached maximum number of steps",
+                "final_reasoning": "Reached the maximum number of steps."
+            }
         
         # End session
         await self.day_analysis_agent.end(session_id)
@@ -702,4 +706,8 @@ class IntradayTradingAgent(Agent):
         
         logger.info(f"| ✅ Agent completed after {step_number} steps")
         
-        return final_result
+        return AgentResponse(
+            success=response["done"],
+            message=response["final_result"] if response["final_result"] else "",
+            extra=AgentExtra(data=response)
+        )

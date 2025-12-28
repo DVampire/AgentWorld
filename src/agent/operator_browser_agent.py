@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
 from src.logger import logger
 from src.utils import get_file_info, dedent
 from src.agent.server import acp
@@ -286,11 +286,12 @@ class OperatorBrowserAgent(Agent):
         
         return messages
     
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
         """Think and action for one step."""
         
         done = False
         final_result = None
+        final_reasoning = None
         
         try:
             model_response = await model_manager(model=self.model_name, messages=messages)
@@ -341,15 +342,9 @@ class OperatorBrowserAgent(Agent):
                 "name": tool_name,
                 "input": tool_args
             }
-            response = await tcp(**input)
-            if isinstance(response, ToolResponse):
-                tool_result = response.message
-            else:
-                tool_result = str(response)
-            if isinstance(tool_result, ToolResponse):
-                tool_result = tool_result.message
-            else:
-                tool_result = str(tool_result)
+            tool_response = await tcp(**input)
+            tool_result = tool_response.message
+            tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
             
             logger.info(f"| ✅ Action completed successfully")
             logger.info(f"| 📄 Results: {str(tool_result)}")
@@ -361,6 +356,7 @@ class OperatorBrowserAgent(Agent):
             if tool_name == "done":
                 done = True
                 final_result = tool_result
+                final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
             
             event_data = {
                 "reasoning": reasoning,
@@ -389,12 +385,17 @@ class OperatorBrowserAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
-        return done, final_result
+        result = {
+            "done": done,
+            "final_result": final_result,
+            "final_reasoning": final_reasoning
+        }
+        return result
     
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None
-                  ) -> Any:
+                  ) -> AgentResponse:
         """
         Main entry point for operator browser agent through acp.
         
@@ -403,7 +404,7 @@ class OperatorBrowserAgent(Agent):
             files (Optional[List[str]]): The files to attach to the task.
             
         Returns:
-            Any: The final result of the task.
+            AgentResponse: The response of the agent.
         """
         logger.info(f"| 🚀 Starting OperatorBrowserAgent: {task}")
         
@@ -442,33 +443,36 @@ class OperatorBrowserAgent(Agent):
 
          # Main loop
         step_number = 0
-        done = False
-        final_result = None
+        response = None
         
         while step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
             
             # Execute one step
-            done, final_result = await self._think_and_action(messages, task_id)
+            response = await self._think_and_action(messages, task_id)
             self.step_number += 1
             
             messages = await self._get_messages(enhanced_task)
             
-            if done:
+            if response["done"]:
                 break
         
         # Handle max steps reached
         if step_number >= self.max_steps:
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
-            final_result = "Reached maximum number of steps"
+            response = {
+                "done": False,
+                "final_result": "Reached maximum number of steps",
+                "final_reasoning": "Reached the maximum number of steps."
+            }
         
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="task_end",
-            data=dict(result=final_result),
+            data=response,
             agent_name=self.name,
             task_id=task_id
         )
@@ -478,4 +482,8 @@ class OperatorBrowserAgent(Agent):
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         
-        return final_result
+        return AgentResponse(
+            success=response["done"],
+            message=response["final_result"] if response["final_result"] else "Task completed",
+            extra=AgentExtra(data=response)
+        )

@@ -46,7 +46,6 @@ class FileTypeClassification(BaseModel):
 
 class Summary(BaseModel):
     """Result of analyzing a chunk of text."""
-    id: int = Field(description="Unique identifier for this summary")
     summary: str = Field(description="Summary of findings from this chunk (2-3 sentences)")
     found_answer: bool = Field(description="Whether the answer to the task has been found in this chunk")
     answer: Optional[str] = Field(default=None, description="The answer if found_answer is True, otherwise None")
@@ -119,10 +118,6 @@ class DeepAnalyzerTool(Tool):
         default=None,
         description="The mdify tool to use for the deep analyzer."
     )
-    next_summary_id: int = Field(
-        default=1,
-        description="Next summary ID for auto-increment"
-    )
     base_dir: str = Field(
         default="workdir/deep_analyzer",
         description="The base directory to use for the deep analyzer."
@@ -151,18 +146,8 @@ class DeepAnalyzerTool(Tool):
         # Initialize tools
         self.mdify_tool = MdifyTool(base_dir=self.base_dir)
         
-        # Initialize summary ID counter
-        if not hasattr(self, 'next_summary_id'):
-            self.next_summary_id = 1
-        
         # Note: file_path is created per-call in __call__
         # to avoid race conditions when multiple coroutines call this tool concurrently
-    
-    def _get_next_summary_id(self) -> int:
-        """Get next summary ID and increment counter."""
-        current_id = self.next_summary_id
-        self.next_summary_id += 1
-        return current_id
     
     def _is_url(self, file_path: str) -> bool:
         """Check if the file path is a URL."""
@@ -408,21 +393,26 @@ class DeepAnalyzerTool(Tool):
         
         return result
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None, **kwargs) -> ToolResponse:
+    async def __call__(self, task: str, files: Optional[List[str]] = None, call_id: Optional[str] = None, **kwargs) -> ToolResponse:
         """Execute deep analysis workflow.
 
         Args:
             task (str): The analysis task or question to investigate
             files (Optional[List[str]]): Optional list of absolute file paths or specific URLs (image, video, PDF) to analyze along with the task
+            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
         """
         try:
             logger.info(f"| 🚀 Starting DeepAnalyzerTool: {task}")
             if files:
                 logger.info(f"| 📂 Attached files: {files}")
             
+            # Generate unique call_id if not provided
+            if call_id is None:
+                call_id = uuid.uuid4().hex[:8]
+            
             # Create per-call local variables to avoid race conditions in concurrent calls
             # Create file path for markdown report
-            md_filename = f"analysis_{uuid.uuid4().hex[:8]}.md"
+            md_filename = f"analysis_{call_id}.md"
             file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
             # Initialize Report instance
@@ -762,7 +752,6 @@ class DeepAnalyzerTool(Tool):
             if response.extra and response.extra.parsed_model:
                 summary_response = response.extra.parsed_model
                 summary = Summary(
-                    id=self._get_next_summary_id(),
                     summary=summary_response.summary,
                     found_answer=summary_response.found_answer,
                     answer=summary_response.answer
@@ -783,7 +772,6 @@ class DeepAnalyzerTool(Tool):
         try:
             if not summaries:
                 return Summary(
-                    id=self._get_next_summary_id(),
                     summary="No summaries to summarize.",
                     found_answer=False,
                     answer=None
@@ -819,7 +807,6 @@ class DeepAnalyzerTool(Tool):
             if not response.success:
                 summary_text = response.message.strip() if response.message else "Model call failed"
                 return Summary(
-                    id=self._get_next_summary_id(),
                     summary=summary_text,
                     found_answer=False,
                     answer=None
@@ -827,7 +814,6 @@ class DeepAnalyzerTool(Tool):
             elif response.extra and response.extra.parsed_model:
                 summary_response = response.extra.parsed_model
                 return Summary(
-                    id=self._get_next_summary_id(),
                     summary=summary_response.summary,
                     found_answer=summary_response.found_answer,
                     answer=summary_response.answer
@@ -836,7 +822,6 @@ class DeepAnalyzerTool(Tool):
                 # Fallback: parse from message
                 summary_text = response.message.strip()
                 return Summary(
-                    id=self._get_next_summary_id(),
                     summary=summary_text,
                     found_answer=False,
                     answer=None
@@ -845,7 +830,6 @@ class DeepAnalyzerTool(Tool):
         except Exception as e:
             logger.error(f"| ❌ Error summarizing summaries: {e}")
             return Summary(
-                id=self._get_next_summary_id(),
                 summary=f"Error summarizing summaries: {e}",
                 found_answer=False,
                 answer=None
@@ -888,7 +872,6 @@ class DeepAnalyzerTool(Tool):
                 if not response.success:
                     summary_text = response.message.strip() if response.message else "Model call failed"
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_text,
                         found_answer=False,
                         answer=None
@@ -896,12 +879,10 @@ class DeepAnalyzerTool(Tool):
                 elif response.extra and response.extra.parsed_model:
                     summary = response.extra.parsed_model
                     # Assign ID to parsed summary
-                    summary.id = self._get_next_summary_id()
                 else:
                     # Fallback: parse from message
                     summary_text = response.message.strip()
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_text,
                         found_answer=False,
                         answer=None
@@ -927,7 +908,7 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing task: {e}")
-            error_summary = Summary(id=self._get_next_summary_id(), summary=f"Error analyzing task: {e}", found_answer=False, answer=None)
+            error_summary = Summary(summary=f"Error analyzing task: {e}", found_answer=False, answer=None)
             summaries.append(error_summary)
             
             # Add error to report if provided
@@ -948,7 +929,7 @@ class DeepAnalyzerTool(Tool):
                 downloaded_path = await self._download_file(file, file_type="text")
                 if not downloaded_path:
                     logger.warning(f"| ❌ Failed to download text file from URL: {file}")
-                    summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to download text file from URL: {file}", found_answer=False, answer=None))
+                    summaries.append(Summary(summary=f"Failed to download text file from URL: {file}", found_answer=False, answer=None))
                     return None
                 local_file_path = downloaded_path
                 logger.info(f"| 📄 Using downloaded text file: {os.path.basename(local_file_path)}")
@@ -976,7 +957,7 @@ class DeepAnalyzerTool(Tool):
                     saved_path = mdify_response.extra.file_path
                 else:
                     logger.error(f"| ❌ Failed to convert file to markdown: {local_file_path}")
-                    summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to convert file to markdown: {local_file_path}", found_answer=False, answer=None))
+                    summaries.append(Summary(summary=f"Failed to convert file to markdown: {local_file_path}", found_answer=False, answer=None))
                     return None
             
             # Read all lines once
@@ -1007,7 +988,7 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing text file {file}: {e}")
-            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing text file {file}: {e}", found_answer=False, answer=None))
+            summaries.append(Summary(summary=f"Error analyzing text file {file}: {e}", found_answer=False, answer=None))
             return None
     
     async def _analyze_pdf_file(self, task: str, file: str, summaries: List[Summary]) -> None:
@@ -1056,7 +1037,6 @@ class DeepAnalyzerTool(Tool):
                 if response.extra and response.extra.parsed_model:
                     summary_response = response.extra.parsed_model
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_response.summary,
                         found_answer=summary_response.found_answer,
                         answer=summary_response.answer
@@ -1083,7 +1063,7 @@ class DeepAnalyzerTool(Tool):
                 doc_result = await fetch_url(file)
                 if not doc_result or not doc_result.markdown:
                     logger.warning(f"Failed to fetch PDF from URL: {file}")
-                    summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to fetch PDF from URL: {file}", found_answer=False, answer=None))
+                    summaries.append(Summary(summary=f"Failed to fetch PDF from URL: {file}", found_answer=False, answer=None))
                     return None
                 
                 # Save fetched content to a temporary markdown file
@@ -1129,7 +1109,7 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing PDF file {file}: {e}")
-            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing PDF file {file}: {e}", found_answer=False, answer=None))
+            summaries.append(Summary(summary=f"Error analyzing PDF file {file}: {e}", found_answer=False, answer=None))
             return None
     
     async def _analyze_markdown_chunk(self, task: str, chunk_text: str, chunk_num: int, start_line: int, end_line: int) -> Summary:
@@ -1162,7 +1142,6 @@ class DeepAnalyzerTool(Tool):
             if not response.success:
                 summary_text = response.message.strip() if response.message else "Model call failed"
                 return Summary(
-                    id=self._get_next_summary_id(),
                     summary=summary_text,
                     found_answer=False,
                     answer=None
@@ -1170,12 +1149,10 @@ class DeepAnalyzerTool(Tool):
             elif response.extra and response.extra.parsed_model:
                 parsed_summary = response.extra.parsed_model
                 # Assign ID to parsed summary
-                parsed_summary.id = self._get_next_summary_id()
                 return parsed_summary
             else:
                 summary = response.message.strip()
                 return Summary(
-                    id=self._get_next_summary_id(),
                     summary=summary,
                     found_answer=False,
                     answer=None
@@ -1183,7 +1160,7 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing markdown chunk: {e}")
-            return Summary(id=self._get_next_summary_id(), summary=f"Error analyzing markdown chunk: {e}", found_answer=False, answer=None)
+            return Summary(summary=f"Error analyzing markdown chunk: {e}", found_answer=False, answer=None)
     
     async def _analyze_image_file(self, task: str, file: str, summaries: List[Summary]) -> None:
         """Analyze a single image file or image URL: first try LLM direct analysis, then analyze multiple times if needed.
@@ -1191,7 +1168,17 @@ class DeepAnalyzerTool(Tool):
         try:
             # Check if it's a URL
             is_url = self._is_url(file)
-            if not is_url and not os.path.exists(file):
+            local_file_path = file
+            
+            # If it's a URL, download it first to avoid API download issues
+            if is_url:
+                logger.info(f"| 📥 Downloading image from URL: {file}")
+                local_file_path = await self._download_file(file, "image")
+                if local_file_path is None:
+                    logger.error(f"| ❌ Failed to download image from URL: {file}")
+                    return None
+                logger.info(f"| ✅ Image downloaded successfully: {local_file_path}")
+            elif not os.path.exists(file):
                 logger.warning(f"Image file not found: {file}")
                 return None
             
@@ -1199,16 +1186,10 @@ class DeepAnalyzerTool(Tool):
             logger.info(f"| 🖼️ Step 1: Trying LLM direct analysis of image")
             
             # Prepare image URL for LLM
-            # For URLs: use the URL string directly (e.g., "https://example.com/image.jpg")
-            # For local files: convert to data URL using make_file_url (e.g., "data:image/jpeg;base64,...")
-            if is_url:
-                # URL: use directly
-                image_url_value = file
-                logger.info(f"| 🖼️ Using image URL: {file}")
-            else:
-                # Local file: convert to data URL using make_file_url
-                image_url_value = make_file_url(file_path=file)
-                logger.info(f"| 🖼️ Using local image file: {os.path.basename(file)}")
+            # Convert local file to data URL using make_file_url (e.g., "data:image/jpeg;base64,...")
+            # This works for both downloaded URLs and local files
+            image_url_value = make_file_url(file_path=local_file_path)
+            logger.info(f"| 🖼️ Using image file: {os.path.basename(local_file_path)}")
             
             # Build message with image
             image_url = ImageURL(url=image_url_value, detail="high")
@@ -1240,7 +1221,6 @@ class DeepAnalyzerTool(Tool):
                 elif response.extra and response.extra.parsed_model:
                     summary_response = response.extra.parsed_model
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_response.summary,
                         found_answer=summary_response.found_answer,
                         answer=summary_response.answer
@@ -1288,7 +1268,6 @@ class DeepAnalyzerTool(Tool):
                 if not response.success:
                     summary_text = response.message.strip() if response.message else "Model call failed"
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_text,
                         found_answer=False,
                         answer=None
@@ -1296,12 +1275,10 @@ class DeepAnalyzerTool(Tool):
                 elif response.extra and response.extra.parsed_model:
                     summary = response.extra.parsed_model
                     # Assign ID to parsed summary
-                    summary.id = self._get_next_summary_id()
                 else:
                     # Fallback: parse from message
                     summary_text = response.message.strip()
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_text,
                         found_answer=False,
                         answer=None
@@ -1318,7 +1295,7 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing image file {file}: {e}")
-            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing image file {file}: {e}", found_answer=False, answer=None))
+            summaries.append(Summary(summary=f"Error analyzing image file {file}: {e}", found_answer=False, answer=None))
             return None
     
     async def _analyze_audio_file(self, task: str, file: str, summaries: List[Summary]) -> None:
@@ -1331,7 +1308,7 @@ class DeepAnalyzerTool(Tool):
                 downloaded_path = await self._download_file(file, file_type="audio")
                 if not downloaded_path:
                     logger.warning(f"| ❌ Failed to download audio from URL: {file}")
-                    summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to download audio from URL: {file}", found_answer=False, answer=None))
+                    summaries.append(Summary(summary=f"Failed to download audio from URL: {file}", found_answer=False, answer=None))
                     return None
                 local_file_path = downloaded_path
                 logger.info(f"| 🎵 Using downloaded audio file: {os.path.basename(local_file_path)}")
@@ -1376,7 +1353,6 @@ class DeepAnalyzerTool(Tool):
                 elif response.extra and response.extra.parsed_model:
                     summary_response = response.extra.parsed_model
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_response.summary,
                         found_answer=summary_response.found_answer,
                         answer=summary_response.answer
@@ -1392,12 +1368,12 @@ class DeepAnalyzerTool(Tool):
                     logger.warning(f"| ⚠️ LLM direct analysis failed to parse response.")
             except Exception as e:
                 logger.error(f"| ❌ Error in LLM audio analysis: {e}")
-                summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing audio file {local_file_path}: {e}", found_answer=False, answer=None))
+                summaries.append(Summary(summary=f"Error analyzing audio file {local_file_path}: {e}", found_answer=False, answer=None))
                 return None
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing audio file {file}: {e}")
-            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing audio file {file}: {e}", found_answer=False, answer=None))
+            summaries.append(Summary(summary=f"Error analyzing audio file {file}: {e}", found_answer=False, answer=None))
             return None
     
     async def _analyze_video_file(self, task: str, file: str, summaries: List[Summary]) -> None:
@@ -1419,7 +1395,7 @@ class DeepAnalyzerTool(Tool):
                     downloaded_path = await self._download_file(file, file_type="video")
                     if not downloaded_path:
                         logger.warning(f"| ❌ Failed to download video from URL: {file}")
-                        summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to download video from URL: {file}", found_answer=False, answer=None))
+                        summaries.append(Summary(summary=f"Failed to download video from URL: {file}", found_answer=False, answer=None))
                         return None
                     local_file_path = downloaded_path
                     # For LLM analysis, convert to data URL using make_file_url
@@ -1465,7 +1441,6 @@ class DeepAnalyzerTool(Tool):
                 if response.extra and response.extra.parsed_model:
                     summary_response = response.extra.parsed_model
                     summary = Summary(
-                        id=self._get_next_summary_id(),
                         summary=summary_response.summary,
                         found_answer=summary_response.found_answer,
                         answer=summary_response.answer
@@ -1492,7 +1467,7 @@ class DeepAnalyzerTool(Tool):
                 doc_result = await fetch_url(file)
                 if not doc_result or not doc_result.markdown:
                     logger.warning(f"Failed to fetch video content from URL: {file}")
-                    summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Failed to fetch video content from URL: {file}", found_answer=False, answer=None))
+                    summaries.append(Summary(summary=f"Failed to fetch video content from URL: {file}", found_answer=False, answer=None))
                     return None
                 
                 # Save fetched content to a temporary markdown file
@@ -1543,7 +1518,7 @@ class DeepAnalyzerTool(Tool):
             
         except Exception as e:
             logger.error(f"| ❌ Error analyzing video file {file}: {e}")
-            summaries.append(Summary(id=self._get_next_summary_id(), summary=f"Error analyzing video file {file}: {e}", found_answer=False, answer=None))
+            summaries.append(Summary(summary=f"Error analyzing video file {file}: {e}", found_answer=False, answer=None))
             return None
     
     async def _validate_file(self, file_path: str) -> bool:

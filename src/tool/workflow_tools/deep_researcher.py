@@ -115,6 +115,7 @@ class DeepResearcherTool(Tool):
                        image: Optional[str] = None, 
                        filter_year: Optional[int] = None,
                        title: Optional[str] = None,
+                       call_id: Optional[str] = None,
                        **kwargs) -> ToolResponse:
         """
         Execute deep research workflow.
@@ -124,15 +125,20 @@ class DeepResearcherTool(Tool):
             image (Optional[str]): Optional image absolute path to analyze along with the task
             filter_year (Optional[int]): Optional year filter for search results
             title (Optional[str]): Title for the report. If not provided, uses default "Research Report".
+            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
         """
         try:
             logger.info(f"🔍 Starting deep research for task: {task}")
+            
+            # Generate unique call ID if not provided
+            if call_id is None:
+                call_id = uuid.uuid4().hex[:8]
             
             # Create per-call local variables to avoid race conditions in concurrent calls
             research_history: List[Dict[str, Any]] = []
             
             # Create file_path and Report instance for this call
-            md_filename = f"research_{uuid.uuid4().hex[:8]}.md"
+            md_filename = f"research_{call_id}.md"
             file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
             report_title = title if title is not None else "Research Report"

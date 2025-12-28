@@ -12,6 +12,7 @@ from src.logger import logger
 from src.tool.server import tcp
 from src.tool.types import Tool, ToolResponse
 from src.agent.server import acp
+from src.agent.types import AgentResponse
 from src.transformation.types import A2TRequest, A2TResponse
 
 
@@ -44,8 +45,14 @@ def create_wrapped_tool_class(agent_config, agent_instance):
                 # Call agent directly using __call__ method
                 result = await self._agent_instance(task=task, files=files, **kwargs)
                 
-                # Convert result to ToolResponse if needed
-                if isinstance(result, ToolResponse):
+                # Convert AgentResponse to ToolResponse
+                if isinstance(result, AgentResponse):
+                    return ToolResponse(
+                        success=result.success,
+                        message=result.message,
+                        extra=result.extra.model_dump() if result.extra else None
+                    )
+                elif isinstance(result, ToolResponse):
                     return result
                 elif isinstance(result, dict):
                     return ToolResponse(

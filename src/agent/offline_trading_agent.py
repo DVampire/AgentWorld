@@ -13,7 +13,7 @@ from src.utils import dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
 from src.tool.types import ToolResponse
 from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
@@ -315,7 +315,7 @@ class OfflineTradingAgent(Agent):
         
         return messages
     
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str):
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
         """Think and action for one step."""
         
         # If the new tool is added, rebuild the ThinkOutput model
@@ -330,6 +330,7 @@ class OfflineTradingAgent(Agent):
         
         done = False
         final_result = None
+        final_reasoning = None
         
         record_action = {
             "thinking": None,
@@ -372,13 +373,9 @@ class OfflineTradingAgent(Agent):
                     "name": tool_name,
                     "input": tool_args
                 }
-                response = await tcp(**input)
-                if isinstance(response, ToolResponse):
-                    tool_result = response.message
-                    response_extra = response.extra if hasattr(response, 'extra') else None
-                else:
-                    tool_result = str(response)
-                    response_extra = response.get('extra') if isinstance(response, dict) else None
+                tool_response = await tcp(**input)
+                tool_result = tool_response.message
+                tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
                 logger.info(f"| ✅ Action {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
@@ -389,15 +386,16 @@ class OfflineTradingAgent(Agent):
                 action_results.append(action_dict)
                 
                 # Update record action
-                action_extra = {}
-                action_extra.update(action_dict)
-                if response_extra is not None:
-                    action_extra['extra'] = response_extra
-                record_action["action"].append(action_extra)
+                action_extra_dict = {}
+                action_extra_dict.update(action_dict)
+                if tool_extra is not None:
+                    action_extra_dict['extra'] = tool_extra.model_dump()
+                record_action["action"].append(action_extra_dict)
                     
                 if tool_name == "done":
                     done = True
                     final_result = tool_result
+                    final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
                     break
             
             event_data = {
@@ -432,12 +430,17 @@ class OfflineTradingAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
-        return done, final_result
+        result = {
+            "done": done,
+            "final_result": final_result,
+            "final_reasoning": final_reasoning
+        }
+        return result
         
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None
-                  ) -> Any:
+                  ) -> AgentResponse:
         """
         Main entry point for offline trading agent through acp.
         
@@ -446,7 +449,7 @@ class OfflineTradingAgent(Agent):
             files (Optional[List[str]]): The files to attach to the task.
             
         Returns:
-            Any: The final result of the task.
+            AgentResponse: The response of the agent.
         """
         logger.info(f"| 🚀 Starting OfflineTradingAgent: {task}")
         
@@ -485,15 +488,14 @@ class OfflineTradingAgent(Agent):
         
         # Main loop
         step_number = 0
-        done = False
-        final_result = None
+        response = None
         
         while step_number < self.max_steps:
             step_number += 1
             logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
             
             # Execute one step
-            done, final_result = await self._think_and_action(messages, task_id)
+            response = await self._think_and_action(messages, task_id)
             self.step_number += 1
             
             # Update tracer and save to json
@@ -505,20 +507,24 @@ class OfflineTradingAgent(Agent):
             
             messages = await self._get_messages(enhanced_task)
             
-            if done:
+            if response.done:
                 break
         
         # Handle max steps reached
         if step_number >= self.max_steps:
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
-            final_result = "Reached maximum number of steps"
+            response = {
+                "done": False,
+                "final_result": "Reached maximum number of steps",
+                "final_reasoning": "Reached the maximum number of steps."
+            }
         
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number,
             event_type="task_end",
-            data=dict(result=final_result),
+            data=response,
             agent_name=self.name,
             task_id=task_id
         )
@@ -531,5 +537,9 @@ class OfflineTradingAgent(Agent):
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         
-        return final_result
+        return AgentResponse(
+            success=response["done"],
+            message=response["final_result"] if response["final_result"] else "",
+            extra=AgentExtra(data=response)
+        )
 

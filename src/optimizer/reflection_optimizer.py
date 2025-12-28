@@ -14,7 +14,8 @@ class ReflectionOptimizer(Optimizer):
     model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
     memory_name: Optional[str] = Field(default=None, description="Name of the optimizer memory system for recording optimization history")
     
-    def __init__(self, agent,
+    def __init__(self, 
+                 agent,
                  model_name: str = "openrouter/gpt-4o", 
                  memory_name: Optional[str] = "optimizer_memory_system",
                  **kwargs

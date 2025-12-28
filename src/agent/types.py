@@ -550,10 +550,26 @@ class Agent(BaseModel):
 
         return messages
 
-    async def __all__(self, task: str, files: Optional[List[str]] = None):
+    async def __all__(self, task: str, files: Optional[List[str]] = None) -> AgentResponse:
         """Run the agent. This method should be implemented by the child classes."""
         raise NotImplementedError("__all__ method is not implemented by the child class")
 
+
+class AgentExtra(BaseModel):
+    """Agent extra data."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    file_path: Optional[Union[str, List[str]]] = Field(default=None, description="The file path of the extra data")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="The data of the extra data")
+    parsed_model: Optional[BaseModel] = Field(default=None, description="The parsed model of the extra data")
+
+class AgentResponse(BaseModel):
+    """Agent response."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    success: bool = Field(description="Whether the agent has completed the task.")
+    message: str = Field(description="The message of the agent.")
+    extra: Optional[AgentExtra] = Field(default=None, description="The extra data of the agent.")
 
 __all__ = [
     "InputArgs",
@@ -564,4 +580,5 @@ __all__ = [
     "AgentConfig",
     "ThinkOutputBuilder",
     "Agent",
+    "AgentResponse",
 ]
