@@ -55,7 +55,7 @@ REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE = """
 
 REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE = f"""
 {{ task }}
-{{ variable_to_improve }}
+{{ current_variables }}
 {{ execution_result }}
 """
 
@@ -114,10 +114,10 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
             "template": None,
             "variables": None
         },
-        "variable_to_improve": {
-            "name": "variable_to_improve",
+        "current_variables": {
+            "name": "current_variables",
             "type": "agent_message_prompt",
-            "description": "Describes the variable to be improved.",
+            "description": "Describes the current variables.",
             "require_grad": False,
             "template": None,
             "variables": None
@@ -226,7 +226,7 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE = """
 
 REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE = f"""
 {{ task }}
-{{ current_variable }}
+{{ current_variables }}
 {{ reflection_analysis }}
 """
 
@@ -286,10 +286,10 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
             "template": None,
             "variables": None
         },
-        "current_variable": {
-            "name": "current_variable",
+        "current_variables": {
+            "name": "current_variables",
             "type": "agent_message_prompt",
-            "description": "Describes the current variable.",
+            "description": "Describes the current variables that need to be improved.",
             "require_grad": False,
             "template": None,
             "variables": None
@@ -297,7 +297,7 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
         "reflection_analysis": {
             "name": "reflection_analysis",
             "type": "agent_message_prompt",
-            "description": "Describes the reflection analysis.",
+            "description": "Describes the reflection analysis for the current variables.",
             "require_grad": False,
             "template": None,
             "variables": None

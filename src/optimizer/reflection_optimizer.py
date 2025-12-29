@@ -1,5 +1,6 @@
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Union
 from pydantic import ConfigDict, Field
+from pydantic import BaseModel
 
 from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
@@ -7,6 +8,13 @@ from src.model import model_manager
 from src.memory import memory_manager
 from src.tool import tcp
 
+
+class ImprovedVariable(BaseModel):
+    name: str = Field(description="The name of the improved variable.")
+    variables: Optional[Union[Dict[str, 'ImprovedVariable'], str]] = Field(default=None, description="The elements of the improved variable. Can be a ImprovedVariable dict (keyed by name), or direct value (string).")
+
+class ImprovedVariables(BaseModel):
+    variables: List[ImprovedVariable] = Field(description="The list of improved variables.")
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
@@ -155,12 +163,12 @@ class ReflectionOptimizer(Optimizer):
         if not hasattr(prompt_manager, 'prompt_context_manager'):
             await prompt_manager.initialize()
         
-        variables_text = await self._format_variables(variables)
+        current_variables_text = await self._format_variables(variables)
  
         system_modules = {}
         agent_message_modules = {
             "task": task,
-            "variables": variables_text,
+            "current_variables": current_variables_text,
             "execution_result": execution_result,
         }
         messages = await prompt_manager.get_messages(
@@ -183,7 +191,7 @@ class ReflectionOptimizer(Optimizer):
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_variables(self, task: str, variables: List, reflection_analysis: str, variable_mapping: Dict) -> Dict[str, str]:
+    async def _improve_variables(self, task: str, variables: List, reflection_analysis: str):
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -203,14 +211,14 @@ class ReflectionOptimizer(Optimizer):
         # Ensure prompt_manager is initialized
         if not hasattr(prompt_manager, 'prompt_context_manager'):
             await prompt_manager.initialize()
-        
+
         # Format all variables for context
-        all_variables_text = await self._format_all_variables_by_type(variables)
+        current_variables_text = await self._format_variables(variables)
         
         system_modules = {}
         agent_message_modules = {
             "task": task,
-            "current_variable": all_variables_text,
+            "current_variables": current_variables_text,
             "reflection_analysis": reflection_analysis
         }
         messages = await prompt_manager.get_messages(
@@ -222,131 +230,12 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| ✨ Generating improved variables (may improve multiple variables)...")
         
         try:
-            response = await model_manager(model=self.model_name, messages=messages)
-            improved_text = response.message if hasattr(response, 'message') else str(response)
-            
-            # Strip potential Markdown code fences.
-            improved_text = improved_text.strip()
-            if improved_text.startswith("```"):
-                # Remove code block markers.
-                lines = improved_text.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                improved_text = "\n".join(lines).strip()
-            
-            logger.info(f"| ✅ Improved variables generated ({len(improved_text)} chars)")
-            logger.info(f"| Improved variables:\n{improved_text}\n")
-            
-            # Parse the improved text to extract variable-specific improvements
-            # The LLM should return improvements in a structured format
-            # For now, we'll try to parse it, but this might need refinement based on actual LLM output
-            # TODO: Consider using structured output format or JSON for better parsing
-            improved_variables = await self._parse_improved_variables(improved_text, variables, variable_mapping)
-            
+            response = await model_manager(model=self.model_name, messages=messages, response_model=ImprovedVariables)
+            improved_variables: List[ImprovedVariable] = response.extra.parsed_model.variables
             return improved_variables
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
-    
-    async def _parse_improved_variables(self, improved_text: str, variables: List, variable_mapping: Dict) -> Dict[str, str]:
-        """
-        Parse improved text to extract variable-specific improvements.
-        Handles hierarchical variables (e.g., system_prompt with sub-variables).
-        
-        Args:
-            improved_text: Text containing improved variables.
-            variables: List of original Variable objects.
-            variable_mapping: Mapping from variable name to Variable object.
-            
-        Returns:
-            Dict[str, str]: Dictionary mapping variable names to improved values.
-        """
-        from src.optimizer.types import Variable
-        import re
-        
-        improved_variables = {}
-        
-        def collect_all_variable_names(var, collected=None, parent_path=""):
-            """Recursively collect all variable names including nested ones."""
-            if collected is None:
-                collected = {}
-            
-            var_name = getattr(var, 'name', 'unknown')
-            full_path = f"{parent_path}.{var_name}" if parent_path else var_name
-            collected[full_path] = var
-            collected[var_name] = var  # Also add short name for backward compatibility
-            
-            # Recursively collect sub-variables
-            if isinstance(var.variables, list):
-                for sub_var in var.variables:
-                    if isinstance(sub_var, Variable):
-                        collect_all_variable_names(sub_var, collected, full_path)
-            elif isinstance(var.variables, Variable):
-                collect_all_variable_names(var.variables, collected, full_path)
-            
-            return collected
-        
-        # Collect all variable names (including nested ones)
-        all_var_map = {}
-        for var in variables:
-            collect_all_variable_names(var, all_var_map)
-        
-        # Try to parse improved text with hierarchical structure support
-        # Pattern 1: [variable_name] (type: type) followed by content or sub-variables
-        # Match variables at any indentation level
-        for var_path, var in all_var_map.items():
-            var_name = getattr(var, 'name', '')
-            var_type = getattr(var, 'type', '')
-            
-            # Pattern for variable with sub-variables: [name] (type: type) ... Sub-variables: ... Content: ...
-            # Pattern for leaf variable: [name] (type: type) ... Content: ...
-            
-            # Try to match variable section
-            # Look for [var_name] followed by optional type, description, and then Content: or Sub-variables:
-            pattern = rf'\[{re.escape(var_name)}\][\s\S]*?(?:\(type:\s*{re.escape(var_type)}\)[\s\S]*?)?(?:Description:[\s\S]*?)?(?:Sub-variables:[\s\S]*?)?Content:\s*([\s\S]*?)(?=\n\s*\[|\n===|$)'
-            match = re.search(pattern, improved_text, re.IGNORECASE | re.MULTILINE)
-            
-            if match:
-                content = match.group(1).strip()
-                # Remove indentation from content lines
-                lines = content.split('\n')
-                dedented_lines = []
-                for line in lines:
-                    # Remove leading spaces (up to 2 levels of indentation)
-                    dedented_line = line.lstrip(' ')
-                    dedented_lines.append(dedented_line)
-                improved_variables[var_name] = '\n'.join(dedented_lines)
-        
-        # If no variable-specific improvements found, try to match by type sections
-        if not improved_variables:
-            for var_type in set(getattr(var, 'type', 'unknown') for var in variables):
-                # Look for === TYPE === section
-                pattern = rf'===\s*{re.escape(var_type.upper())}\s*===[\s\S]*?\[([^\]]+)\][\s\S]*?Content:\s*([\s\S]*?)(?=\n\s*\[|\n===|$)'
-                matches = re.finditer(pattern, improved_text, re.IGNORECASE | re.MULTILINE)
-                for match in matches:
-                    var_name = match.group(1).strip()
-                    content = match.group(2).strip()
-                    if var_name in all_var_map:
-                        improved_variables[var_name] = content
-        
-        # If still no improvements found, apply to all top-level variables
-        if not improved_variables:
-            logger.warning("| ⚠️ Could not parse variable-specific improvements, applying to all top-level variables")
-            for var in variables:
-                var_name = getattr(var, 'name', 'unknown')
-                # Only apply to variables that don't have sub-variables (leaf nodes)
-                has_sub_vars = False
-                if isinstance(var.variables, list):
-                    has_sub_vars = any(isinstance(sub_var, Variable) for sub_var in var.variables)
-                elif isinstance(var.variables, Variable):
-                    has_sub_vars = True
-                
-                if not has_sub_vars:
-                    improved_variables[var_name] = improved_text
-        
-        return improved_variables
     
     async def optimize(
         self,
@@ -363,6 +252,10 @@ class ReflectionOptimizer(Optimizer):
             task: Task description to optimize for.
             files: Optional list of attachments.
         """
+        
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+        
         # Use optimization_steps if provided, otherwise use self.max_steps
         optimization_steps = self.max_steps
         
@@ -420,8 +313,6 @@ class ReflectionOptimizer(Optimizer):
                     variables=trainable_variables,
                     execution_result=solution_variable.get_value(),
                 )
-                print(reflection_analysis)
-                exit()
                 
                 # Step2: Improve variables based on reflection (may improve multiple variables).
                 improved_variables = await self._improve_variables(
@@ -431,7 +322,26 @@ class ReflectionOptimizer(Optimizer):
                 )
                 
                 # Step3: Update variables based on improved variables.
-                # TODO
+                for variable in improved_variables:
+                    variable_name = variable.name
+                    variable_value = variable.variables
+                    
+                    if variable_name in trainable_variables:
+                        variable_type = trainable_variables[variable_name].type
+                    else:
+                        continue
+                    
+                    if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
+                        await prompt_manager.set_variables(
+                            prompt_name=variable_name,
+                            variable_updates=variable_value
+                        )
+                    elif variable_type == "tool_code":
+                        await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
+                    elif variable_type == "solution":
+                        trainable_variables[variable_name].value = variable_value
+                    else:
+                        continue
                 
                 # Step4: Run agent with improved variables.
                 agent_response = await agent(task=task, files=files)
@@ -440,6 +350,10 @@ class ReflectionOptimizer(Optimizer):
                 improved_agent_reasoning = agent_response_extra_data['final_reasoning']
                 improved_solution_variable = trainable_variables['solution']
                 improved_solution_variable.value = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
+                
+                # Step5: Update trainable variables with improved variables.
+                trainable_variables = await self.get_trainable_variables(agent=agent)
+                trainable_variables["solution"] = improved_solution_variable
                 
                 logger.info(f"| ✅ Optimization step {opt_step + 1} completed\n")
                 
