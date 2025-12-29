@@ -97,7 +97,7 @@ async def main():
     agent = await acp.get("tool_calling")
     
     # Example task; replace with the task you want to optimize.
-    task = "How are you!"
+    task = "Solve the equation x^2 + 2x - 3 = 0 with detailed steps and optimize the solution."
     files = []
     
     logger.info(f"| 📋 Task: {task}")

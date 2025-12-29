@@ -22,7 +22,6 @@ class OptimizationRecord(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp of the optimization")
     
     # Optimization context
-    optimizer_type: str = Field(description="Type of optimizer (e.g., 'ReflectionOptimizer', 'GRPOTextualOptimizer')")
     agent_name: str = Field(description="Name of the agent being optimized")
     task: str = Field(description="Task description")
     optimization_step: int = Field(description="Step number in the optimization process")
@@ -47,7 +46,7 @@ class OptimizationRecord(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     
     def __str__(self):
-        return f"OptimizationRecord(id={self.id}, optimizer={self.optimizer_type}, step={self.optimization_step}, variable={self.variable_name})"
+        return f"OptimizationRecord(id={self.id}, step={self.optimization_step}, variable={self.variable_name})"
     
     def __repr__(self):
         return self.__str__()
@@ -56,7 +55,6 @@ class OptimizationRecord(BaseModel):
 class OptimizationSession(BaseModel):
     """Session tracking a complete optimization run"""
     session_id: str = Field(description="Unique session identifier")
-    optimizer_type: str = Field(description="Type of optimizer")
     agent_name: str = Field(description="Name of the agent")
     task: str = Field(description="Task description")
     start_time: datetime = Field(default_factory=datetime.now, description="Session start time")
@@ -65,7 +63,7 @@ class OptimizationSession(BaseModel):
     records: List[OptimizationRecord] = Field(default_factory=list, description="Optimization records")
     
     def __str__(self):
-        return f"OptimizationSession(id={self.session_id}, optimizer={self.optimizer_type}, steps={self.total_steps})"
+        return f"OptimizationSession(id={self.session_id}, steps={self.total_steps})"
     
     def __repr__(self):
         return self.__str__()
@@ -113,7 +111,6 @@ class OptimizerMemorySystem(Memory):
                             agent_name: Optional[str] = None,
                             task_id: Optional[str] = None,
                             description: Optional[str] = None,
-                            optimizer_type: Optional[str] = None,
                             **kwargs) -> str:
         """Start a new optimization session.
         
@@ -122,7 +119,6 @@ class OptimizerMemorySystem(Memory):
             agent_name: Name of the agent being optimized
             task_id: Optional task ID (can be used as task description)
             description: Optional description (used as task description if provided)
-            optimizer_type: Type of optimizer (e.g., 'ReflectionOptimizer')
             **kwargs: Additional arguments
             
         Returns:
@@ -133,13 +129,8 @@ class OptimizerMemorySystem(Memory):
         # Use description or task_id as task
         task = description or task_id or ""
         
-        # Get optimizer_type from kwargs if not provided
-        if optimizer_type is None:
-            optimizer_type = kwargs.get("optimizer_type", "UnknownOptimizer")
-        
         session = OptimizationSession(
             session_id=session_id,
-            optimizer_type=optimizer_type,
             agent_name=agent_name or "",
             task=task,
             start_time=datetime.now()
@@ -148,18 +139,16 @@ class OptimizerMemorySystem(Memory):
         self.sessions[session_id] = session
         self.current_session_id = session_id
         
-        logger.info(f"| 🚀 Started optimization session: {session_id} ({optimizer_type})")
+        logger.info(f"| 🚀 Started optimization session: {session_id}")
         return session_id
     
     async def start_optimization_session(self,
-                                   optimizer_type: str,
                                    agent_name: str,
                                    task: str,
                                    session_id: Optional[str] = None) -> str:
         """Start a new optimization session (deprecated, use start_session instead).
         
         Args:
-            optimizer_type: Type of optimizer (e.g., 'ReflectionOptimizer')
             agent_name: Name of the agent being optimized
             task: Task description
             session_id: Optional session ID. If None, generates a new one.
@@ -173,8 +162,7 @@ class OptimizerMemorySystem(Memory):
         return await self.start_session(
             session_id=session_id,
             agent_name=agent_name,
-            description=task,
-            optimizer_type=optimizer_type
+            description=task
         )
     
     async def end_session(self, session_id: Optional[str] = None):
@@ -324,7 +312,6 @@ class OptimizerMemorySystem(Memory):
         
         # Create optimization record
         record = OptimizationRecord(
-            optimizer_type=session.optimizer_type,
             agent_name=session.agent_name,
             task=session.task,
             optimization_step=optimization_step,
@@ -396,7 +383,6 @@ class OptimizerMemorySystem(Memory):
     
     async def get_optimization_history(self,
                                 agent_name: Optional[str] = None,
-                                optimizer_type: Optional[str] = None,
                                 task_keyword: Optional[str] = None,
                                 variable_name: Optional[str] = None,
                                 session_id: Optional[str] = None,
@@ -405,7 +391,6 @@ class OptimizerMemorySystem(Memory):
         
         Args:
             agent_name: Filter by agent name
-            optimizer_type: Filter by optimizer type
             task_keyword: Filter by task keyword (substring match)
             variable_name: Filter by variable name
             session_id: Filter by session ID
@@ -423,8 +408,6 @@ class OptimizerMemorySystem(Memory):
             if session_id and sid != session_id:
                 continue
             if agent_name and session.agent_name != agent_name:
-                continue
-            if optimizer_type and session.optimizer_type != optimizer_type:
                 continue
             if task_keyword and task_keyword.lower() not in session.task.lower():
                 continue
@@ -446,7 +429,6 @@ class OptimizerMemorySystem(Memory):
     
     async def get_best_practices(self,
                           agent_name: Optional[str] = None,
-                          optimizer_type: Optional[str] = None,
                           variable_name: Optional[str] = None,
                           metric: str = "reward",
                           top_k: int = 10) -> List[OptimizationRecord]:
@@ -454,7 +436,6 @@ class OptimizerMemorySystem(Memory):
         
         Args:
             agent_name: Filter by agent name
-            optimizer_type: Filter by optimizer type
             variable_name: Filter by variable name
             metric: Metric to use for ranking ('reward', 'loss', 'advantage')
             top_k: Number of top records to return
@@ -464,7 +445,6 @@ class OptimizerMemorySystem(Memory):
         """
         records = await self.get_optimization_history(
             agent_name=agent_name,
-            optimizer_type=optimizer_type,
             variable_name=variable_name
         )
         

@@ -113,7 +113,7 @@ class MemoryManager(BaseModel):
         """
         return await self.memory_context_manager.load_contract()
     
-    async def get(self, memory_name: str) -> Any:
+    async def get(self, memory_name: str) -> Memory:
         """Get memory system instance by name (similar to tcp.get()).
         
         Note: Unlike tools, memory systems create a new instance each time since each agent
@@ -123,7 +123,7 @@ class MemoryManager(BaseModel):
             memory_name: Memory system name
             
         Returns:
-            Memory system instance (new instance each time)
+            Memory: Memory system instance (new instance each time)
         """
         return await self.memory_context_manager.get(memory_name)
     
@@ -132,8 +132,13 @@ class MemoryManager(BaseModel):
         if hasattr(self, 'memory_context_manager'):
             await self.memory_context_manager.cleanup()
             
-    async def start_session(self, memory_name: str, session_id: str, agent_name: Optional[str] = None,
-                           task_id: Optional[str] = None, description: Optional[str] = None, **kwargs) -> str:
+    async def start_session(self, 
+                            memory_name: str, 
+                            session_id: str,
+                            agent_name: Optional[str] = None,
+                            task_id: Optional[str] = None, 
+                            description: Optional[str] = None,
+                            **kwargs) -> str:
         """Start a memory session.
         
         Args:
