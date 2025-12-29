@@ -2,5 +2,6 @@
 
 # Playwright Environment Configuration
 environment = dict(
-    base_dir="workdir/playwright"
+    base_dir="workdir/playwright",
+    require_grad=False,
 )

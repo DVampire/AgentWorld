@@ -34,12 +34,14 @@ class DatabaseEnvironment(Environment):
             "state": "The state of the database environment including tables and data.",
         }
     }, description="The metadata of the database environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
         base_dir: str,
         auto_connect: bool = True,
         create_sample_tables: bool = True,
+        require_grad: bool = False,
         **kwargs
     ):
         """

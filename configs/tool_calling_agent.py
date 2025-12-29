@@ -73,16 +73,19 @@ general_memory_system.update(
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
+    require_grad=True,
 )
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
 file_system_environment.update(
     base_dir=f"{workdir}/environment/file_system",
+    require_grad=True,
 )
 
 #-----------------TOOL CALLING AGENT CONFIG-----------------
 tool_calling_agent.update(
     workdir=workdir,
     model_name=model_name,
-    memory_name=memory_names[0]
+    memory_name=memory_names[0],
+    require_grad=True,
 )

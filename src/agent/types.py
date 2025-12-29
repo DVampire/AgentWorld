@@ -68,6 +68,7 @@ class AgentConfig(BaseModel):
     description: str = Field(description="The description of the agent")
     version: str = Field(default="1.0.0", description="Version of the agent")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
 
     cls: Optional[Any] = None
     config: Optional[Dict[str, Any]] = Field(default_factory=dict,description="The initialization configuration of the agent",)
@@ -93,6 +94,7 @@ class AgentConfig(BaseModel):
             "description": self.description,
             "metadata": self.metadata,
             "version": self.version,
+            "require_grad": self.require_grad,
             
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
@@ -113,6 +115,7 @@ class AgentConfig(BaseModel):
         description = data.get("description")
         metadata = data.get("metadata", {})
         version = data.get("version")
+        require_grad = data.get("require_grad", False)
         
         cls_ = None
         code = data.get("code")
@@ -144,6 +147,7 @@ class AgentConfig(BaseModel):
             description=description,
             metadata=metadata,
             version=version,
+            require_grad=require_grad,
             cls=cls_, 
             config=config, 
             instance=instance, 
@@ -155,7 +159,8 @@ class AgentConfig(BaseModel):
     def __str__(self) -> str:
         return (
             f"AgentConfig(name={self.name}, "
-            f"description={self.description})"
+            f"description={self.description}, "
+            f"require_grad={self.require_grad})"
         )
 
     def __repr__(self) -> str:
@@ -257,6 +262,7 @@ class Agent(BaseModel):
     description: str = Field(description="The description of the agent.")
     metadata: Dict[str, Any] = Field(description="The metadata of the agent.")
     version: str = Field(default="1.0.0", description="Version of the agent")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
 
     def __init__(
         self,
@@ -272,6 +278,7 @@ class Agent(BaseModel):
         max_steps: int = 20,
         review_steps: int = 5,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -280,6 +287,7 @@ class Agent(BaseModel):
         self.name = name or self.name
         self.description = description or self.description
         self.metadata = metadata or self.metadata
+        self.require_grad = require_grad
 
         # Set working directory
         self.workdir = workdir

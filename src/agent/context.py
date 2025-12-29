@@ -183,6 +183,7 @@ class AgentContextManager(BaseModel):
                 # Get agent config from global config
                 agent_config_key = inflection.underscore(agent_cls.__name__)
                 agent_config_dict = getattr(config, agent_config_key, {})
+                agent_require_grad = agent_config_dict.get("require_grad", False) if agent_config_dict and "require_grad" in agent_config_dict else False
                 
                 # Get agent properties from agent class
                 agent_name = agent_cls.model_fields['name'].default
@@ -205,6 +206,7 @@ class AgentContextManager(BaseModel):
                     name=agent_name,
                     description=agent_description,
                     version=agent_version,
+                    require_grad=agent_require_grad,
                     cls=agent_cls,
                     config=agent_config_dict,
                     instance=None,
@@ -453,6 +455,7 @@ class AgentContextManager(BaseModel):
             agent_name = agent_instance.name
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
+            agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict and "require_grad" in agent_config_dict else agent_instance.require_grad
             
             # Get or generate version from version_manager
             if version is None:
@@ -477,6 +480,7 @@ class AgentContextManager(BaseModel):
                 description=agent_description,
                 metadata=agent_metadata,
                 version=agent_version,
+                require_grad=agent_require_grad,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
@@ -586,6 +590,7 @@ class AgentContextManager(BaseModel):
             
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
+            agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict else agent_instance.require_grad
             
             # Determine new version from version_manager
             if new_version is None:
@@ -609,6 +614,7 @@ class AgentContextManager(BaseModel):
                 description=agent_description,
                 metadata=agent_metadata,
                 version=new_version,
+                require_grad=agent_require_grad,
                 cls=agent_cls,
                 config=agent_config_dict or {},
                 instance=agent_instance,
@@ -698,6 +704,7 @@ class AgentContextManager(BaseModel):
             
             agent_description = agent_instance.description
             agent_metadata = agent_instance.metadata
+            agent_require_grad = agent_config_dict.get("require_grad", agent_instance.require_grad) if agent_config_dict and "require_grad" in agent_config_dict else agent_instance.require_grad
             
             # Determine new version from version_manager
             if new_version is None:
@@ -725,6 +732,7 @@ class AgentContextManager(BaseModel):
                 description=agent_description,
                 metadata=agent_metadata,
                 version=new_version,
+                require_grad=agent_require_grad,
                 cls=original_config.cls,
                 config=agent_config_dict,
                 instance=agent_instance,
@@ -1034,6 +1042,73 @@ class AgentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
+    async def get_variables(self, agent_name: Optional[str] = None) -> List[Any]:
+        """Get variables from agents, where each agent's class source code is used as the variable value.
+        
+        Args:
+            agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all agents.
+            
+        Returns:
+            List[Any]: List of Variable objects, one for each agent. Each Variable has:
+                - name: agent name
+                - type: "agent_code"
+                - description: agent description
+                - require_grad: agent's require_grad value
+                - variables: agent's class source code (as string value)
+        """
+        # Lazy import to avoid circular dependency
+        from src.optimizer.types import Variable
+        
+        variables: List[Variable] = []
+        
+        if agent_name is not None:
+            # Get specific agent
+            agent_config = await self.get_info(agent_name)
+            if agent_config is None:
+                logger.warning(f"| ⚠️ Agent {agent_name} not found")
+                return variables
+            
+            agent_configs = {agent_name: agent_config}
+        else:
+            # Get all agents
+            agent_configs = self._agent_configs
+        
+        for name, agent_config in agent_configs.items():
+            # Get agent code
+            agent_code = ""
+            if agent_config.cls is not None:
+                agent_code = dynamic_manager.get_full_module_source(agent_config.cls) or ""
+            elif agent_config.code:
+                agent_code = agent_config.code
+            
+            # Create Variable for this agent
+            variable = Variable(
+                name=name,
+                type="agent_code",
+                description=agent_config.description or f"Code for agent {name}",
+                require_grad=agent_config.require_grad,
+                template=None,
+                variables=agent_code  # Store code as the variable value
+            )
+            variables.append(variable)
+        
+        return variables
+    
+    async def get_trainable_variables(self, agent_name: Optional[str] = None) -> List[Any]:
+        """Get trainable variables from agents, filtering out agents with require_grad=False.
+        
+        Only returns variables for agents where require_grad=True.
+        
+        Args:
+            agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all trainable agents.
+            
+        Returns:
+            List[Any]: List of Variable objects for trainable agents.
+        """
+        all_variables = await self.get_variables(agent_name=agent_name)
+        trainable_variables = [var for var in all_variables if var.require_grad]
+        return trainable_variables
+
     async def cleanup(self):
         """Cleanup all active agents."""
         try:

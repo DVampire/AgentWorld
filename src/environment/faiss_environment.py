@@ -30,12 +30,14 @@ class FaissEnvironment(Environment):
             "state": "The state of the FAISS vector store environment.",
         }
     }, description="The metadata of the FAISS environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
         base_dir: str,
         model_name: Optional[str] = None,
         config: Optional[FaissConfig] = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """

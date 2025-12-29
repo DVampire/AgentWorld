@@ -19,6 +19,7 @@ class Environment(BaseModel):
     name: str = Field(description="The name of the environment.")
     description: str = Field(description="The description of the environment.")
     metadata: Dict[str, Any] = Field(description="The metadata of the environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     model_config = ConfigDict(
         arbitrary_types_allowed=True, 
@@ -236,6 +237,7 @@ class EnvironmentConfig(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the environment")
     rules: str = Field(description="The rules of the environment")
     version: str = Field(default="1.0.0", description="Version of the environment")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     cls: Optional[Type[Environment]] = Field(default=None, description="The class of the environment")
     config: Optional[Dict[str, Any]] = Field(default={}, description="The initialization configuration of the environment")
@@ -252,6 +254,7 @@ class EnvironmentConfig(BaseModel):
             "metadata": self.metadata,
             "rules": self.rules,
             "version": self.version,
+            "require_grad": self.require_grad,
             
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
@@ -272,6 +275,7 @@ class EnvironmentConfig(BaseModel):
         metadata = data.get("metadata")
         rules = data.get("rules")
         version = data.get("version")
+        require_grad = data.get("require_grad", False)
         
         cls_ = None
         code = data.get("code")
@@ -312,6 +316,7 @@ class EnvironmentConfig(BaseModel):
             metadata=metadata,
             rules=rules,
             version=version,
+            require_grad=require_grad,
             cls=cls_,
             config=config,
             instance=instance,

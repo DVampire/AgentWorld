@@ -6,5 +6,6 @@ environment = dict(
     device_id=None,  # Use first connected device
     fps=2,
     bitrate=50000000,
-    chunk_duration=60
+    chunk_duration=60,
+    require_grad=False,
 )

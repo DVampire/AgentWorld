@@ -7,4 +7,5 @@ environment = dict(
     symbol=["BTC/USD"],
     data_type=["bars"],
     alpaca_service=None,
+    require_grad=False,
 )

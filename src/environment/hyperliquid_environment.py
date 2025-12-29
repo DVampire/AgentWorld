@@ -46,6 +46,7 @@ class OnlineHyperliquidEnvironment(Environment):
             "state": "The state of the Hyperliquid trading environment including account information, positions, and market data.",
         }
     }, description="The metadata of the Hyperliquid trading environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -54,6 +55,7 @@ class OnlineHyperliquidEnvironment(Environment):
         symbol: Optional[Union[str, List[str]]] = None,
         data_type: Optional[Union[str, List[str]]] = None,
         hyperliquid_service: OnlineHyperliquidService = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """
@@ -1244,6 +1246,7 @@ class OfflineHyperliquidEnvironment(Environment):
             "state": "The state of the Hyperliquid trading environment including account information, positions, and market data.",
         }
     }, description="The metadata of the backtest environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -1253,6 +1256,7 @@ class OfflineHyperliquidEnvironment(Environment):
         initial_balance: float = 10000.0,
         accounts: Optional[List[Dict[str, Union[str, float]]]] = None,
         hyperliquid_service: OfflineHyperliquidService = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """

@@ -170,6 +170,7 @@ class EnvironmentContextManager(BaseModel):
             try:
                 env_config_key = inflection.underscore(env_cls.__name__)
                 env_config_dict= config.get(env_config_key, {})
+                env_require_grad = env_config_dict.get("require_grad", False) if env_config_dict and "require_grad" in env_config_dict else False
                 
                 # Get environment properties from environment class
                 env_name = env_cls.model_fields['name'].default
@@ -225,6 +226,7 @@ class EnvironmentContextManager(BaseModel):
                     description=env_description,
                     metadata=env_metadata,
                     version=env_version,
+                    require_grad=env_require_grad,
                     cls=env_cls,
                     config=env_config_dict,
                     instance=None,
@@ -486,6 +488,7 @@ class EnvironmentContextManager(BaseModel):
             env_name = env_instance.name
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
+            env_require_grad = getattr(env_instance, 'require_grad', False)
             
             if not env_name:
                 raise ValueError("Environment.name cannot be empty.")
@@ -547,6 +550,7 @@ class EnvironmentContextManager(BaseModel):
                 description=env_description,
                 rules=env_rules,
                 version=env_version,
+                require_grad=env_require_grad,
                 actions=actions,
                 cls=env_cls,
                 config=env_config_dict or {},
@@ -669,6 +673,7 @@ class EnvironmentContextManager(BaseModel):
             
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
+            env_require_grad = env_config_dict.get("require_grad", getattr(env_instance, 'require_grad', False)) if env_config_dict and "require_grad" in env_config_dict else getattr(env_instance, 'require_grad', False)
             
             # Determine new version from version_manager
             if new_version is None:
@@ -723,6 +728,7 @@ class EnvironmentContextManager(BaseModel):
                 description=env_description,
                 rules=env_rules,
                 version=new_version,
+                require_grad=env_require_grad,
                 actions=actions,
                 cls=env_cls,
                 config=env_config_dict or {},
@@ -807,6 +813,7 @@ class EnvironmentContextManager(BaseModel):
             
             env_description = env_instance.description
             env_metadata = getattr(env_instance, 'metadata', {})
+            env_require_grad = env_config_dict.get("require_grad", getattr(env_instance, 'require_grad', False)) if env_config_dict and "require_grad" in env_config_dict else getattr(env_instance, 'require_grad', False)
             
             # Determine new version from version_manager
             if new_version is None:
@@ -865,6 +872,7 @@ class EnvironmentContextManager(BaseModel):
                 description=env_description,
                 rules=env_rules,
                 version=new_version,
+                require_grad=env_require_grad,
                 actions=actions,
                 cls=original_config.cls,
                 config=env_config_dict,
@@ -1169,6 +1177,73 @@ class EnvironmentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
+    async def get_variables(self, env_name: Optional[str] = None) -> List[Any]:
+        """Get variables from environments, where each environment's class source code is used as the variable value.
+        
+        Args:
+            env_name (Optional[str]): Name of a specific environment. If None, returns variables for all environments.
+            
+        Returns:
+            List[Any]: List of Variable objects, one for each environment. Each Variable has:
+                - name: environment name
+                - type: "environment_code"
+                - description: environment description
+                - require_grad: environment's require_grad value
+                - variables: environment's class source code (as string value)
+        """
+        # Lazy import to avoid circular dependency
+        from src.optimizer.types import Variable
+        
+        variables: List[Variable] = []
+        
+        if env_name is not None:
+            # Get specific environment
+            env_config = self._environment_configs.get(env_name)
+            if env_config is None:
+                logger.warning(f"| ⚠️ Environment {env_name} not found")
+                return variables
+            
+            env_configs = {env_name: env_config}
+        else:
+            # Get all environments
+            env_configs = self._environment_configs
+        
+        for name, env_config in env_configs.items():
+            # Get environment code
+            env_code = ""
+            if env_config.cls is not None:
+                env_code = dynamic_manager.get_full_module_source(env_config.cls) or ""
+            elif env_config.code:
+                env_code = env_config.code
+            
+            # Create Variable for this environment
+            variable = Variable(
+                name=name,
+                type="environment_code",
+                description=env_config.description or f"Code for environment {name}",
+                require_grad=env_config.require_grad,
+                template=None,
+                variables=env_code  # Store code as the variable value
+            )
+            variables.append(variable)
+        
+        return variables
+    
+    async def get_trainable_variables(self, env_name: Optional[str] = None) -> List[Any]:
+        """Get trainable variables from environments, filtering out environments with require_grad=False.
+        
+        Only returns variables for environments where require_grad=True.
+        
+        Args:
+            env_name (Optional[str]): Name of a specific environment. If None, returns variables for all trainable environments.
+            
+        Returns:
+            List[Any]: List of Variable objects for trainable environments.
+        """
+        all_variables = await self.get_variables(env_name=env_name)
+        trainable_variables = [var for var in all_variables if var.require_grad]
+        return trainable_variables
+
     async def cleanup(self):
         """Cleanup all active environments."""
         try:

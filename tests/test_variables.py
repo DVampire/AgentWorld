@@ -21,6 +21,7 @@ from src.model import model_manager
 from src.version import version_manager
 from src.environment import ecp
 from src.tool import tcp
+from src.agent import acp
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -68,8 +69,13 @@ async def main():
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
-    await ecp.initialize(config.env_names)
+    await ecp.initialize(env_names=config.env_names)
     logger.info(f"| ✅ Environments initialized: {await ecp.list()}")
+    
+    # Initialize agents
+    logger.info("| 🤖 Initializing agents...")
+    await acp.initialize(agent_names=config.agent_names)
+    logger.info(f"| ✅ Agents initialized: {await acp.list()}")
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
@@ -96,15 +102,57 @@ async def main():
     # print(type(sub_variables), len(sub_variables))
     # print("="*100)
     
-    # Step 2: Get variables from tools
-    variables = await tcp.get_variables()
+    # # Step 2: Get variables from tools
+    # variables = await tcp.get_variables()
+    # print("="*100)
+    # print(variables)
+    # print(type(variables), len(variables))
+    # print("="*100)
+    
+    # # Step 3: Get trainable variables from tools
+    # trainable_variables = await tcp.get_trainable_variables()
+    # print("="*100)
+    # print(trainable_variables)
+    # print(type(trainable_variables), len(trainable_variables))
+    # print("="*100)
+    
+    # # Step 4: Get variables from memory manager
+    # variables = await memory_manager.get_variables()
+    # print("="*100)
+    # print(variables)
+    # print(type(variables), len(variables))
+    # print("="*100)
+    
+    # # Step 5: Get trainable variables from memory manager
+    # trainable_variables = await memory_manager.get_trainable_variables()
+    # print("="*100)
+    # print(trainable_variables)
+    # print(type(trainable_variables), len(trainable_variables))
+    # print("="*100)
+    
+    # # Step 6: Get variables from environments
+    # variables = await ecp.get_variables()
+    # print("="*100)
+    # print(variables)
+    # print(type(variables), len(variables))
+    # print("="*100)
+    
+    # # Step 7: Get trainable variables from environments
+    # trainable_variables = await ecp.get_trainable_variables()
+    # print("="*100)
+    # print(trainable_variables)
+    # print(type(trainable_variables), len(trainable_variables))
+    # print("="*100)
+    
+    # Step 8: Get variables from agents
+    variables = await acp.get_variables()
     print("="*100)
     print(variables)
     print(type(variables), len(variables))
     print("="*100)
     
-    # Step 3: Get trainable variables from tools
-    trainable_variables = await tcp.get_trainable_variables()
+    # Step 9: Get trainable variables from agents
+    trainable_variables = await acp.get_trainable_variables()
     print("="*100)
     print(trainable_variables)
     print(type(trainable_variables), len(trainable_variables))

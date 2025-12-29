@@ -27,6 +27,7 @@ class OperatorBrowserAgent(Agent):
     name: str = Field(default="operator_browser", description="The name of the operator browser agent.")
     description: str = Field(default="A browser operator agent that can see and control web browsers using vision-enabled LLM.", description="The description of the operator browser agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the operator browser agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -38,6 +39,7 @@ class OperatorBrowserAgent(Agent):
         review_steps: int = 5,
         log_max_length: int = 500,
         if_correct_action: bool = True,
+        require_grad: bool = False,
         **kwargs
     ):
         """Initialize the Operator Browser Agent.
@@ -64,6 +66,7 @@ class OperatorBrowserAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         self.if_correct_action = if_correct_action

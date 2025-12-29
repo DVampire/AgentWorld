@@ -294,14 +294,17 @@ class CombinedMemory:
 class GeneralMemorySystem(Memory):
     """Memory system that combines different types of memory for comprehensive agent memory management."""
     
+    require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
+    
     def __init__(self, 
                  base_dir: Optional[str] = None,
                  model_name: str = "gpt-4.1",
                  max_summaries: int = 10,
                  max_insights: int = 10,
+                 require_grad: bool = False,
                  **kwargs
                  ):
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         
         if base_dir is not None:
             self.base_dir = base_dir

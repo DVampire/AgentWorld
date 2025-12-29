@@ -100,6 +100,7 @@ class OnlineTradingAgent(Agent):
     name: str = Field(default="online_trading", description="The name of the online trading agent.")
     description: str = Field(default="A online trading agent that can trade online.", description="The description of the online trading agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the online trading agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -115,6 +116,7 @@ class OnlineTradingAgent(Agent):
         max_steps: int = 20,
         review_steps: int = 5,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name for tool calling
@@ -134,6 +136,7 @@ class OnlineTradingAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         self.tracer_save_path = os.path.join(self.workdir, "tracer.json")

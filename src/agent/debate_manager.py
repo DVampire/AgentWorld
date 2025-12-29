@@ -19,6 +19,7 @@ class DebateManagerAgent(Agent):
     name: str = Field(default="debate_manager", description="The name of the debate manager.")
     description: str = Field(default="A debate manager that coordinates multiple agents in a debate.", description="The description of the debate manager.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the debate manager.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -34,6 +35,7 @@ class DebateManagerAgent(Agent):
         review_steps: int = 1,
         log_max_length: int = 1000,
         max_rounds: int = 10,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name for debate manager
@@ -52,6 +54,7 @@ class DebateManagerAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         # Initialize debate-specific attributes

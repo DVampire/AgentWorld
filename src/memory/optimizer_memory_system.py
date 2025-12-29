@@ -73,11 +73,14 @@ class OptimizationSession(BaseModel):
 class OptimizerMemorySystem(Memory):
     """Memory system for recording optimizer optimization history and experiences."""
     
+    require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
+    
     def __init__(self, 
                  base_dir: Optional[str] = None,
                  max_records_per_session: int = 1000,
+                 require_grad: bool = False,
                  **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         
         if base_dir is not None:
             self.base_dir = base_dir

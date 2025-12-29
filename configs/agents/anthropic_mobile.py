@@ -7,5 +7,6 @@ anthropic_mobile_agent = dict(
     memory_config=None,
     max_steps=30,
     review_steps=5,
-    log_max_length=500
+    log_max_length=500,
+    require_grad=False,
 )

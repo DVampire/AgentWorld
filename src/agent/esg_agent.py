@@ -32,6 +32,7 @@ class ESGAgent(Agent):
         description="The description of the ESG agent."
     )
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the ESG agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -47,6 +48,7 @@ class ESGAgent(Agent):
         max_steps: int = 30,
         review_steps: int = 5,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs
     ):
         """Initialize the ESG Agent.
@@ -82,6 +84,7 @@ class ESGAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs
         )
         

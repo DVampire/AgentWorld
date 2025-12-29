@@ -28,6 +28,7 @@ class MobileAgent(Agent):
     name: str = Field(default="mobile", description="The name of the mobile agent.")
     description: str = Field(default="A mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the mobile agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -38,6 +39,7 @@ class MobileAgent(Agent):
         max_steps: int = 30,
         review_steps: int = 5,
         log_max_length: int = 500,
+        require_grad: bool = False,
         **kwargs
     ):
         """Initialize the Mobile Agent.
@@ -63,6 +65,7 @@ class MobileAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         

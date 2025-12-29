@@ -53,12 +53,14 @@ class GitHubEnvironment(Environment):
             """),
         }
     }, description="The metadata of the GitHub environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
         base_dir: str = None,
         token: Optional[SecretStr] = None,
         username: Optional[SecretStr] = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """

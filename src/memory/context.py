@@ -9,7 +9,11 @@ import os
 import json
 import inspect
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Union, Type
+from typing import Any, Dict, Optional, List, Union, Type, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.logger import logger
@@ -18,6 +22,7 @@ from src.version import version_manager
 from src.utils import assemble_project_path
 from src.utils.file_utils import file_lock
 from src.memory.types import MemoryConfig, Memory
+from src.dynamic import dynamic_manager
 
 
 class MemoryContextManager(BaseModel):
@@ -154,16 +159,19 @@ class MemoryContextManager(BaseModel):
                 temp_instance = memory_cls(**memory_config_dict)
                 memory_name = temp_instance.name
                 memory_description = temp_instance.description
+                memory_require_grad = memory_config_dict.get("require_grad", temp_instance.require_grad)
             except Exception:
                 # If instantiation fails, try without config
                 try:
                     temp_instance = memory_cls()
                     memory_name = temp_instance.name
                     memory_description = temp_instance.description
+                    memory_require_grad = memory_config_dict.get("require_grad", temp_instance.require_grad)
                 except Exception:
                     # If still fails, try to get from class attributes or use defaults
                     memory_name = getattr(memory_cls, 'name', None)
                     memory_description = getattr(memory_cls, 'description', '')
+                    memory_require_grad = memory_config_dict.get("require_grad", False)
                     
                     if not memory_name:
                         # Use class name as fallback
@@ -188,6 +196,7 @@ class MemoryContextManager(BaseModel):
             memory_config = MemoryConfig(
                 name=memory_name,
                 description=memory_description,
+                require_grad=memory_require_grad,
                 version=version,
                 cls=memory_cls,
                 instance=None,
@@ -268,12 +277,19 @@ class MemoryContextManager(BaseModel):
             logger.error(f"| ❌ Failed to create temporary memory instance: {e}")
             raise
         
+        # Get require_grad from instance or config
+        if isinstance(memory, Memory):
+            memory_require_grad = memory.require_grad
+        else:
+            memory_require_grad = memory_config_dict.get("require_grad", False)
+        
         # Determine if we're registering a class or instance
         if isinstance(memory, Memory):
             # Registering an instance
             memory_config = MemoryConfig(
                 name=memory_name,
                 description=memory_description,
+                require_grad=memory_require_grad,
                 version=kwargs.pop("version", "1.0.0"),
                 cls=type(memory),
                 config={},
@@ -285,6 +301,7 @@ class MemoryContextManager(BaseModel):
             memory_config = MemoryConfig(
                 name=memory_name,
                 description=memory_description,
+                require_grad=memory_require_grad,
                 version=kwargs.pop("version", "1.0.0"),
                 cls=memory,
                 config=kwargs if kwargs else memory_config_dict,
@@ -351,6 +368,12 @@ class MemoryContextManager(BaseModel):
         temp_instance = self._ensure_memory_instance(memory, **kwargs)
         new_description = temp_instance.description
         
+        # Get require_grad from kwargs or instance
+        if isinstance(memory, Memory):
+            memory_require_grad = memory.require_grad
+        else:
+            memory_require_grad = kwargs.get("require_grad", temp_instance.require_grad)
+        
         # Determine new version from version_manager
         if new_version is None:
             # Get current version from version_manager and generate next patch version
@@ -362,6 +385,7 @@ class MemoryContextManager(BaseModel):
             updated_config = MemoryConfig(
                 name=memory_name,  # Keep same name
                 description=new_description,
+                require_grad=memory_require_grad,
                 version=new_version,
                 cls=type(memory),
                 config={},
@@ -373,6 +397,7 @@ class MemoryContextManager(BaseModel):
             updated_config = MemoryConfig(
                 name=memory_name,  # Keep same name
                 description=new_description,
+                require_grad=memory_require_grad,
                 version=new_version,
                 cls=memory,
                 config=kwargs,
@@ -531,6 +556,83 @@ class MemoryContextManager(BaseModel):
             except Exception as e:
                 logger.error(f"| ❌ Failed to load memory systems from {file_path}: {e}")
                 return False
+    
+    async def get_variables(self, memory_name: Optional[str] = None) -> List[Any]:
+        """Get variables from memory systems, where each memory's code is used as the variable value.
+        
+        Args:
+            memory_name (Optional[str]): Name of a specific memory system. If None, returns variables for all memory systems.
+            
+        Returns:
+            List[Variable]: List of Variable objects, one for each memory system. Each Variable has:
+                - name: memory name
+                - type: "memory_code"
+                - description: memory description
+                - require_grad: memory's require_grad value
+                - variables: memory's code (as string value)
+        """
+        # Lazy import to avoid circular dependency
+        from src.optimizer.types import Variable
+        
+        variables: List[Variable] = []
+        
+        if memory_name is not None:
+            # Get specific memory
+            memory_config = self._memory_configs.get(memory_name)
+            if memory_config is None:
+                logger.warning(f"| ⚠️ Memory {memory_name} not found")
+                return variables
+            
+            memory_configs = {memory_name: memory_config}
+        else:
+            # Get all memory systems
+            memory_configs = self._memory_configs
+        
+        for name, memory_config in memory_configs.items():
+            # Get memory code from class
+            memory_code = ""
+            if memory_config.cls is not None:
+                memory_code = dynamic_manager.get_full_module_source(memory_config.cls) or ""
+            
+            # Create Variable for this memory system
+            variable = Variable(
+                name=name,
+                type="memory_code",
+                description=memory_config.description or f"Code for memory system {name}",
+                require_grad=memory_config.require_grad,
+                template=None,
+                variables=memory_code  # Store code as the variable value
+            )
+            variables.append(variable)
+        
+        return variables
+    
+    async def get_trainable_variables(self, memory_name: Optional[str] = None) -> List[Any]:
+        """Get trainable variables from memory systems, filtering out memory systems with require_grad=False.
+        
+        Only returns variables for memory systems where require_grad=True.
+        
+        Args:
+            memory_name (Optional[str]): Name of a specific memory system. If None, returns trainable variables for all memory systems.
+            
+        Returns:
+            List[Variable]: List of Variable objects for memory systems with require_grad=True. Each Variable has:
+                - name: memory name
+                - type: "memory_code"
+                - description: memory description
+                - require_grad: True
+                - variables: memory's code (as string value)
+        """
+        # Get all variables first
+        all_variables = await self.get_variables(memory_name=memory_name)
+        
+        # Filter to only include variables with require_grad=True
+        trainable_variables = [
+            variable for variable in all_variables 
+            if variable.require_grad is True
+        ]
+        
+        return trainable_variables
     
     async def cleanup(self):
         """Cleanup all memory instances and resources."""

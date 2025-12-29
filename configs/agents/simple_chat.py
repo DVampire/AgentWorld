@@ -5,5 +5,6 @@ simple_chat_agent = dict(
     type = "Agent",
     model_name = "gpt-4.1",
     prompt_name = "simple_chat",
-    max_steps = 50
+    max_steps = 50,
+    require_grad = False,
 )

@@ -68,7 +68,7 @@ async def main():
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
-    await ecp.initialize(config.env_names)
+    await ecp.initialize(env_names=config.env_names)
     logger.info(f"| ✅ Environments initialized: {await ecp.list()}")
     
     # Initialize agents

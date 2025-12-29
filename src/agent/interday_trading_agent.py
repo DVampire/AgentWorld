@@ -26,6 +26,7 @@ class InterdayTradingAgent(Agent):
     name: str = Field(default="interday_trading", description="The name of the interday trading agent.")
     description: str = Field(default="A interday trading agent that can perform single stock trading tasks.", description="The description of the interday trading agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the interday trading agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -36,6 +37,7 @@ class InterdayTradingAgent(Agent):
         max_steps: int = -1,  # -1 means unlimited steps for trading
         review_steps: int = 5,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name for interday trading
@@ -50,6 +52,7 @@ class InterdayTradingAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         self.think_output_builder = ThinkOutputBuilder()

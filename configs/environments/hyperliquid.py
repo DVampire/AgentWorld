@@ -20,6 +20,7 @@ online_hyperliquid_environment = dict(
     symbol=["BTC", "ETH"],
     data_type=["candle"],
     hyperliquid_service=None,
+    require_grad=False,
 )
 
 offline_hyperliquid_environment = dict(
@@ -28,4 +29,5 @@ offline_hyperliquid_environment = dict(
     symbol=["BTC", "ETH"],
     data_type=["candle"],
     hyperliquid_service=None,
+    require_grad=False,
 )

@@ -7,4 +7,5 @@ environment = dict(
     symbol=["BTCUSDT", "ETHUSDT"],
     data_type=["klines"],
     binance_service=None,
+    require_grad=False,
 )

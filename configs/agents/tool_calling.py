@@ -10,4 +10,5 @@ tool_calling_agent = dict(
     max_steps = 50,
     review_steps = 5,
     log_max_length = 1000,
+    require_grad = False,
 )

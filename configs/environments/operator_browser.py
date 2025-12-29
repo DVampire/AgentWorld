@@ -2,5 +2,6 @@
 
 # Operator Browser Environment Configuration
 environment = dict(
-    base_dir="workdir/operator_browser"
+    base_dir="workdir/operator_browser",
+    require_grad=False,
 )

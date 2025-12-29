@@ -72,6 +72,7 @@ class IntradayTradingEnvironment(Environment):
             "interaction": _INTERACTION_RULES,
         }
     }, description="The metadata of the intraday trading environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -90,6 +91,7 @@ class IntradayTradingEnvironment(Environment):
         valid_review_actions: int = 10,  # More actions for intraday
         valid_review_trends: int = 60,   # 60 minutes trend window
         auto_close_eod: bool = True,     # Auto close positions at end of day
+        require_grad: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)

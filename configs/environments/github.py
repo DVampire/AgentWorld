@@ -2,5 +2,6 @@
 
 # GitHub Environment Configuration
 environment = dict(
-    base_dir="workdir/github"
+    base_dir="workdir/github",
+    require_grad=False,
 )

@@ -5,5 +5,6 @@ intraday_trading_agent = dict(
     model_name = "gpt-4.1",
     prompt_name = "intraday_trading",
     memory_config = None,
-    max_steps = -1
+    max_steps = -1,
+    require_grad = False,
 )

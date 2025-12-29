@@ -26,6 +26,7 @@ class AnthropicMobileAgent(Agent):
     name: str = Field(default="anthropic_mobile", description="The name of the anthropic mobile agent.")
     description: str = Field(default="A anthropic mobile agent that can see and control mobile devices using vision-enabled LLM.", description="The description of the mobile agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the anthropic mobile agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -36,6 +37,7 @@ class AnthropicMobileAgent(Agent):
         max_steps: int = 30,
         review_steps: int = 5,
         log_max_length: int = 500,
+        require_grad: bool = False,
         **kwargs
     ):
         """Initialize the Anthropic Mobile Agent.
@@ -61,6 +63,7 @@ class AnthropicMobileAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         # Use global prompt_manager instead of creating new instance

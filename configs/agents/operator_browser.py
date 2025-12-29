@@ -6,6 +6,7 @@ operator_browser_agent = dict(
     model_name = "computer-browser-use",
     prompt_name = "operator_browser",
     memory_config = None,
-    max_steps = 50
+    max_steps = 50,
+    require_grad = False,
 )
 

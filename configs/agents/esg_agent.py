@@ -10,5 +10,6 @@ esg_agent = dict(
     max_steps = 30,
     review_steps = 5,
     log_max_length = 1000,
+    require_grad = False,
 )
 

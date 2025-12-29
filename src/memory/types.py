@@ -96,6 +96,7 @@ class Memory(BaseModel):
     name: str = Field(default="", description="The name of the memory system")
     description: str = Field(default="", description="The description of the memory system")
     save_path: Optional[str] = Field(default=None, description="Path to save/load memory JSON file")
+    require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
     
     def __init__(self, **kwargs):
         """Initialize memory system."""
@@ -119,11 +120,40 @@ class MemoryConfig(BaseModel):
     """Memory configuration for registration"""
     name: str = Field(description="The name of the memory system")
     description: str = Field(description="The description of the memory system")
+    require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
     version: str = Field(default="1.0.0", description="Version of the memory system")
     cls: Optional[Type[Memory]] = Field(default=None, description="The class of the memory system")
     instance: Optional[Any] = Field(default=None, description="The instance of the memory system")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the memory system")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the memory system")
+    
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Dump the model to a dictionary."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "require_grad": self.require_grad,
+            "version": self.version,
+            "cls": self.cls.__name__ if self.cls else None,
+            "config": self.config,
+            "instance": None,  # Don't serialize instance
+            "metadata": self.metadata,
+        }
+    
+    @classmethod
+    def model_validate(cls, data: Dict[str, Any]) -> 'MemoryConfig':
+        """Validate the model from a dictionary."""
+        require_grad = data.get("require_grad", False)  # Default to False if not provided
+        return cls(
+            name=data.get("name"),
+            description=data.get("description"),
+            require_grad=require_grad,
+            version=data.get("version", "1.0.0"),
+            cls=data.get("cls"),
+            config=data.get("config", {}),
+            instance=data.get("instance"),
+            metadata=data.get("metadata", {}),
+        )
     
     def __str__(self):
         return f"MemoryConfig(name={self.name}, description={self.description}, version={self.version})"

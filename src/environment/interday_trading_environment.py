@@ -71,6 +71,7 @@ class InterdayTradingEnvironment(Environment):
             "interaction": _INTERACTION_RULES,
         }
     }, description="The metadata of the Trading Offline environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -88,6 +89,7 @@ class InterdayTradingEnvironment(Environment):
         gamma: float = 0.99,
         valid_review_actions: int = 5,
         valid_review_trends: int = 32,
+        require_grad: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)

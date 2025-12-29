@@ -52,6 +52,7 @@ class BinanceEnvironment(Environment):
             """),
         }
     }, description="The metadata of the Binance trading environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -60,6 +61,7 @@ class BinanceEnvironment(Environment):
         symbol: Optional[Union[str, List[str]]] = None,
         data_type: Optional[Union[str, List[str]]] = None,
         binance_service: BinanceService = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """

@@ -2,7 +2,11 @@
 
 Server implementation for the Environment Context Protocol with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Type, Union, Callable
+from typing import Any, Dict, List, Optional, Type, Union, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
+
 import os
 from pydantic import BaseModel, ConfigDict, Field
 import inspect
@@ -228,6 +232,24 @@ class ECPServer(BaseModel):
             self._registered_configs[env_config.name] = env_config
         return env_config
     
+    async def get_variables(self, env_name: Optional[str] = None) -> List[Any]:
+        """Get variables from environments, where each environment's class source code is used as the variable value.
+        
+        Args:
+            env_name (Optional[str]): Name of a specific environment. If None, returns variables for all environments.
+        """
+        return await self.environment_context_manager.get_variables(env_name=env_name)
+    
+    async def get_trainable_variables(self, env_name: Optional[str] = None) -> List[Any]:
+        """Get trainable variables from environments, filtering out environments with require_grad=False.
+        
+        Only returns variables for environments where require_grad=True.
+        
+        Args:
+            env_name (Optional[str]): Name of a specific environment. If None, returns variables for all trainable environments.
+        """
+        return await self.environment_context_manager.get_trainable_variables(env_name=env_name)
+
     async def __call__(self, name: str, action: str, input: Dict[str, Any]) -> Any:
         """Call an environment action
         

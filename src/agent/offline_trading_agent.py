@@ -104,6 +104,7 @@ class OfflineTradingAgent(Agent):
     name: str = Field(default="offline_trading", description="The name of the offline trading agent.")
     description: str = Field(default="An offline trading agent for backtesting with historical data.", description="The description of the offline trading agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the offline trading agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -119,6 +120,7 @@ class OfflineTradingAgent(Agent):
         max_steps: int = 20,
         review_steps: int = 5,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name for tool calling
@@ -138,6 +140,7 @@ class OfflineTradingAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         self.tracer_save_path = os.path.join(self.workdir, "tracer.json")

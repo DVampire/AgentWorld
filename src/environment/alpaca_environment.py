@@ -51,6 +51,7 @@ class AlpacaEnvironment(Environment):
             """),
         }
     }, description="The metadata of the Alpaca trading environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -59,6 +60,7 @@ class AlpacaEnvironment(Environment):
         symbol: Optional[Union[str, List[str]]] = None,
         data_type: Optional[Union[str, List[str]]] = None,
         alpaca_service: AlpacaService = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """

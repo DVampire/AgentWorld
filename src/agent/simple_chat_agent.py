@@ -22,6 +22,7 @@ class SimpleChatAgent(Agent):
     name: str = Field(default="simple_chat", description="The name of the simple chat agent.")
     description: str = Field(default="A simple chat agent that can have conversations with humans.", description="The description of the simple chat agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the simple chat agent.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -33,6 +34,7 @@ class SimpleChatAgent(Agent):
         max_steps: int = 1,  # Simple chat only needs one step
         review_steps: int = 1,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name for simple chat
@@ -48,6 +50,7 @@ class SimpleChatAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs)
         
         self.name = name

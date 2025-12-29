@@ -40,11 +40,13 @@ class FileSystemEnvironment(Environment):
             "state": "The state of the file system environment.",
         }
     }, description="The metadata of the file system environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
         base_dir: Optional[Union[str, Path]] = None,
         max_file_size: int = 1024 * 1024,  # 1MB
+        require_grad: bool = False,
         **kwargs
     ):
         """

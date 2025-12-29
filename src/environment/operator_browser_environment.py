@@ -38,12 +38,14 @@ class OperatorBrowserEnvironment(Environment):
             "state": "The state of the browser environment including current URL, title, and viewport.",
         }
     }, description="The metadata of the Operator Browser environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
         base_dir: str = None,
         headless: bool = False,
         viewport: Optional[Dict[str, int]] = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """

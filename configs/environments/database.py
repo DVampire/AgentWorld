@@ -2,5 +2,6 @@
 
 # Database Environment Configuration
 environment = dict(
-    base_dir="workdir/database"
+    base_dir="workdir/database",
+    require_grad=False,
 )

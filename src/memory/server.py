@@ -3,7 +3,11 @@
 Manager implementation for the Memory Context Protocol.
 """
 import os
-from typing import Any, Dict, List, Optional, Union, Type
+from typing import Any, Dict, List, Optional, Union, Type, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
@@ -323,6 +327,28 @@ class MemoryManager(BaseModel):
             Dictionary containing 'events', 'summaries', and 'insights'
         """
         return await self.memory_context_manager.get_state(name, n, session_id)
+    
+    async def get_variables(self, memory_name: Optional[str] = None) -> List[Any]:
+        """Get variables from memory systems, where each memory's code is used as the variable value.
+        
+        Args:
+            memory_name (Optional[str]): Name of a specific memory system. If None, returns variables for all memory systems.
+            
+        Returns:
+            List[Variable]: List of Variable objects, one for each memory system.
+        """
+        return await self.memory_context_manager.get_variables(memory_name=memory_name)
+    
+    async def get_trainable_variables(self, memory_name: Optional[str] = None) -> List[Any]:
+        """Get trainable variables from memory systems, filtering out memory systems with require_grad=False.
+        
+        Args:
+            memory_name (Optional[str]): Name of a specific memory system. If None, returns trainable variables for all memory systems.
+            
+        Returns:
+            List[Variable]: List of Variable objects for memory systems with require_grad=True.
+        """
+        return await self.memory_context_manager.get_trainable_variables(memory_name=memory_name)
 
 
 # Global Memory Manager instance

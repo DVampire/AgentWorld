@@ -66,5 +66,6 @@ environment = dict(
     future_timestamps=future_timestamps,
     gamma=gamma,
     valid_review_actions=valid_review_actions,
-    valid_review_trends=valid_review_trends
+    valid_review_trends=valid_review_trends,
+    require_grad=False,
 )

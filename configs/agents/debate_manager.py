@@ -5,5 +5,6 @@ debate_manager_agent = dict(
     type = "Agent",
     model_name = "gpt-5",
     prompt_name = "simple_chat",
-    max_steps = 50
+    max_steps = 50,
+    require_grad = False,
 )

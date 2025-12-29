@@ -38,6 +38,7 @@ class IntradayDayAnalysisAgent(Agent):
     name: str = Field(default="intraday_day_analysis", description="The name of the day analysis agent.")
     description: str = Field(default="An agent that performs deep daily trend analysis for intraday trading.", description="The description of the day analysis agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -45,6 +46,7 @@ class IntradayDayAnalysisAgent(Agent):
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         memory_config: Optional[Dict[str, Any]] = None,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name
@@ -56,6 +58,7 @@ class IntradayDayAnalysisAgent(Agent):
             model_name=model_name,
             prompt_name=prompt_name,
             memory_config=memory_config,
+            require_grad=require_grad,
             **kwargs
         )
         
@@ -283,6 +286,7 @@ class IntradayMinuteTradingAgent(Agent):
     name: str = Field(default="intraday_minute_trading", description="The name of the minute trading agent.")
     description: str = Field(default="An agent that makes fast trading decisions based on daily forecast.", description="The description.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -290,6 +294,7 @@ class IntradayMinuteTradingAgent(Agent):
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
         memory_config: Optional[Dict[str, Any]] = None,
+        require_grad: bool = False,
         **kwargs
     ):
         # Set default prompt name
@@ -301,6 +306,7 @@ class IntradayMinuteTradingAgent(Agent):
             model_name=model_name,
             prompt_name=prompt_name,
             memory_config=memory_config,
+            require_grad=require_grad,
             **kwargs
         )
         
@@ -541,6 +547,7 @@ class IntradayTradingAgent(Agent):
     name: str = Field(default="intraday_trading", description="The name of the intraday trading agent.")
     description: str = Field(default="An intraday trading agent with two-stage decision making.", description="The description.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata.")
+    require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
     def __init__(
         self,
@@ -551,6 +558,7 @@ class IntradayTradingAgent(Agent):
         max_steps: int = -1,  # -1 means unlimited
         review_steps: int = 5,
         log_max_length: int = 1000,
+        require_grad: bool = False,
         **kwargs
     ):
         super().__init__(
@@ -561,6 +569,7 @@ class IntradayTradingAgent(Agent):
             max_steps=max_steps,
             review_steps=review_steps,
             log_max_length=log_max_length,
+            require_grad=require_grad,
             **kwargs
         )
         

@@ -10,4 +10,5 @@ online_trading_agent = dict(
     max_steps = -1,
     review_steps = 5,
     log_max_length = 1000,
+    require_grad = False,
 )

@@ -34,6 +34,7 @@ class MobileEnvironment(Environment):
             "state": "The state of the mobile device including device info, screen size, and current screenshot.",
         }
     }, description="The metadata of the Mobile environment.")
+    require_grad: bool = Field(default=False, description="Whether the environment requires gradients")
     
     def __init__(
         self,
@@ -42,6 +43,7 @@ class MobileEnvironment(Environment):
         fps: int = 2,
         bitrate: int = 50000000,
         chunk_duration: int = 60,
+        require_grad: bool = False,
         **kwargs
     ):
         """

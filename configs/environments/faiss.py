@@ -2,5 +2,6 @@
 
 # FAISS Environment Configuration
 environment = dict(
-    base_dir="workdir/faiss"
+    base_dir="workdir/faiss",
+    require_grad=False,
 )
