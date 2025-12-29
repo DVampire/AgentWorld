@@ -30,6 +30,7 @@ class BrowserTool(Tool):
     name: str = "browser"
     description: str = _BROWSER_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     model_name: str = Field(
         default="openrouter/gpt-4.1",
@@ -41,9 +42,9 @@ class BrowserTool(Tool):
         description="The base directory to use for the browser."
     )
     
-    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, require_grad: bool = False, **kwargs):
         
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         
         if model_name is not None:
             self.model_name = model_name

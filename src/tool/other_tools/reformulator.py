@@ -27,17 +27,18 @@ class ReformulatorTool(Tool):
     name: str = "reformulator"
     description: str = _REFORMULATOR_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     model_name: str = Field(default="openrouter/gemini-3-flash-preview", description="The model to use for reformulation.")
     
-    def __init__(self, model_name: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, require_grad: bool = False, **kwargs):
         """
         Initialize the reformulator tool.
         
         Args:
             model_name: The model to use for reformulation. Default: "openrouter/gemini-3-flash-preview"
         """
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         if model_name:
             self.model_name = model_name
     

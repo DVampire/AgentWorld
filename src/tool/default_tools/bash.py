@@ -22,12 +22,13 @@ class BashTool(Tool):
     name: str = "bash"
     description: str = _BASH_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     timeout: int = Field(description="Timeout in seconds for command execution", default=30)
     
-    def __init__(self, **kwargs):
+    def __init__(self, require_grad: bool = False, **kwargs):
         """A tool for executing bash commands asynchronously."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
     
     async def __call__(self, command: str, **kwargs) -> ToolResponse:
         """Execute a bash command asynchronously.

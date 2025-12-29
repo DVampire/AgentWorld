@@ -20,14 +20,15 @@ class LeetCodeTool(Tool):
     name: str = "leetcode"
     description: str = _LEETCODE_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     # LeetCode GraphQL endpoint
     GRAPHQL_URL: ClassVar[str] = "https://leetcode.com/graphql"
     API_URL: ClassVar[str] = "https://leetcode.com/api/problems/all/"
     
-    def __init__(self, **kwargs):
+    def __init__(self, require_grad: bool = False, **kwargs):
         """Initialize the LeetCode tool."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(self, slug: Optional[str] = None, problem_id: Optional[int] = None, **kwargs) -> ToolResponse:
         """

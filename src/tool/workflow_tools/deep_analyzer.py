@@ -103,6 +103,7 @@ class DeepAnalyzerTool(Tool):
     name: str = "deep_analyzer"
     description: str = _DEEP_ANALYZER_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     # Configuration parameters
     max_rounds: int = Field(default=3, description="Maximum analysis rounds in __call__ main loop")
@@ -127,9 +128,9 @@ class DeepAnalyzerTool(Tool):
         description="The model to use for the file analysis."
     )
 
-    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, require_grad: bool = False, **kwargs):
         """Initialize the deep analyzer tool."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         
         if model_name is not None:
             self.model_name = model_name

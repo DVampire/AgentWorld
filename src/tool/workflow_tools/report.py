@@ -448,6 +448,7 @@ class ReportTool(Tool):
     name: str = "report"
     description: str = _REPORT_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     model_name: str = Field(
         default="openrouter/gemini-3-flash-preview",
@@ -464,10 +465,11 @@ class ReportTool(Tool):
         self, 
         base_dir: Optional[str] = None, 
         model_name: Optional[str] = None,
+        require_grad: bool = False,
         **kwargs
     ):
         """Initialize the report tool."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         
         if model_name is not None:
             self.model_name = model_name

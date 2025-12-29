@@ -65,9 +65,9 @@ class PlotterTool(Tool):
         description="The Python interpreter tool to use."
     )
 
-    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, base_dir: Optional[str] = None, require_grad: bool = False, **kwargs):
         """Initialize the plotter tool."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
         if model_name is not None:
             self.model_name = model_name

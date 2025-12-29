@@ -34,6 +34,7 @@ class WebSearcherTool(Tool):
     name: str = "web_searcher"
     description: str = _WEB_SEARCHER_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
 
     max_length: int = Field(default=4096, description="The maximum length of the search results")
     retry_delay: int = Field(default=10, description="The delay between retries")
@@ -48,9 +49,9 @@ class WebSearcherTool(Tool):
     search_tools: Dict[str, Any] = Field(default=None, description="The search tools to use")
     content_fetcher: WebFetcherTool = Field(default=None, description="The content fetcher to use")
 
-    def __init__(self, model_name: Optional[str] = None, **kwargs):
+    def __init__(self, model_name: Optional[str] = None, require_grad: bool = False, **kwargs):
         """Search the web for information using various search engines."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         if model_name is not None:
             self.model_name = model_name
         # Initialize search engines and content fetcher

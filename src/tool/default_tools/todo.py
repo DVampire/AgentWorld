@@ -65,14 +65,15 @@ class TodoTool(Tool):
     name: str = "todo"
     description: str = _TODO_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     todo_file: Optional[str] = None
     steps_file: Optional[str] = None
     steps: Optional[List[Step]] = None
     
-    def __init__(self, **kwargs):
+    def __init__(self, require_grad: bool = False, **kwargs):
         """A tool for managing a todo.md file with task decomposition and step tracking."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         # Use temporary file for todo.md
         temp_dir = assemble_project_path(tempfile.mkdtemp())
         self.todo_file = assemble_project_path(os.path.join(temp_dir, "todo.md"))

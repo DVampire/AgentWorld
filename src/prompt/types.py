@@ -2,7 +2,7 @@
 
 Core type definitions for the Prompt Context Protocol.
 """
-from typing import Any, Dict, Optional, Type, Literal
+from typing import Any, Dict, Optional, Type, Literal, List
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
@@ -62,6 +62,16 @@ class Prompt(BaseModel):
         if self.prompt_variable is None or reload:
             await self._load_prompt_variable()
         return self.prompt_variable
+    
+    async def get_trainable_variable(self) -> List[Variable]:
+        """Get all trainable variables from the prompt.
+        
+        Returns:
+            List[Variable]: List of all trainable variables from the prompt
+        """
+        if self.prompt_variable is None:
+            await self._load_prompt_variable()
+        return self.prompt_variable.get_trainable_variables()
     
     async def get_message(
         self,

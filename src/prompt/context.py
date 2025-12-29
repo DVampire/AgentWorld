@@ -968,13 +968,13 @@ class PromptContextManager(BaseModel):
         return [system_message, agent_message]
     
     async def get_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
-        """Get all variables from system and agent prompts.
+        """Get top-level variables from system and agent prompts.
         
         Args:
             prompt_name (str): Name of the prompt (e.g., "tool_calling").
             
         Returns:
-            List[Variable]: List of all variables from both prompts
+            List[Variable]: List of top-level variables (system prompt and agent message prompt)
         """
         system_prompt_name = f"{prompt_name}_system_prompt"
         agent_prompt_name = f"{prompt_name}_agent_message_prompt"
@@ -983,9 +983,39 @@ class PromptContextManager(BaseModel):
         variables: List[Variable] = []
         
         if system_prompt_instance is not None:
-            variables.extend(await system_prompt_instance.get_variable())
+            variables.append(await system_prompt_instance.get_variable())
         if agent_prompt_instance is not None:
-            variables.extend(await agent_prompt_instance.get_variable())
+            variables.append(await agent_prompt_instance.get_variable())
+        
+        return variables
+    
+    async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+        """Get top-level variables from system and agent prompts with filtered trainable sub-variables.
+        
+        Args:
+            prompt_name (str): Name of the prompt (e.g., "tool_calling").
+            
+        Returns:
+            List[Variable]: List of top-level variables (system prompt and agent message prompt)
+                          with sub-variables filtered to only include require_grad=True
+        """
+        system_prompt_name = f"{prompt_name}_system_prompt"
+        agent_prompt_name = f"{prompt_name}_agent_message_prompt"
+        system_prompt_instance = await self.get(system_prompt_name)
+        agent_prompt_instance = await self.get(agent_prompt_name)
+        variables: List[Variable] = []
+        
+        if system_prompt_instance is not None:
+            system_var = await system_prompt_instance.get_variable()
+            # Filter to only include trainable sub-variables
+            filtered_system_var = system_var.filter_trainable_sub_variables()
+            variables.append(filtered_system_var)
+        
+        if agent_prompt_instance is not None:
+            agent_var = await agent_prompt_instance.get_variable()
+            # Filter to only include trainable sub-variables
+            filtered_agent_var = agent_var.filter_trainable_sub_variables()
+            variables.append(filtered_agent_var)
         
         return variables
     

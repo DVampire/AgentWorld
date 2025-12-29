@@ -49,6 +49,7 @@ class RetrieverTool(Tool):
     name: str = "retriever"
     description: str = _RETRIEVER_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
 
     # Configuration parameters
     model_name: str = Field(
@@ -83,6 +84,7 @@ class RetrieverTool(Tool):
         top_k: int = 20,
         query_mode: str = "naive",
         extract_metadata: bool = True,
+        require_grad: bool = False,
         **kwargs
     ):
         """Initialize the retriever tool.
@@ -93,8 +95,9 @@ class RetrieverTool(Tool):
             top_k: Number of top results to retrieve.
             query_mode: Query mode for retrieval.
             extract_metadata: Whether to extract structured ESG metadata.
+            require_grad: Whether the tool requires gradients.
         """
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
         if model_name is not None:
             self.model_name = model_name

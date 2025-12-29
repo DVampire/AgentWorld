@@ -12,6 +12,7 @@ from src.config import config
 from src.tool.context import ToolContextManager
 from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.utils import assemble_project_path
+from src.optimizer.types import Variable
 
 class TCPServer(BaseModel):
     """TCP Server for managing tool registration and execution with lazy loading."""
@@ -192,6 +193,28 @@ class TCPServer(BaseModel):
         if tool_config:
             self._registered_configs[tool_config.name] = tool_config
         return tool_config
+    
+    async def get_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+        """Get variables from tools, where each tool's code is used as the variable value.
+        
+        Args:
+            tool_name (Optional[str]): Name of a specific tool. If None, returns variables for all tools.
+            
+        Returns:
+            List[Variable]: List of Variable objects, one for each tool.
+        """
+        return await self.tool_context_manager.get_variables(tool_name=tool_name)
+    
+    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+        """Get trainable variables from tools, filtering out tools with require_grad=False.
+        
+        Args:
+            tool_name (Optional[str]): Name of a specific tool. If None, returns trainable variables for all tools.
+            
+        Returns:
+            List[Variable]: List of Variable objects for tools with require_grad=True.
+        """
+        return await self.tool_context_manager.get_trainable_variables(tool_name=tool_name)
     
     async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
         """Call a tool by name

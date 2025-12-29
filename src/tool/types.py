@@ -31,6 +31,7 @@ class Tool(BaseModel):
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     async def __call__(self, **kwargs) -> ToolResponse:
         """Call the tool with the given arguments."""
@@ -43,6 +44,7 @@ class ToolConfig(BaseModel):
     name: str = Field(description="The name of the tool")
     description: str = Field(description="The description of the tool")
     metadata: Optional[Dict[str, Any]] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     version: str = Field(default="1.0.0", description="Version of the tool")
     
     cls: Optional[Type[Tool]] = Field(default=None, description="The class of the tool")
@@ -62,6 +64,7 @@ class ToolConfig(BaseModel):
             "name": self.name,
             "description": self.description,
             "metadata": self.metadata,
+            "require_grad": self.require_grad,
             "version": self.version,
             
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
@@ -82,6 +85,7 @@ class ToolConfig(BaseModel):
         name = data.get("name")
         description = data.get("description")
         metadata = data.get("metadata")
+        require_grad = data.get("require_grad", False)  # Default to False if not provided
         version = data.get("version")
         
         cls_ = None
@@ -113,6 +117,7 @@ class ToolConfig(BaseModel):
         return cls(name=name, 
             description=description,
             metadata=metadata,
+            require_grad=require_grad,
             version=version,
             cls=cls_, 
             config=config, 

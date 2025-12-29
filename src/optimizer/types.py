@@ -130,7 +130,7 @@ class Variable(BaseModel):
         return self.render(modules)
     
     def __repr__(self):
-        return f"Variable(name={self.name}, value={self.get_value()[:50]}..., role={self.description}, grads={len(self.gradients)})"
+        return f"Variable(name={self.name}, value={self.get_value()}, role={self.description}, grads={len(self.gradients)})"
     
     def __str__(self):
         return self.get_value()
@@ -353,9 +353,96 @@ class Variable(BaseModel):
         
         return all_vars
     
+    def filter_trainable_sub_variables(self) -> 'Variable':
+        """Create a copy of this variable with only trainable sub-variables.
+        
+        Returns:
+            Variable: A new Variable instance with filtered sub-variables (only require_grad=True)
+        """
+        # If no sub-variables (None, empty list, or non-Variable value), return self as-is
+        if not isinstance(self.variables, (list, Variable)):
+            return self
+        
+        # Filter sub-variables to only include those with require_grad=True or their trainable descendants
+        filtered_sub_vars = []
+        if isinstance(self.variables, list):
+            for child in self.variables:
+                if isinstance(child, Variable):
+                    # Check if child has any trainable variables (itself or descendants)
+                    trainable_in_child = child.get_trainable_variables()
+                    if trainable_in_child:
+                        # Recursively filter child's sub-variables
+                        filtered_child = child.filter_trainable_sub_variables()
+                        filtered_sub_vars.append(filtered_child)
+        elif isinstance(self.variables, Variable):
+            # Check if child has any trainable variables (itself or descendants)
+            trainable_in_child = self.variables.get_trainable_variables()
+            if trainable_in_child:
+                filtered_sub_vars = self.variables.filter_trainable_sub_variables()
+            else:
+                # No trainable sub-variables, return self with empty variables
+                return Variable(
+                    name=self.name,
+                    type=self.type,
+                    description=self.description,
+                    require_grad=self.require_grad,
+                    template=self.template,
+                    variables=None,
+                    gradients=self.gradients.copy(),
+                    gradients_context=self.gradients_context.copy(),
+                    grad_fn=self.grad_fn,
+                    predecessors=self.predecessors.copy(),
+                    reduce_meta=self.reduce_meta.copy()
+                )
+        
+        # Create a copy of this variable with filtered sub-variables
+        return Variable(
+            name=self.name,
+            type=self.type,
+            description=self.description,
+            require_grad=self.require_grad,
+            template=self.template,
+            variables=filtered_sub_vars if filtered_sub_vars else None,
+            gradients=self.gradients.copy(),
+            gradients_context=self.gradients_context.copy(),
+            grad_fn=self.grad_fn,
+            predecessors=self.predecessors.copy(),
+            reduce_meta=self.reduce_meta.copy()
+        )
+    
     def get_trainable_variables(self) -> List['Variable']:
-        """Get all variables that require gradients"""
-        return [v for v in self.get_all_variables() if v.require_grad]
+        """Get trainable variables.
+        
+        Logic:
+        - If the variable has sub-variables (list or Variable), recursively get trainable 
+          variables from sub-variables only (filter by require_grad).
+        - If the variable has no sub-variables (None, empty list, or non-Variable value), 
+          return the variable itself if it requires gradients.
+        
+        Returns:
+            List[Variable]: List of all trainable variables (sub-variables with require_grad=True, 
+                          or the variable itself if it has no sub-variables and require_grad=True)
+        """
+        trainable_vars: List['Variable'] = []
+        
+        # Check if there are sub-variables (Variable objects, not strings or other types)
+        has_sub_variables = False
+        if isinstance(self.variables, list) and len(self.variables) > 0:
+            has_sub_variables = True
+            # Recursively get trainable variables from sub-variables
+            for child in self.variables:
+                if isinstance(child, Variable):
+                    trainable_vars.extend(child.get_trainable_variables())
+        elif isinstance(self.variables, Variable):
+            has_sub_variables = True
+            # Recursively get trainable variables from sub-variable
+            trainable_vars.extend(self.variables.get_trainable_variables())
+        
+        # If no sub-variables, check if the variable itself requires gradients
+        if not has_sub_variables and self.require_grad:
+            trainable_vars.append(self)
+        
+        return trainable_vars
 
 class Optimizer(BaseModel):
     """Base optimizer that provides shared functionality such as variable extraction and cache management."""

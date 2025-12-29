@@ -19,6 +19,7 @@ from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
+from src.optimizer.types import Variable
 
 class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
@@ -167,6 +168,7 @@ class ToolContextManager(BaseModel):
                 # Get tool config from global config
                 tool_config_key = inflection.underscore(tool_cls.__name__)
                 tool_config_dict = config.get(tool_config_key, {})
+                tool_require_grad = tool_config_dict.get("require_grad", False)
                 
                 # Get tool properties from tool class
                 tool_name = tool_cls.model_fields['name'].default
@@ -196,6 +198,7 @@ class ToolContextManager(BaseModel):
                     text=tool_text,
                     args_schema=tool_args_schema,
                     metadata=tool_metadata,
+                    require_grad=tool_require_grad,
                     code=tool_code,
                 )
                 
@@ -252,6 +255,7 @@ class ToolContextManager(BaseModel):
                             "name": str,
                             "description": str,
                             "metadata": dict,
+                            "require_grad": bool,
                             "version": str,
                             "cls": Type[Tool],
                             "config": dict,
@@ -437,6 +441,8 @@ class ToolContextManager(BaseModel):
             tool_name = tool_instance.name
             tool_description = tool_instance.description
             tool_metadata = tool_instance.metadata
+            # Get require_grad from tool_config_dict if provided, otherwise from tool_instance
+            tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict else tool_instance.require_grad
             
             # Get or generate version from version_manager
             if version is None:
@@ -460,6 +466,7 @@ class ToolContextManager(BaseModel):
                 name=tool_name,
                 description=tool_description,
                 metadata=tool_metadata,
+                require_grad=tool_require_grad,
                 version=tool_version,
                 cls=tool_cls,
                 config=tool_config_dict or {},
@@ -569,6 +576,8 @@ class ToolContextManager(BaseModel):
             
             tool_description = tool_instance.description
             tool_metadata = tool_instance.metadata
+            # Get require_grad from tool_config_dict if provided, otherwise from tool_instance
+            tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict else tool_instance.require_grad
             
             # Determine new version from version_manager
             if new_version is None:
@@ -591,6 +600,7 @@ class ToolContextManager(BaseModel):
                 name=tool_name,  # Keep same name
                 description=tool_description,
                 metadata=tool_metadata,
+                require_grad=tool_require_grad,
                 version=new_version,
                 cls=tool_cls,
                 config=tool_config_dict or {},
@@ -679,6 +689,7 @@ class ToolContextManager(BaseModel):
             
             tool_description = tool_instance.description
             tool_metadata = tool_instance.metadata
+            tool_require_grad = tool_config_dict.get("require_grad", tool_instance.require_grad) if tool_config_dict else tool_instance.require_grad
             
             # Determine new version from version_manager
             if new_version is None:
@@ -705,6 +716,7 @@ class ToolContextManager(BaseModel):
                 name=new_name,
                 description=tool_description,
                 metadata=tool_metadata,
+                require_grad=tool_require_grad,
                 version=new_version,
                 cls=original_config.cls,
                 config=tool_config_dict,
@@ -1025,6 +1037,78 @@ class ToolContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Error during tool context manager cleanup: {e}")
             
+    async def get_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+        """Get variables from tools, where each tool's code is used as the variable value.
+        
+        Args:
+            tool_name (Optional[str]): Name of a specific tool. If None, returns variables for all tools.
+            
+        Returns:
+            List[Variable]: List of Variable objects, one for each tool. Each Variable has:
+                - name: tool name
+                - type: "tool_code"
+                - description: tool description
+                - require_grad: tool's require_grad value
+                - variables: tool's code (as string value)
+        """
+        variables: List[Variable] = []
+        
+        if tool_name is not None:
+            # Get specific tool
+            tool_config = await self.get_info(tool_name)
+            if tool_config is None:
+                logger.warning(f"| ⚠️ Tool {tool_name} not found")
+                return variables
+            
+            tool_configs = {tool_name: tool_config}
+        else:
+            # Get all tools
+            tool_configs = self._tool_configs
+        
+        for name, tool_config in tool_configs.items():
+            # Get tool code
+            tool_code = tool_config.code or ""
+            
+            # Create Variable for this tool
+            variable = Variable(
+                name=name,
+                type="tool_code",
+                description=tool_config.description or f"Code for tool {name}",
+                require_grad=tool_config.require_grad,
+                template=None,
+                variables=tool_code  # Store code as the variable value
+            )
+            variables.append(variable)
+        
+        return variables
+    
+    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+        """Get trainable variables from tools, filtering out tools with require_grad=False.
+        
+        Only returns variables for tools where require_grad=True.
+        
+        Args:
+            tool_name (Optional[str]): Name of a specific tool. If None, returns trainable variables for all tools.
+            
+        Returns:
+            List[Variable]: List of Variable objects for tools with require_grad=True. Each Variable has:
+                - name: tool name
+                - type: "tool_code"
+                - description: tool description
+                - require_grad: True
+                - variables: tool's code (as string value)
+        """
+        # Get all variables first
+        all_variables = await self.get_variables(tool_name=tool_name)
+        
+        # Filter to only include variables with require_grad=True
+        trainable_variables = [
+            variable for variable in all_variables 
+            if variable.require_grad is True
+        ]
+        
+        return trainable_variables
+    
     async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
         """Call a tool by name
         

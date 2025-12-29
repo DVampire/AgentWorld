@@ -50,10 +50,11 @@ class FileEditorTool(Tool):
     name: str = "edit"
     description: str = _FILE_EDITOR_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
-    def __init__(self, **kwargs):
+    def __init__(self, require_grad: bool = False, **kwargs):
         """Initialize the file editor tool."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(
         self, 

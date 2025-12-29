@@ -47,6 +47,7 @@ class DeepResearcherTool(Tool):
     name: str = "deep_researcher"
     description: str = _DEEP_RESEARCHER_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     # Configuration parameters
     max_rounds: int = Field(default=3, description="Maximum search rounds")
@@ -81,9 +82,10 @@ class DeepResearcherTool(Tool):
                  model_name: Optional[str] = None, 
                  use_llm_search: Optional[bool] = None, 
                  search_llm_models: Optional[List[str]] = None,
+                 require_grad: bool = False,
                  **kwargs):
         """Initialize the deep researcher tool."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
         
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)

@@ -23,14 +23,15 @@ class PythonInterpreterTool(Tool):
     name: str = "python_interpreter"
     description: str = _PYTHON_INTERPRETER_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
 
     authorized_imports: Optional[List[str]] = Field(default=None, description="The authorized imports for the tool")
     base_python_tools: Optional[Dict[str, Any]] = Field(default=None, description="The base python tools for the tool")
     python_evaluator: Optional["LocalPythonExecutor"] = Field(default=None, description="The python evaluator for the tool")
     
-    def __init__(self, **kwargs):
+    def __init__(self, require_grad: bool = False, **kwargs):
         """A tool that can execute Python code."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
         if self.authorized_imports is None:
             self.authorized_imports = list(BASE_BUILTIN_MODULES)

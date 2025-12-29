@@ -17,10 +17,11 @@ class DoneTool(Tool):
     name: str = "done"
     description: str = _DONE_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
-    def __init__(self, **kwargs):
+    def __init__(self, require_grad: bool = False, **kwargs):
         """A tool for indicating that the task has been completed."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(self, 
                        result: str,

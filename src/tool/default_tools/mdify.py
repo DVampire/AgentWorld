@@ -34,14 +34,15 @@ class MdifyTool(Tool):
     name: str = "mdify"
     description: str = _MDIFY_TOOL_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
     timeout: int = Field(description="Timeout in seconds for file conversion", default=60)
     converter: Optional[MarkitdownConverter] = None
     base_dir: Optional[str] = Field(default=None, description="The base directory to use for the mdify tool.")
     
-    def __init__(self, base_dir: Optional[str] = None, **kwargs):
+    def __init__(self, base_dir: Optional[str] = None, require_grad: bool = False, **kwargs):
         """A tool for converting various file formats to markdown text asynchronously."""
-        super().__init__(**kwargs)
+        super().__init__(require_grad=require_grad, **kwargs)
 
         if base_dir is not None:
             self.base_dir = base_dir

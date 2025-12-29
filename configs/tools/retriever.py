@@ -4,4 +4,5 @@ retriever_tool = dict(
     top_k = 20,
     query_mode = "naive",
     extract_metadata = True,
+    require_grad = False
 )

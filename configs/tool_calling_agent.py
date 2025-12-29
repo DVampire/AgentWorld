@@ -58,6 +58,7 @@ deep_researcher_tool.update(
 deep_analyzer_tool.update(
     model_name="openrouter/o3",
     base_dir=f"{workdir}/tool/deep_analyzer",
+    require_grad=True,
 )
 
 #-----------------PLOTTER TOOL CONFIG-----------------
