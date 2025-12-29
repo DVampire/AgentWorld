@@ -10,9 +10,6 @@ from jinja2 import Environment, Template, meta
 from collections import defaultdict
 from functools import partial
 
-from src.logger import logger
-
-
 class Variable(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
@@ -21,7 +18,7 @@ class Variable(BaseModel):
     description: str = Field(description="The description of the variable.")
     require_grad: bool = Field(default=False, description="Whether the variable requires gradient.")
     template: Optional[str] = Field(default=None, description="The template of the variable.")
-    variables: Optional[Union[List['Variable'], Any]] = Field(default=None, description="The elements of the variable.")
+    variables: Optional[Union[Dict[str, 'Variable'], 'Variable', Any]] = Field(default=None, description="The elements of the variable. Can be a dict (keyed by name), single Variable, or direct value.")
     
     # gradient related attributes
     gradients: Set['Variable'] = Field(default_factory=set, description="Text gradients for this variable.")
@@ -38,11 +35,18 @@ class Variable(BaseModel):
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Variable':
-        """Recursively construct Variable tree from nested dict."""
+        """Recursively construct Variable tree from nested dict.
+        
+        Supports dict format for variables:
+        - Dict format: {"var1": {"name": "var1", ...}, "var2": {"name": "var2", ...}}
+        """
         subvars = data.get("variables")
-        if isinstance(subvars, list):
-            subvars = [cls.from_dict(v) for v in subvars]
-        elif subvars is not None and not isinstance(subvars, list):
+        if isinstance(subvars, dict):
+            # Dict format: recursively process each variable
+            subvars = {k: cls.from_dict(v) if isinstance(v, dict) and "name" in v else v 
+                      for k, v in subvars.items()}
+        elif subvars is not None and not isinstance(subvars, dict):
+            # Direct value (string, etc.) - keep as is
             pass
         return cls(
             name=data["name"],
@@ -85,11 +89,13 @@ class Variable(BaseModel):
         ctx = dict(context or {})
 
         # First, process child variables to build context
-        if isinstance(self.variables, list):
-            for child in self.variables:
-                child_modules = child.get_modules(ctx)
-                result.update(child_modules)
-                ctx.update(child_modules)
+        if isinstance(self.variables, dict):
+            # Dict format: iterate over values
+            for child in self.variables.values():
+                if isinstance(child, Variable):
+                    child_modules = child.get_modules(ctx)
+                    result.update(child_modules)
+                    ctx.update(child_modules)
         elif isinstance(self.variables, Variable):
             child_modules = self.variables.get_modules(ctx)
             result.update(child_modules)
@@ -116,8 +122,9 @@ class Variable(BaseModel):
         """Get the complete value of the variable - through rendering template and sub-variables"""
         if self.template is None:
             # If no template, directly return sub-variable values
-            if isinstance(self.variables, list):
-                return " ".join([child.get_value() for child in self.variables])
+            if isinstance(self.variables, dict):
+                # Dict format: iterate over values
+                return " ".join([child.get_value() for child in self.variables.values() if isinstance(child, Variable)])
             elif isinstance(self.variables, Variable):
                 return self.variables.get_value()
             elif self.variables is not None:
@@ -173,8 +180,9 @@ class Variable(BaseModel):
         self.reduce_meta = []
         
         # Recursively reset gradients of sub-variables
-        if isinstance(self.variables, list):
-            for child in self.variables:
+        if isinstance(self.variables, dict):
+            # Dict format: iterate over values
+            for child in self.variables.values():
                 if isinstance(child, Variable):
                     child.reset_gradients()
         elif isinstance(self.variables, Variable):
@@ -183,16 +191,7 @@ class Variable(BaseModel):
     def get_gradient_text(self) -> str:
         """Get aggregated gradient text"""
         return "\n".join([g.get_value() for g in self.gradients])
-    
-    def get_short_value(self, n_words_offset: int = 10) -> str:
-        """Get short representation of the variable"""
-        value = self.get_value()
-        words = value.split(" ")
-        if len(words) <= 2 * n_words_offset:
-            return value
-        short_value = " ".join(words[:n_words_offset]) + " (...) " + " ".join(words[-n_words_offset:])
-        return short_value
-    
+
     def backward(self, engine: Any = None):
         """Backward propagation, compute text gradients - supports nested structure"""
         # Topological sort all predecessor nodes
@@ -344,8 +343,9 @@ class Variable(BaseModel):
         """Get all nested variables - for batch operations"""
         all_vars = [self]
         
-        if isinstance(self.variables, list):
-            for child in self.variables:
+        if isinstance(self.variables, dict):
+            # Dict format: iterate over values
+            for child in self.variables.values():
                 if isinstance(child, Variable):
                     all_vars.extend(child.get_all_variables())
         elif isinstance(self.variables, Variable):
@@ -359,21 +359,22 @@ class Variable(BaseModel):
         Returns:
             Variable: A new Variable instance with filtered sub-variables (only require_grad=True)
         """
-        # If no sub-variables (None, empty list, or non-Variable value), return self as-is
-        if not isinstance(self.variables, (list, Variable)):
+        # If no sub-variables (None, empty dict, or non-Variable value), return self as-is
+        if not isinstance(self.variables, (dict, Variable)):
             return self
         
         # Filter sub-variables to only include those with require_grad=True or their trainable descendants
-        filtered_sub_vars = []
-        if isinstance(self.variables, list):
-            for child in self.variables:
+        filtered_sub_vars = {}
+        if isinstance(self.variables, dict):
+            # Dict format: iterate over key-value pairs
+            for key, child in self.variables.items():
                 if isinstance(child, Variable):
                     # Check if child has any trainable variables (itself or descendants)
                     trainable_in_child = child.get_trainable_variables()
                     if trainable_in_child:
                         # Recursively filter child's sub-variables
                         filtered_child = child.filter_trainable_sub_variables()
-                        filtered_sub_vars.append(filtered_child)
+                        filtered_sub_vars[key] = filtered_child
         elif isinstance(self.variables, Variable):
             # Check if child has any trainable variables (itself or descendants)
             trainable_in_child = self.variables.get_trainable_variables()
@@ -427,10 +428,11 @@ class Variable(BaseModel):
         
         # Check if there are sub-variables (Variable objects, not strings or other types)
         has_sub_variables = False
-        if isinstance(self.variables, list) and len(self.variables) > 0:
+        if isinstance(self.variables, dict) and len(self.variables) > 0:
+            # Dict format: iterate over values
             has_sub_variables = True
             # Recursively get trainable variables from sub-variables
-            for child in self.variables:
+            for child in self.variables.values():
                 if isinstance(child, Variable):
                     trainable_vars.extend(child.get_trainable_variables())
         elif isinstance(self.variables, Variable):
@@ -449,19 +451,15 @@ class Optimizer(BaseModel):
     
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    agent: Any = Field(description="The agent instance to optimize.")
-    
     def __init__(self,
-                 agent, 
                  workdir: str,
                  model_name: Optional[str] = None,
                  prompt_name: Optional[str] = None,
-                 prompt_modules: Optional[Dict[str, Any]] = None,
                  memory_name: Optional[str] = None,
                  max_steps: int = 3,
                  **kwargs
                  ):
-        super().__init__(agent=agent, **kwargs)
+        super().__init__(**kwargs)
         
         # Set working directory
         self.workdir = workdir
@@ -471,190 +469,26 @@ class Optimizer(BaseModel):
         self.memory_name = memory_name
         self.model_name = model_name
 
-        # Setup prompt modules
-        self.prompt_modules = prompt_modules or {}
+        # Setup max steps
         self.max_steps = max_steps if max_steps > 0 else int(1e8)
-        self.prompt_modules["workdir"] = self.workdir
         
         # Setup optimizable variables
         self.optimizable_vars = []
         self.var_mapping = {}
         self.prompt_mapping = None
         
+    async def get_trainable_variables(self):
+        """Get trainable variables from the optimizer."""
+        raise NotImplementedError(f"``get_trainable_variables`` function for {type(self).__name__} is not implemented!")
     
-    def find_prompt_objects_with_variables(self) -> List[Tuple[Any, str]]:
-        """
-        Find all prompt objects on the agent that contain `Variable` instances.
-
-        The method traverses the prompt manager to discover prompt objects.
-
-        Returns:
-            List[Tuple[prompt_obj, prompt_name]]: A list of (prompt object, prompt name) pairs.
-        """
-        prompt_objects = []
-        
-        # Search through the prompt manager for prompt objects.
-        if hasattr(self.agent, 'prompt_manager'):
-            pm = self.agent.prompt_manager
-            
-            # SystemPrompt.
-            if hasattr(pm, 'system_prompt') and hasattr(pm.system_prompt, 'prompt'):
-                prompt_objects.append((pm.system_prompt, 'prompt_manager.system_prompt'))
-            
-            # AgentMessagePrompt.
-            if hasattr(pm, 'agent_message_prompt') and hasattr(pm.agent_message_prompt, 'prompt'):
-                prompt_objects.append((pm.agent_message_prompt, 'prompt_manager.agent_message_prompt'))
-        
-        return prompt_objects
-    
-    def _extract_from_variable_recursive(self, var, parent_name: str = ""):
-        """
-        Recursively extract variables with `require_grad=True`.
-
-        Args:
-            var: Variable instance.
-            parent_name: Parent variable name used during recursion.
-
-        Returns:
-            List[orig_var]: List of optimizable variables.
-        """
-        result = []
-        
-        # Check whether the current variable should be optimized.
-        if hasattr(var, 'require_grad') and var.require_grad:
-            result.append(var)
-        
-        # Recursively process child variables.
-        if hasattr(var, 'variables'):
-            if isinstance(var.variables, list):
-                for child in var.variables:
-                    if hasattr(child, 'require_grad'):
-                        result.extend(self._extract_from_variable_recursive(
-                            child, f"{parent_name}.{var.name}" if parent_name else var.name
-                        ))
-            elif hasattr(var.variables, 'require_grad'):
-                result.extend(self._extract_from_variable_recursive(
-                    var.variables, f"{parent_name}.{var.name}" if parent_name else var.name
-                ))
-        
-        return result
-    
-    def extract_optimizable_variables(self) -> Tuple[List[Any], Dict[Any, Any]]:
-        """
-        Extract optimizable variables (`require_grad=True`) from all prompt objects on the agent.
-
-        This is a generic extraction method; subclasses may override it to return a custom structure.
-
-        Returns:
-            Tuple[List[orig_var], Dict[orig_var -> prompt_obj]]:
-                (List of optimizable variables, mapping from variable to owning prompt object.)
-        """
-        all_optimizable_vars = []
-        prompt_mapping = {}  # orig_var -> prompt_obj
-        
-        prompt_objects = self.find_prompt_objects_with_variables()
-        
-        for prompt_obj, prompt_name in prompt_objects:
-            if hasattr(prompt_obj, 'prompt'):
-                prompt_var = prompt_obj.prompt
-                optimizable_vars = self._extract_from_variable_recursive(prompt_var)
-                all_optimizable_vars.extend(optimizable_vars)
-                
-                # Record which prompt object owns each variable.
-                for orig_var in optimizable_vars:
-                    prompt_mapping[orig_var] = prompt_obj
-        
-        logger.info(f"| 📊 Found {len(all_optimizable_vars)} optimizable variables from {len(prompt_objects)} prompt object(s):")
-        for orig_var in all_optimizable_vars:
-            prompt_obj = prompt_mapping.get(orig_var)
-            prompt_name = getattr(prompt_obj, '__class__', type(prompt_obj)).__name__ if prompt_obj else 'unknown'
-            var_name = orig_var.name if hasattr(orig_var, 'name') else 'unknown'
-            var_desc = orig_var.description if hasattr(orig_var, 'description') else f"Prompt module: {var_name}"
-            logger.info(f"|   - [{prompt_name}] {var_name}: {var_desc}")
-        
-        return all_optimizable_vars, prompt_mapping
-    
-    def clear_prompt_caches(self, vars_to_clear: Optional[List[Any]] = None):
-        """
-        Clear the cached prompts for any prompt objects that contain the given variables.
-
-        Args:
-            vars_to_clear: List of variables whose prompt caches should be cleared.
-                If None, all recorded variables are considered.
-
-        Reloading details:
-        - After clearing the cache, when the agent calls `prompt_obj.get_message()` (typically inside `_get_messages()`),
-          if `reload=False` and `message` is `None`, the prompt automatically re-renders (`prompt.render()`).
-          At that moment the updated variable values are applied.
-        - Relevant locations:
-          * `ToolCallingAgent._get_messages()` -> `prompt_manager.get_system_message()`
-          * `SystemPrompt.get_message()` -> if `message` is `None`, `prompt.render(modules)` runs
-        """
-        if vars_to_clear is None:
-            vars_to_clear = self.optimizable_vars
-        
-        # Collect all prompt objects whose caches should be cleared (deduplicated).
-        prompt_objects_to_clear = set()
-        
-        # Look up prompt objects using `var_mapping` (used by Reflection-based optimizers).
-        for orig_var in vars_to_clear:
-            if orig_var in self.var_mapping:
-                prompt_obj = self.var_mapping[orig_var]
-                prompt_objects_to_clear.add(prompt_obj)
-        
-        # Look up prompt objects using `prompt_mapping` (used by TextGrad-based optimizers).
-        # Subclasses can override this method for specialized handling.
-        
-        # Clear the cache on each prompt object.
-        for prompt_obj in prompt_objects_to_clear:
-            # Both `SystemPrompt` and `AgentMessagePrompt` expose a `message` attribute.
-            if hasattr(prompt_obj, 'message'):
-                prompt_obj.message = None
-                prompt_name = getattr(prompt_obj, '__class__', type(prompt_obj)).__name__
-                logger.debug(f"| 🗑️ Cleared cache for {prompt_name}")
-        
-        if prompt_objects_to_clear:
-            logger.info(f"| 🗑️ Cleared cache for {len(prompt_objects_to_clear)} prompt object(s)")
-    
-    def get_variable_value(self, var: Any) -> str:
-        """
-        Return the current value of the variable as a string.
-
-        Args:
-            var: Variable instance.
-
-        Returns:
-            str: Variable value.
-        """
-        if hasattr(var, 'get_value'):
-            return var.get_value()
-        elif hasattr(var, 'variables'):
-            return str(var.variables)
-        elif hasattr(var, 'value'):
-            return str(var.value)
-        else:
-            return str(var)
-    
-    def set_variable_value(self, var: Any, value: str):
-        """
-        Assign a new value to the variable.
-
-        Args:
-            var: Variable instance.
-            value: New value.
-        """
-        if hasattr(var, 'variables'):
-            var.variables = value
-        elif hasattr(var, 'value'):
-            var.value = value
-        else:
-            raise ValueError(f"Cannot set value for variable {type(var)}")
+    async def set_trainable_variables(self, variables: List['Variable']):
+        """Set trainable variables to the optimizer."""
+        raise NotImplementedError(f"``set_trainable_variables`` function for {type(self).__name__} is not implemented!")
     
     async def optimize(
         self,
         task: str,
         files: Optional[List[str]] = None,
-        optimization_steps: int = 3,
         **kwargs
     ):
         """
@@ -663,8 +497,6 @@ class Optimizer(BaseModel):
         Args:
             task: Task description.
             files: Optional list of attachment paths.
-            optimization_steps: Number of optimization iterations.
-            **kwargs: Additional optimizer-specific parameters.
         """
         raise NotImplementedError(f"``optimize`` function for {type(self).__name__} is not implemented!")
     

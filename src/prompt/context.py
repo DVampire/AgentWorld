@@ -5,8 +5,11 @@ import os
 import json
 import inspect
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Union, Type, Tuple
+from typing import Any, Dict, Optional, List, Union, Type, Tuple, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -16,7 +19,6 @@ from src.utils.file_utils import file_lock
 from src.prompt.types import PromptConfig, Prompt
 from src.registry import PROMPT
 from src.message.types import Message
-from src.optimizer.types import Variable
 from src.dynamic import dynamic_manager
 
 class PromptContextManager(BaseModel):
@@ -967,57 +969,209 @@ class PromptContextManager(BaseModel):
                                                      **kwargs)
         return [system_message, agent_message]
     
-    async def get_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+    async def get_variables(self, prompt_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get top-level variables from system and agent prompts.
         
         Args:
             prompt_name (str): Name of the prompt (e.g., "tool_calling").
             
         Returns:
-            List[Variable]: List of top-level variables (system prompt and agent message prompt)
+            Dict[str, Variable]: Dictionary mapping variable names to Variable objects.
+                                Keys are variable names (e.g., "system_prompt", "agent_message_prompt")
         """
         system_prompt_name = f"{prompt_name}_system_prompt"
         agent_prompt_name = f"{prompt_name}_agent_message_prompt"
         system_prompt_instance = await self.get(system_prompt_name)
         agent_prompt_instance = await self.get(agent_prompt_name)
-        variables: List[Variable] = []
+        variables = {}
         
         if system_prompt_instance is not None:
-            variables.append(await system_prompt_instance.get_variable())
+            system_var = await system_prompt_instance.get_variable()
+            variables[system_prompt_name] = system_var
+        
         if agent_prompt_instance is not None:
-            variables.append(await agent_prompt_instance.get_variable())
+            agent_var = await agent_prompt_instance.get_variable()
+            variables[agent_prompt_name] = agent_var
         
         return variables
     
-    async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+    async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get top-level variables from system and agent prompts with filtered trainable sub-variables.
         
         Args:
             prompt_name (str): Name of the prompt (e.g., "tool_calling").
             
         Returns:
-            List[Variable]: List of top-level variables (system prompt and agent message prompt)
-                          with sub-variables filtered to only include require_grad=True
+            Dict[str, Variable]: Dictionary mapping variable names to Variable objects.
+                                Keys are variable names (e.g., "system_prompt", "agent_message_prompt").
+                                Only includes top-level variables where require_grad=True.
+                                For agent_message_prompt, only includes if it has trainable sub-variables.
+                                Sub-variables are filtered to only include require_grad=True.
         """
         system_prompt_name = f"{prompt_name}_system_prompt"
         agent_prompt_name = f"{prompt_name}_agent_message_prompt"
         system_prompt_instance = await self.get(system_prompt_name)
         agent_prompt_instance = await self.get(agent_prompt_name)
-        variables: List[Variable] = []
+        variables: Dict[str, 'Variable'] = {}
         
         if system_prompt_instance is not None:
             system_var = await system_prompt_instance.get_variable()
-            # Filter to only include trainable sub-variables
-            filtered_system_var = system_var.filter_trainable_sub_variables()
-            variables.append(filtered_system_var)
+            # Only include if top-level variable has require_grad=True
+            if system_var.require_grad:
+                # Filter to only include trainable sub-variables
+                filtered_system_var = system_var.filter_trainable_sub_variables()
+                # For system_prompt, always include if top-level require_grad=True
+                # even if it has no trainable sub-variables (the top-level itself is trainable)
+                variables[system_prompt_name] = filtered_system_var
+                logger.debug(f"| ✅ Included system prompt {system_prompt_name} (require_grad=True)")
+            else:
+                logger.debug(f"| ⚠️ System prompt {system_prompt_name} has require_grad=False, skipping")
+        else:
+            logger.debug(f"| ⚠️ System prompt instance {system_prompt_name} not found")
         
         if agent_prompt_instance is not None:
             agent_var = await agent_prompt_instance.get_variable()
-            # Filter to only include trainable sub-variables
-            filtered_agent_var = agent_var.filter_trainable_sub_variables()
-            variables.append(filtered_agent_var)
+            # For agent_message_prompt, always check if it has any trainable sub-variables
+            # Only include if it has trainable sub-variables (even if top-level require_grad=False)
+            trainable_sub_vars = agent_var.get_trainable_variables()
+            if trainable_sub_vars:
+                # Filter to only include trainable sub-variables
+                filtered_agent_var = agent_var.filter_trainable_sub_variables()
+                variables[agent_prompt_name] = filtered_agent_var
+            # If no trainable sub-variables, don't include agent_message_prompt
         
         return variables
+    
+    async def set_variables(self, 
+                            prompt_name: str, 
+                            variable_updates: Dict[str, Any],
+                            new_version: Optional[str] = None, 
+                            description: Optional[str] = None) -> PromptConfig:
+        """Set variable values in a prompt and create a new version.
+        
+        Args:
+            prompt_name: Name of the prompt to update
+            variable_updates: Dictionary mapping variable names to new values.
+                            Supports nested variables using dot notation (e.g., "agent_context_rules" or "parent.child")
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            PromptConfig: Updated prompt configuration
+        """
+        original_config = self._prompt_configs.get(prompt_name)
+        if original_config is None:
+            raise ValueError(f"Prompt {prompt_name} not found. Use register() to register a new prompt.")
+        
+        # Deep copy variables to avoid modifying the original
+        import copy
+        updated_variables = copy.deepcopy(original_config.variables)
+        
+        def update_variable_recursive(variables_list: List[Dict[str, Any]], var_path: str, new_value: Any) -> bool:
+            """Recursively find and update a variable by path.
+            
+            Supports updating variables at any level, including:
+            - Top-level variables: "agent_context_rules"
+            - Nested sub-variables: "parent.child" or "parent.child.grandchild"
+            - Variables with sub-variables: Will replace the entire variable value
+            
+            Args:
+                variables_list: List of variable dictionaries
+                var_path: Variable path (e.g., "agent_context_rules" or "parent.child")
+                new_value: New value to set (can be string, list of sub-variables, etc.)
+                
+            Returns:
+                True if variable was found and updated, False otherwise
+            """
+            # Split path into parts
+            path_parts = var_path.split('.', 1)
+            current_name = path_parts[0]
+            remaining_path = path_parts[1] if len(path_parts) > 1 else None
+            
+            # Find variable in current level
+            for var_dict in variables_list:
+                if var_dict.get('name') == current_name:
+                    if remaining_path is None:
+                        # Found the target variable - update its value
+                        # This will replace the entire 'variables' field, including any sub-variables
+                        var_dict['variables'] = new_value
+                        logger.debug(f"| Updated variable '{current_name}' with new value (type: {type(new_value).__name__})")
+                        return True
+                    else:
+                        # Need to go deeper - check if this variable has sub-variables
+                        sub_variables = var_dict.get('variables', [])
+                        if isinstance(sub_variables, list):
+                            # Has sub-variables - recursively search
+                            return update_variable_recursive(sub_variables, remaining_path, new_value)
+                        elif isinstance(sub_variables, dict):
+                            # Single sub-variable as dict - convert to list for recursive search
+                            return update_variable_recursive([sub_variables], remaining_path, new_value)
+                        else:
+                            # This variable doesn't have sub-variables (it's a leaf node with string value)
+                            # Can't go deeper
+                            logger.warning(f"| Variable '{current_name}' is a leaf node (value type: {type(sub_variables).__name__}), cannot access nested path '{remaining_path}'")
+                            return False
+            
+            return False
+        
+        # Update each variable
+        updated_count = 0
+        for var_name, new_value in variable_updates.items():
+            if update_variable_recursive(updated_variables, var_name, new_value):
+                updated_count += 1
+                logger.info(f"| ✅ Updated variable {var_name} in prompt {prompt_name}")
+            else:
+                logger.warning(f"| ⚠️ Variable {var_name} not found in prompt {prompt_name}")
+        
+        if updated_count == 0:
+            raise ValueError(f"No variables were updated. Check variable names: {list(variable_updates.keys())}")
+        
+        # Determine new version from version_manager
+        if new_version is None:
+            # Get current version from version_manager and generate next patch version
+            new_version = await version_manager.generate_next_version("prompt", prompt_name, "patch")
+        
+        # Get source code (use original config's code)
+        prompt_code = original_config.code
+        
+        # Create updated config with new variables
+        updated_config = PromptConfig(
+            name=prompt_name,
+            type=original_config.type,
+            description=description or f"Updated variables: {', '.join(variable_updates.keys())}",
+            version=new_version,
+            template=original_config.template,
+            variables=updated_variables,
+            cls=original_config.cls,
+            config=original_config.config,
+            instance=None,  # Instance will be built when needed
+            metadata=original_config.metadata,
+            code=prompt_code
+        )
+        
+        # Update the prompt config (replaces current version)
+        self._prompt_configs[prompt_name] = updated_config
+        
+        # Store in version history
+        if prompt_name not in self._prompt_history_versions:
+            self._prompt_history_versions[prompt_name] = {}
+        self._prompt_history_versions[prompt_name][updated_config.version] = updated_config
+        
+        # Register version record to version manager
+        await version_manager.register_version(
+            "prompt", 
+            prompt_name, 
+            new_version,
+            description=description or f"Updated variables: {', '.join(variable_updates.keys())} from {original_config.version}"
+        )
+        
+        # Persist to JSON
+        await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
+        
+        logger.info(f"| 📝 Updated prompt variables: {prompt_name} v{updated_config.version}")
+        return updated_config
     
     async def save_contract(self, prompt_names: Optional[List[str]] = None):
         """Save the contract for prompts

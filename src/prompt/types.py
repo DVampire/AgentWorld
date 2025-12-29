@@ -2,7 +2,7 @@
 
 Core type definitions for the Prompt Context Protocol.
 """
-from typing import Any, Dict, Optional, Type, Literal, List
+from typing import Any, Dict, Optional, Type, Literal, List, Union, TYPE_CHECKING, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
@@ -142,7 +142,7 @@ class PromptConfig(BaseModel):
     description: str = Field(description="The description of the prompt")
     version: str = Field(default="1.0.0", description="Version of the prompt")
     template: str = Field(description="The template string for the prompt")
-    variables: Optional[list] = Field(default=None, description="The variables used in the template")
+    variables: Optional[Union[Dict[str, 'Variable'], 'Variable']] = Field(default=None, description="The variables used in the template. Can be Dict[str, Variable] or single Variable")
     cls: Optional[Type[Prompt]] = Field(default=None, description="The class of the prompt")
     instance: Optional[Any] = Field(default=None, description="The instance of the prompt")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the prompt")
@@ -151,13 +151,37 @@ class PromptConfig(BaseModel):
     
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Dump the model to a dictionary, recursively serializing nested Pydantic models."""
+        def serialize_variables(vars_data: Any) -> Any:
+            """Recursively serialize Variable objects to dictionaries."""
+            if vars_data is None:
+                return None
+            elif isinstance(vars_data, Variable):
+                # Convert Variable to dict, excluding non-serializable fields
+                return {
+                    "name": vars_data.name,
+                    "type": vars_data.type,
+                    "description": vars_data.description,
+                    "require_grad": vars_data.require_grad,
+                    "template": vars_data.template,
+                    "variables": serialize_variables(vars_data.variables),
+                }
+            elif isinstance(vars_data, dict):
+                # Recursively process dictionary values
+                return {k: serialize_variables(v) for k, v in vars_data.items()}
+            elif isinstance(vars_data, (list, tuple)):
+                # Recursively process list items
+                return [serialize_variables(item) for item in vars_data]
+            else:
+                # Primitive types (str, int, etc.) - return as-is
+                return vars_data
+        
         result = {
             "name": self.name,
             "type": self.type,
             "description": self.description,
             "version": self.version,
             "template": self.template,
-            "variables": self.variables,
+            "variables": serialize_variables(self.variables),
             "metadata": self.metadata,
             "config": self.config,
             "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,

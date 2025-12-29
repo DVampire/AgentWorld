@@ -1,11 +1,14 @@
 """Agent Context Manager for managing agent lifecycle and resources with lazy loading."""
 import os
 from asyncio_atexit import register as async_atexit_register
-from typing import Any, Dict, List, Type, Optional, Union, Tuple
+from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
 from datetime import datetime
 import inflection
 import json
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -1042,14 +1045,14 @@ class AgentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
-    async def get_variables(self, agent_name: Optional[str] = None) -> List[Any]:
+    async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from agents, where each agent's class source code is used as the variable value.
         
         Args:
             agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all agents.
             
         Returns:
-            List[Any]: List of Variable objects, one for each agent. Each Variable has:
+            Dict[str, Variable]: Dictionary mapping agent names to Variable objects. Each Variable has:
                 - name: agent name
                 - type: "agent_code"
                 - description: agent description
@@ -1059,7 +1062,7 @@ class AgentContextManager(BaseModel):
         # Lazy import to avoid circular dependency
         from src.optimizer.types import Variable
         
-        variables: List[Variable] = []
+        variables: Dict[str, Variable] = {}
         
         if agent_name is not None:
             # Get specific agent
@@ -1090,11 +1093,11 @@ class AgentContextManager(BaseModel):
                 template=None,
                 variables=agent_code  # Store code as the variable value
             )
-            variables.append(variable)
+            variables[name] = variable
         
         return variables
     
-    async def get_trainable_variables(self, agent_name: Optional[str] = None) -> List[Any]:
+    async def get_trainable_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get trainable variables from agents, filtering out agents with require_grad=False.
         
         Only returns variables for agents where require_grad=True.
@@ -1103,10 +1106,10 @@ class AgentContextManager(BaseModel):
             agent_name (Optional[str]): Name of a specific agent. If None, returns variables for all trainable agents.
             
         Returns:
-            List[Any]: List of Variable objects for trainable agents.
+            Dict[str, Variable]: Dictionary mapping agent names to Variable objects for trainable agents.
         """
         all_variables = await self.get_variables(agent_name=agent_name)
-        trainable_variables = [var for var in all_variables if var.require_grad]
+        trainable_variables = {name: var for name, var in all_variables.items() if var.require_grad}
         return trainable_variables
 
     async def cleanup(self):

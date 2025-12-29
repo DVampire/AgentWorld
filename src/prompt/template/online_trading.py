@@ -276,129 +276,130 @@ SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for online multi-asset trading agents using perpetual futures - specialized for real-time trading operations with stocks and cryptocurrencies",
     "template": SYSTEM_PROMPT_TEMPLATE,
-        "variables": [
-            {
-                "name": "agent_profile",
-                "type": "system_prompt_module",
-                "description": "Describes the trading agent's core identity, trading capabilities, and primary objectives for multi-asset trading operations using perpetual futures contracts.",
-                "require_grad": False,
-                "template": None,
-                "variables": AGENT_PROFILE
-            },
-            {
-                "name": "agent_introduction",
-                "type": "system_prompt_module",
-                "description": "Defines the trading agent's core competencies in multi-asset market analysis and portfolio management.",
-                "require_grad": False,
-                "template": None,
-                "variables": AGENT_INTRODUCTION
-            },
-            {
-                "name": "language_settings",
-                "type": "system_prompt_module",
-                "description": "Specifies the default working language and financial terminology preferences for the trading agent.",
-                "require_grad": False,
-                "template": None,
-                "variables": LANGUAGE_SETTINGS
-            },
-            {
-                "name": "input",
-                "type": "system_prompt_module",
-                "description": "Describes the structure and components of trading input data including agent context, market environment, and trading tools.",
-                "require_grad": False,
-                "template": None,
-                "variables": INPUT
-            },
-            {
-                "name": "agent_context_rules",
-                "type": "system_prompt_module",
-                "description": "Establishes rules for trading task management, portfolio tracking, risk management, and multi-asset trading strategies using perpetual futures (LONG, SHORT, HOLD actions).",
-                "require_grad": True,
-                "template": None,
-                "variables": AGENT_CONTEXT_RULES
-            },
-            {
-                "name": "environment_context_rules",
-                "type": "system_prompt_module",
-                "description": "Defines how the trading agent should interact with market conditions and trading environments for multiple assets.",
-                "require_grad": False,
-                "template": None,
-                "variables": ENVIRONMENT_CONTEXT_RULES
-            },
-            {
-                "name": "tool_context_rules",
-                "type": "system_prompt_module",
-                "description": "Provides guidelines for trading reasoning patterns, tool selection, market data analysis, and order execution efficiency.",
-                "require_grad": False,
-                "template": None,
-                "variables": TOOL_CONTEXT_RULES
-            },
-            {
-                "name": "example_rules",
-                "type": "system_prompt_module",
-                "description": "Contains few-shot examples and patterns to guide the trading agent's behavior and trading strategies.",
-                "require_grad": False,
-                "template": None,
-                "variables": EXAMPLE_RULES
-            },
-            {
-                "name": "reasoning_rules",
-                "type": "system_prompt_module",
-                "description": "Describes the reasoning rules for the trading agent.",
-                "require_grad": True,
-                "template": None,
-                "variables": REASONING_RULES
-            },
-            {
-                "name": "output",
-                "type": "system_prompt_module",
-                "description": "Describes the output format of the agent's response.",
-                "require_grad": False,
-                "template": None,
-                "variables": OUTPUT
-            }
-        ],
+    "variables": {
+        "agent_profile": {
+            "name": "agent_profile",
+            "type": "system_prompt",
+            "description": "Describes the trading agent's core identity, trading capabilities, and primary objectives for multi-asset trading operations using perpetual futures contracts.",
+            "require_grad": False,
+            "template": None,
+            "variables": AGENT_PROFILE
+        },
+        "agent_introduction": {
+            "name": "agent_introduction",
+            "type": "system_prompt",
+            "description": "Defines the trading agent's core competencies in multi-asset market analysis and portfolio management.",
+            "require_grad": False,
+            "template": None,
+            "variables": AGENT_INTRODUCTION
+        },
+        "language_settings": {
+            "name": "language_settings",
+            "type": "system_prompt",
+            "description": "Specifies the default working language and financial terminology preferences for the trading agent.",
+            "require_grad": False,
+            "template": None,
+            "variables": LANGUAGE_SETTINGS
+        },
+        "input": {
+            "name": "input",
+            "type": "system_prompt",
+            "description": "Describes the structure and components of trading input data including agent context, market environment, and trading tools.",
+            "require_grad": False,
+            "template": None,
+            "variables": INPUT
+        },
+        "agent_context_rules": {
+            "name": "agent_context_rules",
+            "type": "system_prompt",
+            "description": "Establishes rules for trading task management, portfolio tracking, risk management, and multi-asset trading strategies using perpetual futures (LONG, SHORT, HOLD actions).",
+            "require_grad": True,
+            "template": None,
+            "variables": AGENT_CONTEXT_RULES
+        },
+        "environment_context_rules": {
+            "name": "environment_context_rules",
+            "type": "system_prompt",
+            "description": "Defines how the trading agent should interact with market conditions and trading environments for multiple assets.",
+            "require_grad": False,
+            "template": None,
+            "variables": ENVIRONMENT_CONTEXT_RULES
+        },
+        "tool_context_rules": {
+            "name": "tool_context_rules",
+            "type": "system_prompt",
+            "description": "Provides guidelines for trading reasoning patterns, tool selection, market data analysis, and order execution efficiency.",
+            "require_grad": True,
+            "template": None,
+            "variables": TOOL_CONTEXT_RULES
+        },
+        "example_rules": {
+            "name": "example_rules",
+            "type": "system_prompt",
+            "description": "Contains few-shot examples and patterns to guide the trading agent's behavior and trading strategies.",
+            "require_grad": False,
+            "template": None,
+            "variables": EXAMPLE_RULES
+        },
+        "reasoning_rules": {
+            "name": "reasoning_rules",
+            "type": "system_prompt",
+            "description": "Describes the reasoning rules for the trading agent.",
+            "require_grad": True,
+            "template": None,
+            "variables": REASONING_RULES
+        },
+        "output": {
+            "name": "output",
+            "type": "system_prompt",
+            "description": "Describes the output format of the agent's response.",
+            "require_grad": False,
+            "template": None,
+            "variables": OUTPUT
+        }
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "online_trading_agent_message_prompt",
     "description": "Agent message for online trading agents (dynamic context)",
     "type": "agent_message_prompt",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-        "variables": [
-            {
-                "name": "agent_context",
-                "type": "agent_message_prompt_module",
-                "description": "Describes the trading agent's current state, including active positions, pending orders, portfolio status, and trading strategies.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "environment_context",
-                "type": "agent_message_prompt_module",
-                "description": "Describes the current market environment, trading conditions, and external factors affecting multi-asset trading decisions.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "tool_context",
-                "type": "agent_message_prompt_module",
-                "description": "Describes the available trading tools, market data feeds, order management systems, and monitoring capabilities for multi-asset trading.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "examples",
-                "type": "agent_message_prompt_module",
-                "description": "Contains few-shot examples of multi-asset trading strategies and market analysis patterns.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-    ],
+    "variables": {
+        "agent_context": {
+            "name": "agent_context",
+            "type": "agent_message_prompt",
+            "description": "Describes the trading agent's current state, including active positions, pending orders, portfolio status, and trading strategies.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "environment_context": {
+            "name": "environment_context",
+            "type": "agent_message_prompt",
+            "description": "Describes the current market environment, trading conditions, and external factors affecting multi-asset trading decisions.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "tool_context": {
+            "name": "tool_context",
+            "type": "agent_message_prompt",
+            "description": "Describes the available trading tools, market data feeds, order management systems, and monitoring capabilities for multi-asset trading.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "examples": {
+            "name": "examples",
+            "type": "agent_message_prompt",
+            "description": "Contains few-shot examples of multi-asset trading strategies and market analysis patterns.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+    },
 }
 
 @PROMPT.register_module(force=True)

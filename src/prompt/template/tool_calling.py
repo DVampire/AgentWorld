@@ -36,7 +36,7 @@ INPUT = """
 """
 
 # Agent context rules = task rules + agent history rules + memory rules + todo rules
-AGENT_CONTEXT_RULES = f"""
+AGENT_CONTEXT_RULES = """
 <agent_context_rules>
 <workdir_rules>
 You are working in the following working directory: {{ workdir }}.
@@ -195,130 +195,132 @@ SYSTEM_PROMPT = {
     "name": "tool_calling_system_prompt",
     "type": "system_prompt",
     "description": "System prompt for tool-calling agents - static constitution and protocol",
+    "require_grad": True,
     "template": SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_PROFILE
         },
-        {
+        "agent_introduction": {
             "name": "agent_introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_INTRODUCTION
         },
-        {
+        "language_settings": {
             "name": "language_settings",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the default working language and language response preferences for the agent.",
             "require_grad": False,
             "template": None,
             "variables": LANGUAGE_SETTINGS
         },
-        {
+        "input": {
             "name": "input",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
             "require_grad": False,
             "template": None,
             "variables": INPUT
         },
-        {
+        "agent_context_rules": {
             "name": "agent_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Establishes rules for task management, agent history tracking, memory usage, and todo planning strategies.",
-            "require_grad": True,
+            "require_grad": False,
             "template": None,
             "variables": AGENT_CONTEXT_RULES
         },
-        {
+        "environment_context_rules": {
             "name": "environment_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines how the agent should interact with and respond to different environmental contexts and conditions.",
             "require_grad": False,
             "template": None,
             "variables": ENVIRONMENT_CONTEXT_RULES
         },
-        {
+        "tool_context_rules": {
             "name": "tool_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for reasoning patterns, tool selection, usage efficiency, and available tool management.",
-            "require_grad": False,
+            "require_grad": True,
             "template": None,
             "variables": TOOL_CONTEXT_RULES
         },
-        {
+        "example_rules": {
             "name": "example_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
             "require_grad": False,
             "template": None,
             "variables": EXAMPLE_RULES
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the reasoning rules for the agent.",
             "require_grad": True,
             "template": None,
             "variables": REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the output format of the agent's response.",
             "require_grad": False,
             "template": None,
             "variables": OUTPUT
         }
-    ]
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "tool_calling_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for tool calling agents (dynamic context)",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the agent's current state, including its current task, history, memory, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the available tools, their purposes, usage conditions, and current operational status.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples and patterns to guide the agent's behavior and tool usage strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 @PROMPT.register_module(force=True)
@@ -329,6 +331,7 @@ class ToolCallingSystemPrompt(Prompt):
     type: str = Field(default='system_prompt', description="The type of the prompt")
     name: str = Field(default="tool_calling", description="The name of the prompt")
     description: str = Field(default="System prompt for tool-calling agents", description="The description of the prompt")
+    require_grad: bool = Field(default=True, description="Whether the prompt requires gradient")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
     prompt_config: Dict[str, Any] = Field(default=SYSTEM_PROMPT, description="System prompt information")
@@ -341,6 +344,7 @@ class ToolCallingAgentMessagePrompt(Prompt):
     type: str = Field(default='agent_message_prompt', description="The type of the prompt")
     name: str = Field(default="tool_calling", description="The name of the prompt")
     description: str = Field(default="Agent message prompt for tool-calling agents", description="The description of the prompt")
+    require_grad: bool = Field(default=False, description="Whether the prompt requires gradient")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
     
     prompt_config: Dict[str, Any] = Field(default=AGENT_MESSAGE_PROMPT, description="Agent message prompt information")

@@ -58,81 +58,82 @@ SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for simple chat agents - conversational personality",
     "template": SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the chat agent's core identity and capabilities for natural conversations.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_PROFILE
         },
-        {
+        "personality": {
             "name": "personality",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the conversational and approachable personality traits for chat interactions.",
             "require_grad": False,
             "template": None,
             "variables": PERSONALITY
         },
-        {
+        "conversation_guidelines": {
             "name": "conversation_guidelines",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for engaging in natural, friendly conversations.",
             "require_grad": False,
             "template": None,
             "variables": CONVERSATION_GUIDELINES
         },
-        {
+        "response_format": {
             "name": "response_format",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the format and style requirements for conversational responses.",
             "require_grad": False,
             "template": None,
             "variables": RESPONSE_FORMAT
         }
-    ]
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "simple_chat_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for simple chat agents (conversation context)",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the chat agent's current state, including current conversation topic, conversation history, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the conversation environment, including current time and conversation context.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes available tools and their usage conditions for the chat agent.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples of good conversation patterns and response strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 @PROMPT.register_module(force=True)

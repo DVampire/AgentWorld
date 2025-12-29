@@ -235,129 +235,130 @@ SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for mobile agents - static constitution and protocol",
     "template": SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the mobile agent's core identity, capabilities, and primary objectives for mobile device control.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_PROFILE
         },
-        {
+        "agent_introduction": {
             "name": "agent_introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the mobile agent's core competencies in mobile app navigation and UI interaction.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_INTRODUCTION
         },
-        {
+        "language_settings": {
             "name": "language_settings",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the default working language and language response preferences for the mobile agent.",
             "require_grad": False,
             "template": None,
             "variables": LANGUAGE_SETTINGS
         },
-        {
+        "input": {
             "name": "input",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the structure and components of input data including agent context, mobile environment context, and tool context.",
             "require_grad": False,
             "template": None,
             "variables": INPUT
         },
-        {
+        "agent_context_rules": {
             "name": "agent_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Establishes rules for task management, agent history tracking, memory usage, and mobile task completion strategies.",
             "require_grad": True,
             "template": None,
             "variables": AGENT_CONTEXT_RULES
         },
-        {
+        "environment_context_rules": {
             "name": "environment_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines how the mobile agent should interact with and respond to different mobile device environments and conditions.",
             "require_grad": False,
             "template": None,
             "variables": ENVIRONMENT_CONTEXT_RULES
         },
-        {
+        "tool_context_rules": {
             "name": "tool_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for mobile action selection, coordinate-based interaction, and mobile device control efficiency.",
-            "require_grad": False,
+            "require_grad": True,
             "template": None,
             "variables": TOOL_CONTEXT_RULES
         },
-        {
+        "example_rules": {
             "name": "example_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Contains few-shot examples and patterns to guide the mobile agent's behavior and interaction strategies.",
             "require_grad": False,
             "template": None,
             "variables": EXAMPLE_RULES
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the reasoning rules for the mobile agent.",
             "require_grad": True,
             "template": None,
             "variables": REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the output format of the agent's response.",
             "require_grad": False,
             "template": None,
             "variables": OUTPUT
         }
-    ]
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "mobile_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for mobile agents (dynamic context)",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the mobile agent's current state, including its current task, history, memory, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the mobile device environment, situational state, and any external conditions that may influence your reasoning or behavior.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the available mobile actions, their purposes, usage conditions, and current operational status.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples and patterns to guide the mobile agent's behavior and interaction strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 @PROMPT.register_module(force=True)

@@ -17,6 +17,7 @@ from src.model import model_manager
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.logger import logger
 from src.utils import dedent, file_lock
+from src.registry import MEMORY_SYSTEM
 
 
 class OfflineTradingSummary(BaseModel):
@@ -311,6 +312,7 @@ class OfflineTradingCombinedMemory:
         return self.insights[-n:] if len(self.insights) > n else self.insights
 
 
+@MEMORY_SYSTEM.register_module(force=True)
 class OfflineTradingMemorySystem(Memory):
     """Offline trading memory system focused on perpetual futures decision tracking and learning"""
     

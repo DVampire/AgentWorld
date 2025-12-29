@@ -30,8 +30,7 @@ from src.memory import memory_manager
 from src.tool import tcp
 from src.environment import ecp
 from src.agent import acp
-from src.transformation import transformation
-from src.optimizer.reflection_optimizer import optimize_agent_with_reflection
+from src.optimizer import ReflectionOptimizer
 
 
 def parse_args():
@@ -81,18 +80,13 @@ async def main():
     
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
-    await ecp.initialize(config.env_names)
+    await ecp.initialize(env_names=config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
     
     # Initialize agents
     logger.info("| 🤖 Initializing agents...")
     await acp.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents initialized: {await acp.list()}")
-    
-    # Transformation ECP to TCP
-    logger.info("| 🔄 Transformation start...")
-    await transformation.transform(type="e2t", env_names=config.env_names)
-    logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
     
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
@@ -113,35 +107,15 @@ async def main():
     
     # Run the agent with Reflection optimization.
     # Note: the Reflection optimizer relies on the agent's own model for reflection, so no extra optimizer_model is required.
-    optimizer = await optimize_agent_with_reflection(
-        agent=agent,
-        task=task,
-        files=files,
-        optimization_steps=3  # Number of optimization iterations
+    optimizer = ReflectionOptimizer(
+        workdir=config.workdir,
+        prompt_name="reflection_optimizer",
+        model_name="openrouter/gemini-3-flash-preview",
+        memory_name="optimizer_memory_system"
     )
-    
-    # Final run with optimized prompts to show the final result
-    logger.info(f"\n| {'='*60}")
-    logger.info(f"| 🎯 Final run with optimized prompts")
-    logger.info(f"| {'='*60}\n")
-    
-    input = {
-        "name": "tool_calling",
-        "input": {
-            "task": task,
-            "files": files
-        }
-    }
-    final_result = await acp(**input)
-    # Extract message from AgentResponse
-    if hasattr(final_result, 'message'):
-        result_message = final_result.message
-    elif hasattr(final_result, 'extra') and final_result.extra and final_result.extra.data:
-        result_message = final_result.extra.data.get("final_result", str(final_result))
-    else:
-        result_message = str(final_result)
-    logger.info(f"| ✅ Final result: {result_message[:200]}...")
-    logger.info(f"| Execution result: {result_message[:500]}...\n")
+    await optimizer.optimize(agent=agent, 
+                             task=task, 
+                             files=files)
 
 
 if __name__ == "__main__":

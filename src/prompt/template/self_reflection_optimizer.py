@@ -60,72 +60,73 @@ REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for self-reflection optimizer",
     "template": REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_REFLECTION_AGENT_PROFILE
         },
-        {
+        "introduction": {
             "name": "introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_REFLECTION_INTRODUCTION
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_REFLECTION_OUTPUT
         }
-    ]
+    }
 }
 REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
     "name": "reflection_optimizer_reflection_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for self-reflection optimizer",
+    "require_grad": False,
     "template": REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "task": {
             "name": "task",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the task to be executed.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "variable_to_improve": {
             "name": "variable_to_improve",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the variable to be improved.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "execution_result": {
             "name": "execution_result",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the agent execution result.",
             "require_grad": False,
             "template": None,
             "variables": None
         }
-    ]
+    }
 }
 
 @PROMPT.register_module(force=True)
@@ -226,73 +227,74 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for self-improvement optimizer",
     "template": REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_PROFILE
         },
-        {
+        "introduction": {
             "name": "introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_INTRODUCTION
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_OUTPUT
         }
-    ]
+    }
 }
 
 REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
     "name": "reflection_optimizer_improvement_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for self-improvement optimizer",
+    "require_grad": False,
     "template": REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "task": {
             "name": "task",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the task to be executed.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "current_variable": {
             "name": "current_variable",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the current variable.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
-            "name": "reflection_analysis",  
-            "type": "agent_message_prompt_module",
+        "reflection_analysis": {
+            "name": "reflection_analysis",
+            "type": "agent_message_prompt",
             "description": "Describes the reflection analysis.",
             "require_grad": False,
             "template": None,
             "variables": None
         }
-    ]
+    }
 }
 
 @PROMPT.register_module(force=True)

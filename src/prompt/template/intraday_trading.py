@@ -168,129 +168,130 @@ DAY_ANALYSIS_SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "Day-level deep analysis prompt - comprehensive trend forecast without trading",
     "template": DAY_ANALYSIS_SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the market analyst's core identity and capabilities for daily trend analysis.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_AGENT_PROFILE
         },
-        {
+        "agent_introduction": {
             "name": "agent_introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the market analyst's core competencies in news analysis and trend forecasting.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_AGENT_INTRODUCTION
         },
-        {
+        "language_settings": {
             "name": "language_settings",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the default working language and language response preferences for the analyst.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_LANGUAGE_SETTINGS
         },
-        {
+        "input": {
             "name": "input",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_INPUT
         },
-        {
+        "agent_context_rules": {
             "name": "agent_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Establishes rules for analysis task management, agent history tracking, and memory usage.",
             "require_grad": True,
             "template": None,
             "variables": DAY_ANALYSIS_AGENT_CONTEXT_RULES
         },
-        {
+        "environment_context_rules": {
             "name": "environment_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines how the analyst should interact with and respond to different trading environments and market conditions.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_ENVIRONMENT_CONTEXT_RULES
         },
-        {
+        "tool_context_rules": {
             "name": "tool_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for daily trend analysis, news analysis, and trend forecasting.",
-            "require_grad": False,
+            "require_grad": True,
             "template": None,
             "variables": DAY_ANALYSIS_TOOL_CONTEXT_RULES
         },
-        {
+        "example_rules": {
             "name": "example_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Contains few-shot examples and patterns to guide the analyst's behavior and analysis strategies.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_EXAMPLE_RULES
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the reasoning rules for the market analyst.",
             "require_grad": True,
             "template": None,
             "variables": DAY_ANALYSIS_REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the output format of the analyst's response.",
             "require_grad": False,
             "template": None,
             "variables": DAY_ANALYSIS_OUTPUT
         }
-    ]
+    }
 }
 
 DAY_ANALYSIS_MESSAGE_PROMPT = {
     "name": "intraday_day_analysis_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Day-level analysis message prompt",
+    "require_grad": False,
     "template": DAY_ANALYSIS_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the analyst's current state, including its current task, history, memory, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the trading environment, market data, news, and any external conditions that may influence your analysis.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the available analysis tools, their purposes, usage conditions, and current operational status.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples and patterns to guide the analyst's behavior and analysis strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 # ============================================
@@ -462,129 +463,130 @@ MINUTE_TRADING_SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "Minute-level fast trading prompt - quick decisions based on day analysis",
     "template": MINUTE_TRADING_SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the intraday trading agent's core identity and capabilities for fast minute-level trading.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_AGENT_PROFILE
         },
-        {
+        "agent_introduction": {
             "name": "agent_introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the intraday trading agent's core competencies in rapid price analysis and fast trading decisions.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_AGENT_INTRODUCTION
         },
-        {
+        "language_settings": {
             "name": "language_settings",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the default working language and language response preferences for the trading agent.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_LANGUAGE_SETTINGS
         },
-        {
+        "input": {
             "name": "input",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_INPUT
         },
-        {
+        "agent_context_rules": {
             "name": "agent_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Establishes rules for trading task management, agent history tracking, memory usage, and fast trading strategies.",
             "require_grad": True,
             "template": None,
             "variables": MINUTE_TRADING_AGENT_CONTEXT_RULES
         },
-        {
+        "environment_context_rules": {
             "name": "environment_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines how the trading agent should interact with and respond to different trading environments and market conditions.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_ENVIRONMENT_CONTEXT_RULES
         },
-        {
+        "tool_context_rules": {
             "name": "tool_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for fast trading decision-making, daily trend alignment, and rapid execution.",
-            "require_grad": False,
+            "require_grad": True,
             "template": None,
             "variables": MINUTE_TRADING_TOOL_CONTEXT_RULES
         },
-        {
+        "example_rules": {
             "name": "example_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Contains few-shot examples and patterns to guide the trading agent's behavior and trading strategies.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_EXAMPLE_RULES
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the reasoning rules for the intraday trading agent.",
             "require_grad": True,
             "template": None,
             "variables": MINUTE_TRADING_REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the output format of the agent's response.",
             "require_grad": False,
             "template": None,
             "variables": MINUTE_TRADING_OUTPUT
         }
-    ]
+    }
 }
 
 MINUTE_TRADING_MESSAGE_PROMPT = {
     "name": "intraday_minute_trading_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Minute-level trading message prompt",
+    "require_grad": False,
     "template": MINUTE_TRADING_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the trading agent's current state, including its current task, history, memory, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the trading environment, current minute-level price, volume, recent price action, and daily trend forecast.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the available trading actions, their purposes, usage conditions, and current operational status.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples and patterns to guide the trading agent's behavior and trading strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 @PROMPT.register_module(force=True)

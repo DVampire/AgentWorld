@@ -364,129 +364,130 @@ SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for ESG analysis agents - specialized for ESG data retrieval and report generation",
     "template": SYSTEM_PROMPT_TEMPLATE,
-        "variables": [
-            {
-                "name": "agent_profile",
-                "type": "system_prompt_module",
-                "description": "Defines the ESG agent's core identity and capabilities for ESG data analysis.",
-                "require_grad": False,
-                "template": None,
-                "variables": AGENT_PROFILE
-            },
-            {
-                "name": "agent_introduction",
-                "type": "system_prompt_module",
-                "description": "Describes the ESG agent's expertise in environmental, social, and governance analysis.",
-                "require_grad": False,
-                "template": None,
-                "variables": AGENT_INTRODUCTION
-            },
-            {
-                "name": "language_settings",
-                "type": "system_prompt_module",
-                "description": "Specifies language preferences and ESG terminology standards.",
-                "require_grad": False,
-                "template": None,
-                "variables": LANGUAGE_SETTINGS
-            },
-            {
-                "name": "input",
-                "type": "system_prompt_module",
-                "description": "Describes the structure of input data for ESG analysis.",
-                "require_grad": False,
-                "template": None,
-                "variables": INPUT
-            },
-            {
-                "name": "agent_context_rules",
-                "type": "system_prompt_module",
-                "description": "Rules for ESG task management, history tracking, and memory usage.",
-                "require_grad": True,
-                "template": None,
-                "variables": AGENT_CONTEXT_RULES
-            },
-            {
-                "name": "environment_context_rules",
-                "type": "system_prompt_module",
-                "description": "Rules for interacting with ESG data sources and environments.",
-                "require_grad": False,
-                "template": None,
-                "variables": ENVIRONMENT_CONTEXT_RULES
-            },
-            {
-                "name": "tool_context_rules",
-                "type": "system_prompt_module",
-                "description": "Guidelines for ESG-specific tool usage and analysis workflows.",
-                "require_grad": False,
-                "template": None,
-                "variables": TOOL_CONTEXT_RULES
-            },
-            {
-                "name": "example_rules",
-                "type": "system_prompt_module",
-                "description": "Few-shot examples of good ESG analysis patterns.",
-                "require_grad": False,
-                "template": None,
-                "variables": EXAMPLE_RULES
-            },
-            {
-                "name": "reasoning_rules",
-                "type": "system_prompt_module",
-                "description": "Describes the reasoning rules for the ESG agent.",
-                "require_grad": True,
-                "template": None,
-                "variables": REASONING_RULES
-            },
-            {
-                "name": "output",
-                "type": "system_prompt_module",
-                "description": "Describes the output format of the agent's response.",
-                "require_grad": False,
-                "template": None,
-                "variables": OUTPUT
-            }
-        ],
+    "variables": {
+        "agent_profile": {
+            "name": "agent_profile",
+            "type": "system_prompt",
+            "description": "Defines the ESG agent's core identity and capabilities for ESG data analysis.",
+            "require_grad": False,
+            "template": None,
+            "variables": AGENT_PROFILE
+        },
+        "agent_introduction": {
+            "name": "agent_introduction",
+            "type": "system_prompt",
+            "description": "Describes the ESG agent's expertise in environmental, social, and governance analysis.",
+            "require_grad": False,
+            "template": None,
+            "variables": AGENT_INTRODUCTION
+        },
+        "language_settings": {
+            "name": "language_settings",
+            "type": "system_prompt",
+            "description": "Specifies language preferences and ESG terminology standards.",
+            "require_grad": False,
+            "template": None,
+            "variables": LANGUAGE_SETTINGS
+        },
+        "input": {
+            "name": "input",
+            "type": "system_prompt",
+            "description": "Describes the structure of input data for ESG analysis.",
+            "require_grad": False,
+            "template": None,
+            "variables": INPUT
+        },
+        "agent_context_rules": {
+            "name": "agent_context_rules",
+            "type": "system_prompt",
+            "description": "Rules for ESG task management, history tracking, and memory usage.",
+            "require_grad": True,
+            "template": None,
+            "variables": AGENT_CONTEXT_RULES
+        },
+        "environment_context_rules": {
+            "name": "environment_context_rules",
+            "type": "system_prompt",
+            "description": "Rules for interacting with ESG data sources and environments.",
+            "require_grad": False,
+            "template": None,
+            "variables": ENVIRONMENT_CONTEXT_RULES
+        },
+        "tool_context_rules": {
+            "name": "tool_context_rules",
+            "type": "system_prompt",
+            "description": "Guidelines for ESG-specific tool usage and analysis workflows.",
+            "require_grad": True,
+            "template": None,
+            "variables": TOOL_CONTEXT_RULES
+        },
+        "example_rules": {
+            "name": "example_rules",
+            "type": "system_prompt",
+            "description": "Few-shot examples of good ESG analysis patterns.",
+            "require_grad": False,
+            "template": None,
+            "variables": EXAMPLE_RULES
+        },
+        "reasoning_rules": {
+            "name": "reasoning_rules",
+            "type": "system_prompt",
+            "description": "Describes the reasoning rules for the ESG agent.",
+            "require_grad": True,
+            "template": None,
+            "variables": REASONING_RULES
+        },
+        "output": {
+            "name": "output",
+            "type": "system_prompt",
+            "description": "Describes the output format of the agent's response.",
+            "require_grad": False,
+            "template": None,
+            "variables": OUTPUT
+        }
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "esg_agent_agent_message_prompt",
     "description": "Agent message for ESG agents (dynamic context)",
     "type": "agent_message_prompt",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-        "variables": [
-            {
-                "name": "agent_context",
-                "type": "agent_message_prompt_module",
-                "description": "Current ESG analysis state, task, history, and plans.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "environment_context",
-                "type": "agent_message_prompt_module",
-                "description": "Available ESG data sources and environment state.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "tool_context",
-                "type": "agent_message_prompt_module",
-                "description": "ESG tools status and usage information.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-            {
-                "name": "examples",
-                "type": "agent_message_prompt_module",
-                "description": "ESG analysis examples and patterns.",
-                "require_grad": False,
-                "template": None,
-                "variables": None
-            },
-    ],
+    "variables": {
+        "agent_context": {
+            "name": "agent_context",
+            "type": "agent_message_prompt",
+            "description": "Current ESG analysis state, task, history, and plans.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "environment_context": {
+            "name": "environment_context",
+            "type": "agent_message_prompt",
+            "description": "Available ESG data sources and environment state.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "tool_context": {
+            "name": "tool_context",
+            "type": "agent_message_prompt",
+            "description": "ESG tools status and usage information.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "examples": {
+            "name": "examples",
+            "type": "agent_message_prompt",
+            "description": "ESG analysis examples and patterns.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+    },
 }
 
 @PROMPT.register_module(force=True)

@@ -122,6 +122,7 @@ class MemoryConfig(BaseModel):
     description: str = Field(description="The description of the memory system")
     require_grad: bool = Field(default=False, description="Whether the memory system requires gradients")
     version: str = Field(default="1.0.0", description="Version of the memory system")
+    
     cls: Optional[Type[Memory]] = Field(default=None, description="The class of the memory system")
     instance: Optional[Any] = Field(default=None, description="The instance of the memory system")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the memory system")

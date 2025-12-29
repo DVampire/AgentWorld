@@ -209,129 +209,130 @@ SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for operator browser agents - static constitution and protocol",
     "template": SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the browser agent's core identity, capabilities, and primary objectives for web browser control.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_PROFILE
         },
-        {
+        "agent_introduction": {
             "name": "agent_introduction",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the browser agent's core competencies in web page navigation and interaction.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_INTRODUCTION
         },
-        {
+        "language_settings": {
             "name": "language_settings",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the default working language and language response preferences for the browser agent.",
             "require_grad": False,
             "template": None,
             "variables": LANGUAGE_SETTINGS
         },
-        {
+        "input": {
             "name": "input",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the structure and components of input data including agent context, browser environment context, and tool context.",
             "require_grad": False,
             "template": None,
             "variables": INPUT
         },
-        {
+        "agent_context_rules": {
             "name": "agent_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Establishes rules for task management, agent history tracking, memory usage, and web task completion strategies.",
             "require_grad": True,
             "template": None,
             "variables": AGENT_CONTEXT_RULES
         },
-        {
+        "environment_context_rules": {
             "name": "environment_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines how the browser agent should interact with and respond to different browser environments and conditions.",
             "require_grad": False,
             "template": None,
             "variables": ENVIRONMENT_CONTEXT_RULES
         },
-        {
+        "tool_context_rules": {
             "name": "tool_context_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for browser action selection, coordinate-based interaction, and browser control efficiency.",
-            "require_grad": False,
+            "require_grad": True,
             "template": None,
             "variables": TOOL_CONTEXT_RULES
         },
-        {
+        "example_rules": {
             "name": "example_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Contains few-shot examples and patterns to guide the browser agent's behavior and interaction strategies.",
             "require_grad": False,
             "template": None,
             "variables": EXAMPLE_RULES
         },
-        {
+        "reasoning_rules": {
             "name": "reasoning_rules",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the reasoning rules for the browser agent.",
             "require_grad": True,
             "template": None,
             "variables": REASONING_RULES
         },
-        {
+        "output": {
             "name": "output",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the output format of the agent's response.",
             "require_grad": False,
             "template": None,
             "variables": OUTPUT
         }
-    ]
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "operator_browser_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for operator browser agents (dynamic context)",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the browser agent's current state, including its current task, history, memory, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the browser environment, situational state, and any external conditions that may influence your reasoning or behavior.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the available browser actions, their purposes, usage conditions, and current operational status.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples and patterns to guide the browser agent's behavior and interaction strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 @PROMPT.register_module(force=True)

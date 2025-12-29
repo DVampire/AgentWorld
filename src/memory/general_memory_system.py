@@ -18,6 +18,7 @@ from src.utils import dedent
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo, Memory
 from src.utils import file_lock
+from src.registry import MEMORY_SYSTEM
 
 class CombinedMemoryOutput(BaseModel):
     """Structured output for combined summary and insight generation"""
@@ -291,6 +292,7 @@ class CombinedMemory:
             return self.insights
         return self.insights[-n:] if len(self.insights) > n else self.insights
 
+@MEMORY_SYSTEM.register_module(force=True)
 class GeneralMemorySystem(Memory):
     """Memory system that combines different types of memory for comprehensive agent memory management."""
     

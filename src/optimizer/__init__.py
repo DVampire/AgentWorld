@@ -9,7 +9,6 @@ from .textgrad_optimizer import (
 )
 from .reflection_optimizer import (
     ReflectionOptimizer,
-    optimize_agent_with_reflection,
 )
 
 __all__ = [
@@ -17,6 +16,5 @@ __all__ = [
     "TextGradOptimizer",
     "optimize_agent_with_textgrad",
     "ReflectionOptimizer",
-    "optimize_agent_with_reflection",
 ]
 

@@ -5,8 +5,11 @@ import json
 import asyncio
 import inflection
 from datetime import datetime
-from typing import Any, Dict, Callable, Optional, List, Union, Type, Tuple
+from typing import Any, Dict, Callable, Optional, List, Union, Type, Tuple, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
 from asyncio_atexit import register as async_atexit_register
 
 from src.logger import logger
@@ -1177,14 +1180,14 @@ class EnvironmentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
-    async def get_variables(self, env_name: Optional[str] = None) -> List[Any]:
+    async def get_variables(self, env_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from environments, where each environment's class source code is used as the variable value.
         
         Args:
             env_name (Optional[str]): Name of a specific environment. If None, returns variables for all environments.
             
         Returns:
-            List[Any]: List of Variable objects, one for each environment. Each Variable has:
+            Dict[str, Variable]: Dictionary mapping environment names to Variable objects. Each Variable has:
                 - name: environment name
                 - type: "environment_code"
                 - description: environment description
@@ -1194,7 +1197,7 @@ class EnvironmentContextManager(BaseModel):
         # Lazy import to avoid circular dependency
         from src.optimizer.types import Variable
         
-        variables: List[Variable] = []
+        variables: Dict[str, Variable] = {}
         
         if env_name is not None:
             # Get specific environment
@@ -1225,11 +1228,11 @@ class EnvironmentContextManager(BaseModel):
                 template=None,
                 variables=env_code  # Store code as the variable value
             )
-            variables.append(variable)
+            variables[name] = variable
         
         return variables
     
-    async def get_trainable_variables(self, env_name: Optional[str] = None) -> List[Any]:
+    async def get_trainable_variables(self, env_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get trainable variables from environments, filtering out environments with require_grad=False.
         
         Only returns variables for environments where require_grad=True.
@@ -1238,10 +1241,10 @@ class EnvironmentContextManager(BaseModel):
             env_name (Optional[str]): Name of a specific environment. If None, returns variables for all trainable environments.
             
         Returns:
-            List[Any]: List of Variable objects for trainable environments.
+            Dict[str, Variable]: Dictionary mapping environment names to Variable objects for trainable environments.
         """
         all_variables = await self.get_variables(env_name=env_name)
-        trainable_variables = [var for var in all_variables if var.require_grad]
+        trainable_variables = {name: var for name, var in all_variables.items() if var.require_grad}
         return trainable_variables
 
     async def cleanup(self):

@@ -1,11 +1,14 @@
 """Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
 import os
 from asyncio_atexit import register as async_atexit_register
-from typing import Any, Dict, List, Type, Optional, Union, Tuple
+from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
 from datetime import datetime
 import inflection
 import json
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
@@ -19,7 +22,6 @@ from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
-from src.optimizer.types import Variable
 
 class ToolContextManager(BaseModel):
     """Global context manager for all tools with lazy loading support."""
@@ -1037,21 +1039,24 @@ class ToolContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Error during tool context manager cleanup: {e}")
             
-    async def get_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+    async def get_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from tools, where each tool's code is used as the variable value.
         
         Args:
             tool_name (Optional[str]): Name of a specific tool. If None, returns variables for all tools.
             
         Returns:
-            List[Variable]: List of Variable objects, one for each tool. Each Variable has:
+            Dict[str, Variable]: Dictionary mapping tool names to Variable objects. Each Variable has:
                 - name: tool name
                 - type: "tool_code"
                 - description: tool description
                 - require_grad: tool's require_grad value
                 - variables: tool's code (as string value)
         """
-        variables: List[Variable] = []
+        # Lazy import to avoid circular dependency
+        from src.optimizer.types import Variable
+        
+        variables: Dict[str, Variable] = {}
         
         if tool_name is not None:
             # Get specific tool
@@ -1078,11 +1083,11 @@ class ToolContextManager(BaseModel):
                 template=None,
                 variables=tool_code  # Store code as the variable value
             )
-            variables.append(variable)
+            variables[name] = variable
         
         return variables
     
-    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get trainable variables from tools, filtering out tools with require_grad=False.
         
         Only returns variables for tools where require_grad=True.
@@ -1091,7 +1096,8 @@ class ToolContextManager(BaseModel):
             tool_name (Optional[str]): Name of a specific tool. If None, returns trainable variables for all tools.
             
         Returns:
-            List[Variable]: List of Variable objects for tools with require_grad=True. Each Variable has:
+            Dict[str, Variable]: Dictionary mapping tool names to Variable objects for tools with require_grad=True.
+                                Each Variable has:
                 - name: tool name
                 - type: "tool_code"
                 - description: tool description
@@ -1102,10 +1108,10 @@ class ToolContextManager(BaseModel):
         all_variables = await self.get_variables(tool_name=tool_name)
         
         # Filter to only include variables with require_grad=True
-        trainable_variables = [
-            variable for variable in all_variables 
+        trainable_variables = {
+            name: variable for name, variable in all_variables.items()
             if variable.require_grad is True
-        ]
+        }
         
         return trainable_variables
     

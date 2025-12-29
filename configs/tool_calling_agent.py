@@ -7,8 +7,10 @@ with read_base():
     from .tools.deep_analyzer import deep_analyzer_tool
     from .tools.mdify import mdify_tool
     from .tools.plotter import plotter_tool
+    from .tools.bash import bash_tool
     from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
+    from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
 
 tag = "tool_calling_agent"
 workdir = f"workdir/{tag}"
@@ -22,7 +24,8 @@ env_names = [
     "file_system"
 ]
 memory_names = [
-    "general_memory_system"
+    "general_memory_system",
+    "optimizer_memory_system"
 ]
 agent_names = [
     "tool_calling"
@@ -39,6 +42,10 @@ tool_names = [
     "plotter",
 ]
 
+#-----------------BASH TOOL CONFIG-----------------
+bash_tool.update(
+    require_grad=True,
+)
 #-----------------MDIFY TOOL CONFIG-----------------
 mdify_tool.update(
     base_dir=f"{workdir}/tool/mdify",
@@ -58,7 +65,7 @@ deep_researcher_tool.update(
 deep_analyzer_tool.update(
     model_name="openrouter/o3",
     base_dir=f"{workdir}/tool/deep_analyzer",
-    require_grad=True,
+    require_grad=False,
 )
 
 #-----------------PLOTTER TOOL CONFIG-----------------
@@ -73,13 +80,13 @@ general_memory_system.update(
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
-    require_grad=True,
+    require_grad=False,
 )
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
 file_system_environment.update(
     base_dir=f"{workdir}/environment/file_system",
-    require_grad=True,
+    require_grad=False,
 )
 
 #-----------------TOOL CALLING AGENT CONFIG-----------------
@@ -87,5 +94,5 @@ tool_calling_agent.update(
     workdir=workdir,
     model_name=model_name,
     memory_name=memory_names[0],
-    require_grad=True,
+    require_grad=False,
 )

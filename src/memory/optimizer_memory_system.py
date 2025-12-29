@@ -13,6 +13,7 @@ import uuid
 from src.logger import logger
 from src.utils import file_lock
 from src.memory.types import Memory
+from src.registry import MEMORY_SYSTEM
 
 
 class OptimizationRecord(BaseModel):
@@ -70,6 +71,7 @@ class OptimizationSession(BaseModel):
         return self.__str__()
 
 
+@MEMORY_SYSTEM.register_module(force=True)
 class OptimizerMemorySystem(Memory):
     """Memory system for recording optimizer optimization history and experiences."""
     
@@ -106,31 +108,39 @@ class OptimizerMemorySystem(Memory):
             await self.load_from_json(self.save_path)
             self._load_pending = False
     
-    async def start_optimization_session(self,
-                                   optimizer_type: str,
-                                   agent_name: str,
-                                   task: str,
-                                   session_id: Optional[str] = None) -> str:
+    async def start_session(self,
+                            session_id: str,
+                            agent_name: Optional[str] = None,
+                            task_id: Optional[str] = None,
+                            description: Optional[str] = None,
+                            optimizer_type: Optional[str] = None,
+                            **kwargs) -> str:
         """Start a new optimization session.
         
         Args:
-            optimizer_type: Type of optimizer (e.g., 'ReflectionOptimizer')
+            session_id: Session ID
             agent_name: Name of the agent being optimized
-            task: Task description
-            session_id: Optional session ID. If None, generates a new one.
+            task_id: Optional task ID (can be used as task description)
+            description: Optional description (used as task description if provided)
+            optimizer_type: Type of optimizer (e.g., 'ReflectionOptimizer')
+            **kwargs: Additional arguments
             
         Returns:
             Session ID
         """
         await self._ensure_loaded()
         
-        if session_id is None:
-            session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
+        # Use description or task_id as task
+        task = description or task_id or ""
+        
+        # Get optimizer_type from kwargs if not provided
+        if optimizer_type is None:
+            optimizer_type = kwargs.get("optimizer_type", "UnknownOptimizer")
         
         session = OptimizationSession(
             session_id=session_id,
             optimizer_type=optimizer_type,
-            agent_name=agent_name,
+            agent_name=agent_name or "",
             task=task,
             start_time=datetime.now()
         )
@@ -141,7 +151,33 @@ class OptimizerMemorySystem(Memory):
         logger.info(f"| 🚀 Started optimization session: {session_id} ({optimizer_type})")
         return session_id
     
-    async def end_optimization_session(self, session_id: Optional[str] = None):
+    async def start_optimization_session(self,
+                                   optimizer_type: str,
+                                   agent_name: str,
+                                   task: str,
+                                   session_id: Optional[str] = None) -> str:
+        """Start a new optimization session (deprecated, use start_session instead).
+        
+        Args:
+            optimizer_type: Type of optimizer (e.g., 'ReflectionOptimizer')
+            agent_name: Name of the agent being optimized
+            task: Task description
+            session_id: Optional session ID. If None, generates a new one.
+            
+        Returns:
+            Session ID
+        """
+        if session_id is None:
+            session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
+        
+        return await self.start_session(
+            session_id=session_id,
+            agent_name=agent_name,
+            description=task,
+            optimizer_type=optimizer_type
+        )
+    
+    async def end_session(self, session_id: Optional[str] = None):
         """End an optimization session.
         
         Args:
@@ -161,6 +197,81 @@ class OptimizerMemorySystem(Memory):
                 await self.save_to_json(self.save_path)
             
             logger.info(f"| ✅ Ended optimization session: {session_id}")
+    
+    async def end_optimization_session(self, session_id: Optional[str] = None):
+        """End an optimization session (deprecated, use end_session instead).
+        
+        Args:
+            session_id: Optional session ID. If None, uses current session.
+        """
+        await self.end_session(session_id)
+    
+    async def add_event(self,
+                        step_number: int,
+                        event_type,
+                        data: Any,
+                        agent_name: str,
+                        task_id: Optional[str] = None,
+                        session_id: Optional[str] = None,
+                        **kwargs) -> OptimizationRecord:
+        """Add event to optimizer memory system.
+        
+        Args:
+            step_number: Step number (optimization step)
+            event_type: Event type (not used, kept for compatibility)
+            data: Event data (dict containing optimization record fields)
+            agent_name: Agent name
+            task_id: Optional task ID
+            session_id: Optional session ID. If None, uses current session.
+            **kwargs: Additional arguments (can include optimization-specific fields)
+            
+        Returns:
+            OptimizationRecord
+        """
+        # Extract optimization-specific fields from data or kwargs
+        if isinstance(data, dict):
+            variable_name = data.get("variable_name", kwargs.get("variable_name", ""))
+            before_value = data.get("before_value", kwargs.get("before_value", ""))
+            after_value = data.get("after_value", kwargs.get("after_value", ""))
+            execution_result = data.get("execution_result", kwargs.get("execution_result"))
+            reflection_analysis = data.get("reflection_analysis", kwargs.get("reflection_analysis"))
+            variable_description = data.get("variable_description", kwargs.get("variable_description"))
+            reward = data.get("reward", kwargs.get("reward"))
+            loss = data.get("loss", kwargs.get("loss"))
+            advantage = data.get("advantage", kwargs.get("advantage"))
+            kl_divergence = data.get("kl_divergence", kwargs.get("kl_divergence"))
+            metadata = data.get("metadata", kwargs.get("metadata"))
+        else:
+            # Fallback to kwargs if data is not a dict
+            variable_name = kwargs.get("variable_name", "")
+            before_value = kwargs.get("before_value", "")
+            after_value = kwargs.get("after_value", "")
+            execution_result = kwargs.get("execution_result")
+            reflection_analysis = kwargs.get("reflection_analysis")
+            variable_description = kwargs.get("variable_description")
+            reward = kwargs.get("reward")
+            loss = kwargs.get("loss")
+            advantage = kwargs.get("advantage")
+            kl_divergence = kwargs.get("kl_divergence")
+            metadata = kwargs.get("metadata")
+        
+        optimization_step = step_number
+        
+        return await self.record_optimization(
+            variable_name=variable_name,
+            before_value=before_value,
+            after_value=after_value,
+            execution_result=execution_result,
+            reflection_analysis=reflection_analysis,
+            variable_description=variable_description,
+            reward=reward,
+            loss=loss,
+            advantage=advantage,
+            kl_divergence=kl_divergence,
+            optimization_step=optimization_step,
+            session_id=session_id,
+            metadata=metadata
+        )
     
     async def record_optimization(self,
                            variable_name: str,
@@ -200,7 +311,7 @@ class OptimizerMemorySystem(Memory):
             session_id = self.current_session_id
         
         if session_id is None:
-            raise ValueError("No active optimization session. Call start_optimization_session() first.")
+            raise ValueError("No active optimization session. Call start_session() first.")
         
         if session_id not in self.sessions:
             raise ValueError(f"Session {session_id} not found.")
@@ -245,6 +356,44 @@ class OptimizerMemorySystem(Memory):
         logger.debug(f"| 📝 Recorded optimization: {record.id} (step {optimization_step}, variable: {variable_name})")
         return record
     
+    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[OptimizationRecord]:
+        """Get events (optimization records) from memory system.
+        
+        Args:
+            n: Number of events to retrieve. If None, returns all events.
+            session_id: Optional session ID. If None, uses current session.
+            
+        Returns:
+            List of OptimizationRecord
+        """
+        await self._ensure_loaded()
+        
+        records = []
+        
+        # Collect records from matching sessions
+        target_sessions = []
+        if session_id:
+            if session_id in self.sessions:
+                target_sessions = [session_id]
+        else:
+            if self.current_session_id:
+                target_sessions = [self.current_session_id]
+            else:
+                target_sessions = list(self.sessions.keys())
+        
+        for sid in target_sessions:
+            if sid in self.sessions:
+                records.extend(self.sessions[sid].records)
+        
+        # Sort by timestamp (most recent first)
+        records.sort(key=lambda r: r.timestamp, reverse=True)
+        
+        # Apply limit
+        if n is not None:
+            records = records[:n]
+        
+        return records
+    
     async def get_optimization_history(self,
                                 agent_name: Optional[str] = None,
                                 optimizer_type: Optional[str] = None,
@@ -252,7 +401,7 @@ class OptimizerMemorySystem(Memory):
                                 variable_name: Optional[str] = None,
                                 session_id: Optional[str] = None,
                                 limit: Optional[int] = None) -> List[OptimizationRecord]:
-        """Query optimization history.
+        """Query optimization history (deprecated, use get_event instead).
         
         Args:
             agent_name: Filter by agent name

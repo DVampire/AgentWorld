@@ -2,17 +2,19 @@
 
 Server implementation for the Tool Context Protocol with lazy loading support.
 """
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union, TYPE_CHECKING
 import asyncio
 import os
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
 
 from src.logger import logger
 from src.config import config
 from src.tool.context import ToolContextManager
 from src.tool.types import Tool, ToolConfig, ToolResponse
 from src.utils import assemble_project_path
-from src.optimizer.types import Variable
 
 class TCPServer(BaseModel):
     """TCP Server for managing tool registration and execution with lazy loading."""
@@ -194,25 +196,25 @@ class TCPServer(BaseModel):
             self._registered_configs[tool_config.name] = tool_config
         return tool_config
     
-    async def get_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+    async def get_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from tools, where each tool's code is used as the variable value.
         
         Args:
             tool_name (Optional[str]): Name of a specific tool. If None, returns variables for all tools.
             
         Returns:
-            List[Variable]: List of Variable objects, one for each tool.
+            Dict[str, Variable]: Dictionary mapping tool names to Variable objects.
         """
         return await self.tool_context_manager.get_variables(tool_name=tool_name)
     
-    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> List[Variable]:
+    async def get_trainable_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get trainable variables from tools, filtering out tools with require_grad=False.
         
         Args:
             tool_name (Optional[str]): Name of a specific tool. If None, returns trainable variables for all tools.
             
         Returns:
-            List[Variable]: List of Variable objects for tools with require_grad=True.
+            Dict[str, Variable]: Dictionary mapping tool names to Variable objects for tools with require_grad=True.
         """
         return await self.tool_context_manager.get_trainable_variables(tool_name=tool_name)
     

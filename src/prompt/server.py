@@ -245,15 +245,18 @@ class PromptManager(BaseModel):
             **kwargs
         )
     
-    async def get_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+    async def get_variables(self, prompt_name: Optional[str] = None) -> Dict[str, Variable]:
         """Get all variables from a prompt.
         
         Args:
             prompt_name (str): Name of the prompt (e.g., "tool_calling").
+            
+        Returns:
+            Dict[str, Variable]: Dictionary mapping variable names to Variable objects.
         """
         return await self.prompt_context_manager.get_variables(prompt_name=prompt_name)
     
-    async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> List[Variable]:
+    async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> Dict[str, Variable]:
         """Get all trainable variables from a prompt.
         
         Args:

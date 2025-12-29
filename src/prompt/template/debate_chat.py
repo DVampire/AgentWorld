@@ -59,81 +59,82 @@ SYSTEM_PROMPT = {
     "type": "system_prompt",
     "description": "System prompt for debate chat agents - analytical debate personality",
     "template": SYSTEM_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_profile": {
             "name": "agent_profile",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Describes the debate agent's core identity and capabilities for engaging in multi-agent debates.",
             "require_grad": False,
             "template": None,
             "variables": AGENT_PROFILE
         },
-        {
+        "personality": {
             "name": "personality",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Defines the analytical and evidence-based personality traits for debate participation.",
             "require_grad": False,
             "template": None,
             "variables": PERSONALITY
         },
-        {
+        "debate_guidelines": {
             "name": "debate_guidelines",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Provides guidelines for engaging in substantive debates and building upon previous arguments.",
             "require_grad": False,
             "template": None,
             "variables": DEBATE_GUIDELINES
         },
-        {
+        "response_format": {
             "name": "response_format",
-            "type": "system_prompt_module",
+            "type": "system_prompt",
             "description": "Specifies the format and style requirements for debate responses.",
             "require_grad": False,
             "template": None,
             "variables": RESPONSE_FORMAT
         }
-    ]
+    }
 }
 
 AGENT_MESSAGE_PROMPT = {
     "name": "debate_chat_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for debate chat agents (debate context)",
+    "require_grad": False,
     "template": AGENT_MESSAGE_PROMPT_TEMPLATE,
-    "variables": [
-        {
+    "variables": {
+        "agent_context": {
             "name": "agent_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the debate agent's current state, including current debate topic, conversation history, and plans.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "environment_context": {
             "name": "environment_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes the debate environment, including current time and conversation context.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "tool_context": {
             "name": "tool_context",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Describes available tools and their usage conditions for the debate agent.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-        {
+        "examples": {
             "name": "examples",
-            "type": "agent_message_prompt_module",
+            "type": "agent_message_prompt",
             "description": "Contains few-shot examples of good debate patterns and argumentation strategies.",
             "require_grad": False,
             "template": None,
             "variables": None
         },
-    ],
+    },
 }
 
 @PROMPT.register_module(force=True)
