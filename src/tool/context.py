@@ -1115,6 +1115,62 @@ class ToolContextManager(BaseModel):
         
         return trainable_variables
     
+    async def set_variables(self, tool_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> ToolConfig:
+        """Set variable values in a tool and create a new version.
+        
+        Args:
+            tool_name: Name of the tool to update
+            variable_updates: Dictionary mapping variable names to new values.
+                For tools, this is typically {"code": new_code_string}
+                - example:
+                {
+                    "name": "tool_name",
+                    "variables": "tool code"
+                }
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            ToolConfig: Updated tool configuration
+        """
+        original_config = self._tool_configs.get(tool_name)
+        if original_config is None:
+            raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
+        
+        # For tools, variable_updates format is {"name": "tool_name", "variables": "tool code"}
+        # Extract the new code from "variables" field
+        if "variables" not in variable_updates:
+            raise ValueError(f"variable_updates must contain 'variables' field with tool code, got: {list(variable_updates.keys())}")
+        
+        new_code = variable_updates["variables"]
+        if not isinstance(new_code, str):
+            raise ValueError(f"Tool code must be a string, got {type(new_code)}")
+        
+        # Load tool class from code
+        class_name = dynamic_manager.extract_class_name_from_code(new_code)
+        if not class_name:
+            raise ValueError(f"Cannot extract class name from code")
+        
+        try:
+            tool_cls = dynamic_manager.load_class(
+                new_code,
+                class_name=class_name,
+                base_class=Tool,
+                context="tool"
+            )
+        except Exception as e:
+            logger.error(f"| ❌ Failed to load tool class from code: {e}")
+            raise ValueError(f"Failed to load tool class from code: {e}")
+        
+        # Use update() function to handle version management and persistence
+        update_description = description or f"Updated code for {tool_name}"
+        return await self.update(
+            tool_cls=tool_cls,
+            tool_config_dict=original_config.config,
+            new_version=new_version,
+            description=update_description
+        )
+    
     async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
         """Call a tool by name
         

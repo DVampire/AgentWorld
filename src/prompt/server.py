@@ -256,6 +256,22 @@ class PromptManager(BaseModel):
         """
         return await self.prompt_context_manager.get_variables(prompt_name=prompt_name)
     
+    async def set_variables(self, prompt_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> PromptConfig:
+        """Set variable values in a prompt and create a new version.
+        
+        Args:
+            prompt_name: Name of the prompt to update
+            variable_updates: Dictionary mapping variable names to new values.
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update    
+            
+        Returns:
+            PromptConfig: Updated prompt configuration
+        """
+        updated_config = await self.prompt_context_manager.set_variables(prompt_name=prompt_name, variable_updates=variable_updates, new_version=new_version, description=description)
+        self._registered_configs[updated_config.name] = updated_config
+        return updated_config
+    
     async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> Dict[str, Variable]:
         """Get all trainable variables from a prompt.
         

@@ -255,6 +255,28 @@ class ECPServer(BaseModel):
             Dict[str, Variable]: Dictionary mapping environment names to Variable objects for trainable environments.
         """
         return await self.environment_context_manager.get_trainable_variables(env_name=env_name)
+    
+    async def set_variables(self, env_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> EnvironmentConfig:
+        """Set variable values in an environment and create a new version.
+        
+        Args:
+            env_name: Name of the environment to update
+            variable_updates: Dictionary mapping variable names to new values.
+                For environments, this is typically {"code": new_code_string}
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            EnvironmentConfig: Updated environment configuration
+        """
+        updated_config = await self.environment_context_manager.set_variables(
+            env_name=env_name, 
+            variable_updates=variable_updates, 
+            new_version=new_version, 
+            description=description
+        )
+        self._registered_configs[updated_config.name] = updated_config
+        return updated_config
 
     async def __call__(self, name: str, action: str, input: Dict[str, Any]) -> Any:
         """Call an environment action

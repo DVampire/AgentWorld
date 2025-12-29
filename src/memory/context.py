@@ -800,6 +800,58 @@ class MemoryContextManager(BaseModel):
         
         return trainable_variables
     
+    async def set_variables(self, memory_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> MemoryConfig:
+        """Set variable values in a memory system and create a new version.
+        
+        Args:
+            memory_name: Name of the memory system to update
+            variable_updates: Dictionary mapping variable names to new values.
+                For memory systems, this is typically {"name": "memory_name", "variables": "memory code"}
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            MemoryConfig: Updated memory configuration
+        """
+        original_config = self._memory_configs.get(memory_name)
+        if original_config is None:
+            raise ValueError(f"Memory {memory_name} not found. Use register() to register a new memory system.")
+        
+        # For memory systems, variable_updates format is {"name": "memory_name", "variables": "memory code"}
+        # Extract the new code from "variables" field
+        if "variables" not in variable_updates:
+            raise ValueError(f"variable_updates must contain 'variables' field with memory code, got: {list(variable_updates.keys())}")
+        
+        new_code = variable_updates["variables"]
+        if not isinstance(new_code, str):
+            raise ValueError(f"Memory code must be a string, got {type(new_code)}")
+        
+        # Load memory class from code
+        class_name = dynamic_manager.extract_class_name_from_code(new_code)
+        if not class_name:
+            raise ValueError(f"Cannot extract class name from code")
+        
+        try:
+            memory_cls = dynamic_manager.load_class(
+                new_code,
+                class_name=class_name,
+                base_class=Memory,
+                context="memory"
+            )
+        except Exception as e:
+            logger.error(f"| ❌ Failed to load memory class from code: {e}")
+            raise ValueError(f"Failed to load memory class from code: {e}")
+        
+        # Use update() function to handle version management and persistence
+        update_description = description or f"Updated code for {memory_name}"
+        return await self.update(
+            memory_name=memory_name,
+            memory=memory_cls,
+            new_version=new_version,
+            description=update_description,
+            **original_config.config
+        )
+    
     async def cleanup(self):
         """Cleanup all memory instances and resources."""
         try:

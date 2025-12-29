@@ -234,6 +234,28 @@ class MemoryManager(BaseModel):
             Dict[str, Variable]: Dictionary mapping memory names to Variable objects for memory systems with require_grad=True.
         """
         return await self.memory_context_manager.get_trainable_variables(memory_name=memory_name)
+    
+    async def set_variables(self, memory_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> MemoryConfig:
+        """Set variable values in a memory system and create a new version.
+        
+        Args:
+            memory_name: Name of the memory system to update
+            variable_updates: Dictionary mapping variable names to new values.
+                For memory systems, this is typically {"name": "memory_name", "variables": "memory code"}
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            MemoryConfig: Updated memory configuration
+        """
+        updated_config = await self.memory_context_manager.set_variables(
+            memory_name=memory_name, 
+            variable_updates=variable_updates, 
+            new_version=new_version, 
+            description=description
+        )
+        self._registered_memories[updated_config.name] = updated_config
+        return updated_config
 
 
 # Global Memory Manager instance

@@ -459,8 +459,11 @@ class PromptContextManager(BaseModel):
             logger.error(f"| ❌ Failed to create prompt {prompt_config.name}: {e}")
             raise
     
-    async def update(self, prompt_name: str, prompt: Union[Prompt, Dict[str, Any]], 
-                    new_version: Optional[str] = None, description: Optional[str] = None,
+    async def update(self, 
+                     prompt_name: str,
+                     prompt: Union[Prompt, Dict[str, Any]], 
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None,
                     **kwargs: Any) -> PromptConfig:
         """Update an existing prompt with new configuration and create a new version
         
@@ -1052,7 +1055,22 @@ class PromptContextManager(BaseModel):
         Args:
             prompt_name: Name of the prompt to update
             variable_updates: Dictionary mapping variable names to new values.
-                            Supports nested variables using dot notation (e.g., "agent_context_rules" or "parent.child")
+                - example:
+                    {
+                        "name": "tool_calling_system_prompt",
+                        "variables": {
+                            "agent_context_rules": 
+                            {
+                                "name": "agent_context_rules",
+                                "variables": "You are a helpful assistant."
+                            },
+                            "tool_context_rules": 
+                            {
+                                "name": "tool_context_rules",
+                                "variables": "You can use the following tools: {tools}"
+                            }
+                        }
+                    }
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
             
@@ -1067,110 +1085,61 @@ class PromptContextManager(BaseModel):
         import copy
         updated_variables = copy.deepcopy(original_config.variables)
         
-        def update_variable_recursive(variables_list: List[Dict[str, Any]], var_path: str, new_value: Any) -> bool:
-            """Recursively find and update a variable by path.
-            
-            Supports updating variables at any level, including:
-            - Top-level variables: "agent_context_rules"
-            - Nested sub-variables: "parent.child" or "parent.child.grandchild"
-            - Variables with sub-variables: Will replace the entire variable value
-            
-            Args:
-                variables_list: List of variable dictionaries
-                var_path: Variable path (e.g., "agent_context_rules" or "parent.child")
-                new_value: New value to set (can be string, list of sub-variables, etc.)
-                
-            Returns:
-                True if variable was found and updated, False otherwise
-            """
-            # Split path into parts
-            path_parts = var_path.split('.', 1)
-            current_name = path_parts[0]
-            remaining_path = path_parts[1] if len(path_parts) > 1 else None
-            
-            # Find variable in current level
-            for var_dict in variables_list:
-                if var_dict.get('name') == current_name:
-                    if remaining_path is None:
-                        # Found the target variable - update its value
-                        # This will replace the entire 'variables' field, including any sub-variables
-                        var_dict['variables'] = new_value
-                        logger.debug(f"| Updated variable '{current_name}' with new value (type: {type(new_value).__name__})")
-                        return True
-                    else:
-                        # Need to go deeper - check if this variable has sub-variables
-                        sub_variables = var_dict.get('variables', [])
-                        if isinstance(sub_variables, list):
-                            # Has sub-variables - recursively search
-                            return update_variable_recursive(sub_variables, remaining_path, new_value)
-                        elif isinstance(sub_variables, dict):
-                            # Single sub-variable as dict - convert to list for recursive search
-                            return update_variable_recursive([sub_variables], remaining_path, new_value)
-                        else:
-                            # This variable doesn't have sub-variables (it's a leaf node with string value)
-                            # Can't go deeper
-                            logger.warning(f"| Variable '{current_name}' is a leaf node (value type: {type(sub_variables).__name__}), cannot access nested path '{remaining_path}'")
-                            return False
-            
-            return False
+        # Update variables directly
+        # variables is typically Dict[str, Dict] where each dict has 'variables' field
+        if not isinstance(updated_variables, dict):
+            raise ValueError(f"Variables must be a dict, got {type(updated_variables)}")
         
-        # Update each variable
         updated_count = 0
-        for var_name, new_value in variable_updates.items():
-            if update_variable_recursive(updated_variables, var_name, new_value):
-                updated_count += 1
-                logger.info(f"| ✅ Updated variable {var_name} in prompt {prompt_name}")
-            else:
-                logger.warning(f"| ⚠️ Variable {var_name} not found in prompt {prompt_name}")
+        for var_path, new_value in variable_updates.items():
+            path_parts = var_path.split('.')
+            current = updated_variables
+            
+            # Navigate through path
+            for i, part in enumerate(path_parts):
+                if part not in current:
+                    logger.warning(f"| ⚠️ Variable '{part}' not found in path '{var_path}'")
+                    break
+                
+                if i == len(path_parts) - 1:
+                    # Last part - update the variable's 'variables' field
+                    if isinstance(current[part], dict):
+                        current[part]['variables'] = new_value
+                        updated_count += 1
+                        logger.info(f"| ✅ Updated variable {var_path} in prompt {prompt_name}")
+                    elif hasattr(current[part], 'variables'):
+                        current[part].variables = new_value
+                        updated_count += 1
+                        logger.info(f"| ✅ Updated variable {var_path} in prompt {prompt_name}")
+                    else:
+                        logger.warning(f"| ⚠️ Cannot update variable '{var_path}': invalid structure")
+                else:
+                    # Go deeper
+                    next_var = current[part]
+                    if isinstance(next_var, dict) and 'variables' in next_var:
+                        current = next_var['variables']
+                    elif hasattr(next_var, 'variables') and isinstance(next_var.variables, dict):
+                        current = next_var.variables
+                    else:
+                        logger.warning(f"| ⚠️ Variable '{part}' has no nested variables for path '{var_path}'")
+                        break
         
         if updated_count == 0:
             raise ValueError(f"No variables were updated. Check variable names: {list(variable_updates.keys())}")
         
-        # Determine new version from version_manager
-        if new_version is None:
-            # Get current version from version_manager and generate next patch version
-            new_version = await version_manager.generate_next_version("prompt", prompt_name, "patch")
+        # Convert to format expected by update() function
+        # update() expects a dict with prompt config fields (template, variables, etc.)
+        # Use model_dump to get the full config, then update variables
+        prompt_dict = original_config.model_dump()
+        prompt_dict['variables'] = updated_variables
         
-        # Get source code (use original config's code)
-        prompt_code = original_config.code
-        
-        # Create updated config with new variables
-        updated_config = PromptConfig(
-            name=prompt_name,
-            type=original_config.type,
-            description=description or f"Updated variables: {', '.join(variable_updates.keys())}",
-            version=new_version,
-            template=original_config.template,
-            variables=updated_variables,
-            cls=original_config.cls,
-            config=original_config.config,
-            instance=None,  # Instance will be built when needed
-            metadata=original_config.metadata,
-            code=prompt_code
+        updated_config = await self.update(
+            prompt_name=prompt_name,
+            prompt=prompt_dict,
+            new_version=new_version,
+            description=description
         )
-        
-        # Update the prompt config (replaces current version)
-        self._prompt_configs[prompt_name] = updated_config
-        
-        # Store in version history
-        if prompt_name not in self._prompt_history_versions:
-            self._prompt_history_versions[prompt_name] = {}
-        self._prompt_history_versions[prompt_name][updated_config.version] = updated_config
-        
-        # Register version record to version manager
-        await version_manager.register_version(
-            "prompt", 
-            prompt_name, 
-            new_version,
-            description=description or f"Updated variables: {', '.join(variable_updates.keys())} from {original_config.version}"
-        )
-        
-        # Persist to JSON
-        await self.save_to_json()
-        # Save contract to file
-        await self.save_contract()
-        
-        logger.info(f"| 📝 Updated prompt variables: {prompt_name} v{updated_config.version}")
+        logger.info(f"| ✅ Updated variables in prompt {prompt_name}")
         return updated_config
     
     async def save_contract(self, prompt_names: Optional[List[str]] = None):

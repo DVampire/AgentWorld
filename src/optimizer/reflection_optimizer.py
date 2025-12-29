@@ -5,16 +5,11 @@ from pydantic import BaseModel
 from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
-from src.memory import memory_manager
-from src.tool import tcp
 
-
-class ImprovedVariable(BaseModel):
-    name: str = Field(description="The name of the improved variable.")
-    variables: Optional[Union[Dict[str, 'ImprovedVariable'], str]] = Field(default=None, description="The elements of the improved variable. Can be a ImprovedVariable dict (keyed by name), or direct value (string).")
 
 class ImprovedVariables(BaseModel):
-    variables: List[ImprovedVariable] = Field(description="The list of improved variables.")
+    name: str = Field(description="The name of the improved variable.")
+    variables: Optional[Union[Dict[str, 'ImprovedVariables'], str]] = Field(default=None, description="The elements of the improved variable. Can be a ImprovedVariable dict (keyed by name), or direct value (string).")
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
@@ -62,6 +57,7 @@ class ReflectionOptimizer(Optimizer):
         """
         # Lazy import to avoid circular dependency
         from src.prompt import prompt_manager
+        from src.tool import tcp
         
         variables: Dict[str, Any] = {}
         
@@ -191,7 +187,7 @@ class ReflectionOptimizer(Optimizer):
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_variables(self, task: str, variables: List, reflection_analysis: str):
+    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str) -> ImprovedVariables:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -231,7 +227,7 @@ class ReflectionOptimizer(Optimizer):
         
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_model=ImprovedVariables)
-            improved_variables: List[ImprovedVariable] = response.extra.parsed_model.variables
+            improved_variables: Dict[str, ImprovedVariables] = response.extra.parsed_model.variables
             return improved_variables
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
@@ -255,6 +251,10 @@ class ReflectionOptimizer(Optimizer):
         
         # Lazy import to avoid circular dependency
         from src.prompt import prompt_manager
+        from src.tool import tcp
+        from src.environment import ecp
+        from src.agent import acp
+        from src.memory import memory_manager
         
         # Use optimization_steps if provided, otherwise use self.max_steps
         optimization_steps = self.max_steps
@@ -322,14 +322,8 @@ class ReflectionOptimizer(Optimizer):
                 )
                 
                 # Step3: Update variables based on improved variables.
-                for variable in improved_variables:
-                    variable_name = variable.name
-                    variable_value = variable.variables
-                    
-                    if variable_name in trainable_variables:
-                        variable_type = trainable_variables[variable_name].type
-                    else:
-                        continue
+                for variable_name, variable_value in improved_variables.items():
+                    variable_type = trainable_variables[variable_name].type
                     
                     if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
                         await prompt_manager.set_variables(
@@ -340,6 +334,12 @@ class ReflectionOptimizer(Optimizer):
                         await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
                     elif variable_type == "solution":
                         trainable_variables[variable_name].value = variable_value
+                    elif variable_type == "environment_code":
+                        await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                    elif variable_type == "agent_code":
+                        await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                    elif variable_type == "memory_code":
+                        await memory_manager.set_variables(variable_name=variable_name, variable_value=variable_value)
                     else:
                         continue
                 

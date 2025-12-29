@@ -218,6 +218,27 @@ class TCPServer(BaseModel):
         """
         return await self.tool_context_manager.get_trainable_variables(tool_name=tool_name)
     
+    async def set_variables(self, tool_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> ToolConfig:
+        """Set variable values in a tool and create a new version.
+        
+        Args:
+            tool_name: Name of the tool to update
+            variable_updates: Dictionary mapping variable names to new values.
+            new_version: New version string. If None, auto-increments from current version.
+            description: Description for this version update
+            
+        Returns:
+            ToolConfig: Updated tool configuration
+        """
+        updated_config = await self.tool_context_manager.set_variables(
+            tool_name=tool_name, 
+            variable_updates=variable_updates,
+            new_version=new_version, 
+            description=description
+        )
+        self._registered_configs[updated_config.name] = updated_config
+        return updated_config
+    
     async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
         """Call a tool by name
         
