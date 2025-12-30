@@ -230,7 +230,7 @@ class ReflectionOptimizer(Optimizer):
         
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_model=ImprovedVariables)
-            improved_variables: Dict[str, ImprovedVariables] = response.extra.parsed_model.variables
+            improved_variables: ImprovedVariables = response.extra.parsed_model
             return improved_variables
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
