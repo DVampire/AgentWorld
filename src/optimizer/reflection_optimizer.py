@@ -6,10 +6,13 @@ from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
 
+class LeafVariable(BaseModel):
+    name: str = Field(description="Name of the leaf variable")
+    variables: str = Field(description="Leaf value (no further nesting allowed)")
 
 class ImprovedVariables(BaseModel):
-    name: str = Field(description="The name of the improved variable.")
-    variables: Optional[Union[Dict[str, 'ImprovedVariables'], str]] = Field(default=None, description="The elements of the improved variable. Can be a ImprovedVariable dict (keyed by name), or direct value (string).")
+    name: str = Field(description="The name of the variable")
+    variables: Optional[Union[str, Dict[str, LeafVariable]]] = Field(default=None,description=("Either a direct string value or a mapping of names to leaf variables. Leaf variables must not contain nested objects."))
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
