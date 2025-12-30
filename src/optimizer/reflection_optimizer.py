@@ -206,7 +206,28 @@ class ReflectionOptimizer(Optimizer):
             variable_mapping: Mapping from variable name to Variable object.
 
         Returns:
-            Dict[str, str]: Dictionary mapping variable names to improved values.
+            {
+                "variables": {
+                    # prompt variables
+                    "tool_calling_system_prompt": {
+                        "name": "tool_calling_system_prompt",
+                        "variables": {
+                            "agent_context_rules": {
+                                "name": "agent_context_rules",
+                                "variables": "You are a helpful assistant."
+                            },
+                            "tool_context_rules": {
+                                "name": "tool_context_rules",
+                                "variables": "You can use the following tools: {tools}"
+                            }
+                    }
+                    # tool variables
+                    "bash_tool": {
+                        "name": "tool_calling_tool_code",
+                        "variables": "tool_code"
+                    }
+                }
+            }
         """
         # Lazy import to avoid circular dependency
         from src.prompt import prompt_manager
