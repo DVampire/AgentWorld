@@ -10,9 +10,13 @@ class LeafVariable(BaseModel):
     name: str = Field(description="Name of the leaf variable")
     variables: str = Field(description="Leaf value (no further nesting allowed)")
 
-class ImprovedVariables(BaseModel):
+class ImprovedVariable(BaseModel):
     name: str = Field(description="The name of the variable")
     variables: Optional[Union[str, Dict[str, LeafVariable]]] = Field(default=None,description=("Either a direct string value or a mapping of names to leaf variables. Leaf variables must not contain nested objects."))
+
+class ImprovedVariables(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    variables: Dict[str, ImprovedVariable] = Field(default={}, description="The variables to improve")
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
@@ -325,7 +329,7 @@ class ReflectionOptimizer(Optimizer):
                 )
                 
                 # Step3: Update variables based on improved variables.
-                for variable_name, variable_value in improved_variables.items():
+                for variable_name, variable_value in improved_variables.variables.items():
                     variable_type = trainable_variables[variable_name].type
                     
                     if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
