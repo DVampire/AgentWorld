@@ -104,7 +104,16 @@ class BenchmarkManager(Benchmark):
         如果非常严格，建议删除此方法或警告。
         """
         return self._dataset_instance
+    
+    
+    async def reset(self, benchmark_name: str, split: Optional[str] = None):
+        
+        if split is None:
+            split = "test"
 
+        benchmark = self._benchmarks[benchmark_name]
+        await benchmark.reset(split=split)
+        
     async def eval(self, prediction: str, task_id: str, **kwargs) -> float:
         """
         [Async] 执行评估
@@ -197,3 +206,6 @@ class BenchmarkManager(Benchmark):
         
         avg_score = sum(scores) / len(scores) if scores else 0.0
         return avg_score
+    
+    
+benchmark_manager = BenchmarkManager()

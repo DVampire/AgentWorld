@@ -5,8 +5,9 @@ import os
 # --- 导入必要的模块 ---
 sys.path.append(os.getcwd())
 
-from src.benchmark.server import BenchmarkManager
-from src.benchmark.aime import AIMEBenchmark 
+from src.benchmark import benchmark_manager
+
+
 
 # ✅ 新增：导入模型管理器和消息类型
 # 假设你之前的 ModelManager 代码保存在 src/model/manager.py 中

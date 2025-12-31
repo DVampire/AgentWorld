@@ -8,6 +8,11 @@ class AIMEBenchmark(Benchmark):
     针对特定 System Prompt ("Answer: $VALUE") 优化的评估函数
     """
     
+    def __init__(self,
+                 
+                 **kwargs):
+        super().__init__(**kwargs)
+        
     def _clean_number(self, text: str) -> str:
         """
         [Helper] 数字清洗
