@@ -254,7 +254,7 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| ✨ Generating improved variables (may improve multiple variables)...")
         
         try:
-            response = await model_manager(model=self.model_name, messages=messages, response_model=ImprovedVariables)
+            response = await model_manager(model=self.model_name, messages=messages, response_format=ImprovedVariables)
             improved_variables: ImprovedVariables = response.extra.parsed_model
             return improved_variables
         except Exception as e:
@@ -361,7 +361,8 @@ class ReflectionOptimizer(Optimizer):
                     elif variable_type == "tool_code":
                         await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
                     elif variable_type == "solution":
-                        trainable_variables[variable_name].value = variable_value
+                        # Variable model uses `variables` to hold the actual content/value.
+                        trainable_variables[variable_name].variables = variable_value
                     elif variable_type == "environment_code":
                         await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
                     elif variable_type == "agent_code":
@@ -377,7 +378,7 @@ class ReflectionOptimizer(Optimizer):
                 improved_agent_result = agent_response_extra_data['final_result']
                 improved_agent_reasoning = agent_response_extra_data['final_reasoning']
                 improved_solution_variable = trainable_variables['solution']
-                improved_solution_variable.value = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
+                improved_solution_variable.variables = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
                 
                 # Step5: Update trainable variables with improved variables.
                 trainable_variables = await self.get_trainable_variables(agent=agent)
