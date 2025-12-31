@@ -154,8 +154,14 @@ class MemoryManager(BaseModel):
         """
         return await self.memory_context_manager.start_session(memory_name, session_id, agent_name, task_id, description, **kwargs)
     
-    async def add_event(self, memory_name: str, step_number: int, event_type: Any, data: Any,
-                       agent_name: str, task_id: Optional[str] = None, session_id: Optional[str] = None, **kwargs):
+    async def add_event(self, 
+                        memory_name: str,
+                        step_number: int, 
+                        event_type: Any, data: Any,
+                        agent_name: str, 
+                        task_id: Optional[str] = None, 
+                        session_id: Optional[str] = None, 
+                        **kwargs):
         """Add an event to memory.
         
         Args:

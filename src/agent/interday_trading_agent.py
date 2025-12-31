@@ -139,7 +139,7 @@ class InterdayTradingAgent(Agent):
             await memory_manager.add_event(
                 memory_name=self.memory_name,
                 step_number=self.step_number,
-                event_type="action_step",
+                event_type=EventType.TOOL_STEP,
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id
@@ -150,7 +150,7 @@ class InterdayTradingAgent(Agent):
                 await memory_manager.add_event(
                     memory_name=self.memory_name,
                     step_number=self.step_number,
-                    event_type="task_end",
+                    event_type=EventType.TASK_END,
                     data=dict(result=final_result),
                     agent_name=self.name,
                     task_id=task_id
@@ -355,7 +355,7 @@ class InterdayTradingAgent(Agent):
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number, 
-            event_type="task_start", 
+            event_type=EventType.TASK_START, 
             data=dict(task=task),
             agent_name=self.name,
             task_id=task_id
@@ -394,7 +394,7 @@ class InterdayTradingAgent(Agent):
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number,
-            event_type="task_end",
+            event_type=EventType.TASK_END,
             data=response,
             agent_name=self.name,
             task_id=task_id

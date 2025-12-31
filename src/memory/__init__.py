@@ -6,7 +6,7 @@ from .context import MemoryContextManager
 from .general_memory_system import GeneralMemorySystem
 from .online_trading_memory_system import OnlineTradingMemorySystem
 from .offline_trading_memory_system import OfflineTradingMemorySystem
-from .optimizer_memory_system import OptimizerMemorySystem, OptimizationRecord, OptimizationSession
+from .optimizer_memory_system import OptimizerMemorySystem
 
 __all__ = [
     "MemoryManager",
@@ -18,8 +18,6 @@ __all__ = [
     "OnlineTradingMemorySystem",
     "OfflineTradingMemorySystem",
     "OptimizerMemorySystem",
-    "OptimizationRecord",
-    "OptimizationSession",
     "ChatEvent",
     "EventType",
     "SessionInfo",

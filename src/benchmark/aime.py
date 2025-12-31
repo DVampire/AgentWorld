@@ -1,5 +1,3 @@
-
-
 from src.benchmark.types import Benchmark
 
 class AIMEBenchmark(Benchmark):

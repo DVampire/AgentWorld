@@ -3,70 +3,299 @@ Memory system for recording optimizer optimization history and experiences.
 Used for agent self-evolution by learning from past optimization experiences.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
 import json
 import os
-import uuid
 
 from src.logger import logger
-from src.utils import file_lock
-from src.memory.types import Memory
+from src.model import model_manager
+from src.utils import dedent, file_lock
+from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
+from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo, Memory
 from src.registry import MEMORY_SYSTEM
 
+class CombinedMemoryOutput(BaseModel):
+    """Structured output for combined summary and insight generation"""
+    summaries: List[Summary] = Field(description="List of summary points")
+    insights: List[Insight] = Field(description="List of insights extracted from the conversation")
 
-class OptimizationRecord(BaseModel):
-    """Record of a single optimization step"""
-    id: str = Field(default_factory=lambda: f"opt_{uuid.uuid4().hex[:8]}", description="Unique identifier for the optimization record")
-    timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp of the optimization")
-    
-    # Optimization context
-    agent_name: str = Field(description="Name of the agent being optimized")
-    task: str = Field(description="Task description")
-    optimization_step: int = Field(description="Step number in the optimization process")
-    
-    # Prompt variables
-    variable_name: str = Field(description="Name of the prompt variable being optimized")
-    variable_description: Optional[str] = Field(default=None, description="Description of the prompt variable")
-    before_value: str = Field(description="Prompt value before optimization")
-    after_value: str = Field(description="Prompt value after optimization")
-    
-    # Execution and reflection
-    execution_result: Optional[str] = Field(default=None, description="Agent execution result")
-    reflection_analysis: Optional[str] = Field(default=None, description="Reflection analysis (if applicable)")
-    
-    # Performance metrics
-    reward: Optional[float] = Field(default=None, description="Reward value (if applicable)")
-    loss: Optional[float] = Field(default=None, description="Loss value (if applicable)")
-    advantage: Optional[float] = Field(default=None, description="Advantage value (if applicable)")
-    kl_divergence: Optional[float] = Field(default=None, description="KL divergence (if applicable)")
-    
-    # Metadata
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
-    
-    def __str__(self):
-        return f"OptimizationRecord(id={self.id}, step={self.optimization_step}, variable={self.variable_name})"
-    
-    def __repr__(self):
-        return self.__str__()
+class ProcessDecision(BaseModel):
+    should_process: bool = Field(description="Whether to process the memory")
+    reason: str = Field(description="Reason for the decision")
 
+class CombinedMemory:
+    """Combined memory that handles both summaries and insights using structured output"""
+    def __init__(self, 
+                 model_name: str = "gpt-4.1", 
+                 max_summaries: int = 20,
+                 max_insights: int = 100, 
+                 ):
+        
+        self.model_name = model_name
+        self.max_summaries = max_summaries
+        self.max_insights = max_insights
+        
+        self.events: List[ChatEvent] = []
+        # Store the candidate chat history that not been processed yet
+        self.candidate_chat_history: List[Message] = []
+        self.summaries: List[Summary] = []
+        self.insights: List[Insight] = []
+    
+    async def add_event(self, event: Union[ChatEvent, List[ChatEvent]]):
+        """Process conversation events and extract both summaries and insights"""
+        # Add events to chat history
+        if isinstance(event, ChatEvent):
+            events = [event]
+        else:
+            events = event
+            
+        for event in events:
+            self.events.append(event)
+            if event.event_type == EventType.OPTIMIZATION_STEP or event.event_type == EventType.TOOL_STEP or event.event_type == EventType.TASK_END:
+                content = str(event)
+                if event.agent_name:
+                    # AI output
+                    self.candidate_chat_history.append(AssistantMessage(content=content))
+                else:
+                    # User input
+                    self.candidate_chat_history.append(HumanMessage(content=content))
+        
+        # Let LLM decide if we need to process and generate summaries/insights
+        should_process = await self._check_should_process_memory()
+        if should_process:
+            await self._process_memory()
+            
+    async def _get_new_lines_text(self) -> str:
+        """Get new lines from chat history"""
+        new_lines = []
+        for msg in self.candidate_chat_history:
+            if isinstance(msg, HumanMessage):
+                new_lines.append(
+                dedent(f"""
+                <human>
+                {msg.content}
+                </human>
+                """)
+                )
+            elif isinstance(msg, AssistantMessage):
+                new_lines.append(
+                dedent(f"""
+                <assistant>
+                {msg.content}
+                </assistant>
+                """)
+                )
+        new_lines_text = chr(10).join(new_lines)
+        
+        return new_lines_text
+    
+    async def _get_current_memory_text(self) -> str:
+        """Get current memory text"""
+        current_memory = dedent(f"""<summaries>
+            {chr(10).join([str(summary) for summary in self.summaries])}
+            </summaries>
+            <insights>
+            {chr(10).join([str(insight) for insight in self.insights])}
+            </insights>""")
+        return current_memory
 
-class OptimizationSession(BaseModel):
-    """Session tracking a complete optimization run"""
-    session_id: str = Field(description="Unique session identifier")
-    agent_name: str = Field(description="Name of the agent")
-    task: str = Field(description="Task description")
-    start_time: datetime = Field(default_factory=datetime.now, description="Session start time")
-    end_time: Optional[datetime] = Field(default=None, description="Session end time")
-    total_steps: int = Field(default=0, description="Total optimization steps")
-    records: List[OptimizationRecord] = Field(default_factory=list, description="Optimization records")
+    async def _check_should_process_memory(self) -> bool:
+        """Check if we should process memory based on conversation content"""
+        if len(self.candidate_chat_history) <= 3:  # If there are fewer than 3 events, do not process the memory.
+            return False
+            
+        new_lines = await self._get_new_lines_text()
+        current_memory = await self._get_current_memory_text()
+        
+        # Create decision prompt
+        decision_prompt = dedent(f"""You are analyzing a conversation to decide whether to process it and generate summaries and insights.
+        Current conversation has {self.size()} events.
+
+        Decision criteria:
+        1. If there are fewer than 3 events, do not process the memory.
+        2. If the conversation is repetitive or doesn't add new information, do not process the memory.
+        3. If there are significant new insights, decisions, or learnings, process the memory.
+        4. If the conversation is getting long (more than 5 events), process the memory.
+
+        Current memory:
+        {current_memory}
+
+        New conversation events:
+        {new_lines}
+
+        Decide if you should process the memory.""")
+                
+        try:
+            # Build messages
+            messages = [
+                SystemMessage(content="You are a memory processing decision system. Always respond with valid JSON."),
+                HumanMessage(content=decision_prompt)
+            ]
+            
+            # Call model manager with BaseModel response_format
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                response_format=ProcessDecision
+            )
+            if not response.extra or not response.extra.parsed_model:
+                logger.warning("Response does not contain parsed_model")
+                return False
+            processed_decision_response = response.extra.parsed_model
+            should_process = processed_decision_response.should_process
+            reason = processed_decision_response.reason
+            
+            logger.info(f"| Memory processing decision: {should_process} - {reason}")
+            return should_process
+                
+        except Exception as e:
+            logger.warning(f"Failed to check if should process memory: {e}")
+            return False
     
-    def __str__(self):
-        return f"OptimizationSession(id={self.session_id}, steps={self.total_steps})"
+    async def _process_memory(self):
+        """Process memory and generate summaries and insights"""
+        if not self.candidate_chat_history:
+            return
+            
+        new_lines = await self._get_new_lines_text()
+        current_memory = await self._get_current_memory_text()
+        
+        # Create processing prompt using the combined template, optimized for optimization learning
+        prompt = dedent(f"""Analyze the optimization events and extract both summaries and insights.
+        <intro>
+        This is an optimizer memory system that records optimization experiences for agent self-evolution.
+        Focus on extracting actionable knowledge that can help future optimizations.
+        
+        For summaries, focus on:
+        1. Key optimization decisions and variable changes
+        2. Which variables were optimized and why
+        3. Task progress and optimization outcomes
+        4. Reflection analysis highlights
+        
+        For insights, look for:
+        1. **Effective optimization strategies**: Which variable types benefit most from optimization? What patterns lead to successful improvements?
+        2. **Variable-specific learnings**: What works well for prompt variables vs tool code vs solution variables?
+        3. **Reflection patterns**: What kinds of reflection analysis lead to better improvements?
+        4. **Common pitfalls**: What mistakes should be avoided in future optimizations?
+        5. **Task-specific patterns**: What optimization strategies work best for different task types?
+        6. **Improvement patterns**: What changes to variables typically lead to better results?
+        7. **Optimization effectiveness**: Which optimization steps showed the most improvement?
+
+        Avoid repeating information already in the summaries or insights.
+        If there is nothing new, do not add a new entry.
+        Prioritize insights that can be directly applied to future optimization tasks.
+        </intro>
+
+        <output_format>
+        You must respond with a valid JSON object containing both "summaries" and "insights" arrays.
+        - "summaries": array of objects, each with:
+            - "id": string (the unique identifier for the summary)
+            - "importance": string ("high", "medium", or "low")
+            - "content": string (the summary content)
+        - "insights": array of objects, each with:
+            - "id": string (the unique identifier for the insight)
+            - "importance": string ("high", "medium", or "low")
+            - "content": string (the insight text)
+            - "source_event_id": string (the ID of the event that generated this insight)
+            - "tags": array of strings (categorization tags like "variable_optimization", "reflection_pattern", "effective_strategy", "common_pitfall", etc.)
+        </output_format>
+
+        Current memory:
+        {current_memory}
+
+        New conversation events:
+        {new_lines}
+
+        Based on the current memory and new conversation events, generate new summaries and insights that will help future optimizations.
+        """)
+        
+        try:
+            # Build messages
+            messages = [
+                SystemMessage(content="You are a memory processing system. Always respond with valid JSON."),
+                HumanMessage(content=prompt)
+            ]
+            
+            # Call model manager with BaseModel response_format
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+                response_format=CombinedMemoryOutput
+            )
+            
+            # Check if response was successful and contains parsed model
+            if not response.success:
+                raise ValueError(f"Model call failed: {response.message}")
+            
+            if not response.extra or not response.extra.parsed_model:
+                raise ValueError(f"Response does not contain parsed_model. Response: {response.message}")
+            
+            combined_memory_output_response = response.extra.parsed_model
+            
+            new_summaries = combined_memory_output_response.summaries
+            new_insights = combined_memory_output_response.insights
+            
+            # Update summaries and insights
+            self.summaries.extend(new_summaries)
+            self.insights.extend(new_insights)
+            
+            # Sort and limit summaries and insights
+            await self._sort_and_limit_summaries()
+            await self._sort_and_limit_insights()
+            
+            # Clear candidate chat history
+            self.candidate_chat_history.clear()
+            
+        except Exception as e:
+            logger.warning(f"Failed to process memory: {e}")
     
-    def __repr__(self):
-        return self.__str__()
+    async def _sort_and_limit_insights(self):
+        """Sort insights by importance and limit count"""
+        # Sort by importance: high > medium > low
+        importance_order = {Importance.HIGH: 0, Importance.MEDIUM: 1, Importance.LOW: 2}
+        self.insights.sort(key=lambda x: importance_order[x.importance])
+        
+        # Limit count
+        if len(self.insights) > self.max_insights:
+            self.insights = self.insights[:self.max_insights]
+
+    async def _sort_and_limit_summaries(self):
+        """Sort summaries by importance and limit count"""
+        importance_order = {Importance.HIGH: 0, Importance.MEDIUM: 1, Importance.LOW: 2}
+        self.summaries.sort(key=lambda x: importance_order[x.importance])
+        
+        # Limit count
+        if len(self.summaries) > self.max_summaries:
+            self.summaries = self.summaries[:self.max_summaries]
+    
+    def clear(self):
+        """Clear all memory"""
+        self.events.clear()
+        self.candidate_chat_history.clear()
+        self.summaries.clear()
+        self.insights.clear()
+    
+    def size(self) -> int:
+        """Return current event count"""
+        return len(self.events)
+    
+    async def get_event(self, n: Optional[int] = None) -> List[ChatEvent]:
+        if n is None:
+            return self.events
+        
+        return self.events[-n:] if len(self.events) > n else self.events
+    
+    async def get_summary(self, n: Optional[int] = None) -> List[Summary]:
+        if n is None:
+            return self.summaries
+        return self.summaries[-n:] if len(self.summaries) > n else self.summaries
+    
+    async def get_insight(self, n: Optional[int] = None) -> List[Insight]:
+        if n is None:
+            return self.insights
+        return self.insights[-n:] if len(self.insights) > n else self.insights
 
 
 @MEMORY_SYSTEM.register_module(force=True)
@@ -77,7 +306,9 @@ class OptimizerMemorySystem(Memory):
     
     def __init__(self, 
                  base_dir: Optional[str] = None,
-                 max_records_per_session: int = 1000,
+                 model_name: str = "gpt-4.1",
+                 max_summaries: int = 10,
+                 max_insights: int = 10,
                  require_grad: bool = False,
                  **kwargs):
         super().__init__(require_grad=require_grad, **kwargs)
@@ -89,110 +320,65 @@ class OptimizerMemorySystem(Memory):
             os.makedirs(self.base_dir, exist_ok=True)
         logger.info(f"| Optimizer memory system base directory: {self.base_dir}")
         self.save_path = os.path.join(self.base_dir, "optimizer_memory.json")
-        
-        self.max_records_per_session = max_records_per_session
-        
-        # Storage
-        self.sessions: Dict[str, OptimizationSession] = {}
+            
+        self.model_name = model_name
+        self.max_summaries = max_summaries
+        self.max_insights = max_insights
+    
+        self.session_memory: Dict[str, CombinedMemory] = {}
+        self.session_info: Dict[str, SessionInfo] = {}
         self.current_session_id: Optional[str] = None
-        
-        # Auto-load from JSON if file exists (will be done async if needed)
-        # Note: We can't do async in __init__, so loading will happen on first async call
-        self._load_pending = self.save_path and os.path.exists(self.save_path)
     
-    async def _ensure_loaded(self):
-        """Ensure memory is loaded from JSON if pending."""
-        if hasattr(self, '_load_pending') and self._load_pending:
-            await self.load_from_json(self.save_path)
-            self._load_pending = False
-    
-    async def start_session(self,
-                            session_id: str,
-                            agent_name: Optional[str] = None,
-                            task_id: Optional[str] = None,
-                            description: Optional[str] = None,
-                            **kwargs) -> str:
-        """Start a new optimization session.
-        
-        Args:
-            session_id: Session ID
-            agent_name: Name of the agent being optimized
-            task_id: Optional task ID (can be used as task description)
-            description: Optional description (used as task description if provided)
-            **kwargs: Additional arguments
-            
-        Returns:
-            Session ID
-        """
-        await self._ensure_loaded()
-        
-        # Use description or task_id as task
-        task = description or task_id or ""
-        
-        session = OptimizationSession(
-            session_id=session_id,
-            agent_name=agent_name or "",
-            task=task,
-            start_time=datetime.now()
-        )
-        
-        self.sessions[session_id] = session
-        self.current_session_id = session_id
-        
-        logger.info(f"| 🚀 Started optimization session: {session_id}")
-        return session_id
-    
-    async def start_optimization_session(self,
-                                   agent_name: str,
-                                   task: str,
-                                   session_id: Optional[str] = None) -> str:
-        """Start a new optimization session (deprecated, use start_session instead).
-        
-        Args:
-            agent_name: Name of the agent being optimized
-            task: Task description
-            session_id: Optional session ID. If None, generates a new one.
-            
-        Returns:
-            Session ID
-        """
-        if session_id is None:
-            session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
-        
-        return await self.start_session(
-            session_id=session_id,
-            agent_name=agent_name,
-            description=task
-        )
-    
-    async def end_session(self, session_id: Optional[str] = None):
-        """End an optimization session.
-        
-        Args:
-            session_id: Optional session ID. If None, uses current session.
-        """
+    async def _check_session_id(self, session_id: Optional[str] = None):
         if session_id is None:
             session_id = self.current_session_id
+        return session_id
+
+    async def start_session(self, 
+                            session_id: str, 
+                            agent_name: Optional[str] = None, 
+                            task_id: Optional[str] = None, 
+                            description: Optional[str] = None
+                            ) -> str:
+        """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
+        # Auto-load from JSON if file exists and save_path is set
+        if self.save_path and os.path.exists(self.save_path):
+            logger.info(f"| 📂 Loading optimizer memory from JSON: {self.save_path}")
+            await self.load_from_json(self.save_path)
+            logger.info(f"| ✅ Optimizer memory loaded from JSON")
         
-        if session_id and session_id in self.sessions:
-            self.sessions[session_id].end_time = datetime.now()
+        session_info = SessionInfo(
+            session_id=session_id,
+            agent_name=agent_name,
+            task_id=task_id,
+            description=description
+        )
+        self.session_info[session_id] = session_info
+        self.current_session_id = session_id
+        
+        # Initialize CombinedMemory for this session if it doesn't exist
+        if session_id not in self.session_memory:
+            self.session_memory[session_id] = CombinedMemory(
+                model_name=self.model_name, 
+                max_summaries=self.max_summaries,
+                max_insights=self.max_insights
+            )
+        
+        return session_id
+    
+    async def end_session(self, session_id: Optional[str] = None):
+        """End session. Automatically saves to JSON if save_path is set."""
+        session_id = await self._check_session_id(session_id)
+            
+        if session_id and session_id in self.session_info:
+            self.session_info[session_id].end_time = datetime.now()
             
             if session_id == self.current_session_id:
                 self.current_session_id = None
             
-            # Auto-save to JSON
+            # Auto-save to JSON if save_path is set
             if self.save_path:
                 await self.save_to_json(self.save_path)
-            
-            logger.info(f"| ✅ Ended optimization session: {session_id}")
-    
-    async def end_optimization_session(self, session_id: Optional[str] = None):
-        """End an optimization session (deprecated, use end_session instead).
-        
-        Args:
-            session_id: Optional session ID. If None, uses current session.
-        """
-        await self.end_session(session_id)
     
     async def add_event(self,
                         step_number: int,
@@ -201,334 +387,286 @@ class OptimizerMemorySystem(Memory):
                         agent_name: str,
                         task_id: Optional[str] = None,
                         session_id: Optional[str] = None,
-                        **kwargs) -> OptimizationRecord:
+                        **kwargs):
         """Add event to optimizer memory system.
         
         Args:
             step_number: Step number (optimization step)
-            event_type: Event type (not used, kept for compatibility)
-            data: Event data (dict containing optimization record fields)
+            event_type: Event type (use EventType.OPTIMIZATION_STEP with "variable_changes" in data for full optimization records)
+            data: Event data (dict containing optimization information)
             agent_name: Agent name
             task_id: Optional task ID
             session_id: Optional session ID. If None, uses current session.
             **kwargs: Additional arguments (can include optimization-specific fields)
-            
-        Returns:
-            OptimizationRecord
         """
-        # Extract optimization-specific fields from data or kwargs
+        session_id = await self._check_session_id(session_id)
+        if session_id is None:
+            logger.warning("| No session ID available for add_event")
+            return
+        
+        # Ensure event_type is EventType enum
+        if not isinstance(event_type, EventType):
+            # Try to convert string to EventType
+            if isinstance(event_type, str):
+                try:
+                    event_type = EventType(event_type)
+                except ValueError:
+                    logger.warning(f"| ⚠️ Invalid event_type '{event_type}', defaulting to OPTIMIZATION_STEP")
+                    event_type = EventType.OPTIMIZATION_STEP
+            else:
+                logger.warning(f"| ⚠️ Invalid event_type type '{type(event_type)}', defaulting to OPTIMIZATION_STEP")
+                event_type = EventType.OPTIMIZATION_STEP
+        
+        # Build event data string from optimization information
+        event_data_str = ""
         if isinstance(data, dict):
-            variable_name = data.get("variable_name", kwargs.get("variable_name", ""))
-            before_value = data.get("before_value", kwargs.get("before_value", ""))
-            after_value = data.get("after_value", kwargs.get("after_value", ""))
-            execution_result = data.get("execution_result", kwargs.get("execution_result"))
-            reflection_analysis = data.get("reflection_analysis", kwargs.get("reflection_analysis"))
-            variable_description = data.get("variable_description", kwargs.get("variable_description"))
-            reward = data.get("reward", kwargs.get("reward"))
-            loss = data.get("loss", kwargs.get("loss"))
-            advantage = data.get("advantage", kwargs.get("advantage"))
-            kl_divergence = data.get("kl_divergence", kwargs.get("kl_divergence"))
-            metadata = data.get("metadata", kwargs.get("metadata"))
+            # Check if this is a full optimization step record
+            # Optimization steps use EventType.OPTIMIZATION_STEP with "variable_changes" in data
+            if event_type == EventType.OPTIMIZATION_STEP and "variable_changes" in data:
+                # Format comprehensive optimization step data
+                event_parts = []
+                event_parts.append(f"=== Optimization Step {step_number} ===")
+                if data.get("task"):
+                    event_parts.append(f"Task: {data['task']}")
+                if data.get("reflection_analysis"):
+                    event_parts.append(f"\n--- Reflection Analysis ---\n{data['reflection_analysis']}")
+                
+                # Record variable changes
+                if data.get("variable_changes"):
+                    event_parts.append("\n--- Variable Changes ---")
+                    for var_name, var_data in data["variable_changes"].items():
+                        var_type = var_data.get("type", "")
+                        before_value = var_data.get("before", "")
+                        after_value = var_data.get("after", "")
+                        event_parts.append(f"\nVariable: {var_name} (Type: {var_type})")
+                        event_parts.append(f"Before:\n{before_value}")
+                        event_parts.append(f"After:\n{after_value}")
+                
+                if data.get("execution_result"):
+                    event_parts.append(f"\n--- Execution Result ---\n{data['execution_result']}")
+                
+                event_data_str = "\n".join(event_parts)
+            else:
+                # Handle legacy format or simple optimization events
+                variable_name = data.get("variable_name", kwargs.get("variable_name", ""))
+                before_value = data.get("before_value", kwargs.get("before_value", ""))
+                after_value = data.get("after_value", kwargs.get("after_value", ""))
+                execution_result = data.get("execution_result", kwargs.get("execution_result"))
+                reflection_analysis = data.get("reflection_analysis", kwargs.get("reflection_analysis"))
+                reward = data.get("reward", kwargs.get("reward"))
+                loss = data.get("loss", kwargs.get("loss"))
+                advantage = data.get("advantage", kwargs.get("advantage"))
+                
+                # Build event data string with more context for optimization learning
+                event_parts = []
+                if variable_name:
+                    event_parts.append(f"Variable Name: {variable_name}")
+                if before_value:
+                    event_parts.append(f"Before Value:\n{before_value}")
+                if after_value:
+                    event_parts.append(f"After Value:\n{after_value}")
+                if execution_result:
+                    event_parts.append(f"Execution Result:\n{execution_result}")
+                if reflection_analysis:
+                    event_parts.append(f"Reflection Analysis:\n{reflection_analysis}")
+                if reward is not None:
+                    event_parts.append(f"Reward: {reward}")
+                if loss is not None:
+                    event_parts.append(f"Loss: {loss}")
+                if advantage is not None:
+                    event_parts.append(f"Advantage: {advantage}")
+                
+                event_data_str = "\n\n".join(event_parts)
         else:
-            # Fallback to kwargs if data is not a dict
-            variable_name = kwargs.get("variable_name", "")
-            before_value = kwargs.get("before_value", "")
-            after_value = kwargs.get("after_value", "")
-            execution_result = kwargs.get("execution_result")
-            reflection_analysis = kwargs.get("reflection_analysis")
-            variable_description = kwargs.get("variable_description")
-            reward = kwargs.get("reward")
-            loss = kwargs.get("loss")
-            advantage = kwargs.get("advantage")
-            kl_divergence = kwargs.get("kl_divergence")
-            metadata = kwargs.get("metadata")
+            event_data_str = str(data)
         
-        optimization_step = step_number
+        event_id = "event_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         
-        return await self.record_optimization(
-            variable_name=variable_name,
-            before_value=before_value,
-            after_value=after_value,
-            execution_result=execution_result,
-            reflection_analysis=reflection_analysis,
-            variable_description=variable_description,
-            reward=reward,
-            loss=loss,
-            advantage=advantage,
-            kl_divergence=kl_divergence,
-            optimization_step=optimization_step,
-            session_id=session_id,
-            metadata=metadata
+        event = ChatEvent(
+            id=event_id,
+            step_number=step_number,
+            event_type=event_type,  # Already validated and converted above
+            data={"content": event_data_str, "raw_data": data},
+            agent_name=agent_name,
+            task_id=task_id,
+            session_id=session_id
         )
     
-    async def record_optimization(self,
-                           variable_name: str,
-                           before_value: str,
-                           after_value: str,
-                           execution_result: Optional[str] = None,
-                           reflection_analysis: Optional[str] = None,
-                           variable_description: Optional[str] = None,
-                           reward: Optional[float] = None,
-                           loss: Optional[float] = None,
-                           advantage: Optional[float] = None,
-                           kl_divergence: Optional[float] = None,
-                           optimization_step: Optional[int] = None,
-                           session_id: Optional[str] = None,
-                           metadata: Optional[Dict[str, Any]] = None) -> OptimizationRecord:
-        """Record a single optimization step.
-        
-        Args:
-            variable_name: Name of the prompt variable being optimized
-            before_value: Prompt value before optimization
-            after_value: Prompt value after optimization
-            execution_result: Optional agent execution result
-            reflection_analysis: Optional reflection analysis
-            variable_description: Optional description of the variable
-            reward: Optional reward value
-            loss: Optional loss value
-            advantage: Optional advantage value
-            kl_divergence: Optional KL divergence value
-            optimization_step: Optional step number. If None, auto-increments.
-            session_id: Optional session ID. If None, uses current session.
-            metadata: Optional additional metadata
+        if session_id in self.session_memory:
+            await self.session_memory[session_id].add_event(event)
             
-        Returns:
-            OptimizationRecord
-        """
-        if session_id is None:
-            session_id = self.current_session_id
-        
-        if session_id is None:
-            raise ValueError("No active optimization session. Call start_session() first.")
-        
-        if session_id not in self.sessions:
-            raise ValueError(f"Session {session_id} not found.")
-        
-        session = self.sessions[session_id]
-        
-        # Auto-increment step if not provided
-        if optimization_step is None:
-            optimization_step = session.total_steps + 1
-        
-        # Create optimization record
-        record = OptimizationRecord(
-            agent_name=session.agent_name,
-            task=session.task,
-            optimization_step=optimization_step,
-            variable_name=variable_name,
-            variable_description=variable_description,
-            before_value=before_value,
-            after_value=after_value,
-            execution_result=execution_result,
-            reflection_analysis=reflection_analysis,
-            reward=reward,
-            loss=loss,
-            advantage=advantage,
-            kl_divergence=kl_divergence,
-            metadata=metadata or {}
-        )
-        
-        # Add to session
-        session.records.append(record)
-        session.total_steps = max(session.total_steps, optimization_step)
-        
-        # Limit records per session
-        if len(session.records) > self.max_records_per_session:
-            session.records = session.records[-self.max_records_per_session:]
-        
-        # Auto-save to JSON
-        if self.save_path:
-            await self.save_to_json(self.save_path)
-        
-        logger.debug(f"| 📝 Recorded optimization: {record.id} (step {optimization_step}, variable: {variable_name})")
-        return record
+            # Auto-save to JSON if save_path is set
+            if self.save_path:
+                await self.save_to_json(self.save_path)
     
-    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[OptimizationRecord]:
-        """Get events (optimization records) from memory system.
+    async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
+        session_id = await self._check_session_id(session_id)
+            
+        """Get session info"""
+        return self.session_info.get(session_id)
+    
+    async def clear_session(self, session_id: Optional[str] = None):
+        session_id = await self._check_session_id(session_id)
+            
+        """Clear specific session"""
+        if session_id in self.session_info:
+            del self.session_info[session_id]
+            
+            # Clear CombinedMemory
+            if session_id in self.session_memory:
+                await self.session_memory[session_id].clear()
+                del self.session_memory[session_id]
+            
+            if session_id == self.current_session_id:
+                self.current_session_id = None
+                
+    async def clear(self):
+        """Clear all sessions"""
+        for session_id in list(self.session_info.keys()):
+            await self.clear_session(session_id)
+            
+    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[ChatEvent]:
+        """Get events from memory system.
         
         Args:
             n: Number of events to retrieve. If None, returns all events.
             session_id: Optional session ID. If None, uses current session.
             
         Returns:
-            List of OptimizationRecord
+            List of events
         """
-        await self._ensure_loaded()
-        
-        records = []
-        
-        # Collect records from matching sessions
-        target_sessions = []
-        if session_id:
-            if session_id in self.sessions:
-                target_sessions = [session_id]
-        else:
-            if self.current_session_id:
-                target_sessions = [self.current_session_id]
-            else:
-                target_sessions = list(self.sessions.keys())
-        
-        for sid in target_sessions:
-            if sid in self.sessions:
-                records.extend(self.sessions[sid].records)
-        
-        # Sort by timestamp (most recent first)
-        records.sort(key=lambda r: r.timestamp, reverse=True)
-        
-        # Apply limit
-        if n is not None:
-            records = records[:n]
-        
-        return records
+        session_id = await self._check_session_id(session_id)
+        if session_id and session_id in self.session_memory:
+            return await self.session_memory[session_id].get_event(n=n)
+        return []
     
-    async def get_optimization_history(self,
-                                agent_name: Optional[str] = None,
-                                task_keyword: Optional[str] = None,
-                                variable_name: Optional[str] = None,
-                                session_id: Optional[str] = None,
-                                limit: Optional[int] = None) -> List[OptimizationRecord]:
-        """Query optimization history (deprecated, use get_event instead).
+    async def get_summary(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[Summary]:
+        """Get summaries from memory system.
         
         Args:
-            agent_name: Filter by agent name
-            task_keyword: Filter by task keyword (substring match)
-            variable_name: Filter by variable name
-            session_id: Filter by session ID
-            limit: Maximum number of records to return
+            n: Number of summaries to retrieve. If None, returns all summaries.
+            session_id: Optional session ID. If None, uses current session.
             
         Returns:
-            List of OptimizationRecord matching the filters
+            List of summaries
         """
-        await self._ensure_loaded()
+        session_id = await self._check_session_id(session_id)
+        if session_id and session_id in self.session_memory:
+            return await self.session_memory[session_id].get_summary(n=n)
+        return []
+    
+    async def get_insight(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[Insight]:
+        """Get insights from memory system.
         
-        records = []
-        
-        # Collect records from matching sessions
-        for sid, session in self.sessions.items():
-            if session_id and sid != session_id:
-                continue
-            if agent_name and session.agent_name != agent_name:
-                continue
-            if task_keyword and task_keyword.lower() not in session.task.lower():
-                continue
+        Args:
+            n: Number of insights to retrieve. If None, returns all insights.
+            session_id: Optional session ID. If None, uses current session.
             
-            # Filter records by variable name
-            for record in session.records:
-                if variable_name and record.variable_name != variable_name:
+        Returns:
+            List of insights
+        """
+        session_id = await self._check_session_id(session_id)
+        if session_id and session_id in self.session_memory:
+            return await self.session_memory[session_id].get_insight(n=n)
+        return []
+    
+    async def get_optimization_experience(self,
+                                         task_keyword: Optional[str] = None,
+                                         variable_type: Optional[str] = None,
+                                         tag: Optional[str] = None,
+                                         n: Optional[int] = 10) -> Dict[str, Any]:
+        """Get optimization experience from all sessions for learning.
+        
+        This method aggregates insights and summaries from all sessions to provide
+        actionable knowledge for future optimizations.
+        
+        Args:
+            task_keyword: Optional keyword to filter by task description
+            variable_type: Optional variable type filter (e.g., "system_prompt", "tool_code")
+            tag: Optional tag filter (e.g., "effective_strategy", "common_pitfall")
+            n: Maximum number of insights/summaries to return
+            
+        Returns:
+            Dict containing:
+                - "insights": List of relevant insights
+                - "summaries": List of relevant summaries
+                - "total_sessions": Number of sessions analyzed
+        """
+        all_insights = []
+        all_summaries = []
+        
+        # Collect insights and summaries from all sessions
+        for session_id, session_memory in self.session_memory.items():
+            session_info = self.session_info.get(session_id)
+            
+            # Filter by task keyword if provided
+            if task_keyword and session_info:
+                task_desc = session_info.description or session_info.task_id or ""
+                if task_keyword.lower() not in task_desc.lower():
                     continue
-                records.append(record)
-        
-        # Sort by timestamp (most recent first)
-        records.sort(key=lambda r: r.timestamp, reverse=True)
-        
-        # Apply limit
-        if limit:
-            records = records[:limit]
-        
-        return records
-    
-    async def get_best_practices(self,
-                          agent_name: Optional[str] = None,
-                          variable_name: Optional[str] = None,
-                          metric: str = "reward",
-                          top_k: int = 10) -> List[OptimizationRecord]:
-        """Get best practices based on performance metrics.
-        
-        Args:
-            agent_name: Filter by agent name
-            variable_name: Filter by variable name
-            metric: Metric to use for ranking ('reward', 'loss', 'advantage')
-            top_k: Number of top records to return
             
-        Returns:
-            List of top OptimizationRecord sorted by metric
-        """
-        records = await self.get_optimization_history(
-            agent_name=agent_name,
-            variable_name=variable_name
-        )
-        
-        # Filter records with the metric
-        valid_records = []
-        for record in records:
-            value = None
-            if metric == "reward" and record.reward is not None:
-                value = record.reward
-            elif metric == "loss" and record.loss is not None:
-                value = record.loss
-            elif metric == "advantage" and record.advantage is not None:
-                value = record.advantage
+            # Get insights and summaries from this session
+            session_insights = await session_memory.get_insight()
+            session_summaries = await session_memory.get_summary()
             
-            if value is not None:
-                valid_records.append((record, value))
-        
-        # Sort by metric value
-        if metric == "loss":
-            # For loss, lower is better
-            valid_records.sort(key=lambda x: x[1])
-        else:
-            # For reward/advantage, higher is better
-            valid_records.sort(key=lambda x: x[1], reverse=True)
-        
-        # Return top K
-        return [record for record, _ in valid_records[:top_k]]
-    
-    async def get_session_info(self, session_id: Optional[str] = None) -> Optional[OptimizationSession]:
-        """Get session information.
-        
-        Args:
-            session_id: Optional session ID. If None, uses current session.
+            # Filter insights by tag if provided
+            if tag:
+                session_insights = [
+                    insight for insight in session_insights
+                    if hasattr(insight, 'tags') and tag in insight.tags
+                ]
             
-        Returns:
-            OptimizationSession or None
-        """
-        await self._ensure_loaded()
-        
-        if session_id is None:
-            session_id = self.current_session_id
-        
-        if session_id:
-            return self.sessions.get(session_id)
-        return None
-    
-    async def clear_session(self, session_id: Optional[str] = None):
-        """Clear a specific session.
-        
-        Args:
-            session_id: Optional session ID. If None, uses current session.
-        """
-        await self._ensure_loaded()
-        
-        if session_id is None:
-            session_id = self.current_session_id
-        
-        if session_id and session_id in self.sessions:
-            del self.sessions[session_id]
+            # Filter by variable type in content (simple keyword matching)
+            if variable_type:
+                session_insights = [
+                    insight for insight in session_insights
+                    if variable_type.lower() in insight.content.lower()
+                ]
+                session_summaries = [
+                    summary for summary in session_summaries
+                    if variable_type.lower() in summary.content.lower()
+                ]
             
-            if session_id == self.current_session_id:
-                self.current_session_id = None
-            
-            # Auto-save to JSON
-            if self.save_path:
-                await self.save_to_json(self.save_path)
-            
-            logger.info(f"| 🗑️ Cleared optimization session: {session_id}")
-    
-    async def clear(self):
-        """Clear all sessions."""
-        await self._ensure_loaded()
+            all_insights.extend(session_insights)
+            all_summaries.extend(session_summaries)
         
-        self.sessions.clear()
-        self.current_session_id = None
+        # Sort by importance and limit
+        importance_order = {Importance.HIGH: 0, Importance.MEDIUM: 1, Importance.LOW: 2}
+        all_insights.sort(key=lambda x: importance_order.get(x.importance, 2))
+        all_summaries.sort(key=lambda x: importance_order.get(x.importance, 2))
         
-        # Auto-save to JSON
-        if self.save_path:
-            await self.save_to_json(self.save_path)
+        if n:
+            all_insights = all_insights[:n]
+            all_summaries = all_summaries[:n]
         
-        logger.info("| 🗑️ Cleared all optimization sessions")
+        return {
+            "insights": all_insights,
+            "summaries": all_summaries,
+            "total_sessions": len(self.session_memory)
+        }
     
     async def save_to_json(self, file_path: str) -> str:
-        """Save optimizer memory to JSON file.
+        """Save memory system state to JSON file.
+        
+        Structure:
+        {
+            "metadata": {
+                "memory_system_type": str,
+                "current_session_id": str,
+                "session_ids": [str, ...]
+            },
+            "sessions": {
+                "session_id": {
+                    "session_info": {...},
+                    "session_memory": {
+                        "events": [...],
+                        "summaries": [...],
+                        "insights": [...]
+                    }
+                },
+                ...
+            }
+        }
         
         Args:
             file_path: File path to save to
@@ -543,23 +681,40 @@ class OptimizerMemorySystem(Memory):
             metadata = {
                 "memory_system_type": "optimizer_memory_system",
                 "current_session_id": self.current_session_id,
-                "session_ids": list(self.sessions.keys()),
-                "total_sessions": len(self.sessions),
-                "total_records": sum(len(session.records) for session in self.sessions.values())
+                "session_ids": list(self.session_info.keys())
             }
             
             # Prepare sessions data
-            sessions_data = {}
-            for session_id, session in self.sessions.items():
-                sessions_data[session_id] = {
-                    "session_info": session.model_dump(mode="json", exclude={"records"}),
-                    "records": [record.model_dump(mode="json") for record in session.records]
+            sessions = {}
+            for session_id in self.session_info.keys():
+                session_data = {
+                    "session_info": None,
+                    "session_memory": {
+                        "events": [],
+                        "summaries": [],
+                        "insights": []
+                    }
                 }
+                
+                # Save session info
+                if session_id in self.session_info:
+                    session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
+                
+                # Save session memory
+                if session_id in self.session_memory:
+                    session_memory = self.session_memory[session_id]
+                    session_data["session_memory"] = {
+                        "events": [event.model_dump(mode="json") for event in session_memory.events],
+                        "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                        "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                    }
+                
+                sessions[session_id] = session_data
             
             # Prepare save data
             save_data = {
                 "metadata": metadata,
-                "sessions": sessions_data
+                "sessions": sessions
             }
             
             # Save to file
@@ -570,7 +725,27 @@ class OptimizerMemorySystem(Memory):
             return str(file_path)
     
     async def load_from_json(self, file_path: str) -> bool:
-        """Load optimizer memory from JSON file.
+        """Load memory system state from JSON file.
+        
+        Expected format:
+        {
+            "metadata": {
+                "memory_system_type": str,
+                "current_session_id": str,
+                "session_ids": [str, ...]
+            },
+            "sessions": {
+                "session_id": {
+                    "session_info": {...},
+                    "session_memory": {
+                        "events": [...],
+                        "summaries": [...],
+                        "insights": [...]
+                    }
+                },
+                ...
+            }
+        }
         
         Args:
             file_path: File path to load from
@@ -578,14 +753,18 @@ class OptimizerMemorySystem(Memory):
         Returns:
             True if loaded successfully, False otherwise
         """
+        logger.debug(f"| 🔒 Acquiring file lock for: {file_path}")
         async with file_lock(file_path):
+            logger.debug(f"| 🔓 File lock acquired for: {file_path}")
             if not os.path.exists(file_path):
-                logger.warning(f"| ⚠️ Optimizer memory file not found: {file_path}")
+                logger.warning(f"| ⚠️  Optimizer memory file not found: {file_path}")
                 return False
             
             try:
+                logger.debug(f"| 📖 Reading JSON file: {file_path}")
                 with open(file_path, "r", encoding="utf-8") as f:
                     load_data = json.load(f)
+                logger.debug(f"| ✅ JSON file read successfully")
                 
                 # Validate format
                 if "metadata" not in load_data or "sessions" not in load_data:
@@ -600,26 +779,61 @@ class OptimizerMemorySystem(Memory):
                 
                 # Restore sessions
                 sessions_data = load_data.get("sessions", {})
-                logger.debug(f"| 📊 Restoring {len(sessions_data)} optimization sessions from JSON")
+                logger.debug(f"| 📊 Restoring {len(sessions_data)} sessions from JSON")
                 
                 for session_id, session_data in sessions_data.items():
+                    logger.debug(f"| 🔄 Restoring session: {session_id}")
                     # Restore session info
-                    session_info_data = session_data.get("session_info", {})
-                    if session_info_data.get("start_time"):
-                        session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
-                    if session_info_data.get("end_time"):
-                        session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                    session_info_data = session_data.get("session_info")
+                    if session_info_data:
+                        # Parse datetime strings
+                        if session_info_data.get("start_time"):
+                            session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
+                        if session_info_data.get("end_time"):
+                            session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                        
+                        self.session_info[session_id] = SessionInfo(**session_info_data)
                     
-                    session = OptimizationSession(**session_info_data)
+                    # Ensure session memory exists (skip auto-load to avoid recursion)
+                    if session_id not in self.session_memory:
+                        # Create CombinedMemory directly without calling start_session to avoid recursion
+                        self.session_memory[session_id] = CombinedMemory(
+                            model_name=self.model_name, 
+                            max_summaries=self.max_summaries,
+                            max_insights=self.max_insights
+                        )
                     
-                    # Restore records
-                    records_data = session_data.get("records", [])
-                    for record_data in records_data:
-                        if record_data.get("timestamp"):
-                            record_data["timestamp"] = datetime.fromisoformat(record_data["timestamp"])
-                        session.records.append(OptimizationRecord(**record_data))
+                    session_memory = self.session_memory[session_id]
+                    session_memory_data = session_data.get("session_memory", {})
                     
-                    self.sessions[session_id] = session
+                    # Restore events
+                    if "events" in session_memory_data:
+                        events = []
+                        for event_data in session_memory_data["events"]:
+                            if event_data.get("timestamp"):
+                                event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
+                            if event_data.get("event_type"):
+                                event_data["event_type"] = EventType(event_data["event_type"])
+                            events.append(ChatEvent(**event_data))
+                        session_memory.events = events
+                    
+                    # Restore summaries
+                    if "summaries" in session_memory_data:
+                        summaries = []
+                        for summary_data in session_memory_data["summaries"]:
+                            if summary_data.get("importance"):
+                                summary_data["importance"] = Importance(summary_data["importance"])
+                            summaries.append(Summary(**summary_data))
+                        session_memory.summaries = summaries
+                    
+                    # Restore insights
+                    if "insights" in session_memory_data:
+                        insights = []
+                        for insight_data in session_memory_data["insights"]:
+                            if insight_data.get("importance"):
+                                insight_data["importance"] = Importance(insight_data["importance"])
+                            insights.append(Insight(**insight_data))
+                        session_memory.insights = insights
                 
                 logger.info(f"| 📂 Optimizer memory loaded from {file_path}")
                 return True
@@ -627,4 +841,3 @@ class OptimizerMemorySystem(Memory):
             except Exception as e:
                 logger.error(f"| ❌ Failed to load optimizer memory from {file_path}: {e}", exc_info=True)
                 return False
-

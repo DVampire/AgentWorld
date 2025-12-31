@@ -5,11 +5,18 @@ from enum import Enum
 import json
 
 from src.utils import dedent
+from src.dynamic import dynamic_manager
 
 class EventType(Enum):
+    
+    # Agent Event Types
     TASK_START = "task_start"
     TOOL_STEP = "tool_step"
     TASK_END = "task_end"
+    
+    # Optimizer Event Types
+    OPTIMIZATION_STEP = "optimization_step"
+
 
 class ChatEvent(BaseModel):
     id: str = Field(..., description="The unique identifier for the event.")
@@ -127,6 +134,7 @@ class MemoryConfig(BaseModel):
     instance: Optional[Any] = Field(default=None, description="The instance of the memory system")
     config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The initialization configuration of the memory system")
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="The metadata of the memory system")
+    code: Optional[str] = Field(default=None, description="Source code for dynamically generated memory classes (used when cls cannot be imported from a module)")
     
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Dump the model to a dictionary."""
@@ -135,25 +143,54 @@ class MemoryConfig(BaseModel):
             "description": self.description,
             "require_grad": self.require_grad,
             "version": self.version,
-            "cls": self.cls.__name__ if self.cls else None,
+            "cls": dynamic_manager.get_class_string(self.cls) if self.cls else None,
             "config": self.config,
             "instance": None,  # Don't serialize instance
             "metadata": self.metadata,
+            "code": self.code,
         }
     
     @classmethod
     def model_validate(cls, data: Dict[str, Any]) -> 'MemoryConfig':
         """Validate the model from a dictionary."""
+        name = data.get("name")
+        description = data.get("description")
         require_grad = data.get("require_grad", False)  # Default to False if not provided
+        version = data.get("version", "1.0.0")
+        
+        cls_ = None
+        code = data.get("code")
+        if code:
+            class_name = dynamic_manager.extract_class_name_from_code(code)
+            if class_name:
+                try:
+                    cls_ = dynamic_manager.load_class(
+                        code, 
+                        class_name=class_name,
+                        base_class=Memory,
+                        context="memory"
+                    )
+                except Exception as e:
+                    cls_ = None
+            else:
+                cls_ = None
+        else:
+            cls_ = None
+            
+        config = data.get("config", {})
+        instance = data.get("instance", None)
+        metadata = data.get("metadata", {})
+        
         return cls(
-            name=data.get("name"),
-            description=data.get("description"),
+            name=name,
+            description=description,
             require_grad=require_grad,
-            version=data.get("version", "1.0.0"),
-            cls=data.get("cls"),
-            config=data.get("config", {}),
-            instance=data.get("instance"),
-            metadata=data.get("metadata", {}),
+            version=version,
+            cls=cls_,
+            config=config,
+            instance=instance,
+            metadata=metadata,
+            code=code,
         )
     
     def __str__(self):
