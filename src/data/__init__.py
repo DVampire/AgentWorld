@@ -5,6 +5,11 @@ from .scaler import StandardScaler
 from .scaler import WindowedScaler
 from .dataloader import DataLoader
 from .esg import ESGDataset
+from .aime24 import AIME24Dataset
+from .aime25 import AIME25Dataset
+from .GPQA import GPQADataset
+from .gsm8k import GSM8kDataset
+from .leetcode import LeetCodeDataset
 
 __all__ = [
     'MultiAssetDataset',
@@ -15,4 +20,10 @@ __all__ = [
     'WindowedScaler',
     'DataLoader',
     'ESGDataset',
+    'AIME24Dataset',
+    'AIME25Dataset',
+    'GPQADataset',
+    'GSM8kDataset',
+    'LeetCodeDataset',
+
 ]

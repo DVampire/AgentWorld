@@ -13,7 +13,7 @@ from src.logger import logger
 from src.utils import dedent
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.memory import memory_manager
+from src.memory import memory_manager, EventType
 from src.tool.types import ToolResponse
 from src.tracer import Tracer, Record
 from src.model import model_manager
@@ -240,7 +240,7 @@ class ToolCallingAgent(Agent):
             await memory_manager.add_event(
                 memory_name=memory_name,
                 step_number=self.step_number,
-                event_type="tool_step",
+                event_type=EventType.TOOL_STEP,
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id
@@ -251,7 +251,7 @@ class ToolCallingAgent(Agent):
                 await memory_manager.add_event(
                     memory_name=memory_name,
                     step_number=self.step_number,
-                    event_type="task_end",
+                    event_type=EventType.TASK_END,
                     data=dict(result=final_result, reasoning=final_reasoning),
                     agent_name=self.name,
                     task_id=task_id
@@ -326,7 +326,7 @@ class ToolCallingAgent(Agent):
         await memory_manager.add_event(
             memory_name=memory_name,
             step_number=self.step_number,
-            event_type="task_start",
+            event_type=EventType.TASK_START,
             data=dict(task=enhanced_task),
             agent_name=self.name,
             task_id=task_id
@@ -375,7 +375,7 @@ class ToolCallingAgent(Agent):
         await memory_manager.add_event(
             memory_name=memory_name,
             step_number=self.step_number,
-            event_type="task_end",
+            event_type=EventType.TASK_END,
             data=response,
             agent_name=self.name,
             task_id=task_id

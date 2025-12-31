@@ -287,7 +287,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             await memory_manager.add_event(
                 memory_name=self.memory_name,
                 step_number=self.step_number, 
-                event_type="task_start", 
+                event_type=EventType.TASK_START, 
                 data=dict(message=current_message),
                 agent_name=self.name,
                 task_id=task_id
@@ -304,7 +304,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             await memory_manager.add_event(
                 memory_name=self.memory_name,
                 step_number=self.step_number,
-                event_type="action_step",
+                event_type=EventType.TOOL_STEP,
                 data=dict(response=response_text),
                 agent_name=self.name,
                 task_id=task_id
@@ -342,7 +342,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number,
-            event_type="task_end",
+            event_type=EventType.TASK_END,
             data=dict(result=f"Conversation completed after {conversation_round} rounds"),
             agent_name=self.name,
             task_id=task_id

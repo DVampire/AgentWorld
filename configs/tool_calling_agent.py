@@ -74,12 +74,18 @@ plotter_tool.update(
     base_dir=f"{workdir}/tool/plotter",
 )
 
-#-----------------GENERAL MEMORY SYSTEM CONFIG-----------------
+#-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
     base_dir=f"{workdir}/memory/general_memory_system",
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
+    require_grad=False,
+)
+optimizer_memory_system.update(
+    base_dir=f"{workdir}/memory/optimizer_memory_system",
+    model_name=model_name,
+    max_records_per_session=10,
     require_grad=False,
 )
 

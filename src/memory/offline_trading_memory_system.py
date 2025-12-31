@@ -416,6 +416,19 @@ class OfflineTradingMemorySystem(Memory):
             logger.warning("| No session ID available for add_event")
             return
         
+        # Ensure event_type is EventType enum
+        if not isinstance(event_type, EventType):
+            # Try to convert string to EventType
+            if isinstance(event_type, str):
+                try:
+                    event_type = EventType(event_type)
+                except ValueError:
+                    logger.warning(f"| ⚠️ Invalid event_type '{event_type}', defaulting to TOOL_STEP")
+                    event_type = EventType.TOOL_STEP
+            else:
+                logger.warning(f"| ⚠️ Invalid event_type type '{type(event_type)}', defaulting to TOOL_STEP")
+                event_type = EventType.TOOL_STEP
+        
         event_id = "trade_event_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         
         event = ChatEvent(

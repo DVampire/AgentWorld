@@ -1,29 +1,28 @@
-"""Memory Context Manager for managing memory lifecycle and resources."""
-
-import atexit
-import inflection
+"""Memory Context Manager for managing memory lifecycle and resources with lazy loading."""
 import os
-import json
+from asyncio_atexit import register as async_atexit_register
+from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
 from datetime import datetime
-from typing import Any, Dict, Optional, List, Union, Type, TYPE_CHECKING, Tuple
+import inflection
+import json
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from src.optimizer.types import Variable
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from src.logger import logger
 from src.config import config
 from src.version import version_manager
-from src.utils import assemble_project_path
-from src.utils.file_utils import file_lock
+from src.utils import (assemble_project_path, 
+                       gather_with_concurrency,
+                       file_lock
+                       )
 from src.memory.types import MemoryConfig, Memory
 from src.dynamic import dynamic_manager
 from src.registry import MEMORY_SYSTEM
-from src.utils import gather_with_concurrency
 
 class MemoryContextManager(BaseModel):
-    """Global context manager for all memory systems."""
+    """Global context manager for all memory systems with lazy loading support."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     base_dir: str = Field(default=None, description="The base directory to use for the memory systems")
@@ -44,38 +43,44 @@ class MemoryContextManager(BaseModel):
         """
         super().__init__(**kwargs)
         
-        # Set up paths
         if base_dir is not None:
             self.base_dir = assemble_project_path(base_dir)
         else:
             self.base_dir = assemble_project_path(os.path.join(config.workdir, "memory"))
+        logger.info(f"| 📁 Memory context manager base directory: {self.base_dir}.")    
         os.makedirs(self.base_dir, exist_ok=True)
-        logger.info(f"| 📁 Memory context manager base directory: {self.base_dir}")
-        
         if save_path is not None:
             self.save_path = assemble_project_path(save_path)
         else:
             self.save_path = os.path.join(self.base_dir, "memory.json")
-        logger.info(f"| 📁 Memory context manager save path: {self.save_path}")
-        
+        logger.info(f"| 📁 Memory context manager save path: {self.save_path}.")
         if contract_path is not None:
             self.contract_path = assemble_project_path(contract_path)
         else:
             self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 Memory context manager contract path: {self.contract_path}")
-        
+        logger.info(f"| 📁 Memory context manager contract path: {self.contract_path}.")
+
         self._memory_configs: Dict[str, MemoryConfig] = {}  # Current active configs (latest version)
         # Memory version history, e.g., {"memory_name": {"1.0.0": MemoryConfig, "1.0.1": MemoryConfig}}
         self._memory_history_versions: Dict[str, Dict[str, MemoryConfig]] = {}
-        self._cleanup_registered = False
         
-        # Register cleanup on exit
-        if not self._cleanup_registered:
-            atexit.register(self.cleanup)
-            self._cleanup_registered = True
+        self._cleanup_registered = False
     
     async def initialize(self, memory_names: Optional[List[str]] = None):
         """Initialize the memory context manager."""
+        # Register memory-related symbols for auto-injection in dynamic code
+        dynamic_manager.register_symbol("MEMORY_SYSTEM", MEMORY_SYSTEM)
+        dynamic_manager.register_symbol("Memory", Memory)
+        
+        # Register memory context provider for automatic import injection
+        def memory_context_provider():
+            """Provide memory-related imports for dynamic memory classes."""
+            return {
+                "MEMORY_SYSTEM": MEMORY_SYSTEM,
+                "Memory": Memory,
+            }
+        dynamic_manager.register_context_provider("memory", memory_context_provider)
+        
         # Load memory systems from MEMORY_SYSTEM registry
         memory_configs = {}
         registry_memory_configs: Dict[str, MemoryConfig] = await self._load_from_registry()
@@ -126,6 +131,10 @@ class MemoryContextManager(BaseModel):
         # Save contract to file
         await self.save_contract(memory_names=memory_names_list)
         
+        # Register cleanup callback
+        async_atexit_register(self.cleanup)
+        self._cleanup_registered = True
+        
         logger.info(f"| ✅ Memory systems initialization completed")
     
     async def _load_from_registry(self):
@@ -134,7 +143,7 @@ class MemoryContextManager(BaseModel):
         memory_configs: Dict[str, MemoryConfig] = {}
         
         async def register_memory_class(memory_cls: Type[Memory]):
-            """Register a memory class.
+            """Register a memory class synchronously.
             
             Args:
                 memory_cls: Memory class to register
@@ -180,7 +189,7 @@ class MemoryContextManager(BaseModel):
                     version=memory_version,
                     cls=memory_cls,
                     config=memory_config_dict,
-                    instance=None,  # Instance will be built when needed
+                    instance=None,
                     metadata={},
                     code=memory_code,
                 )
@@ -201,7 +210,7 @@ class MemoryContextManager(BaseModel):
             except Exception as e:
                 logger.error(f"| ❌ Failed to register memory class {memory_cls.__name__}: {e}")
                 raise
-        
+            
         import src.memory  # noqa: F401
         
         # Get all registered memory classes from MEMORY_SYSTEM registry
@@ -325,26 +334,58 @@ class MemoryContextManager(BaseModel):
         logger.info(f"| 📂 Loaded {len(memory_configs)} memory systems from {self.save_path}")
         return memory_configs
     
-    async def register(self, memory: Union[Memory, Type[Memory]], *, override: bool = False, **kwargs: Any) -> MemoryConfig:
-        """Register a memory system or memory class (similar to tool registration).
+    async def register(self, 
+                       memory: Union[Memory, Type[Memory]],
+                       memory_config_dict: Optional[Dict[str, Any]] = None,
+                       override: bool = False,
+                       version: Optional[str] = None) -> MemoryConfig:
+        """Register a memory class or instance.
+        
+        This will:
+        - Create (or reuse) a memory instance
+        - Create a `MemoryConfig`
+        - Store it as the current config and append to version history
+        - Register the version in `version_manager`
         
         Args:
             memory: Memory instance or class
+            memory_config_dict: Configuration dict for memory initialization (required when memory is a class)
             override: Whether to override existing registration
-            **kwargs: Configuration for memory initialization
+            version: Optional version string
             
         Returns:
             MemoryConfig: Memory configuration
         """
-        # Get memory config from global config
-        memory_config_key = None
-        memory_config_dict = {}
         
-        # Create temporary instance to get name and description
         try:
-            temp_instance = self._ensure_memory_instance(memory, **kwargs)
-            memory_name = temp_instance.name
-            memory_description = temp_instance.description
+            # Handle both instance and class cases
+            if isinstance(memory, Memory):
+                # Registering an instance
+                memory_instance = memory
+                memory_cls = type(memory)
+                if memory_config_dict:
+                    raise ValueError("Extra keyword arguments are not allowed when registering memory instances.")
+                memory_config_dict = {}
+            else:
+                # Registering a class
+                memory_cls = memory
+                if memory_config_dict is None:
+                    # Fallback to global config by class name
+                    memory_config_key = inflection.underscore(memory_cls.__name__)
+                    memory_config_dict = config.get(memory_config_key, {})
+                
+                # Instantiate memory immediately (register is a runtime operation)
+                try:
+                    memory_instance = memory_cls(**memory_config_dict)
+                except Exception as e:
+                    logger.error(f"| ❌ Failed to create memory instance for {memory_cls.__name__}: {e}")
+                    raise ValueError(f"Failed to instantiate memory {memory_cls.__name__} with provided config: {e}")
+            
+            memory_name = memory_instance.name
+            memory_description = memory_instance.description
+            memory_metadata = getattr(memory_instance, 'metadata', {})
+            # Get require_grad from memory_config_dict if provided, otherwise from memory_instance
+            memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
             
             if not memory_name:
                 raise ValueError("Memory.name cannot be empty.")
@@ -352,174 +393,311 @@ class MemoryContextManager(BaseModel):
             if memory_name in self._memory_configs and not override:
                 raise ValueError(f"Memory '{memory_name}' already registered. Use override=True to replace it.")
             
-            # Get memory config from global config
-            memory_config_key = inflection.underscore(type(temp_instance).__name__)
-            memory_config_dict = config.get(memory_config_key, {})
+            # Get or generate version from version_manager
+            if version is None:
+                memory_version = await version_manager.get_version("memory", memory_name)
+            else:
+                memory_version = version
+                
+            # Get memory code
+            memory_code = dynamic_manager.get_full_module_source(memory_cls)
+            if not memory_code:
+                logger.warning(f"| ⚠️ Memory {memory_name} source code cannot be extracted")
             
+            # --- Build MemoryConfig ---
+            memory_config = MemoryConfig(
+                name=memory_name,
+                description=memory_description,
+                require_grad=memory_require_grad,
+                version=memory_version,
+                cls=memory_cls,
+                config=memory_config_dict or {},
+                instance=memory_instance if isinstance(memory, Memory) else None,
+                metadata=memory_metadata,
+                code=memory_code,
+            )
+            
+            # --- Persist current config and history ---
+            self._memory_configs[memory_name] = memory_config
+            
+            # Store in dict-based history (for quick lookup by version)
+            if memory_name not in self._memory_history_versions:
+                self._memory_history_versions[memory_name] = {}
+            self._memory_history_versions[memory_name][memory_config.version] = memory_config
+            
+            # Register version in version manager
+            await version_manager.register_version("memory", memory_name, memory_config.version)
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 📝 Registered memory config: {memory_name}: {memory_config.version}")
+            return memory_config
+        
         except Exception as e:
-            logger.error(f"| ❌ Failed to create temporary memory instance: {e}")
+            logger.error(f"| ❌ Failed to register memory: {e}")
             raise
-        
-        # Get require_grad from instance or config
-        if isinstance(memory, Memory):
-            memory_require_grad = memory.require_grad
-        else:
-            memory_require_grad = memory_config_dict.get("require_grad", False)
-        
-        # Determine if we're registering a class or instance
-        if isinstance(memory, Memory):
-            # Registering an instance
-            memory_config = MemoryConfig(
-                name=memory_name,
-                description=memory_description,
-                require_grad=memory_require_grad,
-                version=kwargs.pop("version", "1.0.0"),
-                cls=type(memory),
-                config={},
-                instance=memory,
-                metadata={}
-            )
-        else:
-            # Registering a class - store config for lazy loading
-            memory_config = MemoryConfig(
-                name=memory_name,
-                description=memory_description,
-                require_grad=memory_require_grad,
-                version=kwargs.pop("version", "1.0.0"),
-                cls=memory,
-                config=kwargs if kwargs else memory_config_dict,
-                instance=None,  # Will be created on get()
-                metadata={}
-            )
-        
-        # Get or generate version from version_manager
-        if memory_config.version == "1.0.0":
-            memory_config.version = await version_manager.get_or_generate_version("memory", memory_name)
-        
-        # Store metadata
-        self._memory_configs[memory_name] = memory_config
-        
-        # Register version record to version manager
-        await version_manager.register_version("memory", memory_name, memory_config.version)
-        
-        logger.debug(f"| 🧠 Registered memory: {memory_name} v{memory_config.version}")
-        return memory_config
     
-    def _ensure_memory_instance(self, memory: Union[Memory, Type[Memory]], **kwargs) -> Memory:
-        """Ensure we have a memory instance (similar to tool's _ensure_tool_instance).
-        
-        Args:
-            memory: Memory instance or class
-            **kwargs: Configuration for memory initialization
-            
-        Returns:
-            Memory instance
-        """
-        if isinstance(memory, Memory):
-            if kwargs:
-                raise ValueError("Extra keyword arguments are not allowed when registering memory instances.")
-            return memory
-        if isinstance(memory, type) and issubclass(memory, Memory):
-            # Get config from global config if available
-            memory_config_key = inflection.underscore(memory.__name__)
-            global_config = config.get(memory_config_key, {})
-            # Merge global config with kwargs
-            merged_config = {**global_config, **kwargs}
-            return memory(**merged_config)
-        raise TypeError(f"Expected Memory instance or subclass, got {type(memory)!r}")
-    
-    async def update(self, memory_name: str, memory: Union[Memory, Type[Memory]], 
-                    new_version: Optional[str] = None, description: Optional[str] = None,
-                    **kwargs: Any) -> MemoryConfig:
-        """Update an existing memory system with new configuration and create a new version (similar to tool update).
+    async def update(self, 
+                     memory_name: str,
+                     memory: Union[Memory, Type[Memory]],
+                     memory_config_dict: Optional[Dict[str, Any]] = None,
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None) -> MemoryConfig:
+        """Update an existing memory system with new configuration and create a new version
         
         Args:
             memory_name: Name of the memory system to update
-            memory: New memory instance or class with updated content
+            memory: New memory instance or class with updated implementation
+            memory_config_dict: Configuration dict for memory initialization
+                   If None, will try to get from global config
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
-            **kwargs: Configuration for memory initialization
             
         Returns:
             MemoryConfig: Updated memory configuration
         """
-        original_config = self._memory_configs.get(memory_name)
-        if original_config is None:
-            raise ValueError(f"Memory {memory_name} not found. Use register() to register a new memory system.")
-        
-        # Create temporary instance to get new name and description
-        temp_instance = self._ensure_memory_instance(memory, **kwargs)
-        new_description = temp_instance.description
-        
-        # Get require_grad from kwargs or instance
-        if isinstance(memory, Memory):
-            memory_require_grad = memory.require_grad
-        else:
-            memory_require_grad = kwargs.get("require_grad", temp_instance.require_grad)
-        
-        # Determine new version from version_manager
-        if new_version is None:
-            # Get current version from version_manager and generate next patch version
-            new_version = await version_manager.generate_next_version("memory", memory_name, "patch")
-        
-        # Create updated config
-        if isinstance(memory, Memory):
-            # Updating with an instance
+        try:
+            # Handle both instance and class cases
+            if isinstance(memory, Memory):
+                # Updating with an instance
+                memory_instance = memory
+                memory_cls = type(memory)
+                if memory_config_dict:
+                    raise ValueError("Extra keyword arguments are not allowed when updating with memory instances.")
+                memory_config_dict = {}
+            else:
+                # Updating with a class
+                memory_cls = memory
+                if memory_config_dict is None:
+                    # Fallback to global config by class name
+                    memory_config_key = inflection.underscore(memory_cls.__name__)
+                    memory_config_dict = config.get(memory_config_key, {})
+                
+                # Instantiate memory immediately (update is a runtime operation)
+                try:
+                    memory_instance = memory_cls(**memory_config_dict)
+                except Exception as e:
+                    logger.error(f"| ❌ Failed to create memory instance for {memory_cls.__name__}: {e}")
+                    raise ValueError(f"Failed to instantiate memory {memory_cls.__name__} with provided config: {e}")
+            
+            # Check if memory exists
+            original_config = self._memory_configs.get(memory_name)
+            if original_config is None:
+                raise ValueError(f"Memory {memory_name} not found. Use register() to register a new memory system.")
+            
+            memory_description = memory_instance.description
+            memory_metadata = getattr(memory_instance, 'metadata', {})
+            # Get require_grad from memory_config_dict if provided, otherwise from memory_instance
+            memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                # Get current version from version_manager and generate next patch version
+                new_version = await version_manager.generate_next_version("memory", memory_name, "patch")
+            
+            # Get memory code
+            memory_code = dynamic_manager.get_full_module_source(memory_cls)
+            if not memory_code:
+                logger.warning(f"| ⚠️ Memory {memory_name} source code cannot be extracted")
+            
+            # --- Build MemoryConfig ---
             updated_config = MemoryConfig(
                 name=memory_name,  # Keep same name
-                description=new_description,
+                description=memory_description,
                 require_grad=memory_require_grad,
                 version=new_version,
-                cls=type(memory),
-                config={},
-                instance=memory,
-                metadata={}
+                cls=memory_cls,
+                config=memory_config_dict or {},
+                instance=memory_instance if isinstance(memory, Memory) else None,
+                metadata=memory_metadata,
+                code=memory_code,
             )
-        else:
-            # Updating with a class
-            updated_config = MemoryConfig(
-                name=memory_name,  # Keep same name
-                description=new_description,
-                require_grad=memory_require_grad,
-                version=new_version,
-                cls=memory,
-                config=kwargs,
-                instance=None,  # Will be created on get()
-                metadata=original_config.metadata
+            
+            # Update the memory config (replaces current version)
+            self._memory_configs[memory_name] = updated_config
+            
+            # Store in version history
+            if memory_name not in self._memory_history_versions:
+                self._memory_history_versions[memory_name] = {}
+            self._memory_history_versions[memory_name][updated_config.version] = updated_config
+            
+            # Register new version record to version manager
+            await version_manager.register_version(
+                "memory", 
+                memory_name, 
+                new_version,
+                description=description or f"Updated from {original_config.version}"
             )
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 🔄 Updated memory {memory_name} from v{original_config.version} to v{new_version}")
+            return updated_config
         
-        # Store updated config
-        self._memory_configs[memory_name] = updated_config
-        
-        # Register version record to version manager
-        await version_manager.register_version(
-            "memory", 
-            memory_name, 
-            new_version,
-            description=description or f"Updated from {original_config.version}"
-        )
-        
-        logger.info(f"| 🧠 Updated memory {memory_name} from v{original_config.version} to v{new_version}")
-        return updated_config
+        except Exception as e:
+            logger.error(f"| ❌ Failed to update memory: {e}")
+            raise
     
-    async def get(self, name: str) -> Memory:
-        """Get a memory system class by name
+    async def copy(self, 
+                  memory_name: str,
+                  new_name: Optional[str] = None, 
+                  new_version: Optional[str] = None, 
+                  new_config: Optional[Dict[str, Any]] = None) -> MemoryConfig:
+        """Copy an existing memory configuration
         
         Args:
-            name: Name of the memory system
+            memory_name: Name of the memory system to copy
+            new_name: New name for the copied memory. If None, uses original name.
+            new_version: New version for the copied memory. If None, increments version.
+            new_config: New configuration dict for the copied memory. If None, uses original config.
+            
+        Returns:
+            MemoryConfig: New memory configuration
         """
-        memory_config = self._memory_configs.get(name)
+        try:
+            original_config = self._memory_configs.get(memory_name)
+            if original_config is None:
+                raise ValueError(f"Memory {memory_name} not found")
+            
+            if original_config.cls is None:
+                raise ValueError(f"Cannot copy memory {memory_name}: no class provided")
+            
+            # Determine new name
+            if new_name is None:
+                new_name = memory_name
+            
+            # Prepare config dict (merge original config with new config)
+            memory_config_dict = original_config.config.copy() if original_config.config else {}
+            if new_config:
+                # Merge new config into original config
+                memory_config_dict.update(new_config)
+            
+            # Instantiate memory instance (copy is a runtime operation)
+            try:
+                memory_instance = original_config.cls(**memory_config_dict)
+            except Exception as e:
+                logger.error(f"| ❌ Failed to create memory instance for {original_config.cls.__name__}: {e}")
+                raise ValueError(f"Failed to instantiate memory {original_config.cls.__name__} with provided config: {e}")
+            
+            # Apply name override if provided (after instantiation)
+            if new_name != memory_name:
+                memory_instance.name = new_name
+            
+            memory_description = memory_instance.description
+            memory_metadata = getattr(memory_instance, 'metadata', {})
+            memory_require_grad = memory_config_dict.get("require_grad", memory_instance.require_grad) if memory_config_dict and "require_grad" in memory_config_dict else memory_instance.require_grad
+            
+            # Determine new version from version_manager
+            if new_version is None:
+                if new_name == memory_name:
+                    # If copying with same name, get next version from version_manager
+                    new_version = await version_manager.generate_next_version("memory", new_name, "patch")
+                else:
+                    # If copying with different name, get or generate version for new name
+                    new_version = await version_manager.get_version("memory", new_name)
+            
+            # Get memory code
+            memory_code = dynamic_manager.get_full_module_source(original_config.cls)
+            if not memory_code:
+                logger.warning(f"| ⚠️ Memory {new_name} source code cannot be extracted")
+            
+            # --- Build MemoryConfig ---
+            new_memory_config = MemoryConfig(
+                name=new_name,
+                description=memory_description,
+                require_grad=memory_require_grad,
+                version=new_version,
+                cls=original_config.cls,
+                config=memory_config_dict,
+                instance=memory_instance,
+                metadata=memory_metadata,
+                code=memory_code,
+            )
+            
+            # Register new memory
+            self._memory_configs[new_name] = new_memory_config
+            
+            # Store in version history
+            if new_name not in self._memory_history_versions:
+                self._memory_history_versions[new_name] = {}
+            self._memory_history_versions[new_name][new_version] = new_memory_config
+            
+            # Register version record to version manager
+            await version_manager.register_version(
+                "memory", 
+                new_name, 
+                new_version,
+                description=f"Copied from {memory_name}@{original_config.version}"
+            )
+            
+            # Persist to JSON
+            await self.save_to_json()
+            # Save contract to file
+            await self.save_contract()
+            
+            logger.info(f"| 📋 Copied memory {memory_name}@{original_config.version} to {new_name}@{new_version}")
+            return new_memory_config
+        
+        except Exception as e:
+            logger.error(f"| ❌ Failed to copy memory: {e}")
+            raise
+    
+    async def unregister(self, memory_name: str) -> bool:
+        """Unregister a memory system
+        
+        Args:
+            memory_name: Name of the memory system to unregister
+            
+        Returns:
+            True if unregistered successfully, False otherwise
+        """
+        if memory_name not in self._memory_configs:
+            logger.warning(f"| ⚠️ Memory {memory_name} not found")
+            return False
+        
+        memory_config = self._memory_configs[memory_name]
+        
+        # Remove from configs
+        del self._memory_configs[memory_name]
+
+        # Persist to JSON after unregister
+        await self.save_to_json()
+        # Save contract to file
+        await self.save_contract()
+        
+        logger.info(f"| 🗑️ Unregistered memory {memory_name}@{memory_config.version}")
+        return True
+    
+    async def get(self, memory_name: str) -> Memory:
+        """Get memory configuration by name
+        
+        Args:
+            memory_name: Memory name
+            
+        Returns:
+            Memory: Memory instance or None if not found
+        """
+        memory_config = self._memory_configs.get(memory_name)
         if memory_config is None:
             return None
         return memory_config.instance if memory_config.instance is not None else None
     
-    async def get_info(self, name: str) -> Optional[MemoryConfig]:
-        """Get a memory configuration by name
+    async def get_info(self, memory_name: str) -> Optional[MemoryConfig]:
+        """Get memory info by name
         
         Args:
-            name: Name of the memory system
+            memory_name: Memory name
+            
+        Returns:
+            MemoryConfig: Memory info or None if not found
         """
-        return self._memory_configs.get(name)
+        return self._memory_configs.get(memory_name)
     
     async def list(self) -> List[str]:
         """Get list of registered memory systems
@@ -529,12 +707,11 @@ class MemoryContextManager(BaseModel):
         """
         return [name for name in self._memory_configs.keys()]
     
-    async def build(self, memory_config: MemoryConfig, memory_factory: Optional[callable] = None) -> MemoryConfig:
-        """Build a memory system instance from config.
+    async def build(self, memory_config: MemoryConfig) -> MemoryConfig:
+        """Create a memory instance and store it.
         
         Args:
             memory_config: Memory configuration
-            memory_factory: Optional factory function to create memory instance
             
         Returns:
             MemoryConfig: Memory configuration with instance
@@ -641,11 +818,7 @@ class MemoryContextManager(BaseModel):
             return str(file_path)
     
     async def save_contract(self, memory_names: Optional[List[str]] = None):
-        """Save the contract for memory systems
-        
-        Args:
-            memory_names: Optional list of memory names to include in contract. If None, includes all.
-        """
+        """Save the contract for a memory system"""
         contract = []
         if memory_names is not None:
             for index, memory_name in enumerate(memory_names):
@@ -676,15 +849,20 @@ class MemoryContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
-    async def load_from_json(self, file_path: Optional[str] = None) -> bool:
-        """Load memory configurations from JSON
+    async def load_from_json(self, file_path: Optional[str] = None, auto_initialize: bool = True) -> bool:
+        """Load memory configurations with version history from JSON.
+        
+        Loads basic configuration only (instance is not saved, must be created via build()).
+        Only the latest version will be instantiated by default if auto_initialize=True.
         
         Args:
             file_path: File path to load from
+            auto_initialize: Whether to automatically create instance via build() after loading
             
         Returns:
             True if loaded successfully, False otherwise
         """
+        
         file_path = file_path if file_path is not None else self.save_path
         
         async with file_lock(file_path):
@@ -696,31 +874,123 @@ class MemoryContextManager(BaseModel):
                 with open(file_path, "r", encoding="utf-8") as f:
                     load_data = json.load(f)
                 
-                memory_data = load_data.get("memory_systems", {})
+                memories_data = load_data.get("memory_systems", {})
                 loaded_count = 0
                 
-                for memory_name, memory_data_item in memory_data.items():
+                for memory_name, memory_data in memories_data.items():
                     try:
-                        # Create MemoryConfig (cls will be None, need to reload from discovery)
-                        memory_config = MemoryConfig(**memory_data_item)
+                        # Expected format: multiple versions stored as a dict {version_str: config_dict}
+                        versions_data = memory_data.get("versions")
+                        if not isinstance(versions_data, dict):
+                            logger.warning(f"| ⚠️ Memory {memory_name} has invalid format for 'versions' (expected dict), skipping")
+                            continue
                         
-                        # Register memory config
-                        self._memory_configs[memory_name] = memory_config
+                        current_version_str = memory_data.get("current_version")
                         
-                        # Register version to version manager
-                        await version_manager.register_version("memory", memory_name, memory_config.version)
+                        # Load all versions
+                        version_configs = []
+                        latest_config = None
+                        latest_version = None
                         
-                        loaded_count += 1
+                        for version_str, config_dict in versions_data.items():
+                            # Ensure version field is present
+                            if "version" not in config_dict:
+                                config_dict["version"] = version_str
+                            
+                            try:
+                                memory_config = MemoryConfig.model_validate(config_dict)
+                                version_configs.append(memory_config)
+                            except Exception as e:
+                                logger.warning(f"| ⚠️ Failed to load memory config for {memory_name}@{version_str}: {e}")
+                                continue
+                            
+                            # Track latest version
+                            if latest_config is None or (
+                                current_version_str and memory_config.version == current_version_str
+                            ) or (
+                                not current_version_str and (
+                                    latest_version is None or 
+                                    version_manager.compare_versions(memory_config.version, latest_version) > 0
+                                )
+                            ):
+                                latest_config = memory_config
+                                latest_version = memory_config.version
+                        
+                        # Store all versions in history (dict-based)
+                        self._memory_history_versions[memory_name] = {
+                            cfg.version: cfg for cfg in version_configs
+                        }
+                        
+                        # Only set latest version as active
+                        if latest_config:
+                            self._memory_configs[memory_name] = latest_config
+                            
+                            # Register all versions to version manager (only version records)
+                            for memory_config in version_configs:
+                                await version_manager.register_version("memory", memory_name, memory_config.version)
+                            
+                            # Create instance if requested (instance is not saved in JSON, must be created via build)
+                            if auto_initialize and latest_config.cls is not None:
+                                await self.build(latest_config)
+                            
+                            loaded_count += 1
                     except Exception as e:
                         logger.error(f"| ❌ Failed to load memory {memory_name}: {e}")
                         continue
                 
-                logger.info(f"| 📂 Loaded {loaded_count} memory systems from {file_path}")
+                logger.info(f"| 📂 Loaded {loaded_count} memory systems with version history from {file_path}")
                 return True
                 
             except Exception as e:
                 logger.error(f"| ❌ Failed to load memory systems from {file_path}: {e}")
                 return False
+    
+    async def restore(self, memory_name: str, version: str, auto_initialize: bool = True) -> Optional[MemoryConfig]:
+        """Restore a specific version of a memory system from history
+        
+        Args:
+            memory_name: Name of the memory system
+            version: Version string to restore
+            auto_initialize: Whether to automatically initialize the restored memory
+            
+        Returns:
+            MemoryConfig of the restored version, or None if not found
+        """
+        # Look up version from dict-based history (O(1) lookup)
+        version_config = None
+        if memory_name in self._memory_history_versions:
+            version_config = self._memory_history_versions[memory_name].get(version)
+        
+        if version_config is None:
+            logger.warning(f"| ⚠️ Version {version} not found for memory {memory_name}")
+            return None
+        
+        # Create a copy to avoid modifying the history
+        restored_config = MemoryConfig(**version_config.model_dump())
+        
+        # Set as current active config
+        self._memory_configs[memory_name] = restored_config
+        
+        # Update version manager current version
+        version_history = await version_manager.get_version_history("memory", memory_name)
+        if version_history:
+            # Check if version exists in version history, if not register it
+            if version not in version_history.versions:
+                await version_manager.register_version("memory", memory_name, version)
+            version_history.current_version = version
+        else:
+            # If version history doesn't exist, register the version first
+            await version_manager.register_version("memory", memory_name, version)
+        
+        # Initialize if requested
+        if auto_initialize and restored_config.cls is not None:
+            await self.build(restored_config)
+        
+        # Persist to JSON (current_version changes)
+        await self.save_to_json()
+        
+        logger.info(f"| 🔄 Restored memory {memory_name} to version {version}")
+        return restored_config
     
     async def get_variables(self, memory_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from memory systems, where each memory's code is used as the variable value.
@@ -754,10 +1024,8 @@ class MemoryContextManager(BaseModel):
             memory_configs = self._memory_configs
         
         for name, memory_config in memory_configs.items():
-            # Get memory code from class
-            memory_code = ""
-            if memory_config.cls is not None:
-                memory_code = dynamic_manager.get_full_module_source(memory_config.cls) or ""
+            # Get memory code
+            memory_code = memory_config.code or ""
             
             # Create Variable for this memory system
             variable = Variable(
@@ -847,16 +1115,18 @@ class MemoryContextManager(BaseModel):
         return await self.update(
             memory_name=memory_name,
             memory=memory_cls,
+            memory_config_dict=original_config.config,
             new_version=new_version,
-            description=update_description,
-            **original_config.config
+            description=update_description
         )
     
     async def cleanup(self):
-        """Cleanup all memory instances and resources."""
+        """Cleanup all active memory systems."""
         try:
-            # Clear instances and configs
+            # Clear all memory configs and version history
             self._memory_configs.clear()
+            self._memory_history_versions.clear()
+                
             logger.info("| 🧹 Memory context manager cleaned up")
             
         except Exception as e:
@@ -887,8 +1157,15 @@ class MemoryContextManager(BaseModel):
             raise ValueError(f"Memory system '{memory_name}' not found")
         return await instance.start_session(session_id, agent_name, task_id, description, **kwargs)
     
-    async def add_event(self, memory_name: str, step_number: int, event_type: Any, data: Any,
-                       agent_name: str, task_id: Optional[str] = None, session_id: Optional[str] = None, **kwargs):
+    async def add_event(self, 
+                        memory_name: str,
+                        step_number: int, 
+                        event_type: Any, 
+                        data: Any,
+                        agent_name: str, 
+                        task_id: Optional[str] = None, 
+                        session_id: Optional[str] = None,
+                        **kwargs):
         """Add an event to memory (delegates to memory system instance).
         
         Args:
@@ -944,37 +1221,6 @@ class MemoryContextManager(BaseModel):
         if instance is None:
             raise ValueError(f"Memory system '{memory_name}' not found")
         return await instance.clear_session(session_id)
-    
-    def _get_memory_instance(self, memory_name: str) -> Any:
-        """Get memory instance from manager's instance storage.
-        
-        Args:
-            memory_name: Name of the memory system
-            
-        Returns:
-            Memory system instance
-            
-        Raises:
-            ValueError: If memory system or instance not found
-        """
-        if not hasattr(self, '_memory_instances'):
-            raise ValueError(f"Memory system '{memory_name}' instance not found. Please call MemoryManager.get() first to create an instance.")
-        
-        if memory_name not in self._memory_instances:
-            raise ValueError(f"Memory system '{memory_name}' instance not found. Please call MemoryManager.get() first to create an instance.")
-        
-        return self._memory_instances[memory_name]
-    
-    def _set_memory_instance(self, memory_name: str, instance: Any):
-        """Set memory instance for use by context manager methods.
-        
-        Args:
-            memory_name: Name of the memory system
-            instance: Memory system instance
-        """
-        if not hasattr(self, '_memory_instances'):
-            self._memory_instances: Dict[str, Any] = {}
-        self._memory_instances[memory_name] = instance
     
     async def get_state(self, memory_name: str, n: Optional[int] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Get memory state (events, summaries, insights) for a memory system.

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
+from src.memory import EventType
 
 class LeafVariable(BaseModel):
     name: str = Field(description="Name of the leaf variable")
@@ -290,21 +291,36 @@ class ReflectionOptimizer(Optimizer):
         # Initialize optimizer memory session if available
         memory_name = self.memory_name
         session_id = None
+        task_id = None
         if memory_name:
             try:
                 import uuid
+                from datetime import datetime
                 agent_name = getattr(agent, 'name', 'unknown_agent')
                 session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
+                task_id = f"opt_task_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                 await memory_manager.start_session(
                     memory_name=memory_name,
                     session_id=session_id,
                     agent_name=agent_name,
                     description=task
                 )
+                
+                # Add optimization task start event
+                await memory_manager.add_event(
+                    memory_name=memory_name,
+                    step_number=0,
+                    event_type=EventType.TASK_START,
+                    data=dict(task=task, optimization_steps=optimization_steps),
+                    agent_name=agent_name,
+                    task_id=task_id,
+                    session_id=session_id
+                )
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to initialize optimizer memory: {e}")
                 memory_name = None
                 session_id = None
+                task_id = None
                 
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
@@ -380,7 +396,64 @@ class ReflectionOptimizer(Optimizer):
                 improved_solution_variable = trainable_variables['solution']
                 improved_solution_variable.variables = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
                 
-                # Step5: Update trainable variables with improved variables.
+                # Step5: Record optimization step to memory for learning
+                if memory_name and session_id:
+                    try:
+                        # Prepare execution result string
+                        execution_result_str = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
+                        
+                        # Build comprehensive event data for optimization learning
+                        import json
+                        event_data = {
+                            "task": task,
+                            "reflection_analysis": reflection_analysis,
+                            "execution_result": execution_result_str,
+                            "variable_changes": {}
+                        }
+                        
+                        # Record variable changes (before and after)
+                        for var_name, improved_value in improved_variables.variables.items():
+                            before_var = trainable_variables.get(var_name)
+                            before_value = ""
+                            if before_var:
+                                if hasattr(before_var, 'get_value'):
+                                    try:
+                                        before_value = before_var.get_value()
+                                    except:
+                                        before_value = str(before_var.variables) if hasattr(before_var, 'variables') else str(before_var)
+                                elif hasattr(before_var, 'variables'):
+                                    before_value = str(before_var.variables)
+                                else:
+                                    before_value = str(before_var)
+                            
+                            var_type = before_var.type if before_var and hasattr(before_var, 'type') else ""
+                            
+                            # Format improved value
+                            if isinstance(improved_value, dict):
+                                after_value = json.dumps(improved_value, indent=2, ensure_ascii=False)
+                            else:
+                                after_value = str(improved_value)
+                            
+                            event_data["variable_changes"][var_name] = {
+                                "type": var_type,
+                                "before": before_value,
+                                "after": after_value
+                            }
+                        
+                        await memory_manager.add_event(
+                            memory_name=memory_name,
+                            step_number=opt_step + 1,
+                            event_type=EventType.OPTIMIZATION_STEP,
+                            data=event_data,
+                            agent_name=getattr(agent, 'name', 'unknown_agent'),
+                            task_id=task_id,
+                            session_id=session_id
+                        )
+                        logger.debug(f"| 📝 Recorded optimization step {opt_step + 1} to memory")
+                    except Exception as e:
+                        logger.warning(f"| ⚠️ Failed to record optimization step to memory: {e}")
+                
+                # Step6: Update trainable variables with improved variables.
                 trainable_variables = await self.get_trainable_variables(agent=agent)
                 trainable_variables["solution"] = improved_solution_variable
                 
@@ -396,6 +469,21 @@ class ReflectionOptimizer(Optimizer):
         # End optimization memory session if available
         if memory_name and session_id:
             try:
+                # Add optimization task end event
+                await memory_manager.add_event(
+                    memory_name=memory_name,
+                    step_number=optimization_steps + 1,
+                    event_type=EventType.TASK_END,
+                    data=dict(
+                        task=task,
+                        optimization_steps=optimization_steps,
+                        completed=True
+                    ),
+                    agent_name=getattr(agent, 'name', 'unknown_agent'),
+                    task_id=task_id,
+                    session_id=session_id
+                )
+                
                 await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
                 logger.info(f"| 📝 Ended optimization memory session: {session_id}")
             except Exception as e:
