@@ -48,6 +48,11 @@ def create_wrapped_tool_class(action_config, env_config, env_name):
                     env_instance = env_config.instance
                     if env_instance is None:
                         env_instance = await ecp.get(env_config.name)
+                        if env_instance is None:
+                            return ToolResponse(
+                                success=False,
+                                message=f"Environment {env_config.name} instance not found"
+                            )
                     result = await action_function(env_instance, **kwargs)
                 
                 # Convert result to ToolResponse if needed

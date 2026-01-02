@@ -150,7 +150,7 @@ class T2ETransformer:
             
             from src.message.types import HumanMessage
             response = await model_manager(
-                model="gpt-4.1",
+                model="openrouter/gemini-3-flash-preview",
                 messages=[HumanMessage(content=prompt)],
                 response_format=DynamicComposedArgs
             )
