@@ -1,7 +1,7 @@
-from .aime import AIMEBenchmark
-from .server import benchmark_manager
+from .aime24 import AIMEBenchmark
+from .server import BenchmarkFactory
 
 __all__ = [
-    "benchmark_manager",
+    "BenchmarkFactory",
     "AIMEBenchmark",
 ]
