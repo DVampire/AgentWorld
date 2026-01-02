@@ -1,4 +1,4 @@
-"""Report Tool - A workflow tool for managing and refining markdown reports."""
+"""Reporter Tool - A workflow tool for managing and refining markdown reports."""
 
 import os
 import json
@@ -457,7 +457,7 @@ class ReporterTool(Tool):
 
     # Configuration parameters
     base_dir: str = Field(
-        default="workdir/report",
+        default="workdir/reporter",
         description="The base directory for saving reports."
     )
     
@@ -468,7 +468,7 @@ class ReporterTool(Tool):
         require_grad: bool = False,
         **kwargs
     ):
-        """Initialize the report tool."""
+        """Initialize the reporter tool."""
         super().__init__(require_grad=require_grad, **kwargs)
         
         if model_name is not None:

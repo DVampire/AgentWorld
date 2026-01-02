@@ -4,7 +4,7 @@ with read_base():
     from .agents.esg_agent import esg_agent
     from .tools.retriever import retriever_tool
     from .tools.plotter import plotter_tool
-    from .tools.report import report_tool
+    from .tools.reporter import reporter_tool
     from .tools.browser import browser_tool
     from .tools.deep_researcher import deep_researcher_tool
     from .tools.deep_analyzer import deep_analyzer_tool
@@ -34,7 +34,7 @@ tool_names = [
     'todo',  
     'retriever',
     'plotter',
-    'report',
+    'reporter',
     'browser',
     'deep_researcher',
     'deep_analyzer',
@@ -73,9 +73,9 @@ deep_analyzer_tool.update(
     base_dir=f"{workdir}/tool/deep_analyzer",
 )
 #-----------------REPORT TOOL CONFIG-----------------
-report_tool.update(
+reporter_tool.update(
     model_name=model_name,
-    base_dir=f"{workdir}/tool/report",
+    base_dir=f"{workdir}/tool/reporter",
 )
 #-----------------MDIFY TOOL CONFIG-----------------
 mdify_tool.update(

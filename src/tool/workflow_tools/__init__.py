@@ -7,13 +7,13 @@ including browser automation and deep research capabilities.
 from .browser import BrowserTool
 from .deep_researcher import DeepResearcherTool
 from .deep_analyzer import DeepAnalyzerTool
-from .report import ReportTool
+from .report import ReporterTool
 from .tool_generator import ToolGeneratorTool
 
 __all__ = [
     "BrowserTool",
     "DeepResearcherTool",
     "DeepAnalyzerTool",
-    "ReportTool",
+    "ReporterTool",
     "ToolGeneratorTool"
 ]
