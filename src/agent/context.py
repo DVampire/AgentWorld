@@ -1045,6 +1045,65 @@ class AgentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
+    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
+        """Retrieve similar agents using FAISS similarity search.
+        
+        Args:
+            query: Query string to search for
+            k: Number of results to return (default: 4)
+            
+        Returns:
+            List of dictionaries containing agent information with similarity scores
+        """
+        if self._faiss_service is None:
+            logger.warning("| ⚠️ FAISS service not initialized, cannot retrieve agents")
+            return []
+        
+        try:
+            from src.environment.faiss.types import FaissSearchRequest
+            
+            request = FaissSearchRequest(
+                query=query,
+                k=k,
+                fetch_k=k * 5  # Fetch more candidates before filtering
+            )
+            
+            result = await self._faiss_service.search_similar(request)
+            
+            if not result.success:
+                logger.warning(f"| ⚠️ FAISS search failed: {result.message}")
+                return []
+            
+            # Extract documents and scores from result
+            documents = []
+            if result.extra and "documents" in result.extra:
+                docs = result.extra["documents"]
+                scores = result.extra.get("scores", [])
+                
+                for doc, score in zip(docs, scores):
+                    # Extract agent name from metadata
+                    metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+                    agent_name = metadata.get("name", "")
+                    
+                    # Get agent config if available
+                    agent_config = None
+                    if agent_name and agent_name in self._agent_configs:
+                        agent_config = self._agent_configs[agent_name]
+                    
+                    documents.append({
+                        "name": agent_name,
+                        "description": metadata.get("description", ""),
+                        "score": float(score),
+                        "content": doc.get("page_content", "") if isinstance(doc, dict) else str(doc),
+                        "config": agent_config.model_dump() if agent_config else None
+                    })
+            
+            return documents
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error retrieving agents: {e}")
+            return []
+    
     async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from agents, where each agent's class source code is used as the variable value.
         

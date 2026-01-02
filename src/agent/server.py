@@ -204,6 +204,18 @@ class ACPServer(BaseModel):
             self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
+    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
+        """Retrieve similar agents using FAISS similarity search.
+        
+        Args:
+            query: Query string to search for
+            k: Number of results to return (default: 4)
+            
+        Returns:
+            List of dictionaries containing agent information with similarity scores
+        """
+        return await self.agent_context_manager.retrieve(query=query, k=k)
+    
     async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from agents, where each agent's class source code is used as the variable value.
         

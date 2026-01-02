@@ -232,6 +232,18 @@ class ECPServer(BaseModel):
             self._registered_configs[env_config.name] = env_config
         return env_config
     
+    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
+        """Retrieve similar environments using FAISS similarity search.
+        
+        Args:
+            query: Query string to search for
+            k: Number of results to return (default: 4)
+            
+        Returns:
+            List of dictionaries containing environment information with similarity scores
+        """
+        return await self.environment_context_manager.retrieve(query=query, k=k)
+    
     async def get_variables(self, env_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from environments, where each environment's class source code is used as the variable value.
         

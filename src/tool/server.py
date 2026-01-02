@@ -196,6 +196,18 @@ class TCPServer(BaseModel):
             self._registered_configs[tool_config.name] = tool_config
         return tool_config
     
+    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
+        """Retrieve similar tools using FAISS similarity search.
+        
+        Args:
+            query: Query string to search for
+            k: Number of results to return (default: 4)
+            
+        Returns:
+            List of dictionaries containing tool information with similarity scores
+        """
+        return await self.tool_context_manager.retrieve(query=query, k=k)
+    
     async def get_variables(self, tool_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from tools, where each tool's code is used as the variable value.
         

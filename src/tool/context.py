@@ -1024,6 +1024,65 @@ class ToolContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
+    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
+        """Retrieve similar tools using FAISS similarity search.
+        
+        Args:
+            query: Query string to search for
+            k: Number of results to return (default: 4)
+            
+        Returns:
+            List of dictionaries containing tool information with similarity scores
+        """
+        if self._faiss_service is None:
+            logger.warning("| ⚠️ FAISS service not initialized, cannot retrieve tools")
+            return []
+        
+        try:
+            from src.environment.faiss.types import FaissSearchRequest
+            
+            request = FaissSearchRequest(
+                query=query,
+                k=k,
+                fetch_k=k * 5  # Fetch more candidates before filtering
+            )
+            
+            result = await self._faiss_service.search_similar(request)
+            
+            if not result.success:
+                logger.warning(f"| ⚠️ FAISS search failed: {result.message}")
+                return []
+            
+            # Extract documents and scores from result
+            documents = []
+            if result.extra and "documents" in result.extra:
+                docs = result.extra["documents"]
+                scores = result.extra.get("scores", [])
+                
+                for doc, score in zip(docs, scores):
+                    # Extract tool name from metadata
+                    metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+                    tool_name = metadata.get("name", "")
+                    
+                    # Get tool config if available
+                    tool_config = None
+                    if tool_name and tool_name in self._tool_configs:
+                        tool_config = self._tool_configs[tool_name]
+                    
+                    documents.append({
+                        "name": tool_name,
+                        "description": metadata.get("description", ""),
+                        "score": float(score),
+                        "content": doc.get("page_content", "") if isinstance(doc, dict) else str(doc),
+                        "config": tool_config.model_dump() if tool_config else None
+                    })
+            
+            return documents
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error retrieving tools: {e}")
+            return []
+    
     async def cleanup(self):
         """Cleanup all active tools."""
         try:

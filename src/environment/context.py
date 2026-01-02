@@ -1180,6 +1180,65 @@ class EnvironmentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
+    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
+        """Retrieve similar environments using FAISS similarity search.
+        
+        Args:
+            query: Query string to search for
+            k: Number of results to return (default: 4)
+            
+        Returns:
+            List of dictionaries containing environment information with similarity scores
+        """
+        if self._faiss_service is None:
+            logger.warning("| ⚠️ FAISS service not initialized, cannot retrieve environments")
+            return []
+        
+        try:
+            from src.environment.faiss.types import FaissSearchRequest
+            
+            request = FaissSearchRequest(
+                query=query,
+                k=k,
+                fetch_k=k * 5  # Fetch more candidates before filtering
+            )
+            
+            result = await self._faiss_service.search_similar(request)
+            
+            if not result.success:
+                logger.warning(f"| ⚠️ FAISS search failed: {result.message}")
+                return []
+            
+            # Extract documents and scores from result
+            documents = []
+            if result.extra and "documents" in result.extra:
+                docs = result.extra["documents"]
+                scores = result.extra.get("scores", [])
+                
+                for doc, score in zip(docs, scores):
+                    # Extract environment name from metadata
+                    metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
+                    env_name = metadata.get("name", "")
+                    
+                    # Get environment config if available
+                    env_config = None
+                    if env_name and env_name in self._environment_configs:
+                        env_config = self._environment_configs[env_name]
+                    
+                    documents.append({
+                        "name": env_name,
+                        "description": metadata.get("description", ""),
+                        "score": float(score),
+                        "content": doc.get("page_content", "") if isinstance(doc, dict) else str(doc),
+                        "config": env_config.model_dump() if env_config else None
+                    })
+            
+            return documents
+            
+        except Exception as e:
+            logger.error(f"| ❌ Error retrieving environments: {e}")
+            return []
+    
     async def get_variables(self, env_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from environments, where each environment's class source code is used as the variable value.
         
