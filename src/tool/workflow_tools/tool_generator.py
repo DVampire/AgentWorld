@@ -1,0 +1,515 @@
+"""Tool Generator Tool - A workflow tool for intelligent tool evolution through automated creation, dynamic retrieval, and systematic reuse."""
+
+import asyncio
+import os
+import json
+import uuid
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field, ConfigDict
+
+from src.logger import logger
+from src.model import model_manager
+from src.utils import dedent
+from src.message.types import HumanMessage, SystemMessage
+from src.tool.types import Tool, ToolResponse, ToolExtra
+from src.tool.server import tcp
+from src.registry import TOOL
+from src.dynamic import dynamic_manager
+
+
+_TOOL_GENERATOR_DESCRIPTION = """Tool generator tool that performs intelligent tool lifecycle management through TCP.
+This tool will:
+1. Analyze task requirements and extract tool specifications
+2. Retrieve existing similar tools from TCP registry using semantic search
+3. If no suitable tools exist, generate new tool implementations
+4. Evaluate newly created tools for correctness and integration compatibility
+5. Register validated tools in TCP for reuse by other agents
+"""
+
+class ToolSpecification(BaseModel):
+    """Tool specification extracted from task analysis."""
+    tool_name: str = Field(description="Name of the tool to create")
+    description: str = Field(description="Functional description of the tool")
+    parameters: Dict[str, Any] = Field(description="Parameter schema for the tool")
+    implementation_plan: str = Field(description="Plan for implementing the tool")
+
+
+class ToolEvaluation(BaseModel):
+    """Response format for evaluating tool correctness."""
+    is_valid: bool = Field(description="Whether the tool implementation is valid")
+    errors: List[str] = Field(default_factory=list, description="List of errors found during evaluation")
+    warnings: List[str] = Field(default_factory=list, description="List of warnings found during evaluation")
+    reasoning: str = Field(description="Brief explanation of the evaluation result")
+
+
+@TOOL.register_module(force=True)
+class ToolGeneratorTool(Tool):
+    """A tool generator tool that creates, retrieves, evaluates, and manages tools through TCP."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    name: str = "tool_generator"
+    description: str = _TOOL_GENERATOR_DESCRIPTION
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+    require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+    
+    # Configuration parameters
+    model_name: str = Field(
+        default="openrouter/gemini-3-flash-preview",
+        description="The model to use for tool generation and evaluation."
+    )
+    base_dir: str = Field(
+        default="workdir/tool_generator",
+        description="The base directory for the tool generator."
+    )
+    max_retrieval_results: int = Field(
+        default=5,
+        description="Maximum number of similar tools to retrieve"
+    )
+
+    def __init__(self, 
+                 base_dir: Optional[str] = None,
+                 model_name: Optional[str] = None, 
+                 require_grad: bool = False,
+                 **kwargs):
+        """Initialize the tool generator tool."""
+        super().__init__(require_grad=require_grad, **kwargs)
+        
+        from src.utils import assemble_project_path
+        
+        if base_dir is not None:
+            self.base_dir = assemble_project_path(base_dir)
+        elif hasattr(self, 'base_dir'):
+            self.base_dir = assemble_project_path(self.base_dir)
+        else:
+            self.base_dir = assemble_project_path("workdir/tool_generator")
+        
+        # Create base directory if it doesn't exist
+        if self.base_dir:
+            os.makedirs(self.base_dir, exist_ok=True)
+        
+        if model_name is not None:
+            self.model_name = model_name
+
+    async def __call__(self, 
+                       task: str,
+                       tool_name: Optional[str] = None,
+                       description: Optional[str] = None,
+                       call_id: Optional[str] = None,
+                       **kwargs) -> ToolResponse:
+        """
+        Execute tool generation workflow.
+        
+        Args:
+            task (str): The task description that requires a tool. This will be analyzed to determine tool requirements.
+            tool_name (Optional[str]): Optional explicit tool name. If not provided, will be generated from task.
+            description (Optional[str]): Optional explicit tool description. If not provided, will be generated from task.
+            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls.
+        """
+        try:
+            logger.info(f"🔨 Starting tool generation for task: {task}")
+            
+            # Generate unique call ID if not provided
+            if call_id is None:
+                call_id = uuid.uuid4().hex[:8]
+            
+            # Step 1: Task Analysis - Extract tool specifications
+            logger.info("📋 Step 1: Analyzing task requirements...")
+            tool_spec = await self._analyze_task(task, tool_name, description)
+            logger.info(f"| ✅ Tool specification: {tool_spec.tool_name}")
+            
+            # Step 2: Tool Retrieval - Search for existing similar tools
+            logger.info("🔍 Step 2: Retrieving similar tools from TCP...")
+            retrieved_tools = await self._retrieve_tools(tool_spec.description)
+            
+            if retrieved_tools:
+                logger.info(f"| ✅ Found {len(retrieved_tools)} similar tools")
+                # Check if any retrieved tool is suitable
+                suitable_tool = await self._evaluate_retrieved_tools(retrieved_tools, tool_spec)
+                if suitable_tool:
+                    logger.info(f"| ✅ Found suitable existing tool: {suitable_tool.get('name')}")
+                    return ToolResponse(
+                        success=True,
+                        message=f"Found suitable existing tool: {suitable_tool.get('name')}. Description: {suitable_tool.get('description', 'N/A')}",
+                        extra=ToolExtra(
+                            data={
+                                "tool_name": suitable_tool.get('name'),
+                                "action": "retrieved",
+                                "retrieved_tools": retrieved_tools,
+                                "specification": tool_spec.model_dump()
+                            }
+                        )
+                    )
+            
+            # Step 3: Tool Creation - Generate new tool implementation
+            logger.info("🔨 Step 3: Generating new tool implementation...")
+            tool_code = await self._generate_tool_code(tool_spec)
+            logger.info(f"| ✅ Generated tool code for {tool_spec.tool_name}")
+            
+            # Step 4: Tool Evaluation - Validate the generated tool
+            logger.info("✅ Step 4: Evaluating generated tool...")
+            evaluation = await self._evaluate_tool(tool_spec, tool_code)
+            
+            if not evaluation.is_valid:
+                logger.warning(f"| ⚠️ Tool evaluation failed: {evaluation.reasoning}")
+                return ToolResponse(
+                    success=False,
+                    message=f"Tool generation failed evaluation: {evaluation.reasoning}. Errors: {', '.join(evaluation.errors)}",
+                    extra=ToolExtra(
+                        data={
+                            "tool_name": tool_spec.tool_name,
+                            "action": "evaluation_failed",
+                            "evaluation": evaluation.model_dump(),
+                            "specification": tool_spec.model_dump()
+                        }
+                    )
+                )
+            
+            # Step 5: Tool Registration - Register in TCP
+            logger.info("📝 Step 5: Registering tool in TCP...")
+            try:
+                tool_config = await self._register_tool(tool_spec, tool_code)
+                logger.info(f"| ✅ Successfully registered tool: {tool_config.name} (version: {tool_config.version})")
+                
+                # Note: TCP register automatically saves to JSON and contract, no need for manual manifest saving
+                
+                return ToolResponse(
+                    success=True,
+                    message=f"Successfully generated and registered tool '{tool_config.name}' (version: {tool_config.version}). Description: {tool_spec.description}",
+                    extra=ToolExtra(
+                        data={
+                            "tool_name": tool_config.name,
+                            "tool_version": tool_config.version,
+                            "action": "created_and_registered",
+                            "specification": tool_spec.model_dump(),
+                            "evaluation": evaluation.model_dump(),
+                            "retrieved_tools": retrieved_tools
+                        }
+                    )
+                )
+            except Exception as e:
+                logger.error(f"| ❌ Tool registration failed: {e}")
+                return ToolResponse(
+                    success=False,
+                    message=f"Tool generation succeeded but registration failed: {str(e)}",
+                    extra=ToolExtra(
+                        data={
+                            "tool_name": tool_spec.tool_name,
+                            "action": "registration_failed",
+                            "error": str(e),
+                            "specification": tool_spec.model_dump(),
+                            "evaluation": evaluation.model_dump()
+                        }
+                    )
+                )
+            
+        except Exception as e:
+            logger.error(f"❌ Error in tool generation: {e}")
+            return ToolResponse(success=False, message=f"Error during tool generation: {e}")
+
+    async def _analyze_task(self, task: str, tool_name: Optional[str] = None, description: Optional[str] = None) -> ToolSpecification:
+        """Analyze task to extract tool specifications."""
+        system_prompt = """You are an expert at analyzing tasks and extracting tool specifications. 
+        Analyze the given task and determine what tool is needed, including its name, description, and parameters."""
+        
+        user_prompt = dedent(f"""Analyze the following task and extract tool specifications:
+
+        Task: {task}
+        
+        {"Tool name (if specified): " + tool_name if tool_name else ""}
+        {"Tool description (if specified): " + description if description else ""}
+        
+        Extract the following information:
+        1. Tool name: A clear, descriptive name for the tool (use snake_case)
+        2. Description: A detailed functional description of what the tool does
+        3. Parameters: A JSON schema describing the tool's input parameters
+        4. Implementation plan: A brief plan for implementing the tool
+        
+        Return the specification in the following JSON format:
+        {{
+            "tool_name": "example_tool",
+            "description": "Detailed description of what the tool does",
+            "parameters": {{
+                "type": "object",
+                "properties": {{
+                    "param1": {{
+                        "type": "string",
+                        "description": "Description of param1"
+                    }}
+                }},
+                "required": ["param1"]
+            }},
+            "implementation_plan": "Brief plan for implementation"
+        }}
+        """)
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        response = await model_manager(model=self.model_name, messages=messages)
+        
+        # Parse JSON response
+        try:
+            import json
+            spec_dict = json.loads(response.message.strip())
+            return ToolSpecification(**spec_dict)
+        except Exception as e:
+            logger.warning(f"Failed to parse specification JSON, using defaults: {e}")
+            # Fallback: generate basic specification
+            default_name = tool_name or "generated_tool"
+            default_description = description or task
+            return ToolSpecification(
+                tool_name=default_name,
+                description=default_description,
+                parameters={"type": "object", "properties": {}, "required": []},
+                implementation_plan="Generate tool implementation based on task requirements"
+            )
+
+    async def _retrieve_tools(self, query: str) -> List[Dict[str, Any]]:
+        """Retrieve similar tools from TCP using semantic search."""
+        try:
+            retrieved_tools = await tcp.retrieve(query=query, k=self.max_retrieval_results)
+            return retrieved_tools
+        except Exception as e:
+            logger.warning(f"Tool retrieval failed: {e}")
+            return []
+
+    async def _evaluate_retrieved_tools(self, retrieved_tools: List[Dict[str, Any]], spec: ToolSpecification) -> Optional[Dict[str, Any]]:
+        """Evaluate if any retrieved tool is suitable for the task."""
+        if not retrieved_tools:
+            return None
+        
+        # Use LLM to evaluate if any tool is suitable
+        system_prompt = """You are an expert at evaluating tool compatibility. 
+        Determine if any of the retrieved tools can fulfill the required functionality."""
+        
+        tools_list = "\n".join([
+            f"- {tool.get('name', 'Unknown')}: {tool.get('description', 'N/A')} (similarity: {tool.get('score', 0):.4f})"
+            for tool in retrieved_tools
+        ])
+        
+        user_prompt = dedent(f"""Evaluate if any of these retrieved tools can fulfill the required functionality:
+
+        Required Tool:
+        - Name: {spec.tool_name}
+        - Description: {spec.description}
+        - Parameters: {json.dumps(spec.parameters, indent=2)}
+
+        Retrieved Tools:
+        {tools_list}
+
+        Determine if any retrieved tool is suitable. Return JSON:
+        {{
+            "is_suitable": true/false,
+            "tool_name": "name of suitable tool or null",
+            "reasoning": "brief explanation"
+        }}
+        """)
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        try:
+            response = await model_manager(model=self.model_name, messages=messages)
+            eval_result = json.loads(response.message.strip())
+            
+            if eval_result.get("is_suitable") and eval_result.get("tool_name"):
+                tool_name = eval_result["tool_name"]
+                # Find the tool in retrieved_tools
+                for tool in retrieved_tools:
+                    if tool.get("name") == tool_name:
+                        return tool
+        except Exception as e:
+            logger.warning(f"Tool evaluation failed: {e}")
+        
+        return None
+
+    async def _generate_tool_code(self, spec: ToolSpecification) -> str:
+        """Generate tool implementation code."""
+        system_prompt = """You are an expert Python developer specializing in creating tools for AI agents.
+        Generate complete, working tool implementations that follow the Tool base class pattern."""
+        
+        # Example tool code for reference
+        example_code = dedent("""
+        Example Tool Implementation:
+
+        from typing import Optional, Dict, Any
+        from pydantic import Field, ConfigDict
+        from src.tool.types import Tool, ToolResponse
+        from src.registry import TOOL
+        from src.logger import logger
+
+        _TOOL_DESCRIPTION = \"\"\"Tool description here.\"\"\"
+
+        @TOOL.register_module(force=True)
+        class ExampleTool(Tool):
+            \"\"\"An example tool implementation.\"\"\"
+
+            model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+            name: str = "example_tool"
+            description: str = _TOOL_DESCRIPTION
+            metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
+            require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
+
+            def __init__(self, require_grad: bool = False, **kwargs):
+                \"\"\"Initialize the tool.\"\"\"
+                super().__init__(require_grad=require_grad, **kwargs)
+
+            async def __call__(self, param1: str, param2: Optional[int] = None, **kwargs) -> ToolResponse:
+                \"\"\"
+                Execute the tool.
+
+                Args:
+                    param1: Description of param1
+                    param2: Description of param2
+                \"\"\"
+                try:
+                    # Tool implementation logic here
+                    result = f"Processed {param1} with {param2}"
+                    
+                    return ToolResponse(
+                        success=True,
+                        message=result
+                    )
+                except Exception as e:
+                    logger.error(f"Error in example_tool: {e}")
+                    return ToolResponse(
+                        success=False,
+                        message=f"Error executing tool: {str(e)}"
+                    )
+        """)
+        
+        user_prompt = dedent(f"""Generate a complete Python tool implementation for the following specification:
+
+        Tool Name: {spec.tool_name}
+        Description: {spec.description}
+        Parameters: {json.dumps(spec.parameters, indent=2)}
+        Implementation Plan: {spec.implementation_plan}
+
+        Requirements:
+        1. The tool must inherit from the Tool base class (imported from src.tool.types)
+        2. Use @TOOL.register_module(force=True) decorator
+        3. Implement the __call__ method that returns ToolResponse
+        4. Include proper error handling with try-except blocks
+        5. Use logger for error logging
+        6. Follow the existing tool patterns in the codebase
+        7. The tool name should be set as: name: str = "{spec.tool_name}"
+        8. The description should be set as: description: str = "{spec.description}"
+        9. Use Field for metadata and require_grad attributes
+        10. Use ConfigDict(arbitrary_types_allowed=True, extra="allow") for model_config
+
+        Reference Example:
+        {example_code}
+
+        Generate the complete, working Python code for this tool based on the specification above.
+        Make sure to:
+        - Import all necessary modules
+        - Define the tool class with proper structure
+        - Implement the __call__ method according to the parameters schema
+        - Include error handling
+        - Return ToolResponse with success and message fields
+
+        Return ONLY the code, no explanations or markdown formatting.
+        """)
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        response = await model_manager(model=self.model_name, messages=messages)
+        return response.message.strip()
+
+    async def _evaluate_tool(self, spec: ToolSpecification, tool_code: str) -> ToolEvaluation:
+        """Evaluate the generated tool for correctness and compatibility."""
+        # Try to load and validate the tool class
+        errors = []
+        warnings = []
+        
+        try:
+            # Extract class name from code
+            class_name = dynamic_manager.extract_class_name_from_code(tool_code)
+            if not class_name:
+                errors.append("Could not extract class name from tool code")
+                return ToolEvaluation(
+                    is_valid=False,
+                    errors=errors,
+                    warnings=warnings,
+                    reasoning="Failed to extract class name from code"
+                )
+            
+            # Try to load the class
+            from src.tool.types import Tool
+            tool_class = dynamic_manager.load_class(
+                tool_code,
+                class_name=class_name,
+                base_class=Tool,
+                context="tool"
+            )
+            
+            # Basic validation
+            if not hasattr(tool_class, 'name'):
+                errors.append("Tool class missing 'name' attribute")
+            if not hasattr(tool_class, 'description'):
+                errors.append("Tool class missing 'description' attribute")
+            if not hasattr(tool_class, '__call__'):
+                errors.append("Tool class missing '__call__' method")
+            
+            # Check if name matches specification
+            if hasattr(tool_class, 'name') and tool_class.name != spec.tool_name:
+                warnings.append(f"Tool name '{tool_class.name}' does not match specification '{spec.tool_name}'")
+            
+            if errors:
+                return ToolEvaluation(
+                    is_valid=False,
+                    errors=errors,
+                    warnings=warnings,
+                    reasoning=f"Tool validation failed with {len(errors)} error(s)"
+                )
+            
+            return ToolEvaluation(
+                is_valid=True,
+                errors=errors,
+                warnings=warnings,
+                reasoning="Tool passed basic validation checks"
+            )
+            
+        except Exception as e:
+            errors.append(f"Tool loading/validation failed: {str(e)}")
+            return ToolEvaluation(
+                is_valid=False,
+                errors=errors,
+                warnings=warnings,
+                reasoning=f"Tool evaluation failed: {str(e)}"
+            )
+
+    async def _register_tool(self, spec: ToolSpecification, tool_code: str):
+        """Register the tool in TCP."""
+        # Extract class name from code
+        class_name = dynamic_manager.extract_class_name_from_code(tool_code)
+        if not class_name:
+            raise ValueError("Could not extract class name from tool code")
+        
+        # Load the tool class from code
+        from src.tool.types import Tool
+        tool_class = dynamic_manager.load_class(
+            tool_code,
+            class_name=class_name,
+            base_class=Tool,
+            context="tool"
+        )
+        
+        # Register the tool in TCP
+        tool_config = await tcp.register(
+            tool_class,
+            config={},
+            override=True
+        )
+        
+        return tool_config
+

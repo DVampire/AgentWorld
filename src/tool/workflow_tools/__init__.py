@@ -8,10 +8,12 @@ from .browser import BrowserTool
 from .deep_researcher import DeepResearcherTool
 from .deep_analyzer import DeepAnalyzerTool
 from .report import ReportTool
+from .tool_generator import ToolGeneratorTool
 
 __all__ = [
     "BrowserTool",
     "DeepResearcherTool",
     "DeepAnalyzerTool",
-    "ReportTool"
+    "ReportTool",
+    "ToolGeneratorTool"
 ]
