@@ -414,25 +414,24 @@ class DeepAnalyzerTool(Tool):
             # Create per-call local variables to avoid race conditions in concurrent calls
             # Create file path for markdown report
             md_filename = f"analysis_{call_id}.md"
-            file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
+            report_file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
             # Initialize Report instance
             report = Report(
                 title="Deep Analysis Report",
-                model_name=self.model_name,
-                report_file_path=file_path
+                model_name=self.model_name
             )
             
             # Add initial task information
             task_content = f"## Analysis Task\n\n{task}\n\n"
             if files:
                 task_content += f"## Files\n\n"
-                for file_path in files:
-                    file_display = file_path if self._is_url(file_path) else os.path.basename(file_path)
+                for file in files:
+                    file_display = file if self._is_url(file) else os.path.basename(file)
                     task_content += f"- {file_display}\n"
                 task_content += "\n"
             
-            await report.add_item(task_content)
+            await report.add_item(content=task_content)
             
             # Maintain summaries list in __call__
             summaries: List[Summary] = []
@@ -440,11 +439,11 @@ class DeepAnalyzerTool(Tool):
             # Validate files
             valid_files = []
             if files:
-                for file_path in files:
-                    if await self._validate_file(file_path):
-                        valid_files.append(file_path)
+                for file in files:
+                    if await self._validate_file(file):
+                        valid_files.append(file)
                     else:
-                        logger.warning(f"Skipping invalid file: {file_path}")
+                        logger.warning(f"Skipping invalid file: {file}")
             
             # If no files or no valid files, analyze task directly
             if not valid_files:
@@ -455,24 +454,25 @@ class DeepAnalyzerTool(Tool):
                 summary = await self._summarize_summaries(task, summaries)
                 if summary.found_answer:
                     answer_content = f"## Final Answer\n\n**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
-                    await report.add_item(answer_content)
+                    await report.add_item(content=answer_content)
                     
-                    if file_path:
+                    if report_file_path:
+                        report.report_file_path = report_file_path
                         final_report_content = await report.complete()
-                        logger.info(f"✅ Analysis report saved to: {file_path}")
+                        logger.info(f"✅ Analysis report saved to: {report_file_path}")
                         
-                        message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {file_path}"
+                        message = f"Answer found from task analysis.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {report_file_path}"
                         
                         return ToolResponse(
                             success=True,
                             message=message,
                             extra=ToolExtra(
-                                file_path=file_path,
+                                file_path=report_file_path,
                                 data={
                                     "task": task,
                                     "answer_found": True,
                                     "answer": summary.answer,
-                                    "file_path": file_path
+                                    "file_path": report_file_path
                                 }
                             )
                         )
@@ -483,21 +483,22 @@ class DeepAnalyzerTool(Tool):
                     summaries.append(summary)
                     result = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries])
                     
-                    if file_path:
+                    if report_file_path:
+                        report.report_file_path = report_file_path
                         final_report_content = await report.complete()
-                        logger.info(f"✅ Analysis report saved to: {file_path}")
+                        logger.info(f"✅ Analysis report saved to: {report_file_path}")
                         
-                        message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries]) + "\n\nReport saved to: {file_path}"
+                        message = f"Analysis completed but no definitive answer found.\n\nTask: {task}\n\nSummaries:\n" + "\n".join([f"- {s.summary}" for s in summaries]) + f"\n\nReport saved to: {report_file_path}"
                         
                         return ToolResponse(
                             success=False,
                             message=message,
                             extra=ToolExtra(
-                                file_path=file_path,
+                                file_path=report_file_path,
                                 data={
                                     "task": task,
                                     "answer_found": False,
-                                    "file_path": file_path
+                                    "file_path": report_file_path
                                 }
                             )
                         )
@@ -510,24 +511,25 @@ class DeepAnalyzerTool(Tool):
             summary = await self._get_overall_file_summary(task, valid_files)
             if summary and summary.found_answer:
                 answer_content = f"## Final Answer\n\n**Answer Found**: Yes\n\n**Answer**: {summary.answer}\n\n"
-                await report.add_item(answer_content)
+                await report.add_item(content=answer_content)
                 
-                if file_path:
+                if report_file_path:
+                    report.report_file_path = report_file_path
                     final_report_content = await report.complete()
-                    logger.info(f"✅ Analysis report saved to: {file_path}")
+                    logger.info(f"✅ Analysis report saved to: {report_file_path}")
                     
-                    message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {file_path}"
+                    message = f"Answer found from file information summary.\n\nTask: {task}\n\nAnswer: {summary.answer}, Report saved to: {report_file_path}"
                     
                     return ToolResponse(
                         success=True,
                         message=message,
                         extra=ToolExtra(
-                            file_path=file_path,
+                            file_path=report_file_path,
                             data={
                                 "task": task,
                                 "answer_found": True,
                                 "answer": summary.answer,
-                                "file_path": file_path
+                                "file_path": report_file_path
                             }
                         )
                     )
@@ -537,7 +539,7 @@ class DeepAnalyzerTool(Tool):
             elif summary:
                 summaries.append(summary)
                 summary_content = f"## File Information Summary\n\n{summary.summary}\n\n"
-                await report.add_item(summary_content)
+                await report.add_item(content=summary_content)
             
             # Use LLM to classify file types
             logger.info(f"| 🔍 Classifying {len(valid_files)} files by type...")
@@ -550,7 +552,7 @@ class DeepAnalyzerTool(Tool):
                 logger.info(f"| 📋 {file_display}: {file_info.file_type}")
                 classification_content += f"- **{file_display}**: {file_info.file_type}\n"
             classification_content += "\n"
-            await report.add_item(classification_content)
+            await report.add_item(content=classification_content)
             
             # Main analysis loop with max_rounds
             for round_num in range(1, self.max_rounds + 1):
@@ -592,25 +594,26 @@ class DeepAnalyzerTool(Tool):
                     round_summary = await self._summarize_summaries(task, round_summaries)
                     if round_summary.found_answer:
                         round_content += f"### Round {round_num} Summary\n\n**Answer Found**: Yes\n\n**Answer**: {round_summary.answer}\n\n"
-                        await report.add_item(round_content)
+                        await report.add_item(content=round_content)
                         
-                        if file_path:
+                        if report_file_path:
+                            report.report_file_path = report_file_path
                             final_report_content = await report.complete()
-                            logger.info(f"✅ Analysis report saved to: {file_path}")
+                            logger.info(f"✅ Analysis report saved to: {report_file_path}")
                             
-                            message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}, Report saved to: {file_path}"
+                            message = f"Answer found from file analysis.\n\nTask: {task}\n\nAnswer: {round_summary.answer}, Report saved to: {report_file_path}"
                             
                             return ToolResponse(
                                 success=True,
                                 message=message,
                                 extra=ToolExtra(
-                                    file_path=file_path,
+                                    file_path=report_file_path,
                                     data={
                                         "task": task,
                                         "round": round_num,
                                         "answer_found": True,
                                         "answer": round_summary.answer,
-                                        "file_path": file_path
+                                        "file_path": report_file_path
                                     }
                                 )
                             )
@@ -628,7 +631,7 @@ class DeepAnalyzerTool(Tool):
                 else:
                     round_content += f"**Answer Found**: No\n\n"
                 
-                await report.add_item(round_content)
+                await report.add_item(content=round_content)
             
             # Final summary
             final_summary = await self._summarize_summaries(task, summaries)
@@ -637,11 +640,12 @@ class DeepAnalyzerTool(Tool):
                 final_content += f"**Answer Found**: Yes\n\n**Answer**: {final_summary.answer}\n\n"
             else:
                 final_content += f"**Answer Found**: No\n\n"
-            await report.add_item(final_content)
+            await report.add_item(content=final_content)
             
-            if file_path:
+            if report_file_path:
+                report.report_file_path = report_file_path
                 final_report_content = await report.complete()
-                logger.info(f"✅ Analysis report saved to: {file_path}")
+                logger.info(f"✅ Analysis report saved to: {report_file_path}")
                 
                 # Build message parts separately to avoid f-string backslash issue
                 status_text = 'Answer found' if final_summary.found_answer else 'No definitive answer found'
@@ -652,19 +656,19 @@ class DeepAnalyzerTool(Tool):
                     answer_text = 'Summaries:\n' + '\n'.join(summaries_list)
                 
                 message = f"Analysis completed after {self.max_rounds} rounds.\n\nTask: {task}\n\n{status_text}.\n\n{answer_text}"
-                message += f"\n\nReport saved to: {file_path}"
+                message += f"\n\nReport saved to: {report_file_path}"
                 
                 return ToolResponse(
                     success=final_summary.found_answer,
                     message=message,
                     extra=ToolExtra(
-                        file_path=file_path,
+                        file_path=report_file_path,
                         data={
                             "task": task,
                             "rounds": self.max_rounds,
                             "answer_found": final_summary.found_answer,
                             "answer": final_summary.answer if final_summary.found_answer else None,
-                            "file_path": file_path
+                            "file_path": report_file_path
                         }
                     )
                 )
