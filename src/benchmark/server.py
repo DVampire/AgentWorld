@@ -6,7 +6,10 @@ from pydantic import BaseModel, Field
 
 # 导入基类和具体实现
 from .types import Benchmark
-from .aime24 import AIMEBenchmark
+from .aime24 import AIME24Benchmark
+from .aime25 import AIME25Benchmark
+from .gpqa import GPQABenchmark
+from .leetcode import LeetCodeBenchmark
 # 注意：实际项目中建议使用动态注册或 importlib 避免循环依赖，
 # 或者把 implementations 放在单独文件引用。
 
@@ -20,10 +23,11 @@ class BenchmarkFactory:
         
         # 映射表
         registry = {
-            "aime24": AIMEBenchmark,
+            "aime24": AIME24Benchmark,
+            "aime25": AIME25Benchmark,
             #"gsm8k": GSM8kBenchmark,
-            # "gpqa": GPQABenchmark,
-            # "leetcode": LeetCodeBenchmark
+            "gpqa": GPQABenchmark,
+            "leetcode": LeetCodeBenchmark
         }
         
         # 简单的别名匹配逻辑

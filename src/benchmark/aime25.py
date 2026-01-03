@@ -6,13 +6,13 @@ from typing import Optional, Any
 from .types import Benchmark
 from src.registry import DATASET
 
-class AIME24Benchmark(Benchmark):
+class AIME25Benchmark(Benchmark):
     """
     AIME 具体实现
     """
     async def _load_dataset_implementation(self) -> Any:
         cfg = dict(
-            type="AIME24Dataset",
+            type="AIME25Dataset",
             path=self.path,
             name=self.subset if self.subset else "all",
             split=self.split

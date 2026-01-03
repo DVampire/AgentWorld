@@ -86,7 +86,7 @@ class Benchmark(BaseModel):
         # 构造返回给 Runner 的任务对象
         # 自动附带 system_prompt 方便调用
         task = {
-            "task_id": str(record.get("task_id", "")),
+            "task_id": str(record.get("task_id") or record.get("id","")),
             "input": record.get("question") or record.get("prompt") or "", # 兼容不同字段名
             "system_prompt": self.get_task_description(),
             # 保留原数据中可能需要的额外字段 (如 images)
@@ -115,8 +115,8 @@ class Benchmark(BaseModel):
             score = 0.0
             ground_truth = "N/A" # 标记缺失
         else:
-            score = await self._eval_logic(prediction, ground_truth, **kwargs)
-        
+            score = await self._eval_logic(prediction, ground_truth, task_id=str(task_id), **kwargs)
+            
         # --- 记录状态 ---
         result_entry = {
             "task_id": task_id,
