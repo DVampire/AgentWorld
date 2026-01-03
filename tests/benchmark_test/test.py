@@ -13,8 +13,8 @@ from src.message.types import HumanMessage, SystemMessage
 
 # --- 2. 评测配置 ---
 BENCHMARK_CONFIG = {
-    "name": "aime24",
-    "path": "./datasets/AIME24",
+    "name": "leetcode",
+    "path": "./datasets/leetcode",
     "split": "test",
     "subset": None
 }
