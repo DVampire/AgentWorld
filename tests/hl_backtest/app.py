@@ -10,6 +10,7 @@ from backtest import run_backtest
 from regime_based import (
     PRICE_COL,
     MAX_LEVERAGE,
+    reset_signal_history,
     bh_baseline,
     ma_crossover_baseline,
     zscore_mr_baseline,
@@ -18,6 +19,7 @@ from regime_based import (
     funding_arb_baseline,
     carry_momentum_baseline,
 )
+
 
 # ========= Streamlit 基本设置 =========
 st.set_page_config(
@@ -32,7 +34,7 @@ st.markdown(
     """
 本面板会：
 - 载入 1m K 线数据
-- 同时回测 3 个策略（BH / LiveTrading）
+- 同时回测多个策略（BH / MA / ZScoreMR / TSMOM / LiveTrading / FundingArb / CarryMomentum）
 - 支持为 **每个策略设置最小持仓周期（bar 数）**
 - 展示 equity 对比 + stats 表格
 - 一键导出 PDF 报告
@@ -40,6 +42,7 @@ st.markdown(
 )
 
 # ========= 侧边栏参数 =========
+# ... (rest of sidebar params)
 st.sidebar.header("基础参数")
 
 coin = st.sidebar.text_input("合约标的 (COIN)", "BTC")
@@ -71,11 +74,11 @@ run_button = st.sidebar.button("🚀 运行回测")
 @st.cache_data(show_spinner="加载 K 线数据中...")
 def load_data(coin: str, interval: str, lookback: int, use_testnet: bool, local: bool) -> pd.DataFrame:
     """
-    Load crypto price data from jsonl files in workdir.
+    Load crypto price data from local jsonl files.
     
     Args:
         coin: Coin symbol (e.g., "BTC")
-        interval: K-line interval (e.g., "1day", "1m")
+        interval: K-line interval (e.g., "1m")
         lookback: Number of candles to load
         use_testnet: Not used (kept for compatibility)
         local: Not used (kept for compatibility)
@@ -83,32 +86,31 @@ def load_data(coin: str, interval: str, lookback: int, use_testnet: bool, local:
     Returns:
         DataFrame with columns: t, o, h, l, c, v
     """
-    # Map interval to directory name
-    interval_map = {
-        "1m": "1min",
-        "5m": "5min",
-        "15m": "15min",
-        "30m": "30min",
-        "1h": "1hour",
-        "1d": "1day",
-        "1day": "1day",
-    }
-    
-    # Get project root (assuming tests/hl_backtest/app.py is in tests/hl_backtest/)
+    # Get local file path in the same directory
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+    file_path = os.path.join(current_dir, f"{coin}USDT.jsonl")
     
-    # Build file path
-    interval_dir = interval_map.get(interval, interval)
-    symbol = f"{coin}USDT"
-    file_path = os.path.join(
-        project_root,
-        "workdir",
-        "crypto",
-        f"crypto_binance_price_{interval_dir}",
-        f"{symbol}.jsonl"
-    )
-    
+    if not os.path.exists(file_path):
+        # Fallback to workdir if local file not found
+        interval_map = {
+            "1m": "1min",
+            "5m": "5min",
+            "15m": "15min",
+            "30m": "30min",
+            "1h": "1hour",
+            "1d": "1day",
+            "1day": "1day",
+        }
+        project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+        interval_dir = interval_map.get(interval, interval)
+        file_path = os.path.join(
+            project_root,
+            "workdir",
+            "crypto",
+            f"crypto_binance_price_{interval_dir}",
+            f"{coin}USDT.jsonl"
+        )
+
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Data file not found: {file_path}")
     
@@ -154,6 +156,8 @@ def run_all_strategies(
 ) -> Dict[str, Dict]:
     results: Dict[str, Dict] = {}
     for name, fn in strategies.items():
+        # 运行每个策略前，清空 regime_based 中的全局计数器
+        reset_signal_history()
         result = run_backtest(
             df=df,
             strategy_fn=fn,

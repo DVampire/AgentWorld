@@ -35,8 +35,27 @@ CM_HOLD_BARS = 0
 
 
 def reset_signal_history() -> None:
-    """清空信号历史（在每次回测前调用）。"""
+    """清空信号历史和所有持仓计数器（在每次回测前调用）。"""
+    global MA_LAST_SIDE, MA_HOLD_BARS, Z_LAST_SIDE, Z_HOLD_BARS, TS_LAST_SIDE, TS_HOLD_BARS
+    global LT_LAST_SIDE, LT_HOLD_BARS, LT_LAST_EMA20, LT_LAST_EMA50
+    global FA_LAST_SIDE, FA_HOLD_BARS, CM_LAST_SIDE, CM_HOLD_BARS
+
     _SIGNAL_HISTORY.clear()
+    
+    MA_LAST_SIDE = 0
+    MA_HOLD_BARS = 0
+    Z_LAST_SIDE = 0
+    Z_HOLD_BARS = 0
+    TS_LAST_SIDE = 0
+    TS_HOLD_BARS = 0
+    LT_LAST_SIDE = 0
+    LT_HOLD_BARS = 0
+    LT_LAST_EMA20 = None
+    LT_LAST_EMA50 = None
+    FA_LAST_SIDE = 0
+    FA_HOLD_BARS = 0
+    CM_LAST_SIDE = 0
+    CM_HOLD_BARS = 0
 
 
 def get_signal_df() -> pd.DataFrame:
