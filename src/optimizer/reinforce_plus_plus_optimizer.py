@@ -1,520 +1,309 @@
-from abc import ABC, abstractmethod
-from typing import List, Union, Dict, Tuple, Optional, Callable
-from collections import defaultdict, deque
-import random
+from typing import List, Optional, Any, Dict, Union, Callable
+from pydantic import ConfigDict, Field
+from pydantic import BaseModel
+
+from src.logger import logger
+from src.optimizer.types import Optimizer, Variable
+from src.model import model_manager
+from src.memory import EventType
 import math
 import tiktoken
-from src.optimizer.textgrad.variable import Variable
-from src.optimizer.textgrad import logger
-from src.optimizer.textgrad.engine import EngineLM, get_engine
-from src.optimizer.textgrad.config import validate_engine_or_get_default
-from src.optimizer.textgrad.optimizer import Optimizer
-from src.optimizer.textgrad.loss import MultiFieldEvaluation
-
-DEFAULT_EVALUATION_SYSTEM_PROMPT = (
-    "You are an expert mathematics competition grader. You carefully analyse "
-    "candidate solutions, identify issues, and provide actionable feedback that "
-    "helps improve the answer while keeping the required output format."
-)
-
-DEFAULT_EVALUATION_INSTRUCTION = (
-    "Analyse the candidate solution to the contest problem. You will receive:\n"
-    "1. The problem statement.\n"
-    "2. The candidate's full reasoning enclosed in <think>...</think> plus a final "
-    "answer in \\boxed{}.\n\n"
-    "Your task:\n"
-    "- Determine whether the boxed answer is logically correct based on the reasoning.\n"
-    "- Recompute key steps when needed, but never reveal the exact numeric answer even "
-    "if you know or infer it.\n"
-    "- Point out precise reasoning or computation mistakes (if any).\n"
-    "- Provide targeted guidance that helps amend the reasoning while keeping the "
-    "<think> format intact.\n\n"
-    "Respond using the following template:\n"
-    "<VERDICT>correct|incorrect</VERDICT>\n"
-    "<EXPLANATION>your detailed critique</EXPLANATION>\n"
-    "<GUIDANCE>step-by-step instructions to improve the solution</GUIDANCE>"
-)
-
-DEFAULT_REFLECTION_SYSTEM_PROMPT = (
-    "You are an expert mathematics tutor. Given a problem, a student's solution, "
-    "and detailed feedback, you must produce an improved solution.\n\n"
-    "Requirements:\n"
-    "- Keep all reasoning strictly inside <think>...</think>.\n"
-    "- Put ONLY the final numeric answer in a single \\boxed{VALUE} expression on the last line.\n"
-    "- Do not explain the meta-instructions.\n"
-)
 
 
-class ReinforcePlusPlusTextualOptimizer(Optimizer):
-    """
-    REINFORCE++ style optimizer for text optimization.
-    
-    REINFORCE++ combines REINFORCE with PPO's clipping mechanism but without a critic network.
-    Key features:
-    1. Reward function: r(x, y) - β * Σ KL(i)  (reward model score minus KL penalty)
-    2. Advantage function: A(s, a) = r(x, y) - β * Σ KL(i)  (direct reward minus KL penalty)
-    3. Uses PPO clipping to limit policy updates: clip(r_t(θ), 1-ε, 1+ε)
-    4. No value function (critic network) needed
-    
-    Reference: Jian Hu. "REINFORCE++: A Simple and Efficient Approach for Aligning Large Language Models."
-    """
-    
-    def __init__(self, 
-                 parameters: List[Variable],
-                 initial_answer: str,
-                 question_context: str,
-                 engine: Union[EngineLM, str] = None,
-                 reward_function = None,
+
+class LeafVariable(BaseModel):
+    name: str = Field(description="Name of the leaf variable")
+    variables: str = Field(description="Leaf value (no further nesting allowed)")
+
+
+class ImprovedVariable(BaseModel):
+    name: str = Field(description="The name of the variable")
+    variables: Optional[Union[str, Dict[str, LeafVariable]]] = Field(default=None, description=(
+        "Either a direct string value or a mapping of names to leaf variables. Leaf variables must not contain nested objects."))
+
+
+class ImprovedVariables(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    variables: Dict[str, ImprovedVariable] = Field(default={}, description="The variables to improve")
+
+
+class ReinforcePlusPlusOptimizer(Optimizer):
+    """Optimizer that improves agent prompts using the REINFORCE++ method."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    prompt_name: str = Field(default="reflection_optimizer", description="The name of the prompt")
+    model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
+    memory_name: Optional[str] = Field(default=None,
+                                       description="Name of the optimizer memory system for recording optimization history")
+
+    clip_ratio: float = Field(default=0.2, description="Clipping ratio for REINFORCE++")
+    beta: float = Field(default=0.01, description="KL penalty coefficient")
+    reward_fn: Optional[Callable[[str], float]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
+
+    def __init__(self,
+                 workdir: str,
+                 prompt_name: str = "reflection_optimizer",
+                 model_name: str = "openrouter/gpt-4o",
+                 memory_name: Optional[str] = "optimizer_memory_system",
                  clip_ratio: float = 0.2,
-                 beta: float = 0.01,  # KL penalty coefficient
-                 learning_rate: float = 0.1,
-                 max_kl: float = 0.01,
-                 verbose: int = 0,
-                 tokenizer_model: str = "gpt-4o",
-                 evaluation_model: str = 'gpt-4o',
-                 evaluation_system_prompt: str = DEFAULT_EVALUATION_SYSTEM_PROMPT,
-                 evaluation_instruction: str = DEFAULT_EVALUATION_INSTRUCTION,
-                 reflection_system_prompt: str = DEFAULT_REFLECTION_SYSTEM_PROMPT,
-                 num_reflection_steps: int = 3,
-                 reflection_runner: Optional[Callable[[str, str], str]] = None):
+                 beta: float = 0.01,
+                 reward_fn: Optional[Callable[[str], float]] = None,
+                 **kwargs
+                 ):
         """
-        Initialize REINFORCE++ Textual Optimizer.
-        
-        :param parameters: List of variables to optimize
-        :param engine: LLM engine for generating candidates
-        :param reward_function: Function to evaluate text quality (returns float)
-        :param clip_ratio: PPO clipping ratio for policy updates (ε)
-        :param beta: KL penalty coefficient (β)
-        :param learning_rate: Learning rate for policy updates
-        :param max_kl: Maximum KL divergence for early stopping
-        :param verbose: Verbosity level
-        :param new_variable_tags: Tags for parsing improved variables
-        :param optimizer_system_prompt: System prompt for the optimizer
-        :param kl_method: Method for KL calculation: "token_freq", "token_prob", "char_freq", "n_gram"
-        :param tokenizer_model: Model name for tiktoken tokenizer (e.g., "gpt-4o", "cl100k_base")
-        :param use_relative_kl: If True, sum per-token KL; if False, average KL
+        Initialize the REINFORCE++ optimizer.
+
+        Args:
+            agent: Agent instance.
+            model_name: Model name for optimization.
+            memory_name: Optional name of the optimizer memory system for recording optimization history.
+            reward_fn: Optional custom reward function that takes a single candidate text and returns a reward score.
         """
-        super().__init__(parameters)
-
-
-        new_variable_tags = ["<CANDIDATE_VARIABLE>", "</CANDIDATE_VARIABLE>"]
-
-
-        optimizer_system_prompt = self._get_default_reinforce_plus_plus_prompt()
-
-        self.initial_answer = initial_answer
-        self.engine = validate_engine_or_get_default(engine)
-        self.reward_function = reward_function
+        super().__init__(
+            workdir=workdir,
+            prompt_name=prompt_name,
+            model_name=model_name,
+            memory_name=memory_name,
+            **kwargs)
+        self.workdir = workdir
+        if model_name:
+            self.model_name = model_name
+        if prompt_name:
+            self.prompt_name = prompt_name
+        self.memory_name = memory_name
+        # REINFORCE++ config
         self.clip_ratio = clip_ratio
         self.beta = beta
-        self.learning_rate = learning_rate
-        self.max_kl = max_kl
-        self.verbose = verbose
-        self.new_variable_tags = new_variable_tags
-        self.optimizer_system_prompt = optimizer_system_prompt
-        self.evaluation_system_prompt = evaluation_system_prompt
-        self.evaluation_instruction = evaluation_instruction
-        self.reflection_system_prompt = reflection_system_prompt
-        # Optional external reflection runner (e.g., tool-calling agent).
-        # Signature: runner(system_prompt, prompt) -> response_text
-        self.reflection_runner = reflection_runner
+        self.reward_fn = reward_fn
 
-        # Tokenizer for token-level edit distance
-        self.tokenizer = tiktoken.encoding_for_model(tokenizer_model)
-        self.question_context = Variable(
-            question_context,
-            requires_grad=False,
-            role_description="question or context for evaluation"
+        # Initialize tokenizer for text similarity calculation
+        self.tokenizer = tiktoken.encoding_for_model('gpt-4o')
+
+    async def get_trainable_variables(self, agent: Optional[Any] = None) -> Dict[str, Any]:
+        """
+        Get trainable variables from prompt and tools only.
+
+        Returns:
+            Dict[str, Variable]: Dictionary mapping variable names to Variable objects.
+        """
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+        from src.tool import tcp
+
+        variables: Dict[str, Any] = {}
+
+        # Get trainable variables from prompt (returns Dict[str, Variable])
+        if agent and hasattr(agent, 'prompt_name'):
+            prompt_name = agent.prompt_name
+            prompt_variables_dict = await prompt_manager.get_trainable_variables(prompt_name=prompt_name)
+            variables.update(prompt_variables_dict)
+
+        # Get trainable variables from tools (returns Dict[str, Variable])
+        tool_variables_dict = await tcp.get_trainable_variables()
+        variables.update(tool_variables_dict)
+
+        return variables
+
+    async def _format_variables(self, variables: Dict[str, Any]) -> str:
+        """
+        Format variables for context.
+
+        Args:
+            variables (Dict[str, Any]): Dictionary of variables.
+        """
+
+        variables_text = ""
+
+        # Step1: Format prompt variables
+        prompt_variables_text = "<prompt_variables>\n"
+        prompt_variables = {k: v for k, v in variables.items() if
+                            isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
+        for prompt_index, (prompt_name, prompt_variable) in enumerate(prompt_variables.items()):
+            prompt_variables_text += f"<prompt_variable_{prompt_index:04d}>\n"
+            prompt_variables_text += f"Name: {prompt_name}\n"
+            prompt_variables_text += f"Description: {prompt_variable.description}\n"
+
+            # Format sub-variables if they exist
+            if isinstance(prompt_variable.variables, dict):
+                sub_vars = {k: v for k, v in prompt_variable.variables.items() if isinstance(v, Variable)}
+                if sub_vars:
+                    prompt_variables_text += "<sub_variables>\n"
+                    for sub_index, (sub_name, sub_var) in enumerate(sub_vars.items()):
+                        prompt_variables_text += f"  <sub_variable_{sub_index:04d}>\n"
+                        prompt_variables_text += f"    Name: {sub_name}\n"
+                        prompt_variables_text += f"    Description: {sub_var.description}\n"
+                        try:
+                            sub_value = sub_var.get_value() if hasattr(sub_var, 'get_value') else str(sub_var)
+                        except Exception as e:
+                            sub_value = f"<Error getting value: {e}>"
+                        prompt_variables_text += f"    ```text\n{sub_value}\n```\n"
+                        prompt_variables_text += f"  </sub_variable_{sub_index:04d}>\n"
+                    prompt_variables_text += "</sub_variables>\n"
+
+            prompt_variables_text += f"</prompt_variable_{prompt_index:04d}>\n"
+        prompt_variables_text += "</prompt_variables>\n"
+        variables_text += prompt_variables_text
+
+        # Step2: Format tool variables
+        tool_variables_text = "<tool_variables>\n"
+        tool_variables = {k: v for k, v in variables.items() if v.type == "tool_code"}
+        for index, (tool_name, tool_variable) in enumerate(tool_variables.items()):
+            tool_variables_text += f"<tool_variable_{index:04d}>\n"
+            tool_variables_text += f"Name: {tool_name}\n"
+            tool_variables_text += f"Description: {tool_variable.description}\n"
+            tool_variables_text += f"```python\n{tool_variable.get_value()}\n```\n"
+            tool_variables_text += f"</tool_variable_{index:04d}>\n"
+
+        tool_variables_text += "</tool_variables>\n"
+        variables_text += tool_variables_text
+
+        # Step3: Format solution variable
+        solution_variable_text = "<solution_variable>\n"
+        solution_variables = {k: v for k, v in variables.items() if v.type == "solution"}
+        for solution_index, (solution_name, solution_variable) in enumerate(solution_variables.items()):
+            solution_variable_text += f"<solution_variable_{solution_index:04d}>\n"
+            solution_variable_text += f"Name: {solution_name}\n"
+            solution_variable_text += f"Description: {solution_variable.description}\n"
+            solution_variable_text += f"```text\n{solution_variable.get_value()}\n```\n"
+            solution_variable_text += f"</solution_variable_{solution_index:04d}>\n"
+        solution_variable_text += "</solution_variable>\n"
+        variables_text += solution_variable_text
+
+        return variables_text
+
+    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str) -> str:
+        """
+        Generate the reflection analysis for all variables.
+
+        Args:
+            task (str): Task description.
+            variables (Dict[str, Any]): Dictionary of variables.
+            execution_result (str): Agent execution result.
+        Returns:
+            str: Reflection analysis identifying which variables to optimize and how.
+        """
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+
+        # Ensure prompt_manager is initialized
+        if not hasattr(prompt_manager, 'prompt_context_manager'):
+            await prompt_manager.initialize()
+
+        current_variables_text = await self._format_variables(variables)
+
+        system_modules = {}
+        agent_message_modules = {
+            "task": task,
+            "current_variables": current_variables_text,
+            "execution_result": execution_result,
+        }
+        messages = await prompt_manager.get_messages(
+            prompt_name=f"{self.prompt_name}_reflection",
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
         )
 
-        # Auto-build evaluation_module
-        self.evaluation_module = self._build_evaluation_module(
-            evaluation_model=evaluation_model,
-            question_context=self.question_context,
-            parameters=parameters,
-        )
-        if self.verbose:
-            logger.info(f"Auto-built evaluation_module for reflection using {evaluation_model}")
+        logger.info(f"| 🤔 Generating reflection analysis for all variables...")
 
-        self.num_reflection_steps = num_reflection_steps
-
-        # REINFORCE++ state tracking
-        self.policy_history = defaultdict(list)  # Store policy history for each parameter
-        self.reward_history = defaultdict(list)  # Store reward history (raw rewards)
-        self.kl_divergences = defaultdict(list)  # Store KL surrogates (|log policy_ratio|)
-        self.advantages = defaultdict(list)  # Store advantage estimates (reward - KL penalty)
-        self.policy_ratios = defaultdict(list)  # Store policy ratios
-        self.kl_penalties = defaultdict(list)  # Store KL penalties
-        
-        logger.info(f"REINFORCE++ Textual Optimizer initialized, β={beta}, ε={clip_ratio}")
-
-    def _build_evaluation_module(self,
-                                 evaluation_model: str,
-                                 question_context: Union[Variable, str],
-                                 parameters: List[Variable]) -> MultiFieldEvaluation:
-        """
-        Auto-build MultiFieldEvaluation module for reflection.
-
-        :param evaluation_model: Model name for evaluation (e.g., "gpt-4o")
-        :param question_context: Question or context variable
-        :param parameters: List of parameters being optimized (to infer role descriptions)
-        :return: MultiFieldEvaluation module
-        """
-        # Get evaluation engine from model name
-        eval_engine = get_engine(evaluation_model)
-
-        # Create Variable objects
-        eval_instruction_var = Variable(
-            self.evaluation_instruction,
-            requires_grad=False,
-            role_description="instructions for evaluating a solution"
-        )
-
-        eval_system_prompt_var = Variable(
-            self.evaluation_system_prompt,
-            requires_grad=False,
-            role_description="system prompt for the evaluation LLM"
-        )
-
-        # Infer role descriptions from question_context and parameters
-        question_role = question_context.get_role_description() or "question or context"
-
-        # Get solution role description from first parameter
-        solution_role = parameters[0].get_role_description() or "candidate solution"
-
-        # Build MultiFieldEvaluation
-        evaluation_module = MultiFieldEvaluation(
-            evaluation_instruction=eval_instruction_var,
-            role_descriptions=[
-                question_role,
-                solution_role,
-            ],
-            engine=eval_engine,
-            system_prompt=eval_system_prompt_var,
-        )
-
-        return evaluation_module
-
-    def _get_default_reinforce_plus_plus_prompt(self) -> str:
-        """Get default REINFORCE++ system prompt."""
-        return f"""You are a REINFORCE++ style text optimizer. Your task is to generate diverse, high-quality candidate solutions.
-
-For each optimization step, you will:
-1. Propose one improved candidate solution
-2. Focus on quality while exploring alternative phrasing when helpful
-
-Generate each candidate between <CANDIDATE_VARIABLE> and </CANDIDATE_VARIABLE> tags.
-Be creative and explore different solution paths."""
-
-########################################################################################################################
-
-    def _generate_new_policy_via_reflection(self, parameter: Variable) -> str:
-        """
-        Generate a candidate solution through multiple rounds of reflection.
-        Each candidate goes through num_reflection_steps rounds of evaluation → reflection → improvement.
-        """
-        question_text = str(self.question_context)
-        current_solution = parameter.value
-
-        # Perform multiple rounds of reflection
-        for reflection_step in range(1, self.num_reflection_steps + 1):
-            # Step 1: Evaluate current solution
-            solution_var = Variable(
-                current_solution,
-                requires_grad=False,
-                role_description=parameter.get_role_description()
-            )
-
-            evaluation_output = self.evaluation_module([self.question_context, solution_var])
-            evaluation_text = evaluation_output.value
-
-            # Step 2: Build reflection prompt (with different strategies for diversity)
-            reflection_prompt = self._build_reflection_prompt(
-                question_text=question_text,
-                current_solution=current_solution,
-                evaluation_text=evaluation_text,
-            )
-
-            # Step 3: Generate improved solution
-            if self.reflection_runner is not None:
-                # Use external runner (e.g., tool-calling agent)
-                improved_text = self.reflection_runner(
-                    self.reflection_system_prompt,
-                    reflection_prompt,
-                )
-            else:
-                # Default: call underlying engine directly
-                improved_text = self.engine(
-                    reflection_prompt,
-                    system_prompt=self.reflection_system_prompt,
-                )
-
-            improved_text = str(improved_text).strip()
-
-            # Clean up markdown code blocks if present
-            if improved_text.startswith("```"):
-                lines = improved_text.split("\n")
-                if lines and lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                improved_text = "\n".join(lines).strip()
-
-            if improved_text:
-                current_solution = improved_text
-            else:
-                # If generation failed, keep current solution
-                break
-
-        return current_solution if current_solution else None
-
-
-    async def _generate_new_policy_via_reflection_with_agent(self, parameter: Variable) -> str:
-        """
-        Generate a candidate solution through multiple rounds of reflection.
-        Each candidate goes through num_reflection_steps rounds of evaluation → reflection → improvement.
-        """
-        question_text = str(self.question_context)
-        current_solution = parameter.value
-
-        # Perform multiple rounds of reflection
-        for reflection_step in range(1, self.num_reflection_steps + 1):
-            # Step 1: Evaluate current solution
-            solution_var = Variable(
-                current_solution,
-                requires_grad=False,
-                role_description=parameter.get_role_description()
-            )
-
-            evaluation_output = self.evaluation_module([self.question_context, solution_var])
-            evaluation_text = evaluation_output.value
-
-            # Step 2: Build reflection prompt (with different strategies for diversity)
-            reflection_prompt = self._build_reflection_prompt(
-                question_text=question_text,
-                current_solution=current_solution,
-                evaluation_text=evaluation_text,
-            )
-
-            # Step 3: Generate improved solution
-            if self.reflection_runner is not None:
-                improved_text = self.reflection_runner(
-                    self.reflection_system_prompt,
-                    reflection_prompt,
-                )
-            else:
-                improved_text = self.engine(
-                    reflection_prompt,
-                    system_prompt=self.reflection_system_prompt,
-                )
-
-            improved_text = str(improved_text).strip()
-
-            # Clean up markdown code blocks if present
-            if improved_text.startswith("```"):
-                lines = improved_text.split("\n")
-                if lines and lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                improved_text = "\n".join(lines).strip()
-
-            if improved_text:
-                current_solution = improved_text
-            else:
-                # If generation failed, keep current solution
-                break
-
-        return current_solution if current_solution else None
-
-    def _build_reflection_prompt(self, question_text: str, current_solution: str, evaluation_text: str,) -> str:
-        """
-        Build a reflection prompt that asks the model to improve the solution based on feedback.
-        Uses random strategy selection to encourage diverse approaches.
-        """
-
-        return (
-            "You are improving a student's solution to a math contest problem based on detailed feedback.\n\n"
-            "=== Problem ===\n"
-            f"{question_text}\n\n"
-            "=== Current Solution ===\n"
-            f"{current_solution}\n\n"
-            "=== Feedback ===\n"
-            f"{evaluation_text}\n\n"
-            "Please produce an improved solution that:\n"
-            "- Addresses all the feedback points mentioned above.\n"
-            "- Keeps all reasoning clear and well-structured.\n"
-            "- Ensures the final answer is correct and well-justified.\n\n"
-            "Return ONLY the improved solution text."
-        )
-
-    def _generate_new_policy(self, parameter: Variable) -> str:
-        """Generate a single new policy (candidate text) for a parameter."""
-        prompt = self._build_new_policy_prompt(parameter)
-
-        response = self.engine(prompt, system_prompt=self.optimizer_system_prompt)
-        new_policy = self._parse_policies_from_response(response)
-
-        return new_policy[0]
-
-    
-    def _build_new_policy_prompt(self, parameter: Variable) -> str:
-        """Build prompt for generating a new policy candidate."""
-        # Add randomness to encourage exploration
-        exploration_hints = [
-            "Try a completely different approach",
-            "Use a more detailed step-by-step method", 
-            "Try a more concise explanation",
-            "Use a different mathematical notation",
-            "Include more intermediate steps",
-            "Try a visual or diagrammatic approach",
-            "Use a different problem-solving strategy"
-        ]
-        
-        import random
-        selected_hints = random.sample(exploration_hints, min(3, len(exploration_hints)))
-        
-        return f"""Generate 1 improved candidate solution for the following:
-
-Role: {parameter.get_role_description()}
-Current value: {parameter.value}
-
-IMPORTANT: The candidate should improve the current value. Consider these exploration strategies:
-{chr(10).join(f"- {hint}" for hint in selected_hints)}
-
-Generate one improved approach between {self.new_variable_tags[0]} and {self.new_variable_tags[1]} tags.
-Ensure clarity and quality."""
-
-    def _parse_policies_from_response(self, response: str) -> List[str]:
-        """Parse policy candidates from LLM response."""
-        candidates = []
-        start_tag = self.new_variable_tags[0]
-        end_tag = self.new_variable_tags[1]
-        
-        # Split by start tag and process each candidate
-        parts = response.split(start_tag)
-        for part in parts[1:]:  # Skip first part (before first start tag)
-            if end_tag in part:
-                candidate = part.split(end_tag)[0].strip()
-                if candidate:
-                    candidates.append(candidate)
-        
-        return candidates
-    
-    def _generate_fallback_policy(self, parameter: Variable) -> str:
-        """Generate fallback policy text if main generation fails."""
-        base_value = parameter.value
-        # Simple variation
-        return f"Improved version: {base_value}"
-
-########################################################################################################################
-
-    def _evaluate_policy_reward(self, parameter: Variable, policy_text: str) -> float:
-        """Evaluate a single policy text using reward function (raw reward before KL penalty)."""
-        if self.reward_function is None:
-            # Default evaluation: use a simple heuristic
-            return self._default_reward_estimate(parameter, [policy_text])[0]
-        
         try:
-            # Create temporary variable for evaluation
-            temp_var = Variable(
-                value=policy_text,
-                role_description=parameter.role_description,
-                requires_grad=False
-            )
-            reward = self.reward_function(temp_var)
-            return float(reward)
+            response = await model_manager(model=self.model_name, messages=messages)
+            reflection_text = response.message if hasattr(response, 'message') else str(response)
+
+            logger.info(f"| ✅ Reflection analysis generated ({len(reflection_text)} chars)")
+            logger.info(f"| Reflection analysis:\n{reflection_text}\n")
+
+            return reflection_text
         except Exception as e:
-            logger.warning(f"Error evaluating candidate: {e}")
-            return 0.0
-    
-    def _default_reward_estimate(self, parameter: Variable, policies: List[str]) -> List[float]:
-        """Default reward estimate when no reward function is provided."""
-        # Simple heuristic: longer, more detailed responses get higher rewards
+            logger.error(f"| ❌ Error generating reflection: {e}")
+            raise
+
+    async def _improve_variables(self, task: str, variables: Dict[str, Variable],
+                                 reflection_analysis: str) -> ImprovedVariables:
+        """
+        Improve variables based on reflection analysis. May improve multiple variables simultaneously.
+        Uses different optimization logic based on variable types.
+
+        Args:
+            task (str): Task description.
+            variables: List of Variable objects to potentially improve.
+            reflection_analysis (str): Reflection analysis output.
+            variable_mapping: Mapping from variable name to Variable object.
+
+        Returns:
+            {
+                "variables": {
+                    # prompt variables
+                    "tool_calling_system_prompt": {
+                        "name": "tool_calling_system_prompt",
+                        "variables": {
+                            "agent_context_rules": {
+                                "name": "agent_context_rules",
+                                "variables": "You are a helpful assistant."
+                            },
+                            "tool_context_rules": {
+                                "name": "tool_context_rules",
+                                "variables": "You can use the following tools: {tools}"
+                            }
+                    }
+                    # tool variables
+                    "bash_tool": {
+                        "name": "tool_calling_tool_code",
+                        "variables": "tool_code"
+                    }
+                }
+            }
+        """
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+
+        # Ensure prompt_manager is initialized
+        if not hasattr(prompt_manager, 'prompt_context_manager'):
+            await prompt_manager.initialize()
+
+        # Format all variables for context
+        current_variables_text = await self._format_variables(variables)
+
+        system_modules = {}
+        agent_message_modules = {
+            "task": task,
+            "current_variables": current_variables_text,
+            "reflection_analysis": reflection_analysis
+        }
+        messages = await prompt_manager.get_messages(
+            prompt_name=f"{self.prompt_name}_improvement",
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
+        )
+
+        logger.info(f"| ✨ Generating improved variables (may improve multiple variables)...")
+
+        try:
+            response = await model_manager(model=self.model_name, messages=messages, response_format=ImprovedVariables)
+            improved_variables: ImprovedVariables = response.extra.parsed_model
+            return improved_variables
+        except Exception as e:
+            logger.error(f"| ❌ Error improving variables: {e}")
+            raise
+
+    def _default_evaluation(self, candidates: List[str]) -> List[float]:
+        """Default heuristic evaluation for textual candidates."""
         rewards = []
-        for candidate in policies:
-            # Basic heuristics for text quality
-            length_score = min(len(candidate) / 100, 1.0)  # Normalize by 100 chars
+        for candidate in candidates:
+            length_score = min(len(candidate) / 100, 1.0)
             detail_score = candidate.count('.') + candidate.count('!') + candidate.count('?')
-            detail_score = min(detail_score / 5, 1.0)  # Normalize by 5 sentences
-            
+            detail_score = min(detail_score / 5, 1.0)
             reward = (length_score + detail_score) / 2
             rewards.append(reward)
-        
         return rewards
-    
-    def _calculate_kl_div(self, new_value: str) -> float:
-        """Calculate KL penalty using policy_ratio as surrogate: β * |log(policy_ratio)|."""
-        # safe_ratio = max(policy_ratio, 1e-8)  # Avoid log(0)
-        # pseudo_kl = abs(math.log(safe_ratio))
-        kl_div = self._calculate_text_similarity(self.initial_answer, new_value)
-        return max(kl_div, 1e-8)
-    
-    def _calculate_advantage(self, parameter: Variable, reward: float, kl_penalty: float) -> float:
+
+    def _calculate_advantage(self, reward: float, kl_penalty: float) -> float:
         """
         Calculate advantage using REINFORCE++ formula.
         A(s, a) = reward - KL_penalty
         """
         advantage = reward - kl_penalty
-        self.advantages[parameter].append(advantage)
         return advantage
 
-
-########################################################################################################################
-
-    def _estimate_policy_ratio_from_similarity(self, parameter: Variable, old_value: str, new_value: str) -> float:
-        """
-        Calculate policy ratio π_new(a|s) / π_old(a|s).
-        
-        Uses token-level edit distance similarity for more accurate policy ratio estimation.
-        """
-        # Calculate similarity between old and new policies using token-level edit distance
-        # This is more accurate than character-level Jaccard as it considers token order
-        similarity = self._calculate_text_similarity(old_value, new_value)
-        
-        # Policy ratio is inversely related to similarity (more different = higher ratio)
-        # But we want to avoid extreme ratios
-        policy_ratio = 1.0 + (1.0 - similarity) * 0.5  # Scale between 1.0 and 1.5
-        
-        return policy_ratio
-    
-    def _levenshtein_distance(self, tokens1: List[str], tokens2: List[str]) -> int:
-        """
-        Calculate Levenshtein edit distance between two token sequences.
-        
-        :param tokens1: First token sequence
-        :param tokens2: Second token sequence
-        :return: Edit distance (minimum number of insertions, deletions, or substitutions)
-        """
-        m, n = len(tokens1), len(tokens2)
-        
-        # Create DP table
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-        
-        # Initialize: empty sequence to tokens2
-        for j in range(n + 1):
-            dp[0][j] = j
-        
-        # Initialize: tokens1 to empty sequence
-        for i in range(m + 1):
-            dp[i][0] = i
-        
-        # Fill DP table
-        for i in range(1, m + 1):
-            for j in range(1, n + 1):
-                if tokens1[i-1] == tokens2[j-1]:
-                    # Tokens match, no operation needed
-                    dp[i][j] = dp[i-1][j-1]
-                else:
-                    # Take minimum of three operations
-                    dp[i][j] = min(
-                        dp[i-1][j] + 1,      # Delete token from tokens1
-                        dp[i][j-1] + 1,      # Insert token from tokens2
-                        dp[i-1][j-1] + 1     # Substitute token
-                    )
-        
-        return dp[m][n]
-    
     def _tokenize_text(self, text: str) -> List[str]:
         """
         Tokenize text into tokens for edit distance calculation.
@@ -522,28 +311,63 @@ Ensure clarity and quality."""
         token_ids = self.tokenizer.encode(text)
         # Use token ids as strings for comparison to avoid decoding overhead
         return [str(tid) for tid in token_ids]
-    
+
+    def _levenshtein_distance(self, tokens1: List[str], tokens2: List[str]) -> int:
+        """
+        Calculate Levenshtein edit distance between two token sequences.
+
+        :param tokens1: First token sequence
+        :param tokens2: Second token sequence
+        :return: Edit distance (minimum number of insertions, deletions, or substitutions)
+        """
+        m, n = len(tokens1), len(tokens2)
+
+        # Create DP table
+        dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+        # Initialize: empty sequence to tokens2
+        for j in range(n + 1):
+            dp[0][j] = j
+
+        # Initialize: tokens1 to empty sequence
+        for i in range(m + 1):
+            dp[i][0] = i
+
+        # Fill DP table
+        for i in range(1, m + 1):
+            for j in range(1, n + 1):
+                if tokens1[i - 1] == tokens2[j - 1]:
+                    # Tokens match, no operation needed
+                    dp[i][j] = dp[i - 1][j - 1]
+                else:
+                    # Take minimum of three operations
+                    dp[i][j] = min(
+                        dp[i - 1][j] + 1,  # Delete token from tokens1
+                        dp[i][j - 1] + 1,  # Insert token from tokens2
+                        dp[i - 1][j - 1] + 1  # Substitute token
+                    )
+
+        return dp[m][n]
+
     def _calculate_text_similarity(self, text1: str, text2: str) -> float:
         """
         Calculate similarity between two texts using token-level Levenshtein edit distance.
         """
         if not text1 or not text2:
             return 0.0
-        
+
         tokens1 = self._tokenize_text(text1)
         tokens2 = self._tokenize_text(text2)
-        
+
         if not tokens1 and not tokens2:
             return 1.0
         if not tokens1 or not tokens2:
             return 0.0
-        
+
         distance = self._levenshtein_distance(tokens1, tokens2)
         max_len = max(len(tokens1), len(tokens2))
         similarity = 1.0 - (distance / max_len)
         return max(0.0, similarity)
-
-########################################################################################################################
 
     def _apply_clipping(self, policy_ratio: float) -> float:
         """
@@ -551,7 +375,7 @@ Ensure clarity and quality."""
         Clip ratio to [1-ε, 1+ε] where ε = clip_ratio
         """
         return max(1 - self.clip_ratio, min(1 + self.clip_ratio, policy_ratio))
-    
+
     def _calculate_reinforce_plus_plus_objective(self, policy_ratio: float, clipped_ratio: float, advantage: float) -> float:
         """
         Calculate REINFORCE++ objective with clipping for a single sample.
@@ -559,165 +383,391 @@ Ensure clarity and quality."""
         """
         return min(clipped_ratio * advantage, policy_ratio * advantage)
 
-########################################################################################################################
-
-    def _select_and_apply_policy(self, 
-                       parameter: Variable, 
-                       new_policy: str,
-                       reward: float, 
-                       policy_ratio: float,
-                       kl_penalty: float, 
-                       advantage: float,
-                       reward_old: float,
-                       advantage_old: float) -> str:
+    async def optimize(
+            self,
+            agent: Any,
+            task: str,
+            files: Optional[List[str]] = None,
+            reward_fn: Optional[Callable[[str], float]] = None,
+            **kwargs
+    ):
         """
-        Update policy by comparing candidate and old policy objectives.
+        Optimize the agent prompt using the Reflection approach.
+
+        Args:
+            agent: Agent instance.
+            task: Task description to optimize for.
+            files: Optional list of attachments.
+            reward_fn: Optional custom reward function that takes a single candidate text and returns a reward score.
+                      If None, uses the default heuristic evaluation.
         """
-        old_value = parameter.value
-        clipped_ratio = self._apply_clipping(policy_ratio)
-        objective_candidate = self._calculate_reinforce_plus_plus_objective(policy_ratio, clipped_ratio, advantage)
-        objective_old = advantage_old  # old policy ratio = 1, clipped =1
-        
-        # Choose based on objective
-        if objective_candidate >= objective_old:
-            chosen_value = new_policy
-            chosen_reward = reward
-            chosen_policy_ratio = policy_ratio
-            chosen_kl_penalty = kl_penalty
-            chosen_advantage = advantage
-            chosen_clipped_ratio = clipped_ratio
-            chosen_objective = objective_candidate
-        else:
-            chosen_value = old_value
-            chosen_reward = reward_old
-            chosen_policy_ratio = 1.0
-            chosen_kl_penalty = 0.0
-            chosen_advantage = advantage_old
-            chosen_clipped_ratio = 1.0
-            chosen_objective = objective_old
-        
-        # Use |log(policy_ratio)| as surrogate KL
-        kl_div = abs(math.log(max(chosen_policy_ratio, 1e-8)))
-        
-        # Store metrics
-        self.policy_history[parameter].append({
-            'old_value': old_value,
-            'new_value': chosen_value,
-            'reward': chosen_reward,
-            'kl_penalty': chosen_kl_penalty,
-            'advantage': chosen_advantage,
-            'policy_ratio': chosen_policy_ratio,
-            'clipped_ratio': chosen_clipped_ratio,
-            'reinforce_plus_plus_objective': chosen_objective,
-            'kl_divergence': kl_div
-        })
-        
-        self.reward_history[parameter].append(chosen_reward)
-        self.kl_penalties[parameter].append(chosen_kl_penalty)
-        self.policy_ratios[parameter].append(chosen_policy_ratio)
-        self.kl_divergences[parameter].append(kl_div)
-        
-        # if kl_div > self.max_kl:
-        #     logger.info(f"Early stopping due to high KL divergence: {kl_div}")
-        #     return old_value
-        
-        return chosen_value
-    
-    def step(self):
-        """Perform one REINFORCE++ optimization step (synchronous version)."""
-        for parameter in self.parameters:
-            if self.verbose:
-                print(f"\n--- REINFORCE++ Step for {parameter.get_role_description()} ---")
-            
-            new_policy = self._generate_new_policy_via_reflection(parameter)
-            reward = self._evaluate_policy_reward(parameter, new_policy)
-            policy_ratio = self._estimate_policy_ratio_from_similarity(parameter, parameter.value, new_policy)
-            kl_div = self._calculate_kl_div(new_policy)
-            kl_penalty = self.beta*kl_div
-            raw_advantage = self._calculate_advantage(parameter, reward, kl_penalty)
 
-            # Evaluate current (old) policy for comparison
-            reward_old = self._evaluate_policy_reward(parameter, parameter.value)
-            raw_advantage_old = self._calculate_advantage(parameter, reward_old, 0.0)  # no KL penalty for old
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+        from src.tool import tcp
+        from src.environment import ecp
+        from src.agent import acp
+        from src.memory import memory_manager
 
-            new_value = self._select_and_apply_policy(
-                parameter=parameter,
-                new_policy=new_policy,
-                reward=reward,
-                policy_ratio=policy_ratio,
-                kl_penalty=kl_penalty,
-                advantage=raw_advantage,
-                reward_old=reward_old,
-                advantage_old=raw_advantage_old
-            )
-            
-            parameter.set_value(new_value)
-            
-            if self.verbose:
-                print(f"Updated to: {new_value[:100]}...")
-                print(f"Reward(chosen): {self.reward_history[parameter][-1]:.3f}, KL penalty: {self.kl_penalties[parameter][-1]:.3f}, Advantage: {self.policy_history[parameter][-1]['advantage']:.3f}")
-    
-    async def astep(self):
-        """Perform one REINFORCE++ optimization step (async version for agent use)."""
-        for parameter in self.parameters:
-            if self.verbose:
-                print(f"\n--- REINFORCE++ Step for {parameter.get_role_description()} ---")
-            
-            new_policy = await self._generate_new_policy_via_reflection_with_agent(parameter)
-            reward = self._evaluate_policy_reward(parameter, new_policy)
-            policy_ratio = self._estimate_policy_ratio_from_similarity(parameter, parameter.value, new_policy)
-            kl_div = self._calculate_kl_div(new_policy)
-            kl_penalty = self.beta*kl_div
-            raw_advantage = self._calculate_advantage(parameter, reward, kl_penalty)
+        # Use optimization_steps if provided, otherwise use self.max_steps
+        optimization_steps = self.max_steps
 
-            # Evaluate current (old) policy for comparison
-            reward_old = self._evaluate_policy_reward(parameter, parameter.value)
-            raw_advantage_old = self._calculate_advantage(parameter, reward_old, 0.0)  # no KL penalty for old
+        # Initialize optimizer memory session if available
+        memory_name = self.memory_name
+        session_id = None
+        task_id = None
+        if memory_name:
+            try:
+                import uuid
+                from datetime import datetime
+                agent_name = getattr(agent, 'name', 'unknown_agent')
+                session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
+                task_id = f"opt_task_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+                await memory_manager.start_session(
+                    memory_name=memory_name,
+                    session_id=session_id,
+                    agent_name=agent_name,
+                    description=task
+                )
 
-            new_value = self._select_and_apply_policy(
-                parameter=parameter,
-                new_policy=new_policy,
-                reward=reward,
-                policy_ratio=policy_ratio,
-                kl_penalty=kl_penalty,
-                advantage=raw_advantage,
-                reward_old=reward_old,
-                advantage_old=raw_advantage_old
-            )
-            
-            parameter.set_value(new_value)
-            
-            if self.verbose:
-                print(f"Updated to: {new_value[:100]}...")
-                print(f"Reward(chosen): {self.reward_history[parameter][-1]:.3f}, KL penalty: {self.kl_penalties[parameter][-1]:.3f}, Advantage: {self.policy_history[parameter][-1]['advantage']:.3f}")
-    
-    def get_statistics(self) -> Dict:
-        """Get optimization statistics including REINFORCE++ metrics."""
-        stats = {}
-        for param in self.parameters:
-            if param in self.reward_history:
-                rewards = self.reward_history[param]
-                advantages = self.advantages[param]
-                policy_ratios = self.policy_ratios[param]
-                kl_penalties = self.kl_penalties[param]
+                # Add optimization task start event
+                await memory_manager.add_event(
+                    memory_name=memory_name,
+                    step_number=0,
+                    event_type=EventType.TASK_START,
+                    data=dict(task=task, optimization_steps=optimization_steps),
+                    agent_name=agent_name,
+                    task_id=task_id,
+                    session_id=session_id
+                )
+            except Exception as e:
+                logger.warning(f"| ⚠️ Failed to initialize optimizer memory: {e}")
+                memory_name = None
+                session_id = None
+                task_id = None
+
+        # Run agent once to get initial solution
+        logger.info(f"| 🚀 Running agent to get initial solution...")
+        initial_agent_response = await agent(task=task, files=files)
+        initial_agent_response_extra_data = initial_agent_response.extra.data if initial_agent_response.extra and initial_agent_response.extra.data else None
+        initial_agent_result = initial_agent_response_extra_data['final_result']
+        initial_agent_reasoning = initial_agent_response_extra_data['final_reasoning']
+        initial_solution = f"Result: {initial_agent_result}\nReasoning: {initial_agent_reasoning}" if initial_agent_reasoning else f"Result: {initial_agent_result}"
+
+        # Create solution variable
+        solution_variable = Variable(
+            name="solution",
+            type="solution",
+            description="The solution to the task before optimization.",
+            require_grad=True,
+            variables=initial_solution
+        )
+        logger.info(f"| ✅ Initial solution obtained and encapsulated as variable")
+
+        # Get trainable variables
+        logger.info(f"| 📊 Getting trainable variables...")
+        trainable_variables = await self.get_trainable_variables(agent=agent)
+        # Add solution variable to trainable variables
+        trainable_variables["solution"] = solution_variable
+
+        # Save initial policy representation for KL calculation (used throughout optimization)
+        initial_policy_combined = {}
+        for vn, v in trainable_variables.items():
+            if not isinstance(v, Variable):
+                continue
+            initial_policy_combined[vn] = v.get_value() if hasattr(v, 'get_value') else str(v.variables)
+
+        import json
+        initial_policy_text = json.dumps(initial_policy_combined, ensure_ascii=False, sort_keys=True)
+        logger.info(f"| 📊 Initial policy captured for KL calculations")
+
+        # Run the optimization loop.
+        for opt_step in range(optimization_steps):
+            logger.info(f"| REINFORCE++ Optimization Step {opt_step + 1}/{optimization_steps}")
+
+            try:
+                # Capture "before" values for variables we may change, so we can log diffs later
+                before_values: Dict[str, str] = {}
+                for vn, v in trainable_variables.items():
+                    if not isinstance(v, Variable):
+                        continue
+                    before_values[vn] = v.get_value() if hasattr(v, 'get_value') else str(v.variables)
                 
-                stats[param.get_role_description()] = {
-                    'avg_reward': sum(rewards) / len(rewards) if rewards else 0,
-                    'max_reward': max(rewards) if rewards else 0,
-                    'num_steps': len(self.policy_history[param]),
-                    'avg_kl_divergence': sum(self.kl_divergences[param]) / len(self.kl_divergences[param]) if self.kl_divergences[param] else 0,
-                    'avg_kl_penalty': sum(kl_penalties) / len(kl_penalties) if kl_penalties else 0,
-                    'avg_advantage': sum(advantages) / len(advantages) if advantages else 0,
-                    'avg_policy_ratio': sum(policy_ratios) / len(policy_ratios) if policy_ratios else 0,
-                    'exploration_ratio': len(set(rewards)) / len(rewards) if rewards else 0,  # Diversity measure
-                    'beta': self.beta,
-                    'clip_ratio': self.clip_ratio
-                }
-        return stats
+                # Get current reward before generating candidate
+                current_solution = solution_variable.get_value()
+                if reward_fn is not None:
+                    current_reward = reward_fn(current_solution)
+                else:
+                    current_reward = self._default_evaluation([current_solution])[0]
+                logger.info(f"| 📊 Current reward: {current_reward}")
 
+                # Generate one candidate via reflection
+                logger.info(f"| 🤔 Generating candidate via reflection...")
+                reflection_analysis = await self._generate_reflection(
+                    task=task,
+                    variables=trainable_variables,
+                    execution_result=current_solution,
+                )
 
-# Convenience function
-def ReinforcePlusPlus(parameters: List[Variable], **kwargs) -> ReinforcePlusPlusTextualOptimizer:
-    """Convenience function to create REINFORCE++ optimizer."""
-    return ReinforcePlusPlusTextualOptimizer(parameters, **kwargs)
+                improved_set = await self._improve_variables(
+                    task=task,
+                    variables=trainable_variables,
+                    reflection_analysis=reflection_analysis,
+                )
+
+                if not improved_set:
+                    logger.warning("| ⚠️ No improved variables generated; skipping this step")
+                else:
+                    logger.info(f"| 🔄 Evaluating candidate...")
+                    try:
+                        # Temporarily apply the candidate
+                        applied_updates = []
+                        for variable_name, improved_entry in improved_set.variables.items():
+                            try:
+                                variable_type = trainable_variables[variable_name].type if variable_name in trainable_variables else ""
+                                candidate_val = improved_entry.variables if hasattr(improved_entry, 'variables') else improved_entry
+                                if isinstance(candidate_val, dict):
+                                    applied_value = json.dumps(candidate_val, ensure_ascii=False)
+                                else:
+                                    applied_value = str(candidate_val)
+
+                                # Store original value for potential rollback
+                                original_value = None
+                                if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
+                                    original_value = ("prompt", variable_name, trainable_variables[variable_name].variables)
+                                    await prompt_manager.set_variables(
+                                        prompt_name=variable_name,
+                                        variable_updates={"variables": applied_value}
+                                    )
+                                elif variable_type == "tool_code":
+                                    original_value = ("tool", variable_name, trainable_variables[variable_name].variables)
+                                    await tcp.set_variable(variable_name=variable_name, variable_value=applied_value)
+                                elif variable_type == "solution":
+                                    original_value = ("solution", variable_name, trainable_variables[variable_name].variables)
+                                    trainable_variables[variable_name].variables = applied_value
+                                elif variable_type == "environment_code":
+                                    original_value = ("env", variable_name, trainable_variables[variable_name].variables)
+                                    await ecp.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                elif variable_type == "agent_code":
+                                    original_value = ("agent", variable_name, trainable_variables[variable_name].variables)
+                                    await acp.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                elif variable_type == "memory_code":
+                                    original_value = ("memory", variable_name, trainable_variables[variable_name].variables)
+                                    await memory_manager.set_variables(variable_name=variable_name, variable_value=applied_value)
+
+                                if original_value:
+                                    applied_updates.append(original_value)
+
+                            except Exception as e:
+                                logger.warning(f"| ❌ Applying candidate for {variable_name} failed: {e}")
+
+                        # Run agent with the applied candidate
+                        candidate_response = await agent(task=task, files=files)
+                        candidate_response_extra_data = candidate_response.extra.data if candidate_response.extra and candidate_response.extra.data else None
+                        candidate_result = candidate_response_extra_data.get('final_result') if candidate_response_extra_data else None
+                        candidate_reasoning = candidate_response_extra_data.get('final_reasoning') if candidate_response_extra_data else None
+                        candidate_solution = f"Result: {candidate_result}\nReasoning: {candidate_reasoning}" if candidate_reasoning else f"Result: {candidate_result}"
+
+                        # Calculate candidate reward
+                        if reward_fn is not None:
+                            candidate_reward = reward_fn(candidate_solution)
+                        else:
+                            candidate_reward = self._default_evaluation([candidate_solution])[0]
+
+                        logger.info(f"| 🎯 Candidate reward: {candidate_reward}")
+
+                        # Calculate REINFORCE++ objectives for candidate and current policy
+
+                        # Build parameter representations for current and candidate
+                        current_params = {}
+                        candidate_params = {}
+                        for vn, v in trainable_variables.items():
+                            if not isinstance(v, Variable):
+                                continue
+                            current_val = before_values.get(vn, "")
+                            # For candidate, get current applied values
+                            candidate_val = v.get_value() if hasattr(v, 'get_value') else str(v.variables)
+                            current_params[vn] = current_val
+                            candidate_params[vn] = candidate_val
+
+                        current_params_text = json.dumps(current_params, ensure_ascii=False, sort_keys=True)
+                        candidate_params_text = json.dumps(candidate_params, ensure_ascii=False, sort_keys=True)
+
+                        # Step 1: Calculate KL penalty for candidate using |log(policy_ratio)| surrogate
+                        # First compute policy ratio relative to initial policy
+                        initial_param_similarity = self._calculate_text_similarity(initial_policy_text, candidate_params_text)
+                        initial_policy_ratio = 1.0 - initial_param_similarity
+                        kl_div_candidate = abs(math.log(max(initial_policy_ratio, 1e-8)))
+                        kl_penalty_candidate = self.beta * kl_div_candidate
+
+                        # Step 2: Calculate advantage for candidate: A = reward - KL_penalty
+                        advantage_candidate = candidate_reward - kl_penalty_candidate
+
+                        # Step 3: Calculate policy ratio for candidate
+                        param_similarity = self._calculate_text_similarity(current_params_text, candidate_params_text)
+                        policy_ratio_candidate = 1.0 - param_similarity
+
+                        # Step 4: Apply clipping and calculate objective for candidate
+                        clipped_ratio_candidate = self._apply_clipping(policy_ratio_candidate)
+                        objective_candidate = self._calculate_reinforce_plus_plus_objective(
+                            policy_ratio_candidate, clipped_ratio_candidate, advantage_candidate)
+
+                        # Step 5: Calculate objective for current policy
+                        # Current policy has ratio=1.0, advantage = current_reward - 0 (no KL penalty for current)
+                        objective_current = current_reward
+
+                        logger.info(f"| 📊 Objectives - Candidate: {objective_candidate:.4f}, Current: {objective_current:.4f}")
+                        logger.info(f"| 📊 Candidate details - reward: {candidate_reward:.4f}, KL_penalty: {kl_penalty_candidate:.4f}, advantage: {advantage_candidate:.4f}, ratio: {policy_ratio_candidate:.4f}")
+
+                        # REINFORCE++ decision: accept if candidate objective > current objective
+                        if objective_candidate > objective_current:
+                            logger.info(f"| ✅ Accepting candidate update (better objective: {objective_candidate:.4f} > {objective_current:.4f})")
+
+                            # Update solution variable with new result
+                            solution_variable.variables = candidate_solution
+
+                        else:
+                            logger.info(f"| ❌ Rejecting candidate update (worse objective: {objective_candidate:.4f} ≤ {objective_current:.4f})")
+
+                            # Rollback the temporary application
+                            for update_type, var_name, original_val in applied_updates:
+                                try:
+                                    if update_type == "prompt":
+                                        await prompt_manager.set_variables(prompt_name=var_name, variable_updates={"variables": original_val})
+                                    elif update_type == "tool":
+                                        await tcp.set_variable(variable_name=var_name, variable_value=original_val)
+                                    elif update_type == "solution":
+                                        trainable_variables[var_name].variables = original_val
+                                    elif update_type == "env":
+                                        await ecp.set_variables(variable_name=var_name, variable_value=original_val)
+                                    elif update_type == "agent":
+                                        await acp.set_variables(variable_name=var_name, variable_value=original_val)
+                                    elif update_type == "memory":
+                                        await memory_manager.set_variables(memory_name=var_name, variable_value=original_val)
+                                except Exception as e:
+                                    logger.warning(f"| ❌ Rollback failed for {var_name}: {e}")
+
+                    except Exception as e:
+                        logger.warning(f"| ❌ Error evaluating candidate: {e}")
+                        # Rollback on error
+                        for update_type, var_name, original_val in applied_updates:
+                            try:
+                                if update_type == "prompt":
+                                    await prompt_manager.set_variables(prompt_name=var_name, variable_updates={"variables": original_val})
+                                elif update_type == "tool":
+                                    await tcp.set_variable(variable_name=var_name, variable_value=original_val)
+                                elif update_type == "solution":
+                                    trainable_variables[var_name].variables = original_val
+                                elif update_type == "env":
+                                    await ecp.set_variables(variable_name=var_name, variable_value=original_val)
+                                elif update_type == "agent":
+                                    await acp.set_variables(variable_name=var_name, variable_value=original_val)
+                                elif update_type == "memory":
+                                    await memory_manager.set_variables(memory_name=var_name, variable_value=original_val)
+                            except Exception as e:
+                                logger.warning(f"| ❌ Rollback failed for {var_name}: {e}")
+
+                # Step4: Run agent with improved variables.
+                agent_response = await agent(task=task, files=files)
+                agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
+                improved_agent_result = agent_response_extra_data['final_result']
+                improved_agent_reasoning = agent_response_extra_data['final_reasoning']
+                improved_solution_variable = trainable_variables['solution']
+                improved_solution_variable.variables = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
+
+                # Step5: Record optimization step to memory for learning
+                if memory_name and session_id:
+                    try:
+                        # Prepare execution result string
+                        execution_result_str = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
+
+                        # Build comprehensive event data for optimization learning
+                        import json
+                        event_data = {
+                            "task": task,
+                            "reflection_analysis": reflection_analysis,
+                            "execution_result": execution_result_str,
+                            "variable_changes": {}
+                        }
+
+                        # Record variable changes (before and after) using captured before_values
+                        for var_name, before_raw in before_values.items():
+                            before_var = trainable_variables.get(var_name)
+                            before_value = ""
+                            if before_raw is not None:
+                                before_value = str(before_raw)
+
+                            after_value = ""
+                            if before_var:
+                                try:
+                                    # Prefer get_value if available
+                                    after_raw = before_var.get_value() if hasattr(before_var, 'get_value') else getattr(before_var, 'variables', before_var)
+                                except Exception:
+                                    after_raw = getattr(before_var, 'variables', before_var)
+                                if isinstance(after_raw, dict):
+                                    after_value = json.dumps(after_raw, indent=2, ensure_ascii=False)
+                                else:
+                                    after_value = str(after_raw)
+
+                            var_type = before_var.type if before_var and hasattr(before_var, 'type') else ""
+
+                            event_data["variable_changes"][var_name] = {
+                                "type": var_type,
+                                "before": before_value,
+                                "after": after_value
+                            }
+
+                        await memory_manager.add_event(
+                            memory_name=memory_name,
+                            step_number=opt_step + 1,
+                            event_type=EventType.OPTIMIZATION_STEP,
+                            data=event_data,
+                            agent_name=getattr(agent, 'name', 'unknown_agent'),
+                            task_id=task_id,
+                            session_id=session_id
+                        )
+                        logger.debug(f"| 📝 Recorded optimization step {opt_step + 1} to memory")
+                    except Exception as e:
+                        logger.warning(f"| ⚠️ Failed to record optimization step to memory: {e}")
+
+                # Step6: Update trainable variables with improved variables.
+                trainable_variables = await self.get_trainable_variables(agent=agent)
+                trainable_variables["solution"] = improved_solution_variable
+
+                logger.info(f"| ✅ Optimization step {opt_step + 1} completed\n")
+
+            except Exception as e:
+                logger.error(f"| ❌ Error in optimization step {opt_step + 1}: {e}")
+                import traceback
+                logger.error(f"| Traceback: {traceback.format_exc()}")
+                # Continue with the next iteration.
+                continue
+
+        # End optimization memory session if available
+        if memory_name and session_id:
+            try:
+                # Add optimization task end event
+                await memory_manager.add_event(
+                    memory_name=memory_name,
+                    step_number=optimization_steps + 1,
+                    event_type=EventType.TASK_END,
+                    data=dict(
+                        task=task,
+                        optimization_steps=optimization_steps,
+                        completed=True
+                    ),
+                    agent_name=getattr(agent, 'name', 'unknown_agent'),
+                    task_id=task_id,
+                    session_id=session_id
+                )
+
+                await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
+                logger.info(f"| 📝 Ended optimization memory session: {session_id}")
+            except Exception as e:
+                logger.warning(f"| ⚠️ Failed to end optimization memory session: {e}")
+
+        logger.info(f"| ✅ REINFORCE++ optimization completed!")
+        logger.info(f"| {'=' * 60}")
+        logger.info(f"| REINFORCE++ optimization completed!")
+        logger.info(f"| {'=' * 60}")
 
