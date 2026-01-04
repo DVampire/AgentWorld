@@ -1,104 +1,136 @@
-# src/benchmark/manager.py
+"""Benchmark Manager implementation"""
+import os
+from typing import Any, Dict, List, Optional, Union, Type, TYPE_CHECKING
+from pydantic import BaseModel, ConfigDict, Field
 
-import asyncio
-from typing import List, Dict, Optional
-from pydantic import BaseModel, Field
+from src.config import config
+from src.utils import assemble_project_path
+from src.logger import logger
+from src.benchmark.types import BenchmarkConfig, Benchmark
+from src.benchmark.context import BenchmarkContextManager
 
-# 导入基类和具体实现
-from .types import Benchmark
-from .aime24 import AIME24Benchmark
-from .aime25 import AIME25Benchmark
-from .gpqa import GPQABenchmark
-from .leetcode import LeetCodeBenchmark
-# 注意：实际项目中建议使用动态注册或 importlib 避免循环依赖，
-# 或者把 implementations 放在单独文件引用。
+if TYPE_CHECKING:
+    from src.optimizer.types import Variable
 
-class BenchmarkFactory:
-    """
-    工厂类：根据名称创建对应的 Benchmark 实例
-    """
-    @staticmethod
-    def create(name: str, **kwargs) -> Benchmark:
-        name_lower = name.lower()
+class BenchmarkManager(BaseModel):
+    """Benchmark Manager for managing benchmark registration and lifecycle"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    base_dir: str = Field(default=None, description="Base directory for benchmarks")
+    save_path: str = Field(default=None, description="Path to save benchmarks")
+    contract_path: str = Field(default=None, description="Path to save benchmark contract")
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._registered_benchmarks: Dict[str, BenchmarkConfig] = {}
+
+    async def initialize(self, benchmark_names: Optional[List[str]] = None):
+        """Initialize benchmarks."""
+        self.base_dir = assemble_project_path(os.path.join(config.workdir, "benchmark"))
+        os.makedirs(self.base_dir, exist_ok=True)
+        self.save_path = os.path.join(self.base_dir, "benchmark.json")
+        self.contract_path = os.path.join(self.base_dir, "contract.md")
         
-        # 映射表
-        registry = {
-            "aime24": AIME24Benchmark,
-            "aime25": AIME25Benchmark,
-            #"gsm8k": GSM8kBenchmark,
-            "gpqa": GPQABenchmark,
-            "leetcode": LeetCodeBenchmark
-        }
-        
-        # 简单的别名匹配逻辑
-        target_cls = None
-        for key, cls in registry.items():
-            if key in name_lower:
-                target_cls = cls
-                break
-        
-        if target_cls is None:
-            raise ValueError(f"Unknown benchmark name: {name}")
-            
-        # 实例化
-        return target_cls(benchmark_name=name, **kwargs)
-
-
-class BenchmarkManager:
-    """
-    管理类：负责生命周期管理和批量执行
-    """
-    def __init__(self):
-        self._current_benchmark: Optional[Benchmark] = None
-
-    async def init_benchmark(self, name: str, path: str, split: str = "test", subset: str = None):
-        """
-        初始化并加载 Benchmark
-        """
-        # 1. 工厂创建实例
-        self._current_benchmark = BenchmarkFactory.create(
-            name=name, 
-            path=path, 
-            split=split, 
-            subset=subset
+        self.benchmark_context_manager = BenchmarkContextManager(
+            base_dir=self.base_dir,
+            save_path=self.save_path,
+            contract_path=self.contract_path
         )
-        
-        # 2. 异步加载数据
-        await self._current_benchmark.load()
-        return self._current_benchmark
+        await self.benchmark_context_manager.initialize(benchmark_names=benchmark_names)
+        logger.info("| ✅ Benchmark systems initialization completed")
 
-    def get_current_benchmark(self) -> Benchmark:
-        if not self._current_benchmark:
-            raise RuntimeError("No benchmark initialized.")
-        return self._current_benchmark
+    async def register(self, 
+                       benchmark: Union[Benchmark, Type[Benchmark]], 
+                       *, 
+                       override: bool = False, 
+                       **kwargs: Any) -> BenchmarkConfig:
+        """Register a benchmark system asynchronously."""
+        benchmark_config = await self.benchmark_context_manager.register(benchmark, override=override, **kwargs)
+        self._registered_benchmarks[benchmark_config.name] = benchmark_config
+        return benchmark_config
 
-    async def run_evaluation_batch(self, results: List[Dict[str, str]], concurrency: int = 10) -> float:
-        """
-        批量评估入口
-        """
-        if not self._current_benchmark:
-            raise RuntimeError("Benchmark not initialized.")
+    async def update(self, 
+                     benchmark_name: str, 
+                     benchmark: Union[Benchmark, Type[Benchmark]], 
+                     new_version: Optional[str] = None, 
+                     description: Optional[str] = None,
+                     **kwargs: Any) -> BenchmarkConfig:
+        """Update an existing benchmark system."""
+        benchmark_config = await self.benchmark_context_manager.update(benchmark_name, benchmark, new_version, description, **kwargs)
+        self._registered_benchmarks[benchmark_config.name] = benchmark_config
+        return benchmark_config
+
+    async def get_info(self, benchmark_name: str) -> Optional[BenchmarkConfig]:
+        """Get benchmark configuration by name."""
+        return self.benchmark_context_manager._benchmark_configs.get(benchmark_name)
+
+    async def list(self) -> List[str]:
+        """List all registered benchmarks."""
+        return list(self.benchmark_context_manager._benchmark_configs.keys())
+
+    async def get(self, name: str) -> Optional[Benchmark]:
+        """Get benchmark instance by name."""
+        return await self.benchmark_context_manager.get(name)
+
+    async def reset(self, name: str) -> Optional[Dict[str, Any]]:
+        """Reset benchmark progress."""
+        return await self.benchmark_context_manager.reset(name)
+
+    async def step(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get next benchmark task."""
+        return await self.benchmark_context_manager.step(name)
+
+    async def eval_task(self, name: str, prediction: str, ground_truth: Optional[str] = None, task_id: Optional[str] = None, **kwargs) -> float:
+        """Evaluate a benchmark task."""
+        return await self.benchmark_context_manager.eval_task(name, prediction, ground_truth, task_id, **kwargs)
+
+    async def get_stats(self, name: str) -> Dict[str, Any]:
+        """Get benchmark statistics."""
+        return await self.benchmark_context_manager.get_stats(name)
+
+    async def restore(self, name: str, version: str) -> Optional[BenchmarkConfig]:
+        """Restore a specific version of a benchmark."""
+        benchmark_config = await self.benchmark_context_manager.restore(name, version)
+        if benchmark_config:
+            self._registered_benchmarks[name] = benchmark_config
+        return benchmark_config
+
+    async def __call__(self, benchmark_name: str, results: List[Dict[str, str]], concurrency: int = 10) -> float:
+        """Batch evaluation entry point"""
+        benchmark = await self.get(benchmark_name)
+        if not benchmark:
+            raise RuntimeError(f"Benchmark {benchmark_name} not initialized.")
             
+        import asyncio
         sem = asyncio.Semaphore(concurrency)
 
         async def _safe_eval(res):
             async with sem:
                 t_id = str(res.get("task_id", ""))
                 pred = res.get("prediction", "")
+                gt = res.get("ground_truth")
                 
                 if not t_id:
                     return 0.0
                 
                 try:
-                    # 调用当前 Benchmark 实例的 eval_task 方法
-                    # 实例内部会自动查找 GT 并调用特定的 _eval_logic
-                    return await self._current_benchmark.eval_task(prediction=pred, task_id=t_id)
+                    return await benchmark.eval_task(prediction=pred, ground_truth=gt, task_id=t_id)
                 except Exception as e:
-                    print(f"[Error] Eval failed for {t_id}: {e}")
+                    logger.error(f"| ❌ Eval failed for task {t_id}: {e}")
                     return 0.0
 
         tasks = [_safe_eval(res) for res in results]
-        print(f"Starting batch evaluation for {len(tasks)} items...")
+        logger.info(f"| 🚀 Starting batch evaluation for {len(tasks)} items in benchmark '{benchmark_name}'")
         scores = await asyncio.gather(*tasks)
         
-        return sum(scores) / len(scores) if scores else 0.0
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        logger.info(f"| ✅ Batch evaluation for '{benchmark_name}' completed. Avg score: {avg_score:.4f}")
+        return avg_score
+
+    async def cleanup(self):
+        """Cleanup all benchmarks using context manager."""
+        if hasattr(self, 'benchmark_context_manager'):
+            await self.benchmark_context_manager.cleanup()
+
+# Global instance
+benchmark_manager = BenchmarkManager()

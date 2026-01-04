@@ -24,11 +24,11 @@ class LeetCodeDataset:
         self.split = split
         self.lang = lang
 
-        # 1. 路径标准化
+        # 1. Path normalization
         #path = assemble_project_path(path)
         
-        # 2. 加载元数据文件
-        # 假设路径结构: /data/leetcode/test/metadata.jsonl
+        # 2. Load metadata file
+        # Expected path structure: /data/leetcode/test/metadata.jsonl
         metadata_file = os.path.join(path, split, "metadata.jsonl")
         
         if not os.path.exists(metadata_file):
@@ -43,17 +43,17 @@ class LeetCodeDataset:
                 except json.JSONDecodeError:
                     continue
                 
-                # --- LeetCode 特有的加载逻辑 ---
+                # --- LeetCode specific loading logic ---
 
-                # 1. 读取题目描述 (Markdown 内容)
-                # row['file'] 示例: "./question/1.two_sum.md"
-                # 我们需要将其解析为绝对路径。通常它是相对于 metadata.jsonl 所在目录的
+                # 1. Read problem description (Markdown content)
+                # row['file'] example: "./question/1.two_sum.md"
+                # Parse to absolute path, usually relative to metadata.jsonl directory
                 rel_file_path = row.get("file", "")
                 question_content = ""
                 
                 if rel_file_path:
-                    # 移除可能的 "./" 前缀，拼接完整路径
-                    # 假设 question 文件夹和 metadata.jsonl 在同一级 split 目录下
+                    # Remove potential "./" prefix and join with full path
+                    # Assume question folder and metadata.jsonl are in the same split directory
                     clean_rel_path = rel_file_path.replace("./", "") 
                     abs_file_path = os.path.join(path, split, clean_rel_path)
                     
@@ -62,36 +62,36 @@ class LeetCodeDataset:
                             question_content = qf.read()
                     else:
                         print(f"[Warning] Question file not found: {abs_file_path}")
-                        # 如果找不到描述文件，这道题无法做，跳过
+                        # If description file is missing, skip this problem
                         continue
                 
-                # 2. 获取指定语言的代码模板
+                # 2. Get code template for specified language
                 templates = row.get("code_template", {})
-                # 获取用户指定的语言，如果找不到，尝试 fallback 到 python3 或第一个可用的
+                # Get user specified language, fallback to python3 or first available
                 code_stub = templates.get(self.lang, "")
                 if not code_stub and self.lang == "python3":
-                    # 尝试找 python (老版本字段)
+                    # Try python (legacy field)
                     code_stub = templates.get("python", "")
                 
-                # 3. 构建 Prompt
-                # 典型的代码生成 Prompt: 描述 + 代码起手式
+                # 3. Build Prompt
+                # Typical code generation Prompt: description + code stub
                 full_prompt = f"Problem Description:\n{question_content}\n\n" \
                               f"Please write a solution in {self.lang}:\n```\n{code_stub}\n```"
 
-                # 4. 构造数据行
+                # 4. Construct data row
                 data_row = {
-                    "task_id": str(row.get("id", "")), # 转字符串
+                    "task_id": str(row.get("id", "")), # to string
                     
                     "name": row.get("name", ""),
                     
                     "question": full_prompt,
                     
-                    # LeetCode 数据集通常用于 Code Generation，
-                    # 真正的 verification 需要 Sandbox 运行，
-                    # 这里 true_answer 往往是空的，或者只有测试用例（如果有）
+                    # LeetCode datasets are typically for Code Generation,
+                    # real verification requires Sandbox execution,
+                    # true_answer is usually empty or contains test cases (if any)
                     "true_answer": "", 
                     
-                    "template": code_stub, # 保留原始模板，方便后续处理
+                    "template": code_stub, # keep original template for later processing
                     "lang": self.lang,
                     "task": "LeetCode",
                     "file_name": rel_file_path
@@ -99,6 +99,7 @@ class LeetCodeDataset:
                 
                 data_rows.append(data_row)
         
+        # 4. Convert to DataFrame
         self.data = pd.DataFrame(data_rows)
     
     def __len__(self):

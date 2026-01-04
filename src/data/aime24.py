@@ -21,48 +21,48 @@ class AIME24Dataset:
         self.name = name
         self.split = split
 
-        # 1. 路径处理
+        # 1. Path processing
         path = assemble_project_path(path)
         
-        # 2. 定位 metadata.jsonl 文件
+        # 2. Locate metadata.jsonl file
         metadata_file = os.path.join(path, split, "metadata.jsonl")
         if not os.path.exists(metadata_file):
             raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
         
-        # 3. 读取并清洗数据
+        # 3. Read and clean data
         data_rows = []
         with open(metadata_file, "r", encoding="utf-8") as f:
             for line in f:
                 try:
                     row = json.loads(line)
                 except json.JSONDecodeError:
-                    continue # 跳过损坏的行
+                    continue # Skip corrupted lines
 
-                # --- 针对你的数据格式 {"task_id": 60, "problem": "...", "answer": "204"} ---
+                # --- For data format {"task_id": 60, "problem": "...", "answer": "204"} ---
                 
-                # 提取字段
-                # 注意：原始 task_id 是整数 60，建议转为字符串以保持通用性
+                # Extract fields
+                # Note: original task_id is integer 60, convert to string for consistency
                 t_id = str(row.get("task_id", ""))
                 q_text = row.get("problem", "")
                 a_text = row.get("answer", "")
                 
-                # 简单校验：只要有题目文本，就视为有效数据
+                # Simple validation: valid if problem text exists
                 if q_text:
                     data_row = {
-                        "task_id": t_id,          # 对应 json 中的 task_id
-                        "question": q_text,       # 将 problem 映射为框架通用的 question
-                        "true_answer": a_text,    # 将 answer 映射为框架通用的 true_answer
-                        "task": "AIME 2024",      # 固定标签，方便后续识别来源
-                        "file_name": ""           # AIME 题目通常是纯文本，无附件
+                        "task_id": t_id,          # maps to task_id in json
+                        "question": q_text,       # map problem to question
+                        "true_answer": a_text,    # map answer to true_answer
+                        "task": "AIME 2024",      # fixed tag for source identification
+                        "file_name": ""           # AIME problems are usually text-only
                     }
                     
-                    # 答案防御性处理：万一 json 里 answer 是数字类型的 204 而不是字符串 "204"
+                    # Defensive answer handling: handle numeric answer in json
                     if isinstance(data_row["true_answer"], (int, float)):
                         data_row["true_answer"] = str(int(data_row["true_answer"]))
                         
                     data_rows.append(data_row)
         
-        # 4. 转为 DataFrame
+        # 4. Convert to DataFrame
         self.data = pd.DataFrame(data_rows)
     
     def __len__(self):

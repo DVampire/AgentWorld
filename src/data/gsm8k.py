@@ -21,25 +21,25 @@ class GSM8kDataset:
         self.name = name
         self.split = split
 
-        # 1. 定义子集列表
+        # 1. Define subset list
         all_subsets = ["main", "socratic"]
 
-        # 2. 确定要加载的子集
+        # 2. Determine subsets to load
         if name == "all":
             target_subsets = all_subsets
         elif name in all_subsets:
             target_subsets = [name]
         else:
-            # 容错：如果输入未知的名称，默认加载 main，或者你可以改为报错
+            # Fault tolerance: if unknown name, default to main
             print(f"[Warning] Unknown subset '{name}'. Defaulting to 'main'.")
             target_subsets = ["main"]
 
         path = assemble_project_path(path)
         data_rows = []
 
-        # 3. 遍历子集加载
+        # 3. Iterate through subsets to load
         for subset_name in target_subsets:
-            # 预期路径: /data/gsm8k/test/main/metadata.jsonl
+            # Expected path: /data/gsm8k/test/main/metadata.jsonl
             metadata_file = os.path.join(path, split, subset_name, "metadata.jsonl")
             
             if not os.path.exists(metadata_file):
@@ -53,27 +53,27 @@ class GSM8kDataset:
                     except json.JSONDecodeError:
                         continue
                     
-                    # --- GSM8k 特有的答案解析逻辑 ---
-                    # 原始 answer 格式示例: "Janet sells ... <<9*2=18>>18.\n#### 18"
+                    # --- GSM8k specific answer parsing logic ---
+                    # Original answer format example: "Janet sells ... <<9*2=18>>18.\n#### 18"
                     raw_answer = row.get("answer", "")
                     
                     reasoning_content = ""
                     final_answer = ""
                     
                     if "####" in raw_answer:
-                        # 依据 '####' 符号进行分割
+                        # Split by '####' symbol
                         parts = raw_answer.split("####")
-                        # 前半部分是推理过程 (CoT)
+                        # First part is reasoning process (CoT)
                         reasoning_content = parts[0].strip()
-                        # 后半部分是最终数值答案 (Gold Answer)
-                        # strip() 去除可能存在的换行符或空格
+                        # Last part is final numeric answer (Gold Answer)
+                        # strip() to remove potential newlines or spaces
                         final_answer = parts[-1].strip()
                     else:
-                        # 异常处理：如果没有 ####，则整个作为答案
+                        # Exception handling: if no ####, use whole string as answer
                         final_answer = raw_answer.strip()
 
-                    # --- 构造数据行 ---
-                    # 确保 task_id 全局唯一
+                    # --- Construct data row ---
+                    # Ensure task_id is globally unique
                     raw_id = str(row.get("task_id", ""))
                     if raw_id:
                         unique_id = f"{subset_name}_{raw_id}"
@@ -85,20 +85,20 @@ class GSM8kDataset:
                         
                         "question": row.get("question", ""),
                         
-                        # true_answer 只存放最终数值 (例如 "18")
-                        # 这是为了方便后续用 exact match 或数值比较进行评测
+                        # true_answer only stores final numeric value (e.g., "18")
+                        # for easy exact match or numeric comparison during evaluation
                         "true_answer": final_answer,
                         
-                        # 我们把完整的推理过程也存下来，万一通过 prompt learning 需要用到
+                        # save complete reasoning process for potential prompt learning
                         "reasoning": reasoning_content,
                         
                         "task": "GSM8k",
-                        "subset": subset_name, # 标记是 main 还是 socratic
+                        "subset": subset_name, # mark as main or socratic
                         "file_name": ""
                     }
                     
-                    # 简单防御：去除答案中的逗号 (例如 "1,000" -> "1000")
-                    # 这样能提高数值匹配的准确率
+                    # Simple defense: remove commas from answer (e.g., "1,000" -> "1000")
+                    # to improve numeric matching accuracy
                     if isinstance(data_row["true_answer"], str):
                         data_row["true_answer"] = data_row["true_answer"].replace(",", "")
 

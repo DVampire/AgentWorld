@@ -1,48 +1,43 @@
-import os
 import re
 import asyncio
-from typing import Optional, Dict, Any, List
-from pydantic import PrivateAttr  # <--- 1. 新增导入
+from typing import Optional, Dict, Any
+from pydantic import PrivateAttr
 from .types import Benchmark
-from src.registry import DATASET
-
-# 假设 github_solver.py 在同级目录
+from src.registry import BENCHMARK
 from .code_submit import CodeSubmitter 
 
+@BENCHMARK.register_module(force=True)
 class LeetCodeBenchmark(Benchmark):
     """
-    LeetCode 评测实现 (集成 Playwright 在线评测版)
+    LeetCode Benchmark implementation (Integrated with Playwright online evaluation)
     """
-    
-    # 2. 使用 PrivateAttr 声明内部状态
-    # 这样 Pydantic 就不会报错 "object has no field"
+    name: str = "leetcode"
+    path: str = "datasets/leetcode"
     _id_to_record_map: Dict[str, Dict] = PrivateAttr(default_factory=dict)
     _submitter: Any = PrivateAttr(default=None)
     _submitter_started: bool = PrivateAttr(default=False)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # 3. 赋值给私有属性 (建议加下划线前缀)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self._submitter = CodeSubmitter(headless=False)
         self._submitter_started = False
 
-    async def _load_dataset_implementation(self) -> Any:
-        cfg = dict(
-            type="LeetCodeDataset",
+    def _instantiate_dataset(self) -> Any:
+        from src.data.leetcode import LeetCodeDataset
+        dataset = LeetCodeDataset(
             path=self.path,
             split=self.split,
             name=self.subset if self.subset else None
         )
-        dataset = await asyncio.to_thread(DATASET.build, cfg)
         
-        # 使用私有属性
+        # Build index from dataset data
         self._id_to_record_map = {}
-        for record in dataset.data.to_dict(orient="records"):
-            tid = str(record.get("id") or record.get("task_id", "0"))
-            self._id_to_record_map[tid] = record
-            
-        print(f"[{self.benchmark_name}] Index built: {len(self._id_to_record_map)} records mapped.")
+        if hasattr(dataset, 'data'):
+            for record in dataset.data.to_dict(orient="records"):
+                tid = str(record.get("id") or record.get("task_id", "0"))
+                self._id_to_record_map[tid] = record
+            print(f"[{self.name}] Index built: {len(self._id_to_record_map)} records mapped.")
+        
         return dataset
 
     def step(self) -> Optional[Dict[str, Any]]:
@@ -78,16 +73,12 @@ class LeetCodeBenchmark(Benchmark):
         )
 
     async def _eval_logic(self, prediction: str, ground_truth: str, task_id: str, **kwargs) -> float:
-        """
-        执行在线评测逻辑
-        """
         code_body = self._extract_inner_code(prediction)
         if not code_body:
             print(f"[{task_id}] No code extracted.")
             return 0.0
 
         name = kwargs.get("name")
-        # 使用私有属性 _id_to_record_map
         if not name and task_id in self._id_to_record_map:
             name = self._id_to_record_map[task_id].get("name")
         if not name:
@@ -104,11 +95,9 @@ class LeetCodeBenchmark(Benchmark):
             f"# @lc code=end\n"
         )
 
-        # 4. 使用私有属性 _submitter 和 _submitter_started
         if not self._submitter_started:
             print("[LeetCodeBenchmark] Starting CodeSubmitter browser...")
             try:
-                # 注意这里调用的是 self._submitter
                 await asyncio.to_thread(self._submitter.start)
                 self._submitter_started = True
             except Exception as e:
@@ -117,7 +106,6 @@ class LeetCodeBenchmark(Benchmark):
 
         try:
             print(f"[{task_id}] Submitting code...")
-            # 注意这里调用的是 self._submitter
             result = await asyncio.to_thread(self._submitter.submit_code, full_content)
             
             score = self._parse_result_score(result)
@@ -156,7 +144,6 @@ class LeetCodeBenchmark(Benchmark):
         return match.group(1).strip() if match else None
         
     def __del__(self):
-        # 5. 使用私有属性清理
         if hasattr(self, '_submitter') and self._submitter_started:
             try:
                 self._submitter.close()

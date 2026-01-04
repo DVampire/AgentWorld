@@ -8,34 +8,34 @@ from src.utils import assemble_project_path
 
 @DATASET.register_module(force=True)
 class AIME25Dataset:
-    # 核心改动：使用 **kwargs 吸收掉所有不确定的参数（如 subset, name 等）
+    # Core change: use **kwargs to absorb all uncertain parameters (like subset, name, etc.)
     def __init__(self, path, split, **kwargs):
         """
         Args:
-            path: 数据集根目录 (例如 ./datasets/AIME25)
-            split: 数据划分 (例如 test)
+            path: Dataset root directory (e.g., ./datasets/AIME25)
+            split: Data split (e.g., test)
         """
         self.path = path
         self.split = split
         
-        # 1. 转换路径并打印调试信息
+        # 1. Convert path and print debug info
         base_path = assemble_project_path(path)
         
-        # 2. 自动定位 metadata.jsonl
-        # 逻辑：在 {path}/{split}/ 下查找 metadata.jsonl
+        # 2. Auto-locate metadata.jsonl
+        # Logic: search for metadata.jsonl in {path}/{split}/
         metadata_file = os.path.join(base_path, split, "metadata.jsonl")
         
-        # 🚨 调试：如果运行还是 0，请看控制台输出的这个路径在电脑里是否存在
+        # Debug: check if this path exists on your computer
         print(f"DEBUG: Dataset searching at -> {os.path.abspath(metadata_file)}")
         
         data_rows = []
 
         if not os.path.exists(metadata_file):
-            print(f"❌ Error: File not found at {metadata_file}")
+            print(f"Error: File not found at {metadata_file}")
             self.data = pd.DataFrame()
             return
 
-        # 3. 读取数据
+        # 3. Read data
         with open(metadata_file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -60,7 +60,7 @@ class AIME25Dataset:
                     data_rows.append(data_row)
         
         self.data = pd.DataFrame(data_rows)
-        print(f"✅ Successfully loaded {len(self.data)} tasks.")
+        print(f"Successfully loaded {len(self.data)} tasks.")
     
     def __len__(self):
         return len(self.data)

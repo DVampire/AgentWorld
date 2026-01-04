@@ -22,34 +22,33 @@ class GPQADataset:
         self.name = name
         self.split = split
 
-        # 1. 定义已知子集列表
-        # 根据你的描述，子集名称是全大写的
+        # 1. Define known subset list
         all_subsets = ["GPQA_DIAMOND", "GPQA_EXTENDED", "GPQA_MAIN"]
 
-        # 2. 确定要加载的目标子集
+        # 2. Determine target subsets to load
         if name == "all":
             target_subsets = all_subsets
         elif name in all_subsets:
             target_subsets = [name]
         else:
-            # 容错：如果用户输入了小写，尝试匹配大写
+            # Fault tolerance: try matching upper case if input is lower case
             upper_name = name.upper()
             if upper_name in all_subsets:
                 target_subsets = [upper_name]
             else:
-                # 默认 fallback 到所有，或者你可以选择报错
+                # Default fallback to all
                 print(f"[Warning] Unknown subset '{name}'. Loading all GPQA subsets.")
                 target_subsets = all_subsets
 
         path = assemble_project_path(path)
         data_rows = []
         
-        # 固定随机种子，确保每次加载生成的选项顺序一致 (A/B/C/D 对应关系不变)
+        # Fixed random seed to ensure consistent option order (A/B/C/D mapping)
         rng = random.Random(42)
 
-        # 3. 遍历子集加载数据
+        # 3. Iterate through subsets to load data
         for subset_name in target_subsets:
-            # 假设目录结构: /path/split/GPQA_DIAMOND/metadata.jsonl
+            # Expected directory structure: /path/split/GPQA_DIAMOND/metadata.jsonl
             metadata_file = os.path.join(path, split, subset_name, "metadata.jsonl")
             
             if not os.path.exists(metadata_file):
@@ -63,37 +62,37 @@ class GPQADataset:
                     except json.JSONDecodeError:
                         continue
                     
-                    # --- GPQA 特有的数据处理逻辑 ---
+                    # --- GPQA specific data processing logic ---
 
-                    # 1. 获取基础信息
+                    # 1. Get basic info
                     q_text = row.get("Question", "").strip()
                     correct_ans = row.get("Correct Answer", "").strip()
                     
-                    # 2. 收集所有选项 (正确 + 3个错误)
-                    # 注意：GPQA 包含 Incorrect Answer 1, 2, 3
+                    # 2. Collect all choices (Correct + 3 Incorrect)
+                    # Note: GPQA contains Incorrect Answer 1, 2, 3
                     choices = [correct_ans]
                     for i in range(1, 4):
                         wrong = row.get(f"Incorrect Answer {i}", "").strip()
                         if wrong:
                             choices.append(wrong)
                     
-                    # 校验：如果选项不足2个，这题没法做选择题
+                    # Validation: skip if fewer than 2 choices
                     if len(choices) < 2:
                         continue
 
-                    # 3. 打乱选项 (Shuffle)
-                    # 必须打乱，否则 A 永远是正确答案
+                    # 3. Shuffle choices
+                    # Must shuffle, otherwise A will always be correct
                     rng.shuffle(choices)
                     
-                    # 4. 寻找正确答案在打乱后列表中的位置，映射为 A-D
+                    # 4. Find position of correct answer in shuffled list, map to A-D
                     try:
                         correct_idx = choices.index(correct_ans)
                         correct_letter = chr(65 + correct_idx) # 0->A, 1->B ...
                     except ValueError:
                         continue
 
-                    # 5. 构建带选项的 Prompt 文本
-                    # 格式:
+                    # 5. Construct Prompt text with options
+                    # Format:
                     # [Question]
                     # A) [Option1]
                     # B) [Option2]
@@ -105,19 +104,19 @@ class GPQADataset:
                     
                     full_question_prompt = f"{q_text}\n\n" + "\n".join(options_str_list) + "\nAnswer:"
 
-                    # 6. 构造最终数据行
-                    # 优先使用 Record ID，如果没有则生成
+                    # 6. Construct final data row
+                    # Use Record ID if available, otherwise generate one
                     rec_id = row.get("Record ID", "")
                     if not rec_id:
                         rec_id = f"{subset_name}_{len(data_rows)+1}"
                         
                     data_row = {
                         "task_id": rec_id,
-                        "question": full_question_prompt, # 已经是包含选项的完整 Prompt
-                        "true_answer": correct_letter,    # 例如 "C"
-                        "origin_answer": correct_ans,     # (可选) 保留原始答案文本用于 debug
+                        "question": full_question_prompt, # complete prompt containing choices
+                        "true_answer": correct_letter,    # e.g., "C"
+                        "origin_answer": correct_ans,     # (optional) keep original answer for debugging
                         "task": "GPQA",
-                        "subset": subset_name,            # 记录来源于 DIAMOND/MAIN/EXTENDED
+                        "subset": subset_name,            # record source DIAMOND/MAIN/EXTENDED
                         "subdomain": row.get("Subdomain", ""),
                         "file_name": ""
                     }

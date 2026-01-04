@@ -1,7 +1,19 @@
+from .types import Benchmark, BenchmarkConfig
+from .server import benchmark_manager, BenchmarkManager
 from .aime24 import AIME24Benchmark
-from .server import BenchmarkFactory
+from .aime25 import AIME25Benchmark
+from .gpqa import GPQABenchmark
+from .leetcode import LeetCodeBenchmark
+from .gsm8k import GSM8kBenchmark
 
 __all__ = [
-    "BenchmarkFactory",
+    "Benchmark",
+    "BenchmarkConfig",
+    "benchmark_manager",
+    "BenchmarkManager",
     "AIME24Benchmark",
+    "AIME25Benchmark",
+    "GPQABenchmark",
+    "LeetCodeBenchmark",
+    "GSM8kBenchmark",
 ]
