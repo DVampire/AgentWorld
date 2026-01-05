@@ -277,10 +277,14 @@ async def main():
     # Get tasks to run (filter out completed ones)
     save_path = os.path.join(config.workdir, "answers.jsonl")
     tasks_to_run = await get_tasks_to_run(save_path, dataset)
-    tasks_to_run = [task for task in tasks_to_run if int(task.get("task")) == 3][:1]
     
     # Sort tasks by task_id
+    task_ids = [
+        61
+    ]
     tasks_to_run = list(sorted(tasks_to_run, key=lambda x: x.get("task_id", "")))
+    tasks_to_run = [task for task in tasks_to_run if int(task.get("task_id")) in task_ids]
+    tasks_to_run = tasks_to_run[:1]
     logger.info(f"| Loaded {len(tasks_to_run)} tasks to run.")
     
     if not tasks_to_run:

@@ -169,6 +169,7 @@ class ESGAgent(Agent):
         
         done = False
         final_result = None
+        final_reasoning = None
         
         record_tool = {
             "thinking": None,
@@ -379,7 +380,7 @@ class ESGAgent(Agent):
             # Memory is automatically saved in add_event()
             messages = await self._get_messages(enhanced_task)
             
-            if response.done:
+            if response["done"]:
                 break
         
         # Handle max steps reached
