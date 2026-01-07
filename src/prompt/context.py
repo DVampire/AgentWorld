@@ -999,17 +999,16 @@ class PromptContextManager(BaseModel):
         return variables
     
     async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> Dict[str, 'Variable']:
-        """Get top-level variables from system and agent prompts with filtered trainable sub-variables.
+        """Get all trainable sub-variables from system and agent prompts (flattened structure).
         
         Args:
             prompt_name (str): Name of the prompt (e.g., "tool_calling").
             
         Returns:
             Dict[str, Variable]: Dictionary mapping variable names to Variable objects.
-                                Keys are variable names (e.g., "system_prompt", "agent_message_prompt").
-                                Only includes top-level variables where require_grad=True.
-                                For agent_message_prompt, only includes if it has trainable sub-variables.
-                                Sub-variables are filtered to only include require_grad=True.
+                                Keys are sub-variable names (e.g., "tool_context_rules", "reasoning_rules").
+                                Only includes variables where require_grad=True.
+                                Returns flattened structure without parent wrappers.
         """
         system_prompt_name = f"{prompt_name}_system_prompt"
         agent_prompt_name = f"{prompt_name}_agent_message_prompt"
@@ -1017,31 +1016,25 @@ class PromptContextManager(BaseModel):
         agent_prompt_instance = await self.get(agent_prompt_name)
         variables: Dict[str, 'Variable'] = {}
         
+        # Extract trainable sub-variables from system prompt
         if system_prompt_instance is not None:
             system_var = await system_prompt_instance.get_variable()
-            # Only include if top-level variable has require_grad=True
-            if system_var.require_grad:
-                # Filter to only include trainable sub-variables
-                filtered_system_var = system_var.filter_trainable_sub_variables()
-                # For system_prompt, always include if top-level require_grad=True
-                # even if it has no trainable sub-variables (the top-level itself is trainable)
-                variables[system_prompt_name] = filtered_system_var
-                logger.debug(f"| ✅ Included system prompt {system_prompt_name} (require_grad=True)")
-            else:
-                logger.debug(f"| ⚠️ System prompt {system_prompt_name} has require_grad=False, skipping")
+            trainable_sub_vars = system_var.get_trainable_variables()
+            for var_name, var in trainable_sub_vars.items():
+                variables[var_name] = var
+                logger.debug(f"| ✅ Extracted trainable variable '{var_name}' from {system_prompt_name}")
         else:
             logger.debug(f"| ⚠️ System prompt instance {system_prompt_name} not found")
         
+        # Extract trainable sub-variables from agent message prompt
         if agent_prompt_instance is not None:
             agent_var = await agent_prompt_instance.get_variable()
-            # For agent_message_prompt, always check if it has any trainable sub-variables
-            # Only include if it has trainable sub-variables (even if top-level require_grad=False)
             trainable_sub_vars = agent_var.get_trainable_variables()
-            if trainable_sub_vars:
-                # Filter to only include trainable sub-variables
-                filtered_agent_var = agent_var.filter_trainable_sub_variables()
-                variables[agent_prompt_name] = filtered_agent_var
-            # If no trainable sub-variables, don't include agent_message_prompt
+            for var_name, var in trainable_sub_vars.items():
+                variables[var_name] = var
+                logger.debug(f"| ✅ Extracted trainable variable '{var_name}' from {agent_prompt_name}")
+        else:
+            logger.debug(f"| ⚠️ Agent prompt instance {agent_prompt_name} not found")
         
         return variables
     
@@ -1049,98 +1042,124 @@ class PromptContextManager(BaseModel):
                             prompt_name: str, 
                             variable_updates: Dict[str, Any],
                             new_version: Optional[str] = None, 
-                            description: Optional[str] = None) -> PromptConfig:
-        """Set variable values in a prompt and create a new version.
+                            description: Optional[str] = None) -> Dict[str, PromptConfig]:
+        """Set variable values in prompts and create new versions.
+        
+        This method accepts flattened variable updates and automatically routes them to the 
+        appropriate parent prompts (system_prompt or agent_message_prompt) based on variable type.
         
         Args:
-            prompt_name: Name of the prompt to update
+            prompt_name: Base name of the prompt (e.g., "tool_calling")
             variable_updates: Dictionary mapping variable names to new values.
-                - example:
+                - Keys are variable names (e.g., "tool_context_rules", "reasoning_rules")
+                - Values are the new content strings for those variables
+                - Example:
                     {
-                        "name": "tool_calling_system_prompt",
-                        "variables": {
-                            "agent_context_rules": 
-                            {
-                                "name": "agent_context_rules",
-                                "variables": "You are a helpful assistant."
-                            },
-                            "tool_context_rules": 
-                            {
-                                "name": "tool_context_rules",
-                                "variables": "You can use the following tools: {tools}"
-                            }
-                        }
+                        "tool_context_rules": "New tool context rules content...",
+                        "reasoning_rules": "New reasoning rules content...",
+                        "agent_context": "New agent context content..."
                     }
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
             
         Returns:
-            PromptConfig: Updated prompt configuration
+            Dict[str, PromptConfig]: Dictionary mapping prompt names to updated configurations
+                                     (e.g., {"tool_calling_system_prompt": PromptConfig, ...})
         """
-        original_config = self._prompt_configs.get(prompt_name)
-        if original_config is None:
-            raise ValueError(f"Prompt {prompt_name} not found. Use register() to register a new prompt.")
-        
-        # Deep copy variables to avoid modifying the original
         import copy
-        updated_variables = copy.deepcopy(original_config.variables)
         
-        # Update variables directly
-        # variables is typically Dict[str, Dict] where each dict has 'variables' field
-        if not isinstance(updated_variables, dict):
-            raise ValueError(f"Variables must be a dict, got {type(updated_variables)}")
+        system_prompt_name = f"{prompt_name}_system_prompt"
+        agent_prompt_name = f"{prompt_name}_agent_message_prompt"
         
-        updated_count = 0
-        for var_path, new_value in variable_updates.items():
-            path_parts = var_path.split('.')
-            current = updated_variables
+        # Get both prompt instances
+        system_prompt_instance = await self.get(system_prompt_name)
+        agent_prompt_instance = await self.get(agent_prompt_name)
+        
+        # Group updates by parent prompt type
+        system_updates = {}
+        agent_updates = {}
+        
+        # Classify each variable update by checking which prompt contains it
+        for var_name, new_value in variable_updates.items():
+            found = False
             
-            # Navigate through path
-            for i, part in enumerate(path_parts):
-                if part not in current:
-                    logger.warning(f"| ⚠️ Variable '{part}' not found in path '{var_path}'")
-                    break
-                
-                if i == len(path_parts) - 1:
-                    # Last part - update the variable's 'variables' field
-                    if isinstance(current[part], dict):
-                        current[part]['variables'] = new_value
-                        updated_count += 1
-                        logger.info(f"| ✅ Updated variable {var_path} in prompt {prompt_name}")
-                    elif hasattr(current[part], 'variables'):
-                        current[part].variables = new_value
-                        updated_count += 1
-                        logger.info(f"| ✅ Updated variable {var_path} in prompt {prompt_name}")
-                    else:
-                        logger.warning(f"| ⚠️ Cannot update variable '{var_path}': invalid structure")
-                else:
-                    # Go deeper
-                    next_var = current[part]
-                    if isinstance(next_var, dict) and 'variables' in next_var:
-                        current = next_var['variables']
-                    elif hasattr(next_var, 'variables') and isinstance(next_var.variables, dict):
-                        current = next_var.variables
-                    else:
-                        logger.warning(f"| ⚠️ Variable '{part}' has no nested variables for path '{var_path}'")
-                        break
+            # Check if variable belongs to system prompt
+            if system_prompt_instance is not None:
+                system_config = self._prompt_configs.get(system_prompt_name)
+                if system_config and isinstance(system_config.variables, dict):
+                    if var_name in system_config.variables:
+                        system_updates[var_name] = new_value
+                        found = True
+                        logger.debug(f"| 📍 Variable '{var_name}' belongs to {system_prompt_name}")
+            
+            # Check if variable belongs to agent message prompt
+            if not found and agent_prompt_instance is not None:
+                agent_config = self._prompt_configs.get(agent_prompt_name)
+                if agent_config and isinstance(agent_config.variables, dict):
+                    if var_name in agent_config.variables:
+                        agent_updates[var_name] = new_value
+                        found = True
+                        logger.debug(f"| 📍 Variable '{var_name}' belongs to {agent_prompt_name}")
+            
+            if not found:
+                logger.warning(f"| ⚠️ Variable '{var_name}' not found in any prompt")
         
-        if updated_count == 0:
+        # Update each prompt with its respective variables
+        updated_configs = {}
+        
+        # Update system prompt if there are changes
+        if system_updates:
+            system_config = self._prompt_configs.get(system_prompt_name)
+            updated_variables = copy.deepcopy(system_config.variables)
+            
+            for var_name, new_value in system_updates.items():
+                if isinstance(updated_variables[var_name], dict):
+                    updated_variables[var_name]['variables'] = new_value
+                    logger.info(f"| ✅ Updated variable '{var_name}' in {system_prompt_name}")
+                elif hasattr(updated_variables[var_name], 'variables'):
+                    updated_variables[var_name].variables = new_value
+                    logger.info(f"| ✅ Updated variable '{var_name}' in {system_prompt_name}")
+            
+            prompt_dict = system_config.model_dump()
+            prompt_dict['variables'] = updated_variables
+            
+            updated_config = await self.update(
+                prompt_name=system_prompt_name,
+                prompt=prompt_dict,
+                new_version=new_version,
+                description=description
+            )
+            updated_configs[system_prompt_name] = updated_config
+        
+        # Update agent message prompt if there are changes
+        if agent_updates:
+            agent_config = self._prompt_configs.get(agent_prompt_name)
+            updated_variables = copy.deepcopy(agent_config.variables)
+            
+            for var_name, new_value in agent_updates.items():
+                if isinstance(updated_variables[var_name], dict):
+                    updated_variables[var_name]['variables'] = new_value
+                    logger.info(f"| ✅ Updated variable '{var_name}' in {agent_prompt_name}")
+                elif hasattr(updated_variables[var_name], 'variables'):
+                    updated_variables[var_name].variables = new_value
+                    logger.info(f"| ✅ Updated variable '{var_name}' in {agent_prompt_name}")
+            
+            prompt_dict = agent_config.model_dump()
+            prompt_dict['variables'] = updated_variables
+            
+            updated_config = await self.update(
+                prompt_name=agent_prompt_name,
+                prompt=prompt_dict,
+                new_version=new_version,
+                description=description
+            )
+            updated_configs[agent_prompt_name] = updated_config
+        
+        if not updated_configs:
             raise ValueError(f"No variables were updated. Check variable names: {list(variable_updates.keys())}")
         
-        # Convert to format expected by update() function
-        # update() expects a dict with prompt config fields (template, variables, etc.)
-        # Use model_dump to get the full config, then update variables
-        prompt_dict = original_config.model_dump()
-        prompt_dict['variables'] = updated_variables
-        
-        updated_config = await self.update(
-            prompt_name=prompt_name,
-            prompt=prompt_dict,
-            new_version=new_version,
-            description=description
-        )
-        logger.info(f"| ✅ Updated variables in prompt {prompt_name}")
-        return updated_config
+        logger.info(f"| ✅ Updated {len(system_updates) + len(agent_updates)} variables across {len(updated_configs)} prompts")
+        return updated_configs
     
     async def save_contract(self, prompt_names: Optional[List[str]] = None):
         """Save the contract for prompts

@@ -111,7 +111,9 @@ async def main():
         workdir=config.workdir,
         prompt_name="reflection_optimizer",
         model_name="openrouter/gemini-3-flash-preview",
-        memory_name="optimizer_memory_system"
+        memory_name="optimizer_memory_system",
+        optimize_trainable_variables=False,
+        optimize_solution=True
     )
     await optimizer.optimize(agent=agent, 
                              task=task, 

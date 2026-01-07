@@ -7,16 +7,11 @@ from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
 from src.memory import EventType
 
-class LeafVariable(BaseModel):
-    name: str = Field(description="Name of the leaf variable")
-    variables: str = Field(description="Leaf value (no further nesting allowed)")
-
 class ImprovedVariable(BaseModel):
     name: str = Field(description="The name of the variable")
-    variables: Optional[Union[str, Dict[str, LeafVariable]]] = Field(default=None,description=("Either a direct string value or a mapping of names to leaf variables. Leaf variables must not contain nested objects."))
+    variables: str = Field(description="The value of the variable")
 
 class ImprovedVariables(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     variables: Dict[str, ImprovedVariable] = Field(default={}, description="The variables to improve")
 
 class ReflectionOptimizer(Optimizer):
@@ -32,17 +27,22 @@ class ReflectionOptimizer(Optimizer):
                  prompt_name: str = "reflection_optimizer",
                  model_name: str = "openrouter/gpt-4o", 
                  memory_name: Optional[str] = "optimizer_memory_system",
+                 optimize_trainable_variables: bool = True,
+                 optimize_solution: bool = True,
                  **kwargs
                  ):
         """
         Initialize the optimizer.
 
         Args:
-            agent: Agent instance.
+            workdir: Working directory for the optimizer
+            prompt_name: Name of the prompt used for optimization
             model_name: Model name for optimization.
             memory_name: Optional name of the optimizer memory system for recording optimization history.
+            optimize_trainable_variables: Whether to optimize trainable variables (prompt/tool) in phase 1
+            optimize_solution: Whether to optimize solution in phase 2
         """
-        super().__init__( 
+        super().__init__(
                          workdir=workdir, 
                          prompt_name=prompt_name,
                          model_name=model_name,
@@ -55,6 +55,8 @@ class ReflectionOptimizer(Optimizer):
             self.prompt_name = prompt_name
         self.memory_name = memory_name
         
+        self.optimize_trainable_variables = optimize_trainable_variables
+        self.optimize_solution = optimize_solution
         
     async def get_trainable_variables(self, agent: Optional[Any] = None) -> Dict[str, Any]:
         """
@@ -78,73 +80,68 @@ class ReflectionOptimizer(Optimizer):
         # Get trainable variables from tools (returns Dict[str, Variable])
         tool_variables_dict = await tcp.get_trainable_variables()
         variables.update(tool_variables_dict)
-        
+
         return variables
     
     async def _format_variables(self, variables: Dict[str, Any]) -> str:
         """
-        Format variables for context.
+        Format variables for context (now handles flattened structure).
         
         Args:
-            variables (Dict[str, Any]): Dictionary of variables.
+            variables (Dict[str, Any]): Dictionary of flattened variables (prompt sub-variables + tool variables).
         """
         
         variables_text = ""
         
-        # Step1: Format prompt variables
+        # Step1: Format prompt sub-variables (now flattened, no more nesting)
         prompt_variables_text = "<prompt_variables>\n"
         prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
         for prompt_index, (prompt_name, prompt_variable) in enumerate(prompt_variables.items()):
             prompt_variables_text += f"<prompt_variable_{prompt_index:04d}>\n"
             prompt_variables_text += f"Name: {prompt_name}\n"
+            prompt_variables_text += f"Type: {prompt_variable.type}\n"
             prompt_variables_text += f"Description: {prompt_variable.description}\n"
-            
-            # Format sub-variables if they exist
-            if isinstance(prompt_variable.variables, dict):
-                sub_vars = {k: v for k, v in prompt_variable.variables.items() if isinstance(v, Variable)}
-                if sub_vars:
-                    prompt_variables_text += "<sub_variables>\n"
-                    for sub_index, (sub_name, sub_var) in enumerate(sub_vars.items()):
-                        prompt_variables_text += f"  <sub_variable_{sub_index:04d}>\n"
-                        prompt_variables_text += f"    Name: {sub_name}\n"
-                        prompt_variables_text += f"    Description: {sub_var.description}\n"
-                        try:
-                            sub_value = sub_var.get_value() if hasattr(sub_var, 'get_value') else str(sub_var)
-                        except Exception as e:
-                            sub_value = f"<Error getting value: {e}>"
-                        prompt_variables_text += f"    ```text\n{sub_value}\n```\n"
-                        prompt_variables_text += f"  </sub_variable_{sub_index:04d}>\n"
-                    prompt_variables_text += "</sub_variables>\n"
-            
+            try:
+                value = prompt_variable.get_value() if hasattr(prompt_variable, 'get_value') else str(prompt_variable.variables)
+            except Exception as e:
+                value = f"<Error getting value: {e}>"
+            prompt_variables_text += f"```text\n{value}\n```\n"
             prompt_variables_text += f"</prompt_variable_{prompt_index:04d}>\n"
         prompt_variables_text += "</prompt_variables>\n"
         variables_text += prompt_variables_text
         
         # Step2: Format tool variables
         tool_variables_text = "<tool_variables>\n"
-        tool_variables = {k: v for k, v in variables.items() if v.type == "tool_code"}
+        tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
         for index, (tool_name, tool_variable) in enumerate(tool_variables.items()):
-            
             tool_variables_text += f"<tool_variable_{index:04d}>\n"
             tool_variables_text += f"Name: {tool_name}\n"
             tool_variables_text += f"Description: {tool_variable.description}\n"
-            tool_variables_text += f"```python\n{tool_variable.get_value()}\n```\n"
+            try:
+                value = tool_variable.get_value() if hasattr(tool_variable, 'get_value') else str(tool_variable.variables)
+            except Exception as e:
+                value = f"<Error getting value: {e}>"
+            tool_variables_text += f"```python\n{value}\n```\n"
             tool_variables_text += f"</tool_variable_{index:04d}>\n"
-            
         tool_variables_text += "</tool_variables>\n"
         variables_text += tool_variables_text
         
-        # Step3: Format solution variable
-        solution_variable_text = "<solution_variable>\n"
-        solution_variables = {k: v for k, v in variables.items() if v.type == "solution"}
-        for solution_index, (solution_name, solution_variable) in enumerate(solution_variables.items()):
-            solution_variable_text += f"<solution_variable_{solution_index:04d}>\n"
-            solution_variable_text += f"Name: {solution_name}\n"
-            solution_variable_text += f"Description: {solution_variable.description}\n"
-            solution_variable_text += f"```text\n{solution_variable.get_value()}\n```\n"
-            solution_variable_text += f"</solution_variable_{solution_index:04d}>\n"
-        solution_variable_text += "</solution_variable>\n"
-        variables_text += solution_variable_text
+        # Step3: Format solution variable (if present)
+        solution_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "solution"}
+        if solution_variables:
+            solution_variable_text = "<solution_variable>\n"
+            for solution_index, (solution_name, solution_variable) in enumerate(solution_variables.items()):
+                solution_variable_text += f"<solution_{solution_index:04d}>\n"
+                solution_variable_text += f"Name: {solution_name}\n"
+                solution_variable_text += f"Description: {solution_variable.description}\n"
+                try:
+                    value = solution_variable.get_value() if hasattr(solution_variable, 'get_value') else str(solution_variable.variables)
+                except Exception as e:
+                    value = f"<Error getting value: {e}>"
+                solution_variable_text += f"```text\n{value}\n```\n"
+                solution_variable_text += f"</solution_{solution_index:04d}>\n"
+            solution_variable_text += "</solution_variable>\n"
+            variables_text += solution_variable_text
         
         return variables_text
         
@@ -207,25 +204,22 @@ class ReflectionOptimizer(Optimizer):
             variable_mapping: Mapping from variable name to Variable object.
 
         Returns:
+            ImprovedVariables: Dictionary of improved variables in flattened structure
             {
                 "variables": {
-                    # prompt variables
-                    "tool_calling_system_prompt": {
-                        "name": "tool_calling_system_prompt",
-                        "variables": {
-                            "agent_context_rules": {
-                                "name": "agent_context_rules",
-                                "variables": "You are a helpful assistant."
-                            },
-                            "tool_context_rules": {
-                                "name": "tool_context_rules",
-                                "variables": "You can use the following tools: {tools}"
-                            }
-                    }
+                    # prompt sub-variables (flattened from system/agent prompts)
+                    "agent_context_rules": {
+                        "name": "agent_context_rules",
+                        "variables": "You are a helpful assistant."
+                    },
+                    "tool_context_rules": {
+                        "name": "tool_context_rules",
+                        "variables": "You can use the following tools: {tools}"
+                    },
                     # tool variables
-                    "bash_tool": {
-                        "name": "tool_calling_tool_code",
-                        "variables": "tool_code"
+                    "bash": {
+                        "name": "bash",
+                        "variables": "def bash_tool():\n    # tool implementation\n    pass"
                     }
                 }
             }
@@ -270,7 +264,10 @@ class ReflectionOptimizer(Optimizer):
         **kwargs
     ):
         """
-        Optimize the agent prompt using the Reflection approach.
+        Optimize the agent using two-phase reflection approach.
+        
+        Phase 1: Optimize trainable variables (prompt/tool) if optimize_trainable_variables=True
+        Phase 2: Optimize solution if optimize_solution=True
 
         Args:
             agent: Agent instance.
@@ -311,7 +308,12 @@ class ReflectionOptimizer(Optimizer):
                     memory_name=memory_name,
                     step_number=0,
                     event_type=EventType.TASK_START,
-                    data=dict(task=task, optimization_steps=optimization_steps),
+                    data=dict(
+                        task=task, 
+                        optimization_steps=optimization_steps,
+                        optimize_trainable_variables=self.optimize_trainable_variables,
+                        optimize_solution=self.optimize_solution
+                    ),
                     agent_name=agent_name,
                     task_id=task_id,
                     session_id=session_id
@@ -321,151 +323,207 @@ class ReflectionOptimizer(Optimizer):
                 memory_name = None
                 session_id = None
                 task_id = None
-                
+        
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
         initial_agent_response = await agent(task=task, files=files)
         initial_agent_response_extra_data = initial_agent_response.extra.data if initial_agent_response.extra and initial_agent_response.extra.data else None
         initial_agent_result = initial_agent_response_extra_data['final_result']
         initial_agent_reasoning = initial_agent_response_extra_data['final_reasoning']
-        initial_solution = f"Result: {initial_agent_result}\nReasoning: {initial_agent_reasoning}" if initial_agent_reasoning else f"Result: {initial_agent_result}"
-        
-        # Create solution variable
-        solution_variable = Variable(
-            name="solution",
-            type="solution",
-            description="The solution to the task before optimization.",
-            require_grad=True,
-            variables=initial_solution
-        )
-        logger.info(f"| ✅ Initial solution obtained and encapsulated as variable")
-        
-        # Get trainable variables
-        logger.info(f"| 📊 Getting trainable variables...")
-        trainable_variables = await self.get_trainable_variables(agent=agent)
-        # Add solution variable to trainable variables
-        trainable_variables["solution"] = solution_variable
+        current_solution = f"Result: {initial_agent_result}\nReasoning: {initial_agent_reasoning}" if initial_agent_reasoning else f"Result: {initial_agent_result}"
+        logger.info(f"| ✅ Initial solution obtained")
         
         # Run the optimization loop.
         for opt_step in range(optimization_steps):
+            logger.info(f"\n| {'='*60}")
             logger.info(f"| Reflection Optimization Step {opt_step + 1}/{optimization_steps}")
+            logger.info(f"| {'='*60}")
             
             try:
-                # Step1: Generate reflection analysis for all variables.
-                reflection_analysis = await self._generate_reflection(
-                    task=task,
-                    variables=trainable_variables,
-                    execution_result=solution_variable.get_value(),
-                )
-                
-                # Step2: Improve variables based on reflection (may improve multiple variables).
-                improved_variables = await self._improve_variables(
-                    task=task,
-                    variables=trainable_variables,
-                    reflection_analysis=reflection_analysis,
-                )
-                
-                # Step3: Update variables based on improved variables.
-                for variable_name, variable_value in improved_variables.variables.items():
-                    variable_type = trainable_variables[variable_name].type
+                # ============ PHASE 1: Optimize Trainable Variables ============
+                if self.optimize_trainable_variables:
+                    logger.info(f"| 🔧 Phase 1: Optimizing trainable variables (prompt/tool)...")
                     
-                    if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
-                        await prompt_manager.set_variables(
-                            prompt_name=variable_name,
-                            variable_updates=variable_value
+                    # Get trainable variables
+                    trainable_variables = await self.get_trainable_variables(agent=agent)
+                    
+                    if len(trainable_variables) > 0:
+                        # Generate reflection analysis for trainable variables
+                        reflection_analysis = await self._generate_reflection(
+                            task=task,
+                            variables=trainable_variables,
+                            execution_result=current_solution,
                         )
-                        # Update Variable object for consistency
-                        trainable_variables[variable_name].variables = variable_value
-                    elif variable_type == "tool_code":
-                        await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
-                        # Update Variable object for consistency
-                        trainable_variables[variable_name].variables = variable_value
-                    elif variable_type == "solution":
-                        # Variable model uses `variables` to hold the actual content/value.
-                        trainable_variables[variable_name].variables = variable_value
-                    elif variable_type == "environment_code":
-                        await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
-                        # Update Variable object for consistency
-                        trainable_variables[variable_name].variables = variable_value
-                    elif variable_type == "agent_code":
-                        await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
-                        # Update Variable object for consistency
-                        trainable_variables[variable_name].variables = variable_value
-                    elif variable_type == "memory_code":
-                        await memory_manager.set_variables(variable_name=variable_name, variable_value=variable_value)
-                        # Update Variable object for consistency
-                        trainable_variables[variable_name].variables = variable_value
+                        
+                        # Improve trainable variables based on reflection
+                        improved_variables = await self._improve_variables(
+                            task=task,
+                            variables=trainable_variables,
+                            reflection_analysis=reflection_analysis,
+                        )
+                        
+                        # Update trainable variables (now flattened structure)
+                        # Group prompt sub-variables together for batch update
+                        prompt_updates = {}  # Will collect all prompt sub-variable updates
+                        variables_updated = False
+                        
+                        for variable_name, improved_var in improved_variables.variables.items():
+                            if variable_name not in trainable_variables:
+                                logger.warning(f"| ⚠️ Variable {variable_name} not found in trainable variables, skipping")
+                                continue
+                            
+                            variable_type = trainable_variables[variable_name].type
+                            # Extract the actual value string from ImprovedVariable
+                            variable_value = improved_var.variables if hasattr(improved_var, 'variables') else improved_var
+                            
+                            if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
+                                # Prompt sub-variables - collect for batch update
+                                prompt_updates[variable_name] = variable_value
+                                logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
+                            elif variable_type == "tool_code":
+                                await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
+                                variables_updated = True
+                                logger.info(f"| ✅ Updated tool variable: {variable_name}")
+                            elif variable_type == "environment_code":
+                                await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                variables_updated = True
+                                logger.info(f"| ✅ Updated environment variable: {variable_name}")
+                            elif variable_type == "agent_code":
+                                await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                variables_updated = True
+                                logger.info(f"| ✅ Updated agent variable: {variable_name}")
+                            elif variable_type == "memory_code":
+                                await memory_manager.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                variables_updated = True
+                                logger.info(f"| ✅ Updated memory variable: {variable_name}")
+                        
+                        # Batch update all prompt sub-variables
+                        if prompt_updates:
+                            prompt_name = agent.prompt_name if hasattr(agent, 'prompt_name') else "tool_calling"
+                            await prompt_manager.set_variables(
+                                prompt_name=prompt_name,
+                                variable_updates=prompt_updates
+                            )
+                            variables_updated = True
+                            logger.info(f"| ✅ Updated {len(prompt_updates)} prompt sub-variables: {list(prompt_updates.keys())}")
+                        
+                        if variables_updated:
+                            # Re-run agent with updated variables
+                            logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
+                            agent_response = await agent(task=task, files=files)
+                            agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
+                            current_result = agent_response_extra_data['final_result']
+                            current_reasoning = agent_response_extra_data['final_reasoning']
+                            current_solution = f"Result: {current_result}\nReasoning: {current_reasoning}" if current_reasoning else f"Result: {current_result}"
+                            logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
+                        else:
+                            logger.info(f"| ℹ️ Phase 1: No trainable variables were updated")
+                        
+                        # Record phase 1 to memory
+                        if memory_name and session_id and variables_updated:
+                            try:
+                                event_data = {
+                                    "phase": "trainable_variables",
+                                    "task": task,
+                                    "reflection_analysis": reflection_analysis,
+                                    "execution_result": current_solution,
+                                    "variable_changes": {}
+                                }
+                                
+                                for var_name, improved_var in improved_variables.variables.items():
+                                    if var_name in trainable_variables:
+                                        before_var = trainable_variables[var_name]
+                                        before_value = before_var.get_value() if hasattr(before_var, 'get_value') else str(before_var.variables)
+                                        # Extract the actual value from ImprovedVariable
+                                        after_value = improved_var.variables if hasattr(improved_var, 'variables') else str(improved_var)
+                                        
+                                        event_data["variable_changes"][var_name] = {
+                                            "type": before_var.type,
+                                            "before": before_value,
+                                            "after": after_value
+                                        }
+                                
+                                await memory_manager.add_event(
+                                    memory_name=memory_name,
+                                    step_number=opt_step * 2 + 1,
+                                    event_type=EventType.OPTIMIZATION_STEP,
+                                    data=event_data,
+                                    agent_name=getattr(agent, 'name', 'unknown_agent'),
+                                    task_id=task_id,
+                                    session_id=session_id
+                                )
+                            except Exception as e:
+                                logger.warning(f"| ⚠️ Failed to record phase 1 to memory: {e}")
                     else:
-                        continue
+                        logger.info(f"| ℹ️ Phase 1: No trainable variables found, skipping")
+                else:
+                    logger.info(f"| ⏭️ Phase 1: Skipped (optimize_trainable_variables=False)")
                 
-                # Step4: Run agent with improved variables.
-                agent_response = await agent(task=task, files=files)
-                agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                improved_agent_result = agent_response_extra_data['final_result']
-                improved_agent_reasoning = agent_response_extra_data['final_reasoning']
-                improved_solution_variable = trainable_variables['solution']
-                improved_solution_variable.variables = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
-                
-                # Step5: Record optimization step to memory for learning
-                if memory_name and session_id:
-                    try:
-                        # Prepare execution result string
-                        execution_result_str = f"Result: {improved_agent_result}\nReasoning: {improved_agent_reasoning}" if improved_agent_reasoning else f"Result: {improved_agent_result}"
+                # ============ PHASE 2: Optimize Solution ============
+                if self.optimize_solution:
+                    logger.info(f"| 📝 Phase 2: Optimizing solution...")
+                    
+                    # Create solution variable for optimization
+                    solution_variable = Variable(
+                        name="solution",
+                        type="solution",
+                        description="The current solution that may need improvement.",
+                        require_grad=True,
+                        variables=current_solution
+                    )
+                    
+                    solution_variables = {"solution": solution_variable}
+                    
+                    # Generate reflection for solution
+                    solution_reflection = await self._generate_reflection(
+                        task=task,
+                        variables=solution_variables,
+                        execution_result=current_solution,
+                    )
+                    
+                    # Improve solution based on reflection
+                    improved_solution_result = await self._improve_variables(
+                        task=task,
+                        variables=solution_variables,
+                        reflection_analysis=solution_reflection,
+                    )
+                    
+                    # Check if solution was improved
+                    if "solution" in improved_solution_result.variables:
+                        improved_solution_var = improved_solution_result.variables["solution"]
+                        # Extract the actual value string from ImprovedVariable
+                        improved_solution_value = improved_solution_var.variables if hasattr(improved_solution_var, 'variables') else improved_solution_var
                         
-                        # Build comprehensive event data for optimization learning
-                        import json
-                        event_data = {
-                            "task": task,
-                            "reflection_analysis": reflection_analysis,
-                            "execution_result": execution_result_str,
-                            "variable_changes": {}
-                        }
+                        # Update solution
+                        current_solution = improved_solution_value
+                        logger.info(f"| ✅ Phase 2 completed - solution optimized")
                         
-                        # Record variable changes (before and after)
-                        for var_name, improved_value in improved_variables.variables.items():
-                            before_var = trainable_variables.get(var_name)
-                            before_value = ""
-                            if before_var:
-                                if hasattr(before_var, 'get_value'):
-                                    try:
-                                        before_value = before_var.get_value()
-                                    except:
-                                        before_value = str(before_var.variables) if hasattr(before_var, 'variables') else str(before_var)
-                                elif hasattr(before_var, 'variables'):
-                                    before_value = str(before_var.variables)
-                                else:
-                                    before_value = str(before_var)
-                            
-                            var_type = before_var.type if before_var and hasattr(before_var, 'type') else ""
-                            
-                            # Format improved value
-                            if isinstance(improved_value, dict):
-                                after_value = json.dumps(improved_value, indent=2, ensure_ascii=False)
-                            else:
-                                after_value = str(improved_value)
-                            
-                            event_data["variable_changes"][var_name] = {
-                                "type": var_type,
-                                "before": before_value,
-                                "after": after_value
-                            }
-                        
-                        await memory_manager.add_event(
-                            memory_name=memory_name,
-                            step_number=opt_step + 1,
-                            event_type=EventType.OPTIMIZATION_STEP,
-                            data=event_data,
-                            agent_name=getattr(agent, 'name', 'unknown_agent'),
-                            task_id=task_id,
-                            session_id=session_id
-                        )
-                        logger.debug(f"| 📝 Recorded optimization step {opt_step + 1} to memory")
-                    except Exception as e:
-                        logger.warning(f"| ⚠️ Failed to record optimization step to memory: {e}")
-                
-                # Step6: Update trainable variables with improved variables.
-                trainable_variables = await self.get_trainable_variables(agent=agent)
-                trainable_variables["solution"] = improved_solution_variable
+                        # Record phase 2 to memory
+                        if memory_name and session_id:
+                            try:
+                                event_data = {
+                                    "phase": "solution",
+                                    "task": task,
+                                    "reflection_analysis": solution_reflection,
+                                    "before_solution": solution_variable.get_value(),
+                                    "after_solution": improved_solution_value
+                                }
+                                
+                                await memory_manager.add_event(
+                                    memory_name=memory_name,
+                                    step_number=opt_step * 2 + 2,
+                                    event_type=EventType.OPTIMIZATION_STEP,
+                                    data=event_data,
+                                    agent_name=getattr(agent, 'name', 'unknown_agent'),
+                                    task_id=task_id,
+                                    session_id=session_id
+                                )
+                            except Exception as e:
+                                logger.warning(f"| ⚠️ Failed to record phase 2 to memory: {e}")
+                    else:
+                        logger.info(f"| ℹ️ Phase 2: No solution improvements suggested")
+                else:
+                    logger.info(f"| ⏭️ Phase 2: Skipped (optimize_solution=False)")
                 
                 logger.info(f"| ✅ Optimization step {opt_step + 1} completed\n")
                 
@@ -482,12 +540,13 @@ class ReflectionOptimizer(Optimizer):
                 # Add optimization task end event
                 await memory_manager.add_event(
                     memory_name=memory_name,
-                    step_number=optimization_steps + 1,
+                    step_number=optimization_steps * 2 + 1,
                     event_type=EventType.TASK_END,
                     data=dict(
                         task=task,
                         optimization_steps=optimization_steps,
-                        completed=True
+                        completed=True,
+                        final_solution=current_solution
                     ),
                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                     task_id=task_id,
@@ -499,8 +558,9 @@ class ReflectionOptimizer(Optimizer):
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to end optimization memory session: {e}")
         
+        logger.info(f"\n| {'='*60}")
         logger.info(f"| ✅ Reflection optimization completed!")
         logger.info(f"| {'='*60}")
-        logger.info(f"| Reflection optimization completed!")
+        logger.info(f"| Final solution:\n{current_solution}")
         logger.info(f"| {'='*60}")
 

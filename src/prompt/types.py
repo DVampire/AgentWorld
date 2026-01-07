@@ -63,11 +63,11 @@ class Prompt(BaseModel):
             await self._load_prompt_variable()
         return self.prompt_variable
     
-    async def get_trainable_variable(self) -> List[Variable]:
+    async def get_trainable_variable(self) -> Dict[str, Variable]:
         """Get all trainable variables from the prompt.
         
         Returns:
-            List[Variable]: List of all trainable variables from the prompt
+            Dict[str, Variable]: Dictionary mapping variable names to trainable Variable objects
         """
         if self.prompt_variable is None:
             await self._load_prompt_variable()
