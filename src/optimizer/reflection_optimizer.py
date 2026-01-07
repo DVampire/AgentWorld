@@ -374,17 +374,27 @@ class ReflectionOptimizer(Optimizer):
                             prompt_name=variable_name,
                             variable_updates=variable_value
                         )
+                        # Update Variable object for consistency
+                        trainable_variables[variable_name].variables = variable_value
                     elif variable_type == "tool_code":
                         await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
+                        # Update Variable object for consistency
+                        trainable_variables[variable_name].variables = variable_value
                     elif variable_type == "solution":
                         # Variable model uses `variables` to hold the actual content/value.
                         trainable_variables[variable_name].variables = variable_value
                     elif variable_type == "environment_code":
                         await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                        # Update Variable object for consistency
+                        trainable_variables[variable_name].variables = variable_value
                     elif variable_type == "agent_code":
                         await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                        # Update Variable object for consistency
+                        trainable_variables[variable_name].variables = variable_value
                     elif variable_type == "memory_code":
                         await memory_manager.set_variables(variable_name=variable_name, variable_value=variable_value)
+                        # Update Variable object for consistency
+                        trainable_variables[variable_name].variables = variable_value
                     else:
                         continue
                 
