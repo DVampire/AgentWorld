@@ -274,6 +274,7 @@ class Agent(BaseModel):
         prompt_name: Optional[str] = None,
         prompt_modules: Optional[Dict[str, Any]] = None,
         memory_name: Optional[str] = None,
+        use_memory: bool = True,
         max_tools: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
@@ -295,6 +296,7 @@ class Agent(BaseModel):
         # Set prompt name and modules
         self.prompt_name = prompt_name
         self.memory_name = memory_name
+        self.use_memory = use_memory
         self.model_name = model_name
 
         # Setup steps
@@ -414,14 +416,20 @@ class Agent(BaseModel):
             </step_info>
         """)
 
-        state = await memory_manager.get_state(
-            name=self.memory_name,
-            n=self.review_steps,
-        )
-
-        events = state["events"]
-        summaries = state["summaries"]
-        insights = state["insights"]
+        # Get memory state if use_memory is enabled
+        if self.use_memory and self.memory_name:
+            state = await memory_manager.get_state(
+                name=self.memory_name,
+                n=self.review_steps,
+            )
+            events = state["events"]
+            summaries = state["summaries"]
+            insights = state["insights"]
+        else:
+            # Use empty memory state when memory is disabled
+            events = []
+            summaries = []
+            insights = []
 
         agent_history = "<agent_history>"
         for event in events:

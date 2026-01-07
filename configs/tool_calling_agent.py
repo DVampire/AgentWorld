@@ -101,4 +101,5 @@ tool_calling_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
+    use_memory=False,
 )

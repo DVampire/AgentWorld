@@ -237,17 +237,19 @@ class ToolCallingAgent(Agent):
             # Get memory system name
             memory_name = self.memory_name
             
-            await memory_manager.add_event(
-                memory_name=memory_name,
-                step_number=self.step_number,
-                event_type=EventType.TOOL_STEP,
-                data=event_data,
-                agent_name=self.name,
-                task_id=task_id
-            )
+            # Add event to memory if use_memory is enabled
+            if self.use_memory and memory_name:
+                await memory_manager.add_event(
+                    memory_name=memory_name,
+                    step_number=self.step_number,
+                    event_type=EventType.TOOL_STEP,
+                    data=event_data,
+                    agent_name=self.name,
+                    task_id=task_id
+                )
             self.step_number += 1
             
-            if done:
+            if done and self.use_memory and memory_name:
                 await memory_manager.add_event(
                     memory_name=memory_name,
                     step_number=self.step_number,
@@ -293,44 +295,51 @@ class ToolCallingAgent(Agent):
         # Get memory system name
         memory_name = self.memory_name
         
-        # Get memory instance to check for restored session
-        logger.info(f"| 🔍 Getting memory instance: {memory_name}")
-        memory_instance = await memory_manager.get(memory_name)
-        logger.info(f"| ✅ Got memory instance: {memory_name}")
-        restored_session_id = memory_instance.current_session_id
-        logger.info(f"| 🔍 Restored session ID: {restored_session_id}")
-        
-        if restored_session_id:
-            # Restore from checkpoint
-            logger.info(f"| 🔄 Restoring session from checkpoint: {restored_session_id}")
-            session_id = restored_session_id
-            session_info_obj = await memory_manager.get_session_info(memory_name, session_id=session_id)
-            description = session_info_obj.description if session_info_obj else None
-        else:
-            # Start new session
-            logger.info(f"| 🆕 Starting new session...")
-            session_info = await self._generate_session_info(enhanced_task)
-            session_id = session_info.session_id
-            description = session_info.description
-            logger.info(f"| 📝 Session ID: {session_id}, Description: {description}")
-            await memory_manager.start_session(
-                memory_name=memory_name,
-                session_id=session_id,
-                agent_name=self.name,
-                description=description
-            )
-            logger.info(f"| ✅ Session started successfully")
-        
-        # Add task start event
+        # Initialize session variables
+        session_id = None
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        await memory_manager.add_event(
-            memory_name=memory_name,
-            step_number=self.step_number,
-            event_type=EventType.TASK_START,
-            data=dict(task=enhanced_task),
-            agent_name=self.name,
-            task_id=task_id
-        )
+        
+        # Memory session management (only if use_memory is enabled)
+        if self.use_memory and memory_name:
+            # Get memory instance to check for restored session
+            logger.info(f"| 🔍 Getting memory instance: {memory_name}")
+            memory_instance = await memory_manager.get(memory_name)
+            logger.info(f"| ✅ Got memory instance: {memory_name}")
+            restored_session_id = memory_instance.current_session_id
+            logger.info(f"| 🔍 Restored session ID: {restored_session_id}")
+            
+            if restored_session_id:
+                # Restore from checkpoint
+                logger.info(f"| 🔄 Restoring session from checkpoint: {restored_session_id}")
+                session_id = restored_session_id
+                session_info_obj = await memory_manager.get_session_info(memory_name, session_id=session_id)
+                description = session_info_obj.description if session_info_obj else None
+            else:
+                # Start new session
+                logger.info(f"| 🆕 Starting new session...")
+                session_info = await self._generate_session_info(enhanced_task)
+                session_id = session_info.session_id
+                description = session_info.description
+                logger.info(f"| 📝 Session ID: {session_id}, Description: {description}")
+                await memory_manager.start_session(
+                    memory_name=memory_name,
+                    session_id=session_id,
+                    agent_name=self.name,
+                    description=description
+                )
+                logger.info(f"| ✅ Session started successfully")
+            
+            # Add task start event
+            await memory_manager.add_event(
+                memory_name=memory_name,
+                step_number=self.step_number,
+                event_type=EventType.TASK_START,
+                data=dict(task=enhanced_task),
+                agent_name=self.name,
+                task_id=task_id
+            )
+        else:
+            logger.info(f"| ⏭️ Memory disabled (use_memory={self.use_memory}), skipping session management")
         
         # Initialize messages
         messages = await self._get_messages(enhanced_task)
@@ -371,18 +380,19 @@ class ToolCallingAgent(Agent):
         # Get memory system name
         memory_name = self.memory_name
         
-        # Add task end event
-        await memory_manager.add_event(
-            memory_name=memory_name,
-            step_number=self.step_number,
-            event_type=EventType.TASK_END,
-            data=response,
-            agent_name=self.name,
-            task_id=task_id
-        )
-        
-        # End session (automatically saves memory to JSON)
-        await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
+        # Add task end event and end session (only if use_memory is enabled)
+        if self.use_memory and memory_name:
+            await memory_manager.add_event(
+                memory_name=memory_name,
+                step_number=self.step_number,
+                event_type=EventType.TASK_END,
+                data=response,
+                agent_name=self.name,
+                task_id=task_id
+            )
+            
+            # End session (automatically saves memory to JSON)
+            await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
         
         # Save tracer to json
         await self.tracer.save_to_json(self.tracer_save_path)

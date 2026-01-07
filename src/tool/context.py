@@ -1,5 +1,6 @@
 """Tool Context Manager for managing tool lifecycle and resources with lazy loading."""
 import os
+import asyncio
 from asyncio_atexit import register as async_atexit_register
 from typing import Any, Dict, List, Type, Optional, Union, Tuple, TYPE_CHECKING
 from datetime import datetime
@@ -37,6 +38,7 @@ class ToolContextManager(BaseModel):
                  contract_path: Optional[str] = None,
                  model_name: str = "openrouter/gemini-3-flash-preview",
                  embedding_model_name: str = "openrouter/text-embedding-3-large",
+                 default_timeout: Optional[float] = 1800.0,
                  **kwargs):
         """Initialize the tool context manager.
         
@@ -45,6 +47,7 @@ class ToolContextManager(BaseModel):
             save_path: Path to save tool configurations
             model_name: The model to use for the tools
             embedding_model_name: The model to use for the tool embeddings
+            default_timeout: Default timeout in seconds for tool calls (None means no timeout, default 1800s = 30 minutes)
         """
         super().__init__(**kwargs)
         
@@ -71,6 +74,7 @@ class ToolContextManager(BaseModel):
         
         self.model_name = model_name
         self.embedding_model_name = embedding_model_name
+        self.default_timeout = default_timeout
         
         self._cleanup_registered = False
         self._faiss_service = None
@@ -1230,12 +1234,13 @@ class ToolContextManager(BaseModel):
             description=update_description
         )
     
-    async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
-        """Call a tool by name
+    async def __call__(self, name: str, input: Dict[str, Any], timeout: Optional[float] = None) -> ToolResponse:
+        """Call a tool by name with optional timeout
         
         Args:
             name: Tool name
             input: Input for the tool
+            timeout: Timeout in seconds for this specific call (overrides default_timeout if provided)
             
         Returns:
             ToolResponse: Tool result
@@ -1243,4 +1248,22 @@ class ToolContextManager(BaseModel):
         tool = await self.get(name)
         if tool is None:
             raise ValueError(f"Tool {name} not found")
-        return await tool(**input)
+        
+        # Use provided timeout, or fall back to default_timeout
+        effective_timeout = timeout if timeout is not None else self.default_timeout
+        
+        # If timeout is None (no timeout), call tool directly
+        if effective_timeout is None:
+            return await tool(**input)
+        
+        # Otherwise, use asyncio.wait_for to enforce timeout
+        try:
+            return await asyncio.wait_for(tool(**input), timeout=effective_timeout)
+        except asyncio.TimeoutError:
+            error_msg = f"Tool '{name}' execution timed out after {effective_timeout} seconds"
+            logger.error(f"| ⏱️ {error_msg}")
+            return ToolResponse(
+                success=False,
+                message=error_msg,
+                extra=None
+            )
