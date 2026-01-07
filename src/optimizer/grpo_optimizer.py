@@ -1,3 +1,4 @@
+from os import name
 from typing import List, Optional, Any, Dict, Union, Callable
 from pydantic import ConfigDict, Field
 from pydantic import BaseModel
@@ -34,20 +35,22 @@ class GrpoOptimizer(Optimizer):
     model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
     memory_name: Optional[str] = Field(default=None,
                                        description="Name of the optimizer memory system for recording optimization history")
+    benchmark_name: str = Field(default="aime24", description="The name of benchmark")
     num_candidates: int = Field(default=4, description="Number of candidates to generate per variable per step")
     clip_ratio: float = Field(default=0.2, description="Clipping ratio for GRPO")
     beta: float = Field(default=0.01, description="KL penalty coefficient")
-    reward_fn: Optional[Callable[[str], float]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
+    reward_fn: Optional[Callable[[str,str,str], Any]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
 
     def __init__(self,
                  workdir: str,
                  prompt_name: str = "reflection_optimizer",
                  model_name: str = "openrouter/gpt-4o",
                  memory_name: Optional[str] = "optimizer_memory_system",
+                 benchmark_name: str = "aime24",
                  num_candidates: int = 4,
                  clip_ratio: float = 0.2,
                  beta: float = 0.01,
-                 reward_fn: Optional[Callable[[str], float]] = None,
+                 reward_fn: Optional[Callable[[str,str,str], Any]] = None,
                  **kwargs
                  ):
         """
@@ -71,6 +74,7 @@ class GrpoOptimizer(Optimizer):
         if prompt_name:
             self.prompt_name = prompt_name
         self.memory_name = memory_name
+        self.benchmark_name = benchmark_name
         # GRPO-like config
         self.num_candidates = num_candidates
         self.clip_ratio = clip_ratio
@@ -286,16 +290,6 @@ class GrpoOptimizer(Optimizer):
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
 
-    def _default_evaluation(self, candidates: List[str]) -> List[float]:
-        """Default heuristic evaluation for textual candidates."""
-        rewards = []
-        for candidate in candidates:
-            length_score = min(len(candidate) / 100, 1.0)
-            detail_score = candidate.count('.') + candidate.count('!') + candidate.count('?')
-            detail_score = min(detail_score / 5, 1.0)
-            reward = (length_score + detail_score) / 2
-            rewards.append(reward)
-        return rewards
 
     def _normalize_rewards(self, rewards: List[float]) -> List[float]:
         """Group-normalize rewards into advantages."""
@@ -389,8 +383,8 @@ class GrpoOptimizer(Optimizer):
             self,
             agent: Any,
             task: str,
+            benchmark_task_id: str,
             files: Optional[List[str]] = None,
-            reward_fn: Optional[Callable[[str], float]] = None,
             **kwargs
     ):
         """
@@ -498,10 +492,9 @@ class GrpoOptimizer(Optimizer):
 
                 # Get current reward before generating candidate
                 current_solution = solution_variable.get_value()
-                if reward_fn is not None:
-                    current_reward = reward_fn(current_solution)
-                else:
-                    current_reward = self._default_evaluation([current_solution])[0]
+
+                current_reward = await self.reward_fn(benchmark_name=self.benchmark_name, prediction=current_solution, task_id=benchmark_task_id)
+
                 logger.info(f"| 📊 Current reward: {current_reward}")
 
                 # Generate multiple candidate sets (each set may improve multiple variables)
@@ -533,80 +526,94 @@ class GrpoOptimizer(Optimizer):
                     # For each candidate set, temporarily apply it and run agent to get solution
                     for cand_idx, improved_set in enumerate(candidate_sets):
                         logger.info(f"| 🔄 Evaluating candidate set {cand_idx + 1}/{len(candidate_sets)}")
-                        try:
-                            # Temporarily apply the candidate set
-                            applied_updates = []
-                            for variable_name, improved_entry in improved_set.variables.items():
-                                try:
-                                    variable_type = trainable_variables[variable_name].type if variable_name in trainable_variables else ""
-                                    candidate_val = improved_entry.variables if hasattr(improved_entry, 'variables') else improved_entry
-                                    if isinstance(candidate_val, dict):
-                                        applied_value = json.dumps(candidate_val, ensure_ascii=False)
-                                    else:
-                                        applied_value = str(candidate_val)
 
-                                    # Store original value for rollback
-                                    original_value = None
-                                    if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
-                                        # Store current variable value from trainable_variables
-                                        original_value = ("prompt", variable_name, trainable_variables[variable_name].variables)
-                                        await prompt_manager.set_variables(
-                                            prompt_name=variable_name,
-                                            variable_updates={"variables": applied_value}
-                                        )
-                                    elif variable_type == "tool_code":
-                                        original_value = ("tool", variable_name, trainable_variables[variable_name].variables)
-                                        await tcp.set_variable(variable_name=variable_name, variable_value=applied_value)
-                                    elif variable_type == "solution":
-                                        original_value = ("solution", variable_name, trainable_variables[variable_name].variables)
-                                        trainable_variables[variable_name].variables = applied_value
-                                    elif variable_type == "environment_code":
-                                        original_value = ("env", variable_name, trainable_variables[variable_name].variables)
-                                        await ecp.set_variables(variable_name=variable_name, variable_value=applied_value)
-                                    elif variable_type == "agent_code":
-                                        original_value = ("agent", variable_name, trainable_variables[variable_name].variables)
-                                        await acp.set_variables(variable_name=variable_name, variable_value=applied_value)
-                                    elif variable_type == "memory_code":
-                                        original_value = ("memory", variable_name, trainable_variables[variable_name].variables)
-                                        await memory_manager.set_variables(variable_name=variable_name, variable_value=applied_value)
+                        # Temporarily apply the candidate set
+                        applied_updates = []
+                        for variable_name, improved_entry in improved_set.variables.items():
+                            try:
+                                variable_type = trainable_variables[variable_name].type if variable_name in trainable_variables else ""
+                                candidate_val = improved_entry.variables if hasattr(improved_entry, 'variables') else improved_entry
+                                if isinstance(candidate_val, dict):
+                                    applied_value = json.dumps(candidate_val, ensure_ascii=False)
+                                else:
+                                    applied_value = str(candidate_val)
 
-                                    if original_value:
-                                        applied_updates.append(original_value)
+                                # Store original value for rollback
+                                original_value = None
+                                if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
+                                    # Store current variable value from trainable_variables
+                                    original_value = ("prompt", variable_name, trainable_variables[variable_name].variables)
+                                    await prompt_manager.set_variables(
+                                        prompt_name=variable_name,
+                                        variable_updates={"variables": applied_value}
+                                    )
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
+                                elif variable_type == "tool_code":
+                                    original_value = ("tool", variable_name, trainable_variables[variable_name].variables)
+                                    await tcp.set_variable(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
+                                elif variable_type == "solution":
+                                    original_value = ("solution", variable_name, trainable_variables[variable_name].variables)
+                                    trainable_variables[variable_name].variables = applied_value
+                                elif variable_type == "environment_code":
+                                    original_value = ("env", variable_name, trainable_variables[variable_name].variables)
+                                    await ecp.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
+                                elif variable_type == "agent_code":
+                                    original_value = ("agent", variable_name, trainable_variables[variable_name].variables)
+                                    await acp.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
+                                elif variable_type == "memory_code":
+                                    original_value = ("memory", variable_name, trainable_variables[variable_name].variables)
+                                    await memory_manager.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
 
-                                except Exception as e:
-                                    logger.warning(f"| ❌ Applying candidate for {variable_name} failed: {e}")
+                                if original_value:
+                                    applied_updates.append(original_value)
 
-                            # Run agent with the temporarily applied candidate set
-                            candidate_response = await agent(task=task, files=files)
-                            candidate_response_extra_data = candidate_response.extra.data if candidate_response.extra and candidate_response.extra.data else None
-                            candidate_result = candidate_response_extra_data.get('final_result') if candidate_response_extra_data else None
-                            candidate_reasoning = candidate_response_extra_data.get('final_reasoning') if candidate_response_extra_data else None
-                            improved_solution = f"Result: {candidate_result}\nReasoning: {candidate_reasoning}" if candidate_reasoning else f"Result: {candidate_result}"
-                            improved_solutions.append(improved_solution)
+                            except Exception as e:
+                                logger.warning(f"| ❌ Applying candidate for {variable_name} failed: {e}")
 
-                            # Rollback the temporary application
-                            for update_type, var_name, original_val in applied_updates:
-                                try:
-                                    if update_type == "prompt":
-                                        await prompt_manager.set_variables(prompt_name=var_name, variable_updates={"variables": original_val})
-                                    elif update_type == "tool":
-                                        await tcp.set_variable(variable_name=var_name, variable_value=original_val)
-                                    elif update_type == "solution":
-                                        trainable_variables[var_name].variables = original_val
-                                    elif update_type == "env":
-                                        await ecp.set_variables(variable_name=var_name, variable_value=original_val)
-                                    elif update_type == "agent":
-                                        await acp.set_variables(variable_name=var_name, variable_value=original_val)
-                                    elif update_type == "memory":
-                                        await memory_manager.set_variables(memory_name=var_name, variable_value=original_val)
-                                except Exception as e:
-                                    logger.warning(f"| ❌ Rollback failed for {var_name}: {e}")
+                        # Run agent with the temporarily applied candidate set
+                        candidate_response = await agent(task=task, files=files)
+                        candidate_response_extra_data = candidate_response.extra.data if candidate_response.extra and candidate_response.extra.data else None
+                        candidate_result = candidate_response_extra_data.get('final_result') if candidate_response_extra_data else None
+                        candidate_reasoning = candidate_response_extra_data.get('final_reasoning') if candidate_response_extra_data else None
+                        improved_solution = f"Result: {candidate_result}\nReasoning: {candidate_reasoning}" if candidate_reasoning else f"Result: {candidate_result}"
+                        improved_solutions.append(improved_solution)
 
-                        except Exception as e:
-                            logger.warning(f"| ❌ Error evaluating candidate set {cand_idx}: {e}")
-                            # Use baseline solution as fallback
-                            baseline_solution = f"Result: {solution_variable.get_value()}"
-                            improved_solutions.append(baseline_solution)
+                        # Rollback the temporary application
+                        for update_type, var_name, original_val in applied_updates:
+                            try:
+                                if update_type == "prompt":
+                                    await prompt_manager.set_variables(prompt_name=var_name, variable_updates={"variables": original_val})
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[var_name].variables = original_val
+                                elif update_type == "tool":
+                                    await tcp.set_variable(variable_name=var_name, variable_value=original_val)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[var_name].variables = original_val
+                                elif update_type == "solution":
+                                    trainable_variables[var_name].variables = original_val
+                                elif update_type == "env":
+                                    await ecp.set_variables(variable_name=var_name, variable_value=original_val)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[var_name].variables = original_val
+                                elif update_type == "agent":
+                                    await acp.set_variables(variable_name=var_name, variable_value=original_val)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[var_name].variables = original_val
+                                elif update_type == "memory":
+                                    await memory_manager.set_variables(memory_name=var_name, variable_value=original_val)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[var_name].variables = original_val
+                            except Exception as e:
+                                logger.warning(f"| ❌ Rollback failed for {var_name}: {e}")
 
                     # Ensure we have the right number of solutions
                     while len(improved_solutions) < len(candidate_sets):
@@ -615,11 +622,9 @@ class GrpoOptimizer(Optimizer):
                         improved_solutions.append(baseline_solution)
 
                     # Score candidate sets based on their improved solutions
-                    if reward_fn is not None:
-                        rewards = [reward_fn(solution) for solution in improved_solutions]
-                        logger.info(f"| ✨ Reward: {rewards}")
-                    else:
-                        rewards = self._default_evaluation(improved_solutions)
+                    rewards = [await self.reward_fn(benchmark_name=self.benchmark_name, prediction=solution, task_id=benchmark_task_id) for solution in improved_solutions]
+                    logger.info(f"| ✨ Reward: {rewards}")
+
                     advantages = self._normalize_rewards(rewards)
 
                     # Calculate policy ratios and KL based on parameter changes (since reward is based on solution)
@@ -657,13 +662,11 @@ class GrpoOptimizer(Optimizer):
                     kl_divs = []
                     for params_text in candidate_texts:
                         # Policy ratio relative to current step baseline
-                        param_sim_to_baseline = self._calculate_text_similarity(baseline_text, params_text)
-                        ratio = 1.0 - param_sim_to_baseline
+                        ratio = self._calculate_text_similarity(baseline_text, params_text)
                         policy_ratios.append(ratio)
 
                         # KL divergence relative to initial policy using |log(policy_ratio)| surrogate
-                        param_sim_to_initial = self._calculate_text_similarity(initial_policy_text, params_text)
-                        initial_policy_ratio = 1.0 - param_sim_to_initial
+                        initial_policy_ratio = self._calculate_text_similarity(initial_policy_text, params_text)
                         kl_div = abs(math.log(max(initial_policy_ratio, 1e-8)))
                         kl_divs.append(kl_div)
 

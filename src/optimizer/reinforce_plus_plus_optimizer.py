@@ -35,19 +35,20 @@ class ReinforcePlusPlusOptimizer(Optimizer):
     model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
     memory_name: Optional[str] = Field(default=None,
                                        description="Name of the optimizer memory system for recording optimization history")
-
+    benchmark_name: str = Field(default="aime24", description="The name of benchmark")
     clip_ratio: float = Field(default=0.2, description="Clipping ratio for REINFORCE++")
     beta: float = Field(default=0.01, description="KL penalty coefficient")
-    reward_fn: Optional[Callable[[str], float]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
+    reward_fn: Optional[Callable[[str,str,str], Any]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
 
     def __init__(self,
                  workdir: str,
                  prompt_name: str = "reflection_optimizer",
                  model_name: str = "openrouter/gpt-4o",
                  memory_name: Optional[str] = "optimizer_memory_system",
+                 benchmark_name: str = "aime24",
                  clip_ratio: float = 0.2,
                  beta: float = 0.01,
-                 reward_fn: Optional[Callable[[str], float]] = None,
+                 reward_fn: Optional[Callable[[str,str,str], Any]] = None,
                  **kwargs
                  ):
         """
@@ -71,6 +72,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         if prompt_name:
             self.prompt_name = prompt_name
         self.memory_name = memory_name
+        self.benchmark_name = benchmark_name
         # REINFORCE++ config
         self.clip_ratio = clip_ratio
         self.beta = beta
@@ -285,17 +287,6 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
 
-    def _default_evaluation(self, candidates: List[str]) -> List[float]:
-        """Default heuristic evaluation for textual candidates."""
-        rewards = []
-        for candidate in candidates:
-            length_score = min(len(candidate) / 100, 1.0)
-            detail_score = candidate.count('.') + candidate.count('!') + candidate.count('?')
-            detail_score = min(detail_score / 5, 1.0)
-            reward = (length_score + detail_score) / 2
-            rewards.append(reward)
-        return rewards
-
     def _calculate_advantage(self, reward: float, kl_penalty: float) -> float:
         """
         Calculate advantage using REINFORCE++ formula.
@@ -387,8 +378,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             self,
             agent: Any,
             task: str,
+            benchmark_task_id: str,
             files: Optional[List[str]] = None,
-            reward_fn: Optional[Callable[[str], float]] = None,
             **kwargs
     ):
         """
@@ -495,10 +486,9 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                 
                 # Get current reward before generating candidate
                 current_solution = solution_variable.get_value()
-                if reward_fn is not None:
-                    current_reward = reward_fn(current_solution)
-                else:
-                    current_reward = self._default_evaluation([current_solution])[0]
+
+                current_reward = await self.reward_fn(benchmark_name=self.benchmark_name, prediction=current_solution, task_id=benchmark_task_id)
+
                 logger.info(f"| 📊 Current reward: {current_reward}")
 
                 # Generate one candidate via reflection
@@ -539,21 +529,31 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                                         prompt_name=variable_name,
                                         variable_updates={"variables": applied_value}
                                     )
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
                                 elif variable_type == "tool_code":
                                     original_value = ("tool", variable_name, trainable_variables[variable_name].variables)
                                     await tcp.set_variable(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
                                 elif variable_type == "solution":
                                     original_value = ("solution", variable_name, trainable_variables[variable_name].variables)
                                     trainable_variables[variable_name].variables = applied_value
                                 elif variable_type == "environment_code":
                                     original_value = ("env", variable_name, trainable_variables[variable_name].variables)
                                     await ecp.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
                                 elif variable_type == "agent_code":
                                     original_value = ("agent", variable_name, trainable_variables[variable_name].variables)
                                     await acp.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
                                 elif variable_type == "memory_code":
                                     original_value = ("memory", variable_name, trainable_variables[variable_name].variables)
                                     await memory_manager.set_variables(variable_name=variable_name, variable_value=applied_value)
+                                    # Update Variable object for parameter tracking
+                                    trainable_variables[variable_name].variables = applied_value
 
                                 if original_value:
                                     applied_updates.append(original_value)
@@ -569,10 +569,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                         candidate_solution = f"Result: {candidate_result}\nReasoning: {candidate_reasoning}" if candidate_reasoning else f"Result: {candidate_result}"
 
                         # Calculate candidate reward
-                        if reward_fn is not None:
-                            candidate_reward = reward_fn(candidate_solution)
-                        else:
-                            candidate_reward = self._default_evaluation([candidate_solution])[0]
+                        candidate_reward = await self.reward_fn(benchmark_name=self.benchmark_name, prediction=current_solution, task_id=benchmark_task_id)
 
                         logger.info(f"| 🎯 Candidate reward: {candidate_reward}")
 
@@ -595,8 +592,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
 
                         # Step 1: Calculate KL penalty for candidate using |log(policy_ratio)| surrogate
                         # First compute policy ratio relative to initial policy
-                        initial_param_similarity = self._calculate_text_similarity(initial_policy_text, candidate_params_text)
-                        initial_policy_ratio = 1.0 - initial_param_similarity
+                        print(f'initial_policy_text: {len(initial_policy_text)}; current_params_text: {len(current_params_text)}; candidate_params_text: {len(candidate_params_text)}')
+                        initial_policy_ratio = self._calculate_text_similarity(initial_policy_text, candidate_params_text)
                         kl_div_candidate = abs(math.log(max(initial_policy_ratio, 1e-8)))
                         kl_penalty_candidate = self.beta * kl_div_candidate
 
@@ -604,8 +601,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                         advantage_candidate = candidate_reward - kl_penalty_candidate
 
                         # Step 3: Calculate policy ratio for candidate
-                        param_similarity = self._calculate_text_similarity(current_params_text, candidate_params_text)
-                        policy_ratio_candidate = 1.0 - param_similarity
+                        policy_ratio_candidate = self._calculate_text_similarity(current_params_text, candidate_params_text)
 
                         # Step 4: Apply clipping and calculate objective for candidate
                         clipped_ratio_candidate = self._apply_clipping(policy_ratio_candidate)
@@ -770,4 +766,6 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         logger.info(f"| {'=' * 60}")
         logger.info(f"| REINFORCE++ optimization completed!")
         logger.info(f"| {'=' * 60}")
+
+        return trainable_variables["solution"]
 
