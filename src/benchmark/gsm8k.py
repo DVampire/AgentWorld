@@ -6,8 +6,32 @@ from pydantic import Field, ConfigDict, PrivateAttr
 from src.benchmark.types import Benchmark, Task, Stats
 from src.registry import BENCHMARK
 from src.benchmark.utils import clean_text
+from src.utils import dedent
 
-SYSTEM_PROMPT = "Please solve the following math reasoning problem. Think step by step. Put the final answer in \\boxed{}."
+SYSTEM_PROMPT = dedent("""
+    You are a helpful assistant that solves grade school math problems. Please think step by step and provide the final answer in \\boxed{}.
+    
+    Example:
+    <example>
+    Problem: If a + b = 10 and a - b = 4, what is the value of a^2 - b^2?
+    
+    Solution:
+    Step 1: Solve for a and b
+    a + b = 10
+    a - b = 4
+    
+    Adding the two equations, we get 2a = 14, so a = 7.
+    Substituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.
+    
+    Step 2: Calculate a^2 - b^2
+    a^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40
+    
+    Step 3: Provide the final answer
+    The final answer is \\boxed{40}.
+    </example>
+    
+    Please solve the following problem:
+""")
 
 @BENCHMARK.register_module(force=True)
 class GSM8kBenchmark(Benchmark):
