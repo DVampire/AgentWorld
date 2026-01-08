@@ -9,30 +9,20 @@ from src.benchmark.utils import clean_text
 from src.utils import dedent
 
 SYSTEM_PROMPT = dedent("""
-    You are a helpful assistant that solves multiple-choice questions. Please think step by step and provide the final answer in \\boxed{}.
+    You are a helpful assistant that solves multiple-choice questions. Please think step by step and provide the final answer.
     
     Example:
-    <example>
     Problem: If a + b = 10 and a - b = 4, what is the value of a^2 - b^2?
     A. 40
     B. 41
     C. 42
     D. 43
-    
-    Solution:
-    Step 1: Solve for a and b
-    a + b = 10
-    a - b = 4
-    
-    Adding the two equations, we get 2a = 14, so a = 7.
-    Substituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.
-    
-    Step 2: Calculate a^2 - b^2
-    a^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40
-    
-    Step 3: Provide the final answer
-    The final answer is \\boxed{A}.
-    </example>
+    Output format:
+    The output should be a JSON object with the following fields, DO NOT add any other text like "```json" or "```" or anything else:
+    {
+        "reasoning": "Step 1: Solve for a and b\n\na + b = 10\n\na - b = 4\n\nAdding the two equations, we get 2a = 14, so a = 7.\n\tSubstituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.\n\nStep 2: Calculate a^2 - b^2\n\ta^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40\n\nStep 3: Provide the final answer\n\tThe final answer is A.",
+        "answer": "A"
+    }
     
     Please solve the following problem:
 """)
@@ -85,36 +75,16 @@ class GPQABenchmark(Benchmark):
         )
 
     async def eval(self, task: Task) -> Optional[Task]:
-        prediction = str(task.prediction) if task.prediction is not None else ""
+        answer = str(task.answer) if task.answer is not None else ""
         ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
         
-        # Extract answer from prediction (patterned after AIME)
-        extracted_pred = None
-        if prediction:
-            # 1. Try \boxed{}
-            boxed_matches = re.findall(r"\\boxed\{\s*([A-D])\s*\}", prediction)
-            if boxed_matches:
-                extracted_pred = boxed_matches[-1]
-            else:
-                # 2. Try Answer: <letter>
-                answer_matches = re.findall(r"(?i)Answer:\s*\(?([A-D])\)?", prediction)
-                if answer_matches:
-                    extracted_pred = answer_matches[-1]
-                else:
-                    # 3. Try parenthesis pattern (A)
-                    paren_matches = re.findall(r"\s\(([A-D])\)", prediction)
-                    if paren_matches:
-                        extracted_pred = paren_matches[-1]
-                    else:
-                        # 4. Try loose pattern A.
-                        loose_matches = re.findall(r"(?:^|\s)([A-D])(?:\.|,|$)", prediction)
-                        if loose_matches:
-                            extracted_pred = loose_matches[-1]
-
-        clean_pred = clean_text(extracted_pred) if extracted_pred is not None else None
-        clean_gt = clean_text(ground_truth)
+        clean_answer = clean_text(answer) if answer is not None else None
+        clean_ground_truth = clean_text(ground_truth) if ground_truth is not None else None
         
-        task.score = 1.0 if clean_pred == clean_gt and clean_pred is not None else 0.0
+        task.answer = clean_answer
+        task.ground_truth = clean_ground_truth
+        
+        task.score = 1.0 if clean_answer == clean_ground_truth and clean_answer is not None else 0.0
         self._tasks.append(task)
         return task
 

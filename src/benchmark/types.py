@@ -16,8 +16,8 @@ class Task(BaseModel):
     ground_truth: Optional[Any] = Field(default=None, description="The expected correct answer")
     
     # Output
-    solution: Optional[Any] = Field(default=None, description="The solution to the task")
-    prediction: Optional[Any] = Field(default=None, description="The predicted answer")
+    reasoning: Optional[str] = Field(default=None, description="The reasoning process")
+    answer: Optional[Any] = Field(default=None, description="The final answer")
     time: Optional[float] = Field(default=0.0, description="The time taken to complete the task in seconds")
     score: Optional[float] = Field(default=0.0, description="The score of the task")
     

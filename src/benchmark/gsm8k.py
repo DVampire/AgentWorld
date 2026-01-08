@@ -9,30 +9,19 @@ from src.benchmark.utils import clean_text
 from src.utils import dedent
 
 SYSTEM_PROMPT = dedent("""
-    You are a helpful assistant that solves grade school math problems. Please think step by step and provide the final answer in \\boxed{}.
+    You are a helpful assistant that solves math contest problems. Please think step by step and provide the final answer.
     
     Example:
-    <example>
     Problem: If a + b = 10 and a - b = 4, what is the value of a^2 - b^2?
-    
-    Solution:
-    Step 1: Solve for a and b
-    a + b = 10
-    a - b = 4
-    
-    Adding the two equations, we get 2a = 14, so a = 7.
-    Substituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.
-    
-    Step 2: Calculate a^2 - b^2
-    a^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40
-    
-    Step 3: Provide the final answer
-    The final answer is \\boxed{40}.
-    </example>
+    Output format:
+    The output should be a JSON object with the following fields, DO NOT add any other text like "```json" or "```" or anything else:
+    {
+        "reasoning": "Step 1: Solve for a and b\n\na + b = 10\n\na - b = 4\n\nAdding the two equations, we get 2a = 14, so a = 7.\n\tSubstituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.\n\nStep 2: Calculate a^2 - b^2\n\ta^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40\n\nStep 3: Provide the final answer\n\tThe final answer is 40.",
+        "answer": 40
+    }
     
     Please solve the following problem:
 """)
-
 @BENCHMARK.register_module(force=True)
 class GSM8kBenchmark(Benchmark):
     """
@@ -81,35 +70,16 @@ class GSM8kBenchmark(Benchmark):
         )
 
     async def eval(self, task: Task) -> Optional[Task]:
-        prediction = str(task.prediction) if task.prediction is not None else ""
+        answer = str(task.answer) if task.answer is not None else ""
         ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
         
-        # Extract answer from prediction
-        extracted_pred = None
-        if prediction:
-            # Try \boxed{}
-            boxed_matches = re.findall(r"\\boxed\{([^}]+)\}", prediction)
-            if boxed_matches:
-                extracted_pred = boxed_matches[-1]
-            else:
-                # Try Answer: $VALUE
-                answer_matches = re.findall(r"(?i)Answer:\s*(?:\$|\\\$)?\s*(-?[\d,]+)", prediction)
-                if answer_matches:
-                    extracted_pred = answer_matches[-1]
-                else:
-                    # Try #### VALUE (GSM8K style)
-                    if "####" in prediction:
-                        extracted_pred = prediction.split("####")[-1]
-                    else:
-                        # Fallback to last number
-                        numbers = re.findall(r"-?\d+", prediction)
-                        if numbers:
-                            extracted_pred = numbers[-1]
-
-        clean_pred = clean_text(extracted_pred) if extracted_pred is not None else None
-        clean_gt = clean_text(ground_truth)
+        clean_answer = clean_text(answer) if answer is not None else None
+        clean_ground_truth = clean_text(ground_truth) if ground_truth is not None else None
         
-        task.score = 1.0 if clean_pred == clean_gt and clean_pred is not None else 0.0
+        task.answer = clean_answer
+        task.ground_truth = clean_ground_truth
+        
+        task.score = 1.0 if clean_answer == clean_ground_truth and clean_answer is not None else 0.0
         self._tasks.append(task)
         return task
 

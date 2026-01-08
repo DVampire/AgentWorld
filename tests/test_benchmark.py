@@ -10,6 +10,7 @@ from pathlib import Path
 from mmengine import DictAction
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from typing import Union
 
 # 加载环境变量
 load_dotenv(verbose=True)
@@ -29,23 +30,16 @@ from src.message.types import HumanMessage, SystemMessage
 # ==========================================
 TARGET_MODEL = "openrouter/gemini-3-flash-preview" 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Test AIME Benchmark Loop')
-    parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
-    parser.add_argument(
-        '--cfg-options',
-        nargs='+',
-        action=DictAction,
-        help='override settings')
-    args = parser.parse_args()
-    return args
+class Response(BaseModel):
+    reasoning: str = Field(description="The reasoning process")
+    answer: str = Field(description="The final answer")
 
 def sanitize_filename(name: str) -> str:
     """清洗文件名，移移除非法字符"""
     name = str(name).replace('\n', ' ').replace('\r', '')
     return re.sub(r'[\\/*?:"<>|]', '', name).strip()
 
-async def test_math_benchmark(benchmark_name: str = "aime24"):
+async def test_math_benchmark(benchmark_name: str = "aime25"):
     """
     Test the benchmark manager specifically for Math/AIME using a REAL model.
     Uses response_format for structured output.
@@ -100,11 +94,14 @@ async def test_math_benchmark(benchmark_name: str = "aime24"):
                 response = await model_manager(
                     model=TARGET_MODEL,
                     messages=messages,
+                    response_format=Response,
                 )
                 
                 if response.success:
                     # 获取解析后的对象
-                    task.solution = response.message
+                    response_model = response.extra.parsed_model
+                    task.reasoning = response_model.reasoning
+                    task.answer = response_model.answer
                     
                     # --- 保存 Response 到 Markdown 文件 ---
                     try:
@@ -113,7 +110,7 @@ async def test_math_benchmark(benchmark_name: str = "aime24"):
                         file_path = os.path.join(save_dir, filename)
                         
                         with open(file_path, "w", encoding="utf-8") as f:
-                            f.write(task.solution)
+                            f.write(task.reasoning + "\n\n" + task.answer)
                         
                         print(f"💾 [Saved] Output saved to: {file_path}")
                         
@@ -122,18 +119,20 @@ async def test_math_benchmark(benchmark_name: str = "aime24"):
 
                 else:
                     logger.error(f"| ⚠️ [Task {task_id}] Model API Error: {response.message}")
-                    task.solution = "" 
+                    task.reasoning = "" 
+                    task.answer = "" 
                     
             except Exception as e:
                 logger.error(f"| ❌ [Task {task_id}] Critical Inference Error: {e}")
-                task.solution = ""
+                task.reasoning = ""
+                task.answer = ""
 
             # --- 3. 评测 ---
             task.time = time.time() - start_time
             print(f"🤖 [Task {task_id}] Evaluating...")
             task = await benchmark_manager.eval(benchmark_name, task)
             
-            print(f"🤖 [Task {task_id}] Prediction: {task.prediction}, Ground Truth: {task.ground_truth}")
+            print(f"🤖 [Task {task_id}] Answer: {task.answer}, Ground Truth: {task.ground_truth}")
             
             if task.score and task.score >= 1.0:
                 print(f"✅ [Task {task_id}] Result: Correct (Score: {task.score}) | Time: {task.time:.2f}s")
@@ -163,7 +162,7 @@ async def test_math_benchmark(benchmark_name: str = "aime24"):
 async def main():
     parser = argparse.ArgumentParser(description='Test Benchmark Loop')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
-    parser.add_argument("--benchmark", default="aime24", help="benchmark name to test")
+    parser.add_argument("--benchmark", default="aime25", help="benchmark name to test")
     parser.add_argument(
         '--cfg-options',
         nargs='+',
