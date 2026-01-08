@@ -47,7 +47,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test different optimizers on benchmark tasks')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
-                       default='reinforce_pp', help="optimizer to test")
+                       default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="aime24", help="benchmark name to test on")
 
     parser.add_argument(
@@ -74,6 +74,8 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
         'prompt_name': 'reflection_optimizer',
         'model_name': 'openrouter/gemini-3-flash-preview',
         'memory_name': 'optimizer_memory_system',
+        'optimize_trainable_variables': 'True',
+        'optimize_solution': 'True',
         'benchmark_name': benchmark_name,
 
     }

@@ -335,9 +335,9 @@ class ReflectionOptimizer(Optimizer):
         
         # Run the optimization loop.
         for opt_step in range(optimization_steps):
-            logger.info(f"\n| {'='*60}")
+            logger.info(f"| {'=' * 60}")
             logger.info(f"| Reflection Optimization Step {opt_step + 1}/{optimization_steps}")
-            logger.info(f"| {'='*60}")
+            logger.info(f"| {'=' * 60}")
             
             try:
                 # ============ PHASE 1: Optimize Trainable Variables ============
