@@ -1,72 +1,108 @@
 import re
-from typing import Optional, Any
-from .types import Benchmark
+from typing import Optional, Any, List, Dict
+from pydantic import Field, ConfigDict, PrivateAttr
+
+
+from src.benchmark.types import Benchmark, Task, Stats
 from src.registry import BENCHMARK
+from src.benchmark.utils import clean_text
+
+SYSTEM_PROMPT = "Please solve the following math reasoning problem. Think step by step. Put the final answer in \\boxed{}."
 
 @BENCHMARK.register_module(force=True)
 class GSM8kBenchmark(Benchmark):
     """
     GSM8k Benchmark implementation
     """
-    name: str = "gsm8k"
-    path: str = "datasets/gsm8k"
-    def _instantiate_dataset(self) -> Any:
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="gsm8k", description="The name of the benchmark")
+    path: str = Field(default="datasets/gsm8k", description="The path to the benchmark dataset")
+    
+    _data_records: List[Dict] = PrivateAttr(default_factory=list)
+    _index: int = PrivateAttr(default=0)
+    _tasks: List[Task] = PrivateAttr(default_factory=list)
+    
+    system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
+
+    async def initialize(self):
         from src.data.gsm8k import GSM8kDataset
-        return GSM8kDataset(
+        dataset = GSM8kDataset(
             path=self.path,
             name=self.subset if self.subset else "main",
             split=self.split
         )
+        if hasattr(dataset, 'data'):
+            self._data_records = dataset.data.to_dict(orient="records")
+        await self.reset()
 
-    def get_task_description(self) -> str:
-        return (
-            "You will answer a mathematical reasoning question. Think step by step. "
-            "The last line of your response should be of the following format: "
-            "'Answer: $VALUE' where VALUE is a numerical value."
+    async def reset(self) -> Optional[Task]:
+        self._index = 0
+        self._tasks = []
+        return await self.step()
+
+    async def step(self) -> Optional[Task]:
+        if self._index >= len(self._data_records):
+            return None
+        
+        record = self._data_records[self._index]
+        self._index += 1
+        
+        return Task(
+            task_id=f"{self._index:04d}",
+            input=record.get("question") or record.get("prompt") or "",
+            system_prompt=self.system_prompt,
+            ground_truth=record.get("true_answer") or record.get("answer"),
+            extra={k: v for k, v in record.items() if k not in ["true_answer", "answer", "task_id", "id", "question", "prompt"]}
         )
 
-    async def _eval_logic(self, prediction: str, ground_truth: str, **kwargs) -> float:
-        extracted_pred = self._extract_answer(prediction)
-        clean_gt = self._clean_number(ground_truth)
+    async def eval(self, task: Task) -> Optional[Task]:
+        prediction = str(task.prediction) if task.prediction is not None else ""
+        ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
         
-        if extracted_pred is None:
-            return 0.0
+        # Extract answer from prediction
+        extracted_pred = None
+        if prediction:
+            # Try \boxed{}
+            boxed_matches = re.findall(r"\\boxed\{([^}]+)\}", prediction)
+            if boxed_matches:
+                extracted_pred = boxed_matches[-1]
+            else:
+                # Try Answer: $VALUE
+                answer_matches = re.findall(r"(?i)Answer:\s*(?:\$|\\\$)?\s*(-?[\d,]+)", prediction)
+                if answer_matches:
+                    extracted_pred = answer_matches[-1]
+                else:
+                    # Try #### VALUE (GSM8K style)
+                    if "####" in prediction:
+                        extracted_pred = prediction.split("####")[-1]
+                    else:
+                        # Fallback to last number
+                        numbers = re.findall(r"-?\d+", prediction)
+                        if numbers:
+                            extracted_pred = numbers[-1]
+
+        clean_pred = clean_text(extracted_pred) if extracted_pred is not None else None
+        clean_gt = clean_text(ground_truth)
         
-        return 1.0 if extracted_pred == clean_gt else 0.0
+        task.score = 1.0 if clean_pred == clean_gt and clean_pred is not None else 0.0
+        self._tasks.append(task)
+        return task
 
-    def _clean_number(self, text: str) -> str:
-        if not text:
-            return ""
-        text = text.strip().replace(",", "").replace("$", "")
-        try:
-            return str(int(float(text)))
-        except (ValueError, TypeError):
-            return text
-
-    def _extract_answer(self, prediction: str) -> Optional[str]:
-        if not prediction:
-            return None
-
-        # 1. Answer: $VALUE
-        prompt_pattern = r"(?i)Answer:\s*(?:\$|\\\$)?\s*(-?[\d,]+)"
-        matches = re.findall(prompt_pattern, prediction)
-        if matches:
-            return self._clean_number(matches[-1])
-
-        # 2. \boxed{VALUE}
-        boxed_pattern = r"\\boxed\{([^}]+)\}"
-        matches = re.findall(boxed_pattern, prediction)
-        if matches:
-            return self._clean_number(matches[-1])
-
-        # 3. #### VALUE
-        if "####" in prediction:
-            return self._clean_number(prediction.split("####")[-1])
-
-        # 4. Last number
-        numbers = re.findall(r"-?\d+", prediction)
-        if numbers:
-            return self._clean_number(numbers[-1])
-
-        return None
+    async def stats(self) -> Optional[Stats]:
+        total = len(self._data_records)
+        attempted = len(self._tasks)
+        correct = sum(1 for r in self._tasks if r.score and r.score >= 1.0)
+        
+        task_times = {r.task_id: r.time for r in self._tasks if r.time is not None}
+        avg_time = sum(task_times.values()) / len(task_times) if task_times else 0.0
+        
+        return Stats(
+            accuracy=correct / attempted if attempted > 0 else 0.0,
+            total=total,
+            correct=correct,
+            wrong=attempted - correct,
+            times=task_times,
+            average_time=avg_time
+        )
 

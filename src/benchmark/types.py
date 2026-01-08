@@ -5,6 +5,36 @@ import inflection
 from src.logger import logger
 from src.dynamic import dynamic_manager
 
+class Task(BaseModel):
+    """Data model for a single benchmark task"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    # Input
+    task_id: str = Field(description="Unique identifier for the task")
+    input: str = Field(description="The input prompt/question for the task")
+    system_prompt: Optional[str] = Field(default=None, description="The system prompt for the task")
+    ground_truth: Optional[Any] = Field(default=None, description="The expected correct answer")
+    
+    # Output
+    solution: Optional[Any] = Field(default=None, description="The solution to the task")
+    prediction: Optional[Any] = Field(default=None, description="The predicted answer")
+    time: Optional[float] = Field(default=0.0, description="The time taken to complete the task in seconds")
+    score: Optional[float] = Field(default=0.0, description="The score of the task")
+    
+    extra: Optional[Dict[str, Any]] = Field(default=None, description="Additional task-specific metadata")
+
+class Stats(BaseModel):
+    """Data model for benchmark statistics"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    accuracy: float = Field(default=0.0, description="Overall accuracy score")
+    total: int = Field(default=0, description="Total number of tasks")
+    correct: int = Field(default=0, description="Number of correct tasks")
+    wrong: int = Field(default=0, description="Number of wrong tasks")
+    times: Dict[str, float] = Field(default_factory=dict, description="Time taken for each task (task_id -> seconds)")
+    average_time: float = Field(default=0.0, description="Average time per task in seconds")
+    extra: Dict[str, Any] = Field(default_factory=dict, description="Additional statistics or information")
+
 class Benchmark(BaseModel):
     """Base class for all benchmark systems"""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
@@ -17,15 +47,8 @@ class Benchmark(BaseModel):
     subset: Optional[str] = Field(default=None, description="Subset name")
     path: str = Field(default="", description="Dataset path")
     
-    # Private attributes for state management
-    _dataset_instance: Any = PrivateAttr(default=None)
-    _ground_truth_map: Dict[str, str] = PrivateAttr(default_factory=dict)
-    _data_records: List[Dict] = PrivateAttr(default_factory=list)
-    _current_index: int = PrivateAttr(default=0)
-    _results: List[Dict] = PrivateAttr(default_factory=list)
-
     def __init__(self, **kwargs):
-        """Initialize benchmark system and instantiate data."""
+        """Initialize benchmark system."""
         super().__init__(**kwargs)
         # Auto-set name from class name if not provided
         if not self.name:
@@ -33,119 +56,33 @@ class Benchmark(BaseModel):
         # Auto-set description from docstring if not provided
         if not self.description and self.__class__.__doc__:
             self.description = self.__class__.__doc__.strip().split('\n')[0]
-            
-        # Each benchmark should instantiate its own data during init
-        self._dataset_instance = self._instantiate_dataset()
-        
-        # Automatically load data records and ground truth if dataset is available
-        if self._dataset_instance is not None and hasattr(self._dataset_instance, 'data'):
-            full_df = self._dataset_instance.data
-            if "task_id" in full_df.columns and "true_answer" in full_df.columns:
-                self._ground_truth_map = dict(zip(
-                    full_df["task_id"].astype(str), 
-                    full_df["true_answer"].astype(str)
-                ))
-            
-            # Cache data for step() iteration
-            self._data_records = full_df.to_dict(orient="records")
-            
-            # Initialize state
-            self.reset()
-            logger.info(f"| [{self.name}] ✅ Data instantiated and loaded. Size: {len(self._data_records)}")
 
-    def _instantiate_dataset(self) -> Any:
+    async def initialize(self) -> Any:
         """Instantiate the dataset. To be implemented by subclasses."""
-        return None
-
-    def get_task_description(self) -> str:
         raise NotImplementedError
 
-    # ================= State and Control Functions =================
-
-    def reset(self) -> Optional[Dict[str, Any]]:
+    async def reset(self) -> Optional[Task]:
         """
         Reset evaluation progress and statistics. Returns the first task.
         """
-        self._current_index = 0
-        self._results = []
-        logger.info(f"| [{self.name}] ✅ Progress reset. Ready to start.")
-        return self.step()
-
-    def step(self) -> Optional[Dict[str, Any]]:
-        """Get the next task to be tested."""
-        if self._current_index >= len(self._data_records):
-            return None
-        
-        # Get current record
-        record = self._data_records[self._current_index]
-        self._current_index += 1
-        
-        # Construct task object
-        task_id = str(record.get("task_id") or record.get("id",""))
-        task = {
-            "task_id": task_id,
-            "input": record.get("question") or record.get("prompt") or "",
-            "system_prompt": self.get_task_description(),
-            "ground_truth": record.get("true_answer") or record.get("answer") or self._ground_truth_map.get(task_id),
-            **{k: v for k, v in record.items() if k not in ["true_answer", "answer", "task_id", "id"]}
-        }
-        return task
-
-    @property
-    def progress(self) -> Tuple[int, int]:
-        """Return (current index, total count)."""
-        return self._current_index, len(self._data_records)
-
-    # ================= Evaluation and Statistics Functions =================
-
-    async def eval_task(self, prediction: str, ground_truth: Optional[str] = None, task_id: Optional[str] = None, **kwargs) -> float:
-        """Public interface for single task evaluation."""
-        if ground_truth is None and task_id is not None:
-            ground_truth = self._ground_truth_map.get(str(task_id))
-        
-        if ground_truth is None:
-            logger.error(f"| [{self.name}] ❌ Task ID '{task_id}' not found and no ground truth provided.")
-            score = 0.0
-            ground_truth = "N/A"
-        else:
-            score = await self._eval_logic(prediction, ground_truth, task_id=str(task_id) if task_id else None, **kwargs)
-            
-        # Record state
-        result_entry = {
-            "task_id": task_id,
-            "prediction": prediction,
-            "ground_truth": ground_truth,
-            "score": score,
-            "metadata": kwargs
-        }
-        self._results.append(result_entry)
-        
-        return score
-
-    async def _eval_logic(self, prediction: str, ground_truth: str, **kwargs) -> float:
         raise NotImplementedError
 
-    def get_stats(self) -> Dict[str, Any]:
+    async def step(self) -> Optional[Task]:
+        """Get the next task to be tested."""
+        raise NotImplementedError
+
+    async def eval(self, task: Task) -> Optional[Task]:
+        """Public interface for single task evaluation."""
+        raise NotImplementedError
+
+    async def stats(self) -> Optional[Stats]:
         """Calculate current overall statistics."""
-        total_attempted = len(self._results)
-        if total_attempted == 0:
-            return {"accuracy": 0.0, "total": 0, "correct": 0}
-        
-        correct_count = sum(1 for r in self._results if r["score"] >= 1.0)
-        accuracy = correct_count / total_attempted
-        
-        return {
-            "accuracy": accuracy,
-            "total_attempted": total_attempted,
-            "correct_count": correct_count,
-            "total_dataset_size": len(self._data_records),
-            "progress_percent": f"{(total_attempted / len(self._data_records))*100:.1f}%" if len(self._data_records) > 0 else "0%"
-        }
-
-    def get_results(self) -> List[Dict]:
-        """Get detailed results list."""
-        return self._results
-
+        raise NotImplementedError
+    
+    async def cleanup(self):
+        """Cleanup benchmark resources."""
+        pass
+    
 
 class BenchmarkConfig(BaseModel):
     """Benchmark configuration for registration"""

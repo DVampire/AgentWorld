@@ -1,58 +1,130 @@
 import re
-from typing import Optional, Any
-from .types import Benchmark
+from typing import Optional, Any, List, Dict
+from pydantic import Field, ConfigDict, PrivateAttr
+
+
+from src.benchmark.types import Benchmark, Task, Stats
 from src.registry import BENCHMARK
+from src.benchmark.utils import clean_text
+from src.utils import dedent
+
+SYSTEM_PROMPT = dedent("""
+    You are a helpful assistant that solves math contest problems. Please think step by step and provide the final answer in \\boxed{}.
+    
+    Example:
+    <example>
+    Problem: If a + b = 10 and a - b = 4, what is the value of a^2 - b^2?
+    
+    Solution:
+    Step 1: Solve for a and b
+    a + b = 10
+    a - b = 4
+    
+    Adding the two equations, we get 2a = 14, so a = 7.
+    Substituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.
+    
+    Step 2: Calculate a^2 - b^2
+    a^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40
+    
+    Step 3: Provide the final answer
+    The final answer is \\boxed{40}.
+    </example>
+    
+    Please solve the following problem:
+""")
 
 @BENCHMARK.register_module(force=True)
 class AIME24Benchmark(Benchmark):
     """
     AIME 2024 Benchmark implementation
     """
-    name: str = "aime24"
-    path: str = "datasets/AIME24"
-    def _instantiate_dataset(self) -> Any:
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="aime24", description="The name of the benchmark")
+    path: str = Field(default="datasets/AIME24", description="The path to the benchmark dataset")
+    
+    _data_records: List[Dict] = PrivateAttr(default_factory=list)
+    _index: int = PrivateAttr(default=0)
+    _tasks: List[Task] = PrivateAttr(default_factory=list)
+    
+    system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
+
+    async def initialize(self):
         from src.data.aime24 import AIME24Dataset
-        return AIME24Dataset(
+        dataset = AIME24Dataset(
             path=self.path,
-            name=self.subset if self.subset else "all",
-            split=self.split
+            name="all",
+            split="test"
+        )
+        if hasattr(dataset, 'data'):
+            self._data_records = dataset.data.to_dict(orient="records")
+        await self.reset()
+
+    async def reset(self) -> Optional[Task]:
+        self._index = 0
+        self._tasks = []
+        return await self.step()
+
+    async def step(self) -> Optional[Task]:
+        if self._index >= len(self._data_records):
+            return None
+        
+        record = self._data_records[self._index]
+        self._index += 1
+        
+        return Task(
+            task_id=f"{self._index:04d}",
+            input=record.get("question") or record.get("prompt") or "",
+            system_prompt=self.system_prompt,
+            ground_truth=record.get("true_answer") or record.get("answer"),
+            extra={k: v for k, v in record.items() if k not in ["true_answer", "answer", "task_id", "id", "question", "prompt"]}
         )
 
-    def get_task_description(self) -> str:
-        return "Please solve the following math contest problem. Put the final answer in \\boxed{}."
-
-    async def _eval_logic(self, prediction: str, ground_truth: str, **kwargs) -> float:
-        extracted_pred = self._extract_answer(prediction)
-        clean_gt = self._clean_number(ground_truth)
+    async def eval(self, task: Task) -> Optional[Task]:
+        solution = str(task.solution) if task.solution is not None else ""
+        ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
         
-        if extracted_pred is None:
-            return 0.0
-        
-        return 1.0 if extracted_pred == clean_gt else 0.0
+        # Extract answer from prediction
+        extracted_pred = None
+        if solution:
+            # Try \boxed{}
+            boxed_matches = re.findall(r"\\boxed\{([^}]+)\}", solution)
+            if boxed_matches:
+                extracted_pred = boxed_matches[-1]
+            else:
+                # Try Answer: $VALUE
+                answer_matches = re.findall(r"(?i)Answer:\s*(?:\$|\\\$)?\s*(-?[\d,]+)", solution)
+                if answer_matches:
+                    extracted_pred = answer_matches[-1]
+                else:
+                    # Fallback to last number
+                    numbers = re.findall(r"-?\d+", solution)
+                    if numbers:
+                        extracted_pred = numbers[-1]
 
-    def _clean_number(self, text: str) -> str:
-        if not text: return ""
-        text = text.strip().replace(",", "").replace("$", "")
-        try:
-            return str(int(float(text)))
-        except (ValueError, TypeError):
-            return text
-
-    def _extract_answer(self, prediction: str) -> Optional[str]:
-        if not prediction: return None
+        clean_pred = clean_text(extracted_pred) if extracted_pred is not None else None
+        clean_gt = clean_text(ground_truth)
         
-        boxed_pattern = r"\\boxed\{([^}]+)\}"
-        matches = re.findall(boxed_pattern, prediction)
-        if matches:
-            return self._clean_number(matches[-1])
-            
-        prompt_pattern = r"(?i)Answer:\s*(?:\$|\\\$)?\s*(-?[\d,]+)"
-        matches = re.findall(prompt_pattern, prediction)
-        if matches:
-            return self._clean_number(matches[-1])
-            
-        numbers = re.findall(r"-?\d+", prediction)
-        if numbers:
-            return self._clean_number(numbers[-1])
-            
-        return None
+        task.prediction = clean_pred
+        task.ground_truth = clean_gt
+
+        task.score = 1.0 if clean_pred == clean_gt and clean_pred is not None else 0.0
+        self._tasks.append(task)
+        return task
+
+    async def stats(self) -> Optional[Stats]:
+        total = len(self._data_records)
+        attempted = len(self._tasks)
+        correct = sum(1 for r in self._tasks if r.score and r.score >= 1.0)
+        
+        task_times = {r.task_id: r.time for r in self._tasks if r.time is not None}
+        avg_time = sum(task_times.values()) / len(task_times) if task_times else 0.0
+        
+        return Stats(
+            accuracy=correct / attempted if attempted > 0 else 0.0,
+            total=total,
+            correct=correct,
+            wrong=attempted - correct,
+            times=task_times,
+            average_time=avg_time
+        )

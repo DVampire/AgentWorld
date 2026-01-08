@@ -55,7 +55,7 @@ class OfflineTradingMemoryOutput(BaseModel):
 
 class ProcessDecision(BaseModel):
     should_process: bool = Field(description="Whether to process the trading memory")
-    reason: str = Field(description="Reason for the decision")
+    reasoning: str = Field(description="Reasoning for the decision")
 
 
 class OfflineTradingCombinedMemory:
@@ -165,9 +165,9 @@ class OfflineTradingCombinedMemory:
                 return False
             processed_decision_response = response.extra.parsed_model
             should_process = processed_decision_response.should_process
-            reason = processed_decision_response.reason
+            reasoning = processed_decision_response.reasoning
             
-            logger.info(f"| Offline trading memory processing decision: {should_process} - {reason}")
+            logger.info(f"| Offline trading memory processing decision: {should_process} - {reasoning}")
             return should_process
                 
         except Exception as e:

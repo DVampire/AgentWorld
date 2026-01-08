@@ -41,7 +41,7 @@ class SecurityWatchdog(BaseWatchdog):
 				BrowserErrorEvent(
 					error_type='NavigationBlocked',
 					message=f'Navigation blocked to disallowed URL: {event.url}',
-					details={'url': event.url, 'reason': 'not_in_allowed_domains'},
+					details={'url': event.url, 'reasoning': 'not_in_allowed_domains'},
 				)
 			)
 			# Stop event propagation by raising exception

@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.config import config
 from src.utils import assemble_project_path
 from src.logger import logger
-from src.benchmark.types import BenchmarkConfig, Benchmark
+from src.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats
 from src.benchmark.context import BenchmarkContextManager
 
 if TYPE_CHECKING:
@@ -72,21 +72,21 @@ class BenchmarkManager(BaseModel):
         """Get benchmark instance by name."""
         return await self.benchmark_context_manager.get(name)
 
-    async def reset(self, name: str) -> Optional[Dict[str, Any]]:
+    async def reset(self, name: str) -> Optional[Task]:
         """Reset benchmark progress."""
         return await self.benchmark_context_manager.reset(name)
 
-    async def step(self, name: str) -> Optional[Dict[str, Any]]:
+    async def step(self, name: str) -> Optional[Task]:
         """Get next benchmark task."""
         return await self.benchmark_context_manager.step(name)
 
-    async def eval_task(self, name: str, prediction: str, ground_truth: Optional[str] = None, task_id: Optional[str] = None, **kwargs) -> float:
+    async def eval(self, name: str, task: Task) -> Optional[Task]:
         """Evaluate a benchmark task."""
-        return await self.benchmark_context_manager.eval_task(name, prediction, ground_truth, task_id, **kwargs)
+        return await self.benchmark_context_manager.eval(name, task)
 
-    async def get_stats(self, name: str) -> Dict[str, Any]:
+    async def stats(self, name: str) -> Optional[Stats]:
         """Get benchmark statistics."""
-        return await self.benchmark_context_manager.get_stats(name)
+        return await self.benchmark_context_manager.stats(name)
 
     async def restore(self, name: str, version: str) -> Optional[BenchmarkConfig]:
         """Restore a specific version of a benchmark."""
@@ -114,7 +114,14 @@ class BenchmarkManager(BaseModel):
                     return 0.0
                 
                 try:
-                    return await benchmark.eval_task(prediction=pred, ground_truth=gt, task_id=t_id)
+                    # Create a Task object for evaluation
+                    task = Task(
+                        task_id=t_id,
+                        prediction=pred,
+                        ground_truth=gt
+                    )
+                    evaluated_task = await benchmark.eval(task)
+                    return evaluated_task.score if evaluated_task else 0.0
                 except Exception as e:
                     logger.error(f"| ❌ Eval failed for task {t_id}: {e}")
                     return 0.0

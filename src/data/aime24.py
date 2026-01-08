@@ -70,10 +70,3 @@ class AIME24Dataset:
     
     def __getitem__(self, index):
         return self.data.iloc[index]
-    
-    def get_task_description(self):
-        return (
-            "You will answer a challenging mathematics contest problem. Think step by step. "
-            "State intermediate reasoning clearly. The last line of your response should be "
-            "of the following format: 'Answer: $VALUE' where VALUE is a numerical value."
-        )

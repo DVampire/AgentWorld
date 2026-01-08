@@ -378,7 +378,7 @@ class BrowserConnectedEvent(BaseEvent):
 class BrowserStoppedEvent(BaseEvent):
 	"""Browser has stopped/disconnected."""
 
-	reason: str | None = None
+	reasoning: str | None = None
 
 	event_timeout: float | None = _get_timeout('TIMEOUT_BrowserStoppedEvent', 30.0)  # seconds
 

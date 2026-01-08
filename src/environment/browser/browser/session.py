@@ -868,7 +868,7 @@ class BrowserSession(BaseModel):
 		try:
 			# Check if we should keep the browser alive
 			if self.browser_profile.keep_alive and not event.force:
-				self.event_bus.dispatch(BrowserStoppedEvent(reason='Kept alive due to keep_alive=True'))
+				self.event_bus.dispatch(BrowserStoppedEvent(reasoning='Kept alive due to keep_alive=True'))
 				return
 
 			# Clean up cloud browser session if using cloud browser
@@ -890,7 +890,7 @@ class BrowserSession(BaseModel):
 
 			# Notify stop and wait for all handlers to complete
 			# LocalBrowserWatchdog listens for BrowserStopEvent and dispatches BrowserKillEvent
-			stop_event = self.event_bus.dispatch(BrowserStoppedEvent(reason='Stopped by request'))
+			stop_event = self.event_bus.dispatch(BrowserStoppedEvent(reasoning='Stopped by request'))
 			await stop_event
 
 		except Exception as e:

@@ -18,7 +18,7 @@ class ImprovedVariables(BaseModel):
 
 class EvaluationResult(BaseModel):
     is_satisfied: bool = Field(description="Whether the current solution and variables are satisfactory and optimization can stop")
-    reason: str = Field(description="The reason for the decision")
+    reasoning: str = Field(description="The reasoning for the decision")
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
@@ -275,7 +275,7 @@ class ReflectionOptimizer(Optimizer):
 
             Review the current solution and reasoning provided below and decide if the optimization process can stop.
             If the solution is correct, complete, and follows all requirements, set is_satisfied to True.
-            Otherwise, set is_satisfied to False and provide the reason.
+            Otherwise, set is_satisfied to False and provide the reasoning.
 
             Return your decision in the specified structured format.
             """)
@@ -295,11 +295,11 @@ class ReflectionOptimizer(Optimizer):
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_format=EvaluationResult)
             evaluation: EvaluationResult = response.extra.parsed_model
-            logger.info(f"| Evaluation result: Satisfied={evaluation.is_satisfied}, Reason: {evaluation.reason}")
+            logger.info(f"| Evaluation result: Satisfied={evaluation.is_satisfied}, Reasoning: {evaluation.reasoning}")
             return evaluation
         except Exception as e:
             logger.warning(f"| ⚠️ Evaluation failed: {e}. Optimization will continue...")
-            return EvaluationResult(is_satisfied=False, reason=f"Evaluation failed: {e}")
+            return EvaluationResult(is_satisfied=False, reasoning=f"Evaluation failed: {e}")
     
     async def optimize(
         self,
@@ -577,7 +577,7 @@ class ReflectionOptimizer(Optimizer):
                 )
                 
                 if evaluation.is_satisfied:
-                    logger.info(f"| 🎉 Early termination triggered: {evaluation.reason}")
+                    logger.info(f"| 🎉 Early termination triggered: {evaluation.reasoning}")
                     break
                 
                 logger.info(f"| ✅ Optimization step {opt_step + 1} completed\n")

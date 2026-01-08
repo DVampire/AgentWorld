@@ -14,7 +14,7 @@ from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
-from src.benchmark.types import BenchmarkConfig, Benchmark
+from src.benchmark.types import BenchmarkConfig, Benchmark, Task, Stats
 from src.dynamic import dynamic_manager
 from src.registry import BENCHMARK
 
@@ -456,34 +456,41 @@ class BenchmarkContextManager(BaseModel):
 
     async def cleanup(self):
         """Cleanup active benchmarks."""
+        for name, config in self._benchmark_configs.items():
+            if config.instance is not None and hasattr(config.instance, "cleanup"):
+                try:
+                    await config.instance.cleanup()
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Error during benchmark {name} cleanup: {e}")
+        
         self._benchmark_configs.clear()
         self._benchmark_history_versions.clear()
         logger.info("| 🧹 Benchmark context manager cleaned up")
 
-    async def reset(self, name: str) -> Optional[Dict[str, Any]]:
+    async def reset(self, name: str) -> Optional[Task]:
         """Reset benchmark progress (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
-        return instance.reset()
+        return await instance.reset()
 
-    async def step(self, name: str) -> Optional[Dict[str, Any]]:
+    async def step(self, name: str) -> Optional[Task]:
         """Get next benchmark task (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
-        return instance.step()
+        return await instance.step()
 
-    async def eval_task(self, name: str, prediction: str, ground_truth: Optional[str] = None, task_id: Optional[str] = None, **kwargs) -> float:
+    async def eval(self, name: str, task: Task) -> Optional[Task]:
         """Evaluate a benchmark task (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
-        return await instance.eval_task(prediction, ground_truth, task_id, **kwargs)
+        return await instance.eval(task)
 
-    async def get_stats(self, name: str) -> Dict[str, Any]:
+    async def stats(self, name: str) -> Optional[Stats]:
         """Get benchmark statistics (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
-        return instance.get_stats()
+        return await instance.stats()

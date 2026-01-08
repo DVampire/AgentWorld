@@ -23,7 +23,7 @@ class CombinedMemoryOutput(BaseModel):
 
 class ProcessDecision(BaseModel):
     should_process: bool = Field(description="Whether to process the memory")
-    reason: str = Field(description="Reason for the decision")
+    reasoning: str = Field(description="Reasoning for the decision")
 
 class CombinedMemory:
     """Combined memory that handles both summaries and insights using structured output"""
@@ -145,9 +145,9 @@ class CombinedMemory:
                 return False
             processed_decision_response = response.extra.parsed_model
             should_process = processed_decision_response.should_process
-            reason = processed_decision_response.reason
+            reasoning = processed_decision_response.reasoning
             
-            logger.info(f"| Memory processing decision: {should_process} - {reason}")
+            logger.info(f"| Memory processing decision: {should_process} - {reasoning}")
             return should_process
                 
         except Exception as e:
