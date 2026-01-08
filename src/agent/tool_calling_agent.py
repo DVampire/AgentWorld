@@ -14,7 +14,6 @@ from src.utils import dedent
 from src.tool.server import tcp
 from src.environment.server import ecp
 from src.memory import memory_manager, EventType
-from src.tool.types import ToolResponse
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.registry import AGENT

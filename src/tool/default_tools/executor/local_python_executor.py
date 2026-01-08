@@ -86,6 +86,7 @@ BASE_BUILTIN_MODULES = [
     "json",
     "csv",
     "os",
+    "sympy",
 ]
 
 BASE_PYTHON_TOOLS = {

@@ -118,10 +118,10 @@ class CombinedMemory:
         Current conversation has {self.size()} events.
 
         Decision criteria:
-        1. If there are fewer than 3 events, do not process the memory.
+        1. If there are fewer than 5 events, do not process the memory.
         2. If the conversation is repetitive or doesn't add new information, do not process the memory.
         3. If there are significant new insights, decisions, or learnings, process the memory.
-        4. If the conversation is getting long (more than 5 events), process the memory.
+        4. If the conversation is getting long (more than 10 events), process the memory.
 
         Current memory:
         {current_memory}

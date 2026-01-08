@@ -5,7 +5,9 @@ from pydantic import BaseModel
 from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
+from src.message.types import SystemMessage, HumanMessage
 from src.memory import EventType
+from src.utils import dedent
 
 class ImprovedVariable(BaseModel):
     name: str = Field(description="The name of the variable")
@@ -13,6 +15,10 @@ class ImprovedVariable(BaseModel):
 
 class ImprovedVariables(BaseModel):
     variables: Dict[str, ImprovedVariable] = Field(default={}, description="The variables to improve")
+
+class EvaluationResult(BaseModel):
+    is_satisfied: bool = Field(description="Whether the current solution and variables are satisfactory and optimization can stop")
+    reason: str = Field(description="The reason for the decision")
 
 class ReflectionOptimizer(Optimizer):
     """Optimizer that improves agent prompts using the Reflection method."""
@@ -255,6 +261,45 @@ class ReflectionOptimizer(Optimizer):
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
+    
+    async def _evaluate_solution(self, task: str, execution_result: str) -> EvaluationResult:
+        """
+        Evaluate if the current solution is satisfactory.
+        """
+        logger.info(f"| ⚖️ Evaluating if optimization goal is reached...")
+        
+        system_prompt = dedent(f"""
+            You are an expert evaluator. Your task is to determine if the current agent solution and reasoning have successfully completed the given task.
+
+            Task: {task}
+
+            Review the current solution and reasoning provided below and decide if the optimization process can stop.
+            If the solution is correct, complete, and follows all requirements, set is_satisfied to True.
+            Otherwise, set is_satisfied to False and provide the reason.
+
+            Return your decision in the specified structured format.
+            """)
+        
+        user_message = dedent(f"""
+            Current Execution Result/Solution:
+            {execution_result}
+
+            Please evaluate if this solution is satisfactory.
+            """)
+        
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_message),
+        ]
+        
+        try:
+            response = await model_manager(model=self.model_name, messages=messages, response_format=EvaluationResult)
+            evaluation: EvaluationResult = response.extra.parsed_model
+            logger.info(f"| Evaluation result: Satisfied={evaluation.is_satisfied}, Reason: {evaluation.reason}")
+            return evaluation
+        except Exception as e:
+            logger.warning(f"| ⚠️ Evaluation failed: {e}. Optimization will continue...")
+            return EvaluationResult(is_satisfied=False, reason=f"Evaluation failed: {e}")
     
     async def optimize(
         self,
@@ -524,6 +569,16 @@ class ReflectionOptimizer(Optimizer):
                         logger.info(f"| ℹ️ Phase 2: No solution improvements suggested")
                 else:
                     logger.info(f"| ⏭️ Phase 2: Skipped (optimize_solution=False)")
+                
+                # ============ Evaluation Module: Check for early termination ============
+                evaluation = await self._evaluate_solution(
+                    task=task,
+                    execution_result=current_solution
+                )
+                
+                if evaluation.is_satisfied:
+                    logger.info(f"| 🎉 Early termination triggered: {evaluation.reason}")
+                    break
                 
                 logger.info(f"| ✅ Optimization step {opt_step + 1} completed\n")
                 
