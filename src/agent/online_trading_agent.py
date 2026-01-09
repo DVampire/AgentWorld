@@ -340,16 +340,6 @@ class OnlineTradingAgent(Agent):
             )
             self.step_number += 1
             
-            if done:
-                await memory_manager.add_event(
-                    memory_name=self.memory_name,
-                    step_number=self.step_number,
-                    event_type=EventType.TASK_END,
-                    data=dict(result=final_result),
-                    agent_name=self.name,
-                    task_id=task_id
-                )
-            
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
