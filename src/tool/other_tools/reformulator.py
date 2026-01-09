@@ -13,6 +13,12 @@ from src.registry import TOOL
 _REFORMULATOR_TOOL_DESCRIPTION = """Reformulator tool for reformulating final answers from agent conversations.
 This tool takes the original task and the conversation history, then uses an LLM to extract and format the final answer.
 Use this tool when you need to produce a clean, formatted final answer from a conversation transcript.
+
+Args:
+- task (str): The original task/question that was asked
+- data (List[str]): Conversation history in the form of a list of message texts.
+
+Example: {"name": "reformulator", "args": {"task": "What is the capital of France?", "data": ["The capital of France is Paris.", "The capital of France is Paris."]}}.
 """
 
 

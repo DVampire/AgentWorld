@@ -14,6 +14,11 @@ IMPORTANT:
 - Be careful with commands that modify the system or require elevated privileges. 
 - For file operations, ALWAYS use ABSOLUTE paths to avoid path-related issues. 
 - Input should be a VALID bash command string.
+
+Args:
+- command (str): The command to execute. If file path is necessary, it should be an absolute path.
+
+Example: {"name": "bash", "args": {"command": "ls -l /path/to/file.txt"}}.
 """
 
 @TOOL.register_module(force=True)

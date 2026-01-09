@@ -23,6 +23,14 @@ This tool will:
 3. If no suitable tools exist, generate new tool implementations
 4. Evaluate newly created tools for correctness and integration compatibility
 5. Register validated tools in TCP for reuse by other agents
+
+Args:
+- task (str): The task to complete.
+- tool_name (Optional[str]): Optional explicit tool name. If not provided, will be generated from task.
+- description (Optional[str]): Optional explicit tool description. If not provided, will be generated from task.
+- call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
+
+Example: {"name": "tool_generator", "args": {"task": "Analyze the given files and provide a summary of the findings.", "tool_name": "deep_analyzer", "description": "Analyze the given files and provide a summary of the findings.", "call_id": "1234567890"}}.
 """
 
 class ToolSpecification(BaseModel):

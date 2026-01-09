@@ -336,24 +336,25 @@ class GoogleChatSerializer:
         Google Gemini uses response_schema:
         - Format: JSON Schema object
         - Requires response_mime_type: "application/json"
+        - CRITICAL: Google has strict nesting depth limits, so we use OpenRouter's optimization
         
         Args:
             response_format: BaseModel class, instance, or dict
             
         Returns:
             Dictionary containing response_schema configuration:
-            - response_schema: JSON schema
+            - response_schema: JSON schema (optimized to reduce nesting depth)
             - response_mime_type: "application/json"
         """
+        # Import OpenRouter serializer to reuse optimization logic
+        # Google has strict nesting depth limits, so we need aggressive optimization
+        from src.model.openrouter.serializer import OpenRouterChatSerializer
+        
         if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            # Pydantic model class - get JSON schema
-            schema = response_format.model_json_schema()
-            # Ensure additionalProperties: false for structured output
-            if schema.get("type") == "object" and "additionalProperties" not in schema:
-                schema["additionalProperties"] = False
-            elif "properties" in schema and "type" not in schema:
-                schema["type"] = "object"
-                schema["additionalProperties"] = False
+            # Use OpenRouter serializer's optimization (same logic applies to Google)
+            optimized = OpenRouterChatSerializer.serialize_response_format(response_format)
+            # Extract the optimized schema
+            schema = optimized["json_schema"]["schema"]
             
             return {
                 'response_schema': schema,
@@ -362,13 +363,8 @@ class GoogleChatSerializer:
         elif isinstance(response_format, BaseModel):
             # BaseModel instance - get the class
             model_class = type(response_format)
-            schema = model_class.model_json_schema()
-            # Ensure additionalProperties: false
-            if schema.get("type") == "object" and "additionalProperties" not in schema:
-                schema["additionalProperties"] = False
-            elif "properties" in schema and "type" not in schema:
-                schema["type"] = "object"
-                schema["additionalProperties"] = False
+            optimized = OpenRouterChatSerializer.serialize_response_format(model_class)
+            schema = optimized["json_schema"]["schema"]
             
             return {
                 'response_schema': schema,

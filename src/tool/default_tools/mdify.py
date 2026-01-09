@@ -25,6 +25,12 @@ Supported file formats:
 - Plain text files
 
 The tool will extract text content, tables, metadata, and other structured information from these files, convert them into readable markdown format, and save the result as a .md file in the base_dir folder.
+
+Args:
+- file_path (str): The absolute path to the file to convert.
+- output_format (str): The output format.
+
+Example: {"name": "mdify", "args": {"file_path": "/path/to/file.pdf", "output_format": "markdown"}}.
 """
 
 @TOOL.register_module(force=True)

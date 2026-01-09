@@ -6,7 +6,7 @@ import asyncio
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra
 from src.logger import logger
 from src.agent.server import acp
 from src.memory import memory_manager, SessionInfo, EventType

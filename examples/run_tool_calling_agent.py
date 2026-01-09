@@ -77,11 +77,6 @@ async def main():
     await acp.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents initialized: {await acp.list()}")
     
-    # Transformation ECP to TCP
-    logger.info("| 🔄 Transformation start...")
-    await transformation.transform(type="e2t", env_names=config.env_names)
-    logger.info(f"| ✅ Transformation completed: {await tcp.list()}")
-    
     # Initialize version manager, must after tool, agent, environment initialized
     logger.info("| 📁 Initializing version manager...")
     await version_manager.initialize()
@@ -91,7 +86,7 @@ async def main():
     # task = """If Eliud Kipchoge could maintain his record-making marathon pace indefinitely, how many thousand hours would it take him to run the distance between the Earth and the Moon its closest approach? Please use the minimum perigee value on the Wikipedia page for the Moon when carrying out your calculation. Round your result to the nearest 1000 hours and do not use any comma separators if necessary."""
     # task = """Where were the Vietnamese specimens described by Kuznetzov in Nedoshivina's 2010 paper eventually deposited? Just give me the city name without abbreviations."""
     # task = "Write a mini game about a cat that can fly and fight enemies, and then push it to github."
-    task = "Find an image of Pikachu and count how many tails does Pikachu have."
+    task = "Calculate the 2x-1=15 equation, what is the value of x?"
     files = []
     
     logger.info(f"| 📋 Task: {task}")

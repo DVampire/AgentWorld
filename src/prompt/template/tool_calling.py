@@ -126,6 +126,11 @@ You have access to a `todo` tool for task planning. Use it strategically based o
 - If any `todo.md` items are finished, mark them as complete in the file.
 </todo_rules>
 
+<available_tools>
+You will be provided with the available tools in <tool_context>.
+[A list of available tools.]
+</available_tools>
+
 </tool_context_rules>
 """
 
@@ -156,17 +161,14 @@ You must ALWAYS respond with a valid JSON in this exact format.
 DO NOT add any other text like "```json" or "```" or anything else:
 
 {
-  "thinking": "A structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
-  "evaluation_previous_goal": "One-sentence analysis of your last tool usage. Clearly state success, failure, or uncertainty.",
-  "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
-  "next_goal": "State the next immediate goals and tool calls to achieve them, in one clear sentence.",
-  "tool": [
-    {"name": "tool_name", "args": {tool-specific parameters}}
-    // ... more tools in sequence
-  ]
+        "thinking": "A structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
+        "evaluation_previous_goal": "One-sentence analysis of your last tool usage. Clearly state success, failure, or uncertainty.",
+        "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
+        "next_goal": "State the next immediate goals and tool calls to achieve them, in one clear sentence.",
+        "tool": The list of available tools to be executed in sequence. e.g., [{"name": "tool_name", "args": {"param1": "value1", "param2": "value2"}}, ...]
 }
 
-Tool list should NEVER be empty.
+Tool list should NEVER be empty. You must select tools with valid `name` and `args` from the <available_tools> list.
 </output>
 """
 

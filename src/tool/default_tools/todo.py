@@ -51,7 +51,6 @@ Available operations:
 7. export: Export todo.md to a specified path.
     - export_path: The target path to export the todo.md file.
 
-Input format: JSON string with 'action' and action-specific parameters.
 Example: {"name": "todo", "args": {"action": "add", "task": "Task description", "priority": "high", "category": "work"}}
 
 The todo.md file is maintained in the current working directory and follows a structured format for task management.

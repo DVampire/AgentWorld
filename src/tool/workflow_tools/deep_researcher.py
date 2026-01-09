@@ -15,7 +15,7 @@ from src.message.types import HumanMessage, SystemMessage
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.tool.default_tools.web_searcher import WebSearcherTool
 from src.registry import TOOL
-from src.tool.workflow_tools.report import Report
+from src.tool.workflow_tools.reporter import Report
 
 
 _DEEP_RESEARCHER_DESCRIPTION = """Deep research tool that performs multi-round web search and content analysis.
@@ -24,6 +24,15 @@ This tool will:
 2. Use web_searcher to search, fetch, and summarize web pages
 3. Evaluate if the answer is found based on the summaries
 4. If not found, generate new queries and repeat (up to max rounds)
+
+Args:
+- task (str): The research task or question to investigate
+- image (Optional[str]): Optional image absolute path to analyze along with the task
+- filter_year (Optional[int]): Optional year filter for search results
+- title (Optional[str]): Title for the report. If not provided, uses default "Research Report".
+- call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
+
+Example: {"name": "deep_researcher", "args": {"task": "What is the capital of France?", "image": "/path/to/image.jpg", "filter_year": 2025, "title": "Research Report", "call_id": "1234567890"}}.
 """
 
 class CompletenessEvaluation(BaseModel):

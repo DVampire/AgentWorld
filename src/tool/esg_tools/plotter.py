@@ -39,6 +39,12 @@ This tool will:
 - Converting markdown tables to charts
 - Creating plots from CSV data files
 - Generating data visualizations automatically
+
+Args:
+- input_data (str): The input data - can be: Plain text data, Markdown table string, or Path to a CSV file
+- output_filename (Optional[str]): Optional custom filename for the output PNG. If not provided, a default name will be generated.
+
+Example: {"name": "plotter", "args": {"input_data": "The input data", "output_filename": "plot.png"}}.
 """
 
 

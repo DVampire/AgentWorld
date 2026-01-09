@@ -2,95 +2,23 @@
 
 import asyncio
 import os
-import pandas as pd
 from datetime import datetime
-from typing import List, Optional, Type, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 from langchain_core.messages import BaseMessage
-from pydantic import Field, ConfigDict, BaseModel
+from pydantic import Field, ConfigDict
 
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput
 from src.tool.types import ToolResponse
 from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
-
-def format_actions(actions: List[BaseModel]) -> str:
-    """Format actions as a Markdown table using pandas."""
-    rows = []
-    for action in actions:
-        if isinstance(action.args, dict):
-            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
-        else:
-            args_str = str(action.args)
-
-        rows.append({
-            "Action": action.name,
-            "Args": args_str,
-            "Output": action.output if action.output is not None else None
-        })
-    
-    df = pd.DataFrame(rows)
-    
-    if df["Output"].isna().all():
-        df = df.drop(columns=["Output"])
-    else:
-        df["Output"] = df["Output"].fillna("None")
-    
-    return df.to_markdown(index=True)
-
-class ThinkOutputBuilder:
-    def __init__(self):
-        self.schemas: Dict[str, type[BaseModel]] = {}
-
-    def register(self, schema: Dict[str, type[BaseModel]]):
-        """Register new args schema"""
-        self.schemas.update(schema)
-        return self  # Support chaining
-
-    def build(self):
-        """Generate Action and ThinkOutput models"""
-
-        # -------- Dynamically generate Action --------
-        schemas = self.schemas
-        ActionArgs = Union[tuple(schemas.values())]
-
-        class Action(BaseModel):
-            name: str = Field(description="The name of the action.")
-            args: ActionArgs = Field(description="The arguments of the action.")
-            output: Optional[str] = Field(default=None, description="The output of the action.")
-            
-            def __str__(self):
-                return f"Action: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
-            
-            def __repr__(self):
-                return self.__str__()
-
-        # -------- Dynamically generate ThinkOutput --------
-        class ThinkOutput(BaseModel):
-            thinking: str = Field(description="A structured <think>-style reasoning block.")
-            memory: str = Field(description="1-3 sentences of specific memory.")
-            action: List[Action] = Field(
-                description='[{"name": "action_name", "args": {...}}, ...]'
-            )
-
-            def __str__(self):
-                return (
-                    f"Thinking: {self.thinking}\n"
-                    f"Memory: {self.memory}\n"
-                    f"Action:\n{format_actions(self.action)}\n"
-                )
-            
-            def __repr__(self):
-                return self.__str__()
-
-        return ThinkOutput
 
 @AGENT.register_module(force=True)
 class OfflineTradingAgent(Agent):
@@ -155,9 +83,6 @@ class OfflineTradingAgent(Agent):
             if last_record:
                 self.record = last_record
         
-        self.think_output_builder = ThinkOutputBuilder()
-        self.think_output_builder.register(tcp.args_schemas())
-        self.ThinkOutput = self.think_output_builder.build()
         
     async def _get_agent_context(self, task: str) -> Dict[str, Any]:
         """Get the agent context."""
@@ -186,10 +111,10 @@ class OfflineTradingAgent(Agent):
                 agent_history += f"Task Start: {event.data['task']}\n"
             elif event.event_type == EventType.TASK_END:
                 agent_history += f"Task End: {event.data['result']}\n"
-            elif event.event_type == EventType.ACTION_STEP:
+            elif event.event_type == EventType.TOOL_STEP:
                 agent_history += f"Thinking: {event.data['thinking']}\n"
                 agent_history += f"Memory: {event.data['memory']}\n"
-                agent_history += f"Action: {event.data['action']}\n"
+                agent_history += f"Tool: {event.data['tool']}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         agent_history += "</agent_history>"
@@ -321,56 +246,53 @@ class OfflineTradingAgent(Agent):
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
         """Think and action for one step."""
         
-        # If the new tool is added, rebuild the ThinkOutput model
-        tcp_args_schema = tcp.args_schemas()
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
-        
         done = False
         final_result = None
         final_reasoning = None
         
-        record_action = {
+        record_tool = {
             "thinking": None,
+            "evaluation_previous_goal": None,
             "memory": None,
-            "action": [],
+            "next_goal": None,
+            "tool": [],
         }
         
         try:
-            model_response = await model_manager(
+            think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=self.ThinkOutput
+                response_format=ThinkOutput
             )
-            think_output = model_response.extra.parsed_model
+            think_output = think_output.extra.parsed_model
             
             thinking = think_output.thinking
+            evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
-            actions = think_output.action
+            next_goal = think_output.next_goal
+            tools = think_output.tool
             
-            # Update record action
-            record_action["thinking"] = thinking
-            record_action["memory"] = memory
+            # Update record tool
+            record_tool["thinking"] = thinking
+            record_tool["evaluation_previous_goal"] = evaluation_previous_goal
+            record_tool["memory"] = memory
+            record_tool["next_goal"] = next_goal
             
             logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
-            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
+            logger.info(f"| 🎯 Next Goal: {next_goal}")
+            logger.info(f"| 🔧 Tools to execute: {len(tools)}")
             
-            # Execute actions sequentially
-            action_results = []
+            # Execute tools sequentially
+            tool_results = []
             
-            for i, action in enumerate(actions):
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action.name}")
+            for i, tool in enumerate(tools):
+                logger.info(f"| 📝 Tool {i+1}/{len(tools)}: {tool.name}")
                 
                 # Execute the tool
-                tool_name = action.name
-                tool_args = action.args.model_dump()
+                tool_name = tool.name
+                tool_args = tool.args if tool.args else {}
                 
-                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
+                logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 
                 input = {
                     "name": tool_name,
@@ -380,20 +302,20 @@ class OfflineTradingAgent(Agent):
                 tool_result = tool_response.message
                 tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
-                logger.info(f"| ✅ Action {i+1} completed successfully")
+                logger.info(f"| ✅ Tool {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
                 
-                # Update action with result
-                action_dict = action.model_dump()
-                action_dict["output"] = tool_result
-                action_results.append(action_dict)
+                # Update tool with result
+                tool_dict = tool.model_dump()
+                tool_dict["output"] = tool_result
+                tool_results.append(tool_dict)
                 
-                # Update record action
-                action_extra_dict = {}
-                action_extra_dict.update(action_dict)
+                # Update record tool
+                tool_extra_dict = {}
+                tool_extra_dict.update(tool_dict)
                 if tool_extra is not None:
-                    action_extra_dict['extra'] = tool_extra.model_dump()
-                record_action["action"].append(action_extra_dict)
+                    tool_extra_dict['extra'] = tool_extra.model_dump()
+                record_tool["tool"].append(tool_extra_dict)
                     
                 if tool_name == "done":
                     done = True
@@ -403,12 +325,14 @@ class OfflineTradingAgent(Agent):
             
             event_data = {
                 "thinking": thinking,
+                "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
-                "action": action_results
+                "next_goal": next_goal,
+                "tool": tool_results
             }
             
-            # Update record action
-            self.record.action = record_action
+            # Update record tool
+            self.record.tool = record_tool
             
             await memory_manager.add_event(
                 memory_name=self.memory_name,
@@ -503,7 +427,7 @@ class OfflineTradingAgent(Agent):
             
             # Update tracer and save to json
             self.tracer.add_record(observation=self.record.observation, 
-                                   action=self.record.action,
+                                   tool=self.record.tool,
                                    session_id=session_id,
                                    task_id=task_id)
             self.tracer.save_to_json(self.tracer_save_path)

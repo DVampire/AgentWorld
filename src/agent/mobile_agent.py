@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra
 from src.logger import logger
 from src.utils import get_file_info, dedent
 from src.agent.server import acp

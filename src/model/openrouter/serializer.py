@@ -391,202 +391,176 @@ class OpenRouterChatSerializer:
         response_format: Union[Type[BaseModel], BaseModel]
     ) -> Dict[str, Any]:
         """
-        Format response_format from Pydantic model to OpenRouter-compatible JSON schema format.
-        
-        This function:
-        1. Resolves $ref references
-        2. Adds additionalProperties: false to all object types (OpenRouter requirement)
-        3. Ensures all properties are in required array (OpenRouter strict mode requirement)
-        
-        Args:
-            response_format: BaseModel class or instance
+        Format response_format from Pydantic model to OpenRouter JSON schema format.
             
-        Returns:
-            Dictionary containing response format configuration with:
-            - type: "json_schema"
-            - json_schema: Contains name, strict mode, and optimized schema
+        Example 1:
+        class BashToolInputArgs(BaseModel):
+            command: str = Field(description="The command to execute.")
+            file_path: Optional[str] = Field(default=None, description="The file path to execute the command.")
+            
+        output:
+        {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "response",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The command to execute.",
+                        },
+                        "file_path": {
+                            "type": "string",
+                            "description": "The file path to execute the command.",
+                        },
+                    },
+                    "additionalProperties": False,
+                    "required": ["command"],
+                },
+            },
+        }
+        
+        Example 2:
+        class Tool(BaseModel):
+            name: str
+            args: Optional[Dict[str, Any]] = Field(default=None, description="The arguments to the tool.")
+            
+        class ThinkOutput(BaseModel):
+            thinking: str = Field(description="The thinking to complete the task.")
+            evaluation_previous_goal: str = Field(description="The evaluation of the previous goal.")
+            memory: str = Field(description="The memory to complete the task.")
+            next_goal: str = Field(description="The next goal to complete the task.")
+            tool: List[Tool] = Field(description="The tool to complete the task.")
+            
+        output:
+        {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "think_output_response",
+                "strict": true,
+                "schema": {
+                "type": "object",
+                "properties": {
+                    "thinking": { "type": "string", "description": "The thinking to complete the task." },
+                    "evaluation_previous_goal": { "type": "string", "description": "The evaluation of the previous goal." },
+                    "memory": { "type": "string", "description": "The memory to complete the task." },
+                    "next_goal": { "type": "string", "description": "The next goal to complete the task." },
+                    "tool": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                        "name": { "type": "string", "description": "The name of the tool." },
+                        "args": {
+                                "type": "object",
+                                "description": "The arguments to the tool.",
+                                "additionalProperties": true
+                            }
+                        },
+                        "required": ["name"],
+                        "additionalProperties": false
+                    }
+                    }
+                },
+                "required": ["thinking", "evaluation_previous_goal", "memory", "next_goal", "tool"],
+                "additionalProperties": false
+                }
+            }
+        }
         """
-        # Get the BaseModel class if it's an instance
-        if isinstance(response_format, BaseModel) and not isinstance(response_format, type):
-            model_class = type(response_format)
-        else:
-            model_class = response_format
-        
-        # Get JSON schema from Pydantic model
+        model_class = response_format if isinstance(response_format, type) else type(response_format)
         schema = model_class.model_json_schema()
-        
-        # Build a lookup for $defs to resolve references
-        defs_lookup = schema.get("$defs", {})
-        
-        def optimize_schema(obj: Any, defs: Dict[str, Any] = None) -> Any:
-            """
-            Recursively process schema to:
-            1. Resolve $ref references
-            2. Add additionalProperties: false to all object types (OpenRouter requirement)
-            3. Preserve types, descriptions, and default values
-            """
-            if defs is None:
-                defs = defs_lookup
-            
-            if isinstance(obj, dict):
-                optimized = {}
-                
-                # Handle $ref references
-                if "$ref" in obj:
-                    ref_path = obj["$ref"]
-                    if ref_path.startswith("#/$defs/"):
-                        def_name = ref_path.split("/")[-1]
-                        if def_name in defs:
-                            # Resolve the reference and recursively optimize
-                            return optimize_schema(defs[def_name], defs)
-                
-                # Process all keys
-                for key, value in obj.items():
-                    # Skip $ref as we handle it above
-                    if key == "$ref":
-                        continue
-                    
-                    # Recursively process nested structures
-                    if key == "items":
-                        # Process items and ensure it has type if it's a dict
-                        processed_items = optimize_schema(value, defs)
-                        if isinstance(processed_items, dict) and "type" not in processed_items:
-                            # If items is a dict without type, infer it from context
-                            # Check if it has properties (object) or other indicators
-                            if "properties" in processed_items:
-                                processed_items = {**processed_items, "type": "object"}
-                            elif "$ref" in processed_items:
-                                # Keep $ref as is, it will be resolved
-                                pass
-                            else:
-                                # Default to "string" for simple types
-                                processed_items = {**processed_items, "type": "string"}
-                        optimized[key] = processed_items
-                    elif key in ["properties"]:
-                        optimized[key] = optimize_schema(value, defs)
-                    elif key == "anyOf" or key == "oneOf" or key == "allOf":
-                        # Handle union types
-                        processed_items = [optimize_schema(item, defs) for item in value] if isinstance(value, list) else value
-                        # Fix required fields in oneOf/anyOf items - ensure required only contains keys that exist in properties
-                        if isinstance(processed_items, list):
-                            for item in processed_items:
-                                if isinstance(item, dict):
-                                    properties = item.get("properties", {})
-                                    required = item.get("required", [])
-                                    if required and properties:
-                                        # Filter required to only include keys that exist in properties
-                                        item["required"] = [r for r in required if r in properties]
-                        optimized[key] = processed_items
-                    elif isinstance(value, (dict, list)):
-                        optimized[key] = optimize_schema(value, defs)
-                    else:
-                        optimized[key] = value
-                
-                # CRITICAL: Ensure array items have type key (double-check after processing)
-                if optimized.get("type") == "array" and "items" in optimized:
-                    items = optimized["items"]
-                    if isinstance(items, dict) and "type" not in items and "$ref" not in items:
-                        # If items is a dict without type and no $ref, add default type
-                        if "properties" in items:
-                            optimized["items"] = {**items, "type": "object"}
-                        else:
-                            optimized["items"] = {**items, "type": "string"}
-                
-                # CRITICAL: Fix required fields - ensure required only contains keys that exist in properties
-                if "required" in optimized and "properties" in optimized:
-                    properties = optimized["properties"]
-                    required = optimized["required"]
-                    if isinstance(required, list) and isinstance(properties, dict):
-                        # Filter required to only include keys that exist in properties
-                        optimized["required"] = [r for r in required if r in properties]
-                
-                # CRITICAL: Add additionalProperties: false to ALL objects for OpenRouter
-                if optimized.get("type") == "object":
-                    optimized["additionalProperties"] = False
-                # Also handle root level if it has properties but no explicit type
-                elif "properties" in optimized and "type" not in optimized:
-                    optimized["type"] = "object"
-                    optimized["additionalProperties"] = False
-                
-                return optimized
-            elif isinstance(obj, list):
-                return [optimize_schema(item, defs) for item in obj]
-            else:
+        defs = schema.pop("$defs", {})  # 移除 $defs，避免在最终结果中出现
+
+        def transform(obj: Any) -> Any:
+            if not isinstance(obj, dict):
                 return obj
-        
-        # Optimize the entire schema
-        optimized_schema = optimize_schema(schema)
-        
-        # CRITICAL: Fix required fields at root level - ensure required only contains keys that exist in properties
-        if "required" in optimized_schema and "properties" in optimized_schema:
-            properties = optimized_schema["properties"]
-            required = optimized_schema["required"]
-            if isinstance(required, list) and isinstance(properties, dict):
-                # Filter required to only include keys that exist in properties
-                optimized_schema["required"] = [r for r in required if r in properties]
-        
-        # Ensure root schema has additionalProperties: false if it's an object
-        if optimized_schema.get("type") == "object" and "additionalProperties" not in optimized_schema:
-            optimized_schema["additionalProperties"] = False
-        # Also handle root level if it has properties but no explicit type
-        elif "properties" in optimized_schema and "type" not in optimized_schema:
-            optimized_schema["type"] = "object"
-            optimized_schema["additionalProperties"] = False
-        
-        # Fix required array: OpenRouter requires that if 'required' exists,
-        # it must include ALL properties. This means all fields in properties must be in required.
-        def fix_required_array(obj: Any, defs: Dict[str, Any] = None) -> Any:
-            """Fix required arrays to include all properties for OpenRouter."""
-            if defs is None:
-                defs = defs_lookup
             
-            if isinstance(obj, dict):
-                fixed = {}
-                
-                # Handle $ref references
-                if "$ref" in obj:
-                    ref_path = obj["$ref"]
-                    if ref_path.startswith("#/$defs/"):
-                        def_name = ref_path.split("/")[-1]
-                        if def_name in defs:
-                            return fix_required_array(defs[def_name], defs)
-                
-                # Process all keys
-                for key, value in obj.items():
-                    if key == "$ref":
-                        continue
-                    elif isinstance(value, (dict, list)):
-                        fixed[key] = fix_required_array(value, defs)
+            # 展开所有引用，确保完全内联
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                if ref_path.startswith("#/$defs/"):
+                    def_name = ref_path.split("/")[-1]
+                    if def_name in defs:
+                        return transform(defs[def_name])
+                return {"type": "object", "additionalProperties": True}
+            
+            # 处理 Union 结构 (anyOf, oneOf, allOf) - 用于处理 Optional 字段
+            for k in ["anyOf", "oneOf", "allOf"]:
+                if k in obj:
+                    items = obj[k]
+                    non_null = [i for i in items if isinstance(i, dict) and i.get("type") != "null"]
+                    if len(non_null) == 1:
+                        # 保留原始对象的 description 和 title
+                        result = transform(non_null[0])
+                        if isinstance(result, dict):
+                            if "description" in obj and "description" not in result:
+                                result["description"] = obj["description"]
+                            if "title" in obj and "title" not in result:
+                                result["title"] = obj["title"]
+                        return result
                     else:
-                        fixed[key] = value
+                        return {
+                            "type": "object",
+                            "description": obj.get("description", "Simplified Object"),
+                            "additionalProperties": True 
+                        }
+
+            # 处理对象
+            if obj.get("type") == "object" or "properties" in obj:
+                props = obj.get("properties", {})
+                required = obj.get("required", [])
+                new_props = {}
+                new_required = []
                 
-                # Fix required array for object types
-                if fixed.get("type") == "object" and "properties" in fixed:
-                    properties = fixed.get("properties", {})
-                    
-                    # OpenRouter requires ALL properties to be in required array
-                    all_property_keys = list(properties.keys())
-                    if all_property_keys:
-                        fixed["required"] = all_property_keys
-                    elif "required" in fixed:
-                        # If no properties, keep empty required array
-                        fixed["required"] = []
+                for k, v in props.items():
+                    new_props[k] = transform(v)
+                    if k in required:
+                        new_required.append(k)
                 
-                return fixed
-            elif isinstance(obj, list):
-                return [fix_required_array(item, defs) for item in obj]
-            else:
-                return obj
-        
-        # Fix required arrays in the optimized schema
-        optimized_schema = fix_required_array(optimized_schema)
-        
-        # Build the response format dictionary
+                # 对于 Dict[str, Any] 类型（没有 properties 或 properties 为空），保留 additionalProperties: true
+                # 否则设置为 False（严格模式）
+                if not new_props and obj.get("additionalProperties") is True:
+                    additional_props = True
+                else:
+                    additional_props = False
+                
+                result = {
+                    "type": "object",
+                    "properties": new_props,
+                    "required": new_required,
+                    "additionalProperties": additional_props
+                }
+                # 保留 description 和 title 等元数据
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # 处理数组
+            if obj.get("type") == "array":
+                result = {
+                    "type": "array",
+                    "items": transform(obj.get("items", {}))
+                }
+                # 保留 description 和 title 等元数据
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # 对于其他类型，保留所有字段（包括 description、title 等）
+            return obj
+
         return {
             "type": "json_schema",
             "json_schema": {
                 "name": "response",
                 "strict": True,
-                "schema": optimized_schema,
+                "schema": transform(schema),
             },
         }

@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
 
-from src.agent.types import Agent, AgentResponse, AgentExtra
+from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
 from src.config import config
 from src.logger import logger
 from src.utils import dedent
@@ -71,7 +71,6 @@ class PlanningAgent(Agent):
     
     async def initialize(self):
         """Initialize the agent."""
-        # Call parent initialize to setup think_output_builder
         await super().initialize()
         
         self.tracer = Tracer()
@@ -168,25 +167,6 @@ class PlanningAgent(Agent):
     async def _think_and_tool(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
         """Think and tool calls for one step, with support for agent calls."""
         
-        # If the new tool is added, rebuild the ThinkOutput model
-        # Get all tools asynchronously and build args_schema dict
-        # Include both config.tool_names and tools from E2T transformation (all tools in TCP)
-        config_tool_names = config.tool_names
-        all_tcp_tools = await tcp.list()  # Get all tools registered in TCP (including from E2T and A2T)
-        # Combine config tools and all TCP tools, removing duplicates
-        tool_names = list(set(config_tool_names + all_tcp_tools))
-        tool_configs = await asyncio.gather(*[tcp.get_info(tool_name) for tool_name in tool_names])
-        tcp_args_schema = {
-            tool_config.name: tool_config.args_schema for tool_config in tool_configs if tool_config is not None
-        }
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
-        
         done = False
         final_result = None
         final_reasoning = None
@@ -203,7 +183,7 @@ class PlanningAgent(Agent):
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=self.ThinkOutput
+                response_format=ThinkOutput
             )
             think_output = think_output.extra.parsed_model
             
@@ -231,7 +211,7 @@ class PlanningAgent(Agent):
                 
                 # Execute the tool or agent
                 tool_name = tool.name
-                tool_args = tool.args.model_dump()
+                tool_args = tool.args if tool.args else {}
                 
                 logger.info(f"| 📝 Tool/Agent Name: {tool_name}, Args: {tool_args}")
                 

@@ -437,6 +437,9 @@ _REPORT_DESCRIPTION = """Report tool for managing and refining markdown reports.
 2. Use `complete` with the SAME `call_id` to optimize the entire report with LLM
 
 ⚠️ IMPORTANT: You MUST use the same `call_id` for all calls to the same report. Different `call_id` values create separate reports.
+
+Example: {"name": "reporter", "args": {"action": "add", "call_id": "1234567890", "file_path": "/path/to/file.md", "content": "The content of the file."}}.
+Example: {"name": "reporter", "args": {"action": "complete", "call_id": "1234567890"}}.
 """
 
 

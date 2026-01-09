@@ -40,7 +40,7 @@ class ModelManager:
         self.model_clients: Dict[str, Union[ChatOpenAI, ResponseOpenAI, TranscribeOpenAI, EmbeddingOpenAI, ChatOpenRouter, ChatAnthropic]] = {}
         
         # Default parameters
-        self.max_tokens: int = 65536
+        self.max_tokens: int = 16384
         self.default_temperature: float = 0.7
         self.default_reasoning: Dict[str, Any] = {
             "reasoning_effort": "high"

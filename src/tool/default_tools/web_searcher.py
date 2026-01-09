@@ -25,7 +25,18 @@ This tool performs deep research by:
 2. Fetching and analyzing content from each webpage
 3. Summarizing each page based on the query
 4. Merging all summaries into a comprehensive report with citations.
-If the primary search engine fails, it automatically falls back to alternative engines."""
+If the primary search engine fails, it automatically falls back to alternative engines.
+
+
+Args:
+- query (str): The search query to submit to the search engine.
+- num_results (Optional[int]): The number of search results to return.
+- lang (Optional[str]): Language code for search results.
+- country (Optional[str]): Country code for search results.
+- filter_year (Optional[int]): Filter results by year.
+
+Example: {"name": "web_searcher", "args": {"query": "What is the capital of France?", "num_results": 5, "lang": "en", "country": "us", "filter_year": 2025}}.
+"""
 
 @TOOL.register_module(force=True)
 class WebSearcherTool(Tool):

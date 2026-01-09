@@ -14,7 +14,7 @@ from src.utils import assemble_project_path
 from src.registry import TOOL
 from src.logger import logger
 from src.tool.types import Tool, ToolResponse, ToolExtra
-from src.tool.workflow_tools.report import Report
+from src.tool.workflow_tools.reporter import Report
 
 from src.tool.esg_tools.lightrag import LightRAG, QueryParam
 from src.tool.esg_tools.lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
@@ -38,6 +38,14 @@ This tool will:
 - Finding sustainability information
 - Retrieving governance and compliance data
 - If the information is not found, please ask the `browser_use_agent` to search the web.
+
+Args:
+- query (str): The query to search for in the vector database.
+- top_k (Optional[int]): The number of top results to retrieve.
+- query_mode (str): The query mode: "naive", "local", "global", "hybrid", or "mix".
+- extract_metadata (bool): Whether to extract structured ESG metadata from results.
+
+Example: {"name": "retriever", "args": {"query": "What is the capital of France?", "top_k": 5, "query_mode": "naive", "extract_metadata": True}}.
 """
 
 
