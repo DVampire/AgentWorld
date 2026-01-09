@@ -64,34 +64,21 @@ class LeetCodeDataset:
                         print(f"[Warning] Question file not found: {abs_file_path}")
                         # If description file is missing, skip this problem
                         continue
-                
-                # 2. Get code template for specified language
-                templates = row.get("code_template", {})
-                # Get user specified language, fallback to python3 or first available
-                code_stub = templates.get(self.lang, "")
-                if not code_stub and self.lang == "python3":
-                    # Try python (legacy field)
-                    code_stub = templates.get("python", "")
-                
-                # 3. Build Prompt
-                # Typical code generation Prompt: description + code stub
-                full_prompt = f"Problem Description:\n{question_content}\n\n" \
-                              f"Please write a solution in {self.lang}:\n```\n{code_stub}\n```"
+                    
+                code_template = row.get("code_template", {})
+            
 
                 # 4. Construct data row
                 data_row = {
                     "task_id": str(row.get("id", "")), # to string
-                    
                     "name": row.get("name", ""),
-                    
-                    "question": full_prompt,
+                    "question": question_content,
                     
                     # LeetCode datasets are typically for Code Generation,
                     # real verification requires Sandbox execution,
                     # true_answer is usually empty or contains test cases (if any)
                     "true_answer": "", 
-                    
-                    "template": code_stub, # keep original template for later processing
+                    "code_template": code_template,
                     "lang": self.lang,
                     "task": "LeetCode",
                     "file_name": rel_file_path
@@ -107,17 +94,3 @@ class LeetCodeDataset:
     
     def __getitem__(self, index):
         return self.data.iloc[index]
-    
-    def get_task_description(self):
-        return (
-        "You will solve a LeetCode algorithmic problem. "
-        "Think step by step about the logic, time complexity, and edge cases. "
-        "The last part of your response must be the Python solution code, "
-        "strictly enclosed between the standard LeetCode markers as follows:\n\n"
-        "# @lc code=start\n"
-        "class Solution:\n"
-        "    # Your code implementation here\n"
-        "# @lc code=end\n\n"
-        "Do not wrap this block in markdown code ticks (like ```python). "
-        "Just output the markers and the code directly at the end."
-    )
