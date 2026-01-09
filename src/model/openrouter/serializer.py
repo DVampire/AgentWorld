@@ -472,13 +472,13 @@ class OpenRouterChatSerializer:
         """
         model_class = response_format if isinstance(response_format, type) else type(response_format)
         schema = model_class.model_json_schema()
-        defs = schema.pop("$defs", {})  # 移除 $defs，避免在最终结果中出现
+        defs = schema.pop("$defs", {})  # Remove $defs to avoid appearing in the final result
 
         def transform(obj: Any) -> Any:
             if not isinstance(obj, dict):
                 return obj
             
-            # 展开所有引用，确保完全内联
+            # Expand all references to ensure full inlining
             if "$ref" in obj:
                 ref_path = obj["$ref"]
                 if ref_path.startswith("#/$defs/"):
@@ -487,13 +487,13 @@ class OpenRouterChatSerializer:
                         return transform(defs[def_name])
                 return {"type": "object", "additionalProperties": True}
             
-            # 处理 Union 结构 (anyOf, oneOf, allOf) - 用于处理 Optional 字段
+            # Handle Union structures (anyOf, oneOf, allOf) - used for handling Optional fields
             for k in ["anyOf", "oneOf", "allOf"]:
                 if k in obj:
                     items = obj[k]
                     non_null = [i for i in items if isinstance(i, dict) and i.get("type") != "null"]
                     if len(non_null) == 1:
-                        # 保留原始对象的 description 和 title
+                        # Retain original object's description and title
                         result = transform(non_null[0])
                         if isinstance(result, dict):
                             if "description" in obj and "description" not in result:
@@ -508,7 +508,7 @@ class OpenRouterChatSerializer:
                             "additionalProperties": True 
                         }
 
-            # 处理对象
+            # Handle objects
             if obj.get("type") == "object" or "properties" in obj:
                 props = obj.get("properties", {})
                 required = obj.get("required", [])
@@ -520,8 +520,8 @@ class OpenRouterChatSerializer:
                     if k in required:
                         new_required.append(k)
                 
-                # 对于 Dict[str, Any] 类型（没有 properties 或 properties 为空），保留 additionalProperties: true
-                # 否则设置为 False（严格模式）
+                # For Dict[str, Any] types (no properties or empty properties), retain additionalProperties: True
+                # Otherwise, set to False (strict mode)
                 if not new_props and obj.get("additionalProperties") is True:
                     additional_props = True
                 else:
@@ -533,27 +533,27 @@ class OpenRouterChatSerializer:
                     "required": new_required,
                     "additionalProperties": additional_props
                 }
-                # 保留 description 和 title 等元数据
+                # Retain metadata such as description and title
                 if "description" in obj:
                     result["description"] = obj["description"]
                 if "title" in obj:
                     result["title"] = obj["title"]
                 return result
 
-            # 处理数组
+            # Handle arrays
             if obj.get("type") == "array":
                 result = {
                     "type": "array",
                     "items": transform(obj.get("items", {}))
                 }
-                # 保留 description 和 title 等元数据
+                # Retain metadata such as description and title
                 if "description" in obj:
                     result["description"] = obj["description"]
                 if "title" in obj:
                     result["title"] = obj["title"]
                 return result
 
-            # 对于其他类型，保留所有字段（包括 description、title 等）
+            # For other types, retain all fields (including description, title, etc.)
             return obj
 
         return {
