@@ -47,7 +47,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test different optimizers on benchmark tasks')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
-                       default='reinforce_pp', help="optimizer to test")
+                       default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="aime24", help="benchmark name to test on")
 
     parser.add_argument(
@@ -71,11 +71,11 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
     """Create optimizer instance based on type."""
     base_config = {
         'workdir': config.workdir,
-        'prompt_name': 'reflection_optimizer',
         'model_name': 'openrouter/gemini-3-flash-preview',
         'memory_name': 'optimizer_memory_system',
         'benchmark_name': benchmark_name,
-
+        'optimize_trainable_variables': False,
+        'optimize_solution': True
     }
 
     if optimizer_type == 'grpo':
@@ -84,6 +84,7 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
             clip_ratio=0.2,
             beta=0.01,
             reward_fn=reward_fn,
+            prompt_name='grpo_optimizer',
             **base_config
         )
     elif optimizer_type == 'reinforce_pp':
@@ -91,10 +92,13 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
             clip_ratio=0.2,
             beta=0.01,
             reward_fn=reward_fn,
+            prompt_name='reinforce_plus_plus_optimizer',
             **base_config
         )
     elif optimizer_type == 'reflection':
-        return ReflectionOptimizer(**base_config)
+        return ReflectionOptimizer(prompt_name='reflection_optimizer',
+            **base_config
+        )
     else:
         raise ValueError(f"Unknown optimizer type: {optimizer_type}")
 
@@ -108,15 +112,10 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
 
     # Create fresh optimizer for each task (to avoid state carryover)
     logger.info(f"| 🤖 Starting {optimizer_type.upper()} optimization...")
-    # Set benchmark_name as attribute on reward_fn for sync calls
     optimizer = create_optimizer(optimizer_type, reward_fn, benchmark_name)
 
     # Statistics tracking
     total_tasks = 0
-    initial_scores = []
-    optimized_scores = []
-    improvements = []
-    task_results = []
 
     # Reset benchmark progress
     logger.info(f"| 🔄 Resetting progress for {benchmark_name}...")
@@ -124,10 +123,9 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
 
     while task_data is not None:
         total_tasks += 1
-        task_id = task_data.get("task_id", f"task_{total_tasks}")
-        task_input = task_data.get("input", "")
-        system_instruction = task_data.get("system_prompt", "")
-        ground_truth = task_data.get("ground_truth", "")
+        task_id = task_data.task_id
+        task_input = task_data.input
+        system_instruction = task_data.system_prompt
 
         # Combine system instruction with task input
         full_task = f"{system_instruction}\n\n{task_input}"
@@ -136,47 +134,34 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
         print(f"\n📋 Task {total_tasks}: {task_id}")
         logger.info(f"📋 Task: {full_task[:150]}..." if len(full_task) > 150 else f"📋 Task: {full_task}")
 
-        # # Test initial performance before optimization
-        # logger.info("| 🚀 Testing initial performance...")
-        # initial_response = await agent(task=full_task, files=[])
-        # initial_result = initial_response.extra.data.get('final_result', '') if initial_response.extra and initial_response.extra.data else ''
-        #
-        # # Evaluate initial answer
-        # initial_score = await benchmark_manager.eval_task(name=benchmark_name, prediction=initial_result, task_id=task_id)
-        # initial_scores.append(initial_score)
-        # logger.info(f"| 🎯 Initial Score: {initial_score}")
-        # print(f"| 🎯 Initial Score: {initial_score}")
+        if optimizer_type != 'reflection':
+            logger.info(f"| 🚀 Running agent to get initial solution...")
+            reference_agent_response = await agent(task=full_task, files=[])
+            reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
+            reference_agent_result = reference_agent_response_extra_data['final_result']
+            reference_agent_reasoning = reference_agent_response_extra_data['final_reasoning']
+            reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
+            logger.info(f"| ✅ Initial solution obtained")
 
-        await optimizer.optimize(agent=agent,
-                                 task=full_task,
-                                 benchmark_task_id=task_id,
-                                 files=[])
+            await optimizer.optimize(agent=agent,
+                                     task=full_task,
+                                     sft_solution=reference_solution,
+                                     benchmark_task_id=task_id,
+                                     files=[])
+        else:
+            await optimizer.optimize(agent=agent,
+                                     task=full_task,
+                                     benchmark_task_id=task_id,
+                                     files=[])
 
-        # Test optimized performance
-        logger.info("| 🚀 Testing optimized performance...")
-        optimized_response = await agent(task=full_task, files=[])
-        optimized_result = optimized_response.extra.data.get('final_result', '') if optimized_response.extra and optimized_response.extra.data else ''
+        stats = await benchmark_manager.stats(benchmark_name)
+        if stats:
+            attempted = stats.correct + stats.wrong
+            print(f"📊 Overall Progress: {attempted}/{stats.total} | Accuracy: {stats.accuracy:.2%}")
 
-        # Evaluate optimized answer
-        optimized_score = await benchmark_manager.eval_task(name=benchmark_name, prediction=optimized_result, task_id=task_id)
-        optimized_scores.append(optimized_score)
-        logger.info(f"| 🎯 Optimized Score: {optimized_score}")
-        print(f"| 🎯 Optimized Score: {optimized_score}")
 
-        # # Calculate improvement
-        # improvement = optimized_score - initial_score
-        # improvements.append(improvement)
 
-        # Store detailed results
-        task_results.append({
-            'task_id': task_id,
-            # 'initial_score': initial_score,
-            'optimized_score': optimized_score,
-            # 'improvement': improvement,
-            'ground_truth': ground_truth,
-            # 'initial_result': initial_result[:200] if len(initial_result) > 200 else initial_result,
-            'optimized_result': optimized_result[:200] if len(optimized_result) > 200 else optimized_result
-        })
+
 
         # Progress indicator
         if total_tasks % 5 == 0:
@@ -186,36 +171,6 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
         # Get next task
         task_data = await benchmark_manager.step(benchmark_name)
 
-    # Calculate overall statistics
-    avg_initial = sum(initial_scores) / len(initial_scores)
-    avg_optimized = sum(optimized_scores) / len(optimized_scores)
-    avg_improvement = sum(improvements) / len(improvements)
-
-    improved_count = sum(1 for imp in improvements if imp > 0)
-    neutral_count = sum(1 for imp in improvements if imp == 0)
-    regressed_count = sum(1 for imp in improvements if imp < 0)
-
-    logger.info("\n🎯 === FINAL RESULTS ===")
-    logger.info(f"| 📊 Total Tasks Tested: {total_tasks}")
-    logger.info(f"| 📊 Average Initial Score: {avg_initial:.3f}")
-    logger.info(f"| 📊 Average Optimized Score: {avg_optimized:.3f}")
-    logger.info(f"| 📊 Average Improvement: {avg_improvement:+.3f}")
-    logger.info("\n📈 Performance Distribution:")
-    logger.info(f"|  ✅ Improved: {improved_count} tasks ({improved_count/total_tasks*100:.1f}%)")
-    logger.info(f"|  🤝 Neutral: {neutral_count} tasks ({neutral_count/total_tasks*100:.1f}%)")
-    logger.info(f"|  📉 Regressed: {regressed_count} tasks ({regressed_count/total_tasks*100:.1f}%)")
-
-    if avg_improvement > 0:
-        logger.info(f"\n🎉 OVERALL SUCCESS: {optimizer_type.upper()} improved average performance by {avg_improvement:.3f}")
-    elif avg_improvement == 0:
-        logger.info(f"\n🤝 OVERALL NEUTRAL: {optimizer_type.upper()} maintained average performance")
-    else:
-        logger.info(f"\n📉 OVERALL REGRESSION: {optimizer_type.upper()} decreased average performance by {abs(avg_improvement):.3f}")
-
-    # Print detailed results for first few tasks
-    logger.info("\n📋 Sample Task Results:")
-    for i, result in enumerate(task_results[:3]):  # Show first 3 tasks
-        logger.info(f"  Task {result['task_id']}: {result['initial_score']} → {result['optimized_score']} (Δ{result['improvement']:+.3f})")
 
 
 async def main():

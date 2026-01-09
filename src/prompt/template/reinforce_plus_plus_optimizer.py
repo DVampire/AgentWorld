@@ -3,15 +3,16 @@ from src.prompt.types import Prompt
 from typing import Any, Dict, Literal
 from pydantic import Field, ConfigDict
 
-# ---------------------Reflection Prompt---------------------
-REFLECTION_OPTIMIZER_REFLECTION_AGENT_PROFILE = """
-You are an expert at analyzing agent execution results and identifying which variables (prompts, tools, solutions, etc.) need improvement.
+# ---------------------REINFORCE++ Reflection Prompt---------------------
+
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_AGENT_PROFILE = """
+You are an expert at analyzing agent execution results and RL metrics to identify which variables (prompts, tools, solutions, etc.) need improvement.
 """
 
-REFLECTION_OPTIMIZER_REFLECTION_INTRODUCTION = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_INTRODUCTION = """
 <intro>
 You excel at:
-- Analyzing agent execution results and identifying which variables caused problems or could be improved
+- Analyzing agent execution results combined with RL metrics (reward, advantage, objective, policy ratio)
 - Reflecting on how different types of variables (prompt variables, tool code, solution) contributed to issues
 - Providing specific, actionable feedback on how to improve each variable type
 - Being constructive and specific
@@ -19,8 +20,16 @@ You excel at:
 </intro>
 """
 
-REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_REASONING_RULES = """
 <reasoning_rules>
+**RL Metrics Interpretation:**
+- **Reward (0.0-1.0)**: Measures task completion quality (1.0 = perfect, 0.0 = failed)
+- **Advantage**: Reward minus KL penalty (positive = good performance, negative = needs improvement)
+- **Policy Ratio**: Similarity between current and previous solution (1.0 = identical, <1.0 = different)
+- **Objective**: Clipped policy ratio × advantage (REINFORCE++ optimization target)
+
+Based on the current RL metrics and execution results, analyze:
+
 Please analyze the execution result and all available variables, then provide:
 - **What went wrong or could be improved**
    - Identify specific issues in the agent's behavior or output
@@ -40,71 +49,78 @@ Please analyze the execution result and all available variables, then provide:
 </reasoning_rules>
 """
 
-REFLECTION_OPTIMIZER_REFLECTION_OUTPUT = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_OUTPUT = """
 <output>
 Please ONLY respond with the text of the analysis and recommendations, without any additional commentary or explanation.
 </output>
 """
 
-REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ introduction }}
 {{ reasoning_rules }}
 {{ output }}
 """
 
-REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ task }}
 {{ current_variables }}
 {{ execution_result }}
+
+**RL Metrics:**
+- Reward: {{ reward }}
+- Advantage: {{ advantage }}
+- Policy Ratio: {{ policy_ratio }}
+- Objective: {{ objective }}
 """
 
-REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT = {
-    "name": "reflection_optimizer_reflection_system_prompt",
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_SYSTEM_PROMPT = {
+    "name": "reinforce_plus_plus_optimizer_reflection_system_prompt",
     "type": "system_prompt",
-    "description": "System prompt for self-reflection optimizer",
-    "template": REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE,
+    "description": "System prompt for REINFORCE++ reflection optimizer",
+    "template": REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE,
     "variables": {
         "agent_profile": {
             "name": "agent_profile",
             "type": "system_prompt",
-            "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Describes the agent's core identity and RL expertise.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_REFLECTION_AGENT_PROFILE
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_AGENT_PROFILE
         },
         "introduction": {
             "name": "introduction",
             "type": "system_prompt",
-            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Defines the agent's capabilities in RL-based optimization.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_REFLECTION_INTRODUCTION
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_INTRODUCTION
         },
         "reasoning_rules": {
             "name": "reasoning_rules",
             "type": "system_prompt",
-            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Defines how to interpret RL metrics and make optimization decisions.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_REASONING_RULES
         },
         "output": {
             "name": "output",
             "type": "system_prompt",
-            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Defines the output format for RL-based analysis.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_REFLECTION_OUTPUT
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_OUTPUT
         }
     }
 }
-REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
-    "name": "reflection_optimizer_reflection_agent_message_prompt",
+
+REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
+    "name": "reinforce_plus_plus_optimizer_reflection_agent_message_prompt",
     "type": "agent_message_prompt",
-    "description": "Agent message for self-reflection optimizer",
+    "description": "Agent message for REINFORCE++ reflection optimizer",
     "require_grad": False,
-    "template": REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE,
+    "template": REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE,
     "variables": {
         "task": {
             "name": "task",
@@ -129,41 +145,73 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
             "require_grad": False,
             "template": None,
             "variables": None
+        },
+        "reward": {
+            "name": "reward",
+            "type": "agent_message_prompt",
+            "description": "Current reward score from RL evaluation.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "advantage": {
+            "name": "advantage",
+            "type": "agent_message_prompt",
+            "description": "Calculated advantage (reward - KL penalty).",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "policy_ratio": {
+            "name": "policy_ratio",
+            "type": "agent_message_prompt",
+            "description": "Policy ratio between current and old solution.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "objective": {
+            "name": "objective",
+            "type": "agent_message_prompt",
+            "description": "REINFORCE++ objective value.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
         }
     }
 }
 
 @PROMPT.register_module(force=True)
-class ReflectionOptimizerReflectionSystemPrompt(Prompt):
-    """System prompt template for self-reflection optimizer."""
+class ReinforcePlusPlusOptimizerReflectionSystemPrompt(Prompt):
+    """System prompt template for REINFORCE++ reflection optimizer."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
+
     type: str = Field(default='system_prompt', description="The type of the prompt")
-    name: str = Field(default="reflection_optimizer_reflection", description="The name of the prompt")
-    description: str = Field(default="System prompt for self-reflection optimizer", description="The description of the prompt")
+    name: str = Field(default="reinforce_plus_plus_optimizer_reflection", description="The name of the prompt")
+    description: str = Field(default="System prompt for REINFORCE++ reflection optimizer", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
-    
-    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT, description="System prompt information")
+
+    prompt_config: Dict[str, Any] = Field(default=REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_SYSTEM_PROMPT, description="System prompt information")
 
 @PROMPT.register_module(force=True)
-class ReflectionOptimizerReflectionAgentMessagePrompt(Prompt):
-    """Agent message prompt template for self-reflection optimizer."""
+class ReinforcePlusPlusOptimizerReflectionAgentMessagePrompt(Prompt):
+    """Agent message prompt template for REINFORCE++ reflection optimizer."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
-    name: str = Field(default="reflection_optimizer_reflection", description="The name of the prompt")
-    description: str = Field(default="Agent message prompt for self-reflection optimizer", description="The description of the prompt")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
-    
-    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT, description="Agent message prompt information")
-# ---------------------Reflection Prompt---------------------
 
-# ---------------------Improvement Prompt---------------------
-REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_PROFILE = """
+    type: str = Field(default='agent_message_prompt', description="The type of the prompt")
+    name: str = Field(default="reinforce_plus_plus_optimizer_reflection", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for REINFORCE++ reflection optimizer", description="The description of the prompt")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+
+    prompt_config: Dict[str, Any] = Field(default=REINFORCE_PLUS_PLUS_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT, description="Agent message prompt information")
+
+# ---------------------REINFORCE++ Improvement Prompt---------------------
+
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_AGENT_PROFILE = """
 You are an expert at improving variables (prompts, tools, solutions) based on feedback and analysis.
 """
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_INTRODUCTION = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_INTRODUCTION = """
 <intro>
 You excel at:
 - Improving different types of variables (prompt variables, tool code, solutions) based on feedback and analysis
@@ -175,7 +223,7 @@ You excel at:
 </intro>
 """
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_REASONING_RULES = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_REASONING_RULES = """
 <reasoning_rules>
 Based on the analysis and feedback provided, please improve the variable by:
 
@@ -207,7 +255,7 @@ Based on the analysis and feedback provided, please improve the variable by:
 </reasoning_rules>
 """
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_OUTPUT = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_OUTPUT = """
 <output>
 Please provide ONLY the improved variable content:
 - For prompt variables: Provide the improved prompt text
@@ -217,66 +265,66 @@ Do not include any additional commentary or explanation.
 </output>
 """
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ introduction }}
 {{ reasoning_rules }}
 {{ output }}
 """
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE = """
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ task }}
 {{ current_variables }}
 {{ reflection_analysis }}
 """
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT = {
-    "name": "reflection_optimizer_improvement_system_prompt",
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT = {
+    "name": "reinforce_plus_plus_optimizer_improvement_system_prompt",
     "type": "system_prompt",
-    "description": "System prompt for self-improvement optimizer",
-    "template": REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE,
+    "description": "System prompt for REINFORCE++ improvement optimizer",
+    "template": REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE,
     "variables": {
         "agent_profile": {
             "name": "agent_profile",
             "type": "system_prompt",
-            "description": "Describes the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Describes the agent's RL-guided optimization expertise.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_PROFILE
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_AGENT_PROFILE
         },
         "introduction": {
             "name": "introduction",
             "type": "system_prompt",
-            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Defines RL-guided optimization capabilities.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_INTRODUCTION
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_INTRODUCTION
         },
         "reasoning_rules": {
             "name": "reasoning_rules",
             "type": "system_prompt",
-            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Defines how to use RL metrics for optimization decisions.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_REASONING_RULES
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_REASONING_RULES
         },
         "output": {
             "name": "output",
             "type": "system_prompt",
-            "description": "Defines the agent's core identity, capabilities, and primary objectives for task execution.",
+            "description": "Defines the output format for RL-guided improvements.",
             "require_grad": False,
             "template": None,
-            "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_OUTPUT
+            "variables": REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_OUTPUT
         }
     }
 }
 
-REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
-    "name": "reflection_optimizer_improvement_agent_message_prompt",
+REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
+    "name": "reinforce_plus_plus_optimizer_improvement_agent_message_prompt",
     "type": "agent_message_prompt",
-    "description": "Agent message for self-improvement optimizer",
+    "description": "Agent message for REINFORCE++ improvement optimizer",
     "require_grad": False,
-    "template": REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE,
+    "template": REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE,
     "variables": {
         "task": {
             "name": "task",
@@ -297,7 +345,7 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
         "reflection_analysis": {
             "name": "reflection_analysis",
             "type": "agent_message_prompt",
-            "description": "Describes the reflection analysis for the current variables.",
+            "description": "Describes the RL-guided reflection analysis for the current variables.",
             "require_grad": False,
             "template": None,
             "variables": None
@@ -306,25 +354,25 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
 }
 
 @PROMPT.register_module(force=True)
-class ReflectionOptimizerImprovementSystemPrompt(Prompt):
-    """System prompt template for self-improvement optimizer."""
+class ReinforcePlusPlusOptimizerImprovementSystemPrompt(Prompt):
+    """System prompt template for REINFORCE++ improvement optimizer."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
+
     type: str = Field(default='system_prompt', description="The type of the prompt")
-    name: str = Field(default="reflection_optimizer_improvement", description="The name of the prompt")
-    description: str = Field(default="System prompt for self-improvement optimizer", description="The description of the prompt")
+    name: str = Field(default="reinforce_plus_plus_optimizer_improvement", description="The name of the prompt")
+    description: str = Field(default="System prompt for REINFORCE++ improvement optimizer", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
-    
-    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT, description="System prompt information")
+
+    prompt_config: Dict[str, Any] = Field(default=REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT, description="System prompt information")
 
 @PROMPT.register_module(force=True)
-class ReflectionOptimizerImprovementAgentMessagePrompt(Prompt):
-    """Agent message prompt template for self-improvement optimizer."""
+class ReinforcePlusPlusOptimizerImprovementAgentMessagePrompt(Prompt):
+    """Agent message prompt template for REINFORCE++ improvement optimizer."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
+
     type: str = Field(default='agent_message_prompt', description="The type of the prompt")
-    name: str = Field(default="reflection_optimizer_improvement", description="The name of the prompt")
-    description: str = Field(default="Agent message prompt for self-improvement optimizer", description="The description of the prompt")
+    name: str = Field(default="reinforce_plus_plus_optimizer_improvement", description="The name of the prompt")
+    description: str = Field(default="Agent message prompt for REINFORCE++ improvement optimizer", description="The description of the prompt")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
-    
-    prompt_config: Dict[str, Any] = Field(default=REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT, description="Agent message prompt information")
+
+    prompt_config: Dict[str, Any] = Field(default=REINFORCE_PLUS_PLUS_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT, description="Agent message prompt information")

@@ -253,7 +253,7 @@ class ReflectionOptimizer(Optimizer):
         )
         
         logger.info(f"| ✨ Generating improved variables (may improve multiple variables)...")
-        
+
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_format=ImprovedVariables)
             improved_variables: ImprovedVariables = response.extra.parsed_model

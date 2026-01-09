@@ -50,6 +50,18 @@ from .self_reflection_optimizer import (
     ReflectionOptimizerImprovementSystemPrompt,
     ReflectionOptimizerImprovementAgentMessagePrompt,
 )
+from .reinforce_plus_plus_optimizer import (
+    ReinforcePlusPlusOptimizerReflectionSystemPrompt,
+    ReinforcePlusPlusOptimizerReflectionAgentMessagePrompt,
+    ReinforcePlusPlusOptimizerImprovementSystemPrompt,
+    ReinforcePlusPlusOptimizerImprovementAgentMessagePrompt,
+)
+from .grpo_optimizer import (
+    GrpoOptimizerReflectionSystemPrompt,
+    GrpoOptimizerReflectionAgentMessagePrompt,
+    GrpoOptimizerImprovementSystemPrompt,
+    GrpoOptimizerImprovementAgentMessagePrompt,
+)
 
 __all__ = [
     "AnthropicMobileSystemPrompt",
@@ -80,4 +92,12 @@ __all__ = [
     "ReflectionOptimizerReflectionAgentMessagePrompt",
     "ReflectionOptimizerImprovementSystemPrompt",
     "ReflectionOptimizerImprovementAgentMessagePrompt",
+    "ReinforcePlusPlusOptimizerReflectionSystemPrompt",
+    "ReinforcePlusPlusOptimizerReflectionAgentMessagePrompt",
+    "ReinforcePlusPlusOptimizerImprovementSystemPrompt",
+    "ReinforcePlusPlusOptimizerImprovementAgentMessagePrompt",
+    "GrpoOptimizerReflectionSystemPrompt",
+    "GrpoOptimizerReflectionAgentMessagePrompt",
+    "GrpoOptimizerImprovementSystemPrompt",
+    "GrpoOptimizerImprovementAgentMessagePrompt",
 ]
