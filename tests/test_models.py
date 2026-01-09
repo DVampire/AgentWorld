@@ -42,8 +42,8 @@ async def test_chat():
     models = [
         # OpenAI models
         # "openrouter/gpt-4o",
-        "openrouter/gpt-4.1",
-        "openrouter/gpt-5",
+        # "openrouter/gpt-4.1",
+        # "openrouter/gpt-5",
         # "openrouter/gpt-5.1",
         # "openrouter/gpt-5.2",
         # "openrouter/o3",
@@ -79,10 +79,13 @@ async def test_chat():
     messages = [
         SystemMessage(content="You are a helpful assistant."),
         HumanMessage(content=[
-            ContentPartText(text="What are the names of the Pokémon in the image?"),
-            ContentPartImage(image_url=ImageURL(url=image_url, detail="high")),
+            ContentPartText(text="What are the names of the Pokémon in the image?" * 1000),
+            # ContentPartImage(image_url=ImageURL(url=image_url, detail="high")),
         ]),
     ]
+    
+    print(messages)
+    exit()
     
     for model in models:
         logger.info(f"| Testing {model}")

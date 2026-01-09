@@ -30,7 +30,6 @@ from importlib.util import find_spec
 from types import BuiltinFunctionType, FunctionType, ModuleType
 from typing import Any, Optional, Dict, Union
 
-from src.utils import truncate_content
 from src.logger import logger
 
 
@@ -1604,21 +1603,15 @@ def evaluate_python_code(
     try:
         for node in expression.body:
             result = evaluate_ast(node, state, static_tools, custom_tools, authorized_imports)
-        state["_print_outputs"].value = truncate_content(
-            str(state["_print_outputs"]), max_length=max_print_outputs_length
-        )
+        state["_print_outputs"].value = str(state["_print_outputs"])
         is_final_answer = False
         return result, is_final_answer
     except FinalAnswerException as e:
-        state["_print_outputs"].value = truncate_content(
-            str(state["_print_outputs"]), max_length=max_print_outputs_length
-        )
+        state["_print_outputs"].value = str(state["_print_outputs"])
         is_final_answer = True
         return e.value, is_final_answer
     except Exception as e:
-        state["_print_outputs"].value = truncate_content(
-            str(state["_print_outputs"]), max_length=max_print_outputs_length
-        )
+        state["_print_outputs"].value = str(state["_print_outputs"])
         raise InterpreterError(
             f"Code execution failed at line '{ast.get_source_segment(code, node)}' due to: {type(e).__name__}: {e}"
         )

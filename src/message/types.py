@@ -1,18 +1,16 @@
 from pydantic import BaseModel, Field
 from typing import Literal, List, Union, Optional
 
-from src.utils import truncate_content, truncate_file_url
-
 class ContentPartText(BaseModel):
     """A text content part."""
     text: str = Field(description="The text of the content part.")  # type: ignore
     type: Literal['text'] = Field(default='text', description="The type of the content part.")  # type: ignore
     
     def __str__(self) -> str:
-        return f'Text: {truncate_content(self.text)}'
+        return str(self.text)
 
     def __repr__(self) -> str:
-        return f'ContentPartText(text={truncate_content(self.text)})'
+        return f'ContentPartText(text={repr(self.text)})'
 
 SupportedImageMediaType = Literal['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 SupportedAudioMediaType = Literal['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp3', 'audio/m4a', 'audio/flac']
@@ -27,12 +25,10 @@ class AudioURL(BaseModel):
     media_type: SupportedAudioMediaType = Field(default='audio/mp3', description="The media type of the audio.")
 
     def __str__(self) -> str:
-        url_display = truncate_file_url(self.url)
-        return f'🎧  Audio[{self.media_type}]: {url_display}'
+        return str(self.url)
 
     def __repr__(self) -> str:
-        url_repr = truncate_file_url(self.url)
-        return f'AudioURL(url={repr(url_repr)}, media_type={repr(self.media_type)})'
+        return f'AudioURL(url={repr(self.url)}, media_type={repr(self.media_type)})'
 
 
 class ContentPartAudio(BaseModel):
@@ -41,7 +37,7 @@ class ContentPartAudio(BaseModel):
     type: Literal['audio_url'] = Field(default='audio_url', description="The type of the content part.")  # type: ignore
 
     def __str__(self) -> str:
-        return f'Audio: {str(self.audio_url)}'
+        return str(self.audio_url)
 
     def __repr__(self) -> str:
         return f'ContentPartAudio(audio_url={str(self.audio_url)})'
@@ -54,10 +50,10 @@ class VideoURL(BaseModel):
     media_type: SupportedVideoMediaType = Field(default='video/mp4', description="The media type of the video.")
 
     def __str__(self) -> str:
-        return f'🎥  Video[{self.media_type}]: {truncate_file_url(self.url)}'
+        return str(self.url)
 
     def __repr__(self) -> str:
-        return f'VideoURL(url={repr(truncate_file_url(self.url))}, media_type={repr(self.media_type)})'
+        return f'VideoURL(url={repr(self.url)}, media_type={repr(self.media_type)})'
 
 class ContentPartVideo(BaseModel):
     """A video content part."""
@@ -65,10 +61,10 @@ class ContentPartVideo(BaseModel):
     type: Literal['video_url'] = Field(default='video_url', description="The type of the content part.")  # type: ignore
 
     def __str__(self) -> str:
-        return f'Video: {str(self.video_url)}'
+        return str(self.video_url)
 
     def __repr__(self) -> str:
-        return f'ContentPartVideo(video_url={str(self.video_url)})'
+        return f'ContentPartVideo(video_url={repr(self.video_url)})'
 
 class ImageURL(BaseModel):
     """An image URL content part."""
@@ -83,12 +79,10 @@ class ImageURL(BaseModel):
     media_type: SupportedImageMediaType = 'image/png'
 
     def __str__(self) -> str:
-        url_display = truncate_file_url(self.url)
-        return f'🖼️  Image[{self.media_type}, detail={self.detail}]: {url_display}'
+        return str(self.url)
 
     def __repr__(self) -> str:
-        url_repr = truncate_file_url(self.url)
-        return f'ImageURL(url={repr(url_repr)}, detail={repr(self.detail)}, media_type={repr(self.media_type)})'
+        return f'ImageURL(url={repr(self.url)}, detail={repr(self.detail)}, media_type={repr(self.media_type)})'
 
 class ContentPartImage(BaseModel):
     """An image content part."""
@@ -96,10 +90,10 @@ class ContentPartImage(BaseModel):
     type: Literal['image_url'] = Field(default='image_url', description="The type of the content part.")  # type: ignore
 
     def __str__(self) -> str:
-        return f'Image: {str(self.image_url)}'
+        return str(self.image_url)
 
     def __repr__(self) -> str:
-        return f'ContentPartImage(image_url={str(self.image_url)})'
+        return f'ContentPartImage(image_url={repr(self.image_url)})'
 
 class PdfURL(BaseModel):
     """A PDF URL content part."""
@@ -109,10 +103,10 @@ class PdfURL(BaseModel):
     media_type: SupportedPdfMediaType = 'application/pdf'
 
     def __str__(self) -> str:
-        return f'📄  PDF[{self.media_type}]: {truncate_file_url(self.url)}'
+        return str(self.url)
 
     def __repr__(self) -> str:
-        return f'PdfURL(url={repr(truncate_file_url(self.url))}, media_type={repr(self.media_type)})'
+        return f'PdfURL(url={repr(self.url)}, media_type={repr(self.media_type)})'
 
 class ContentPartPdf(BaseModel):
     """A PDF content part."""
@@ -120,31 +114,30 @@ class ContentPartPdf(BaseModel):
     type: Literal['pdf_url'] = Field(default='pdf_url', description="The type of the content part.")  # type: ignore
 
     def __str__(self) -> str:
-        return f'PDF: {str(self.pdf_url)}'
+        return str(self.pdf_url)
 
     def __repr__(self) -> str:
-        return f'ContentPartPdf(pdf_url={str(self.pdf_url)})'
+        return f'ContentPartPdf(pdf_url={repr(self.pdf_url)})'
 
 class ContentPartRefusal(BaseModel):
     refusal: str = Field(description="The refusal message by the assistant.")
     type: Literal['refusal'] = Field(default='refusal', description="The type of the content part.")  # type: ignore
 
     def __str__(self) -> str:
-        return f'Refusal: {truncate_content(self.refusal)}'
+        return str(self.refusal)
 
     def __repr__(self) -> str:
-        return f'ContentPartRefusal(refusal={truncate_content(repr(self.refusal))})'
+        return f'ContentPartRefusal(refusal={repr(self.refusal)})'
     
 class Function(BaseModel):
     arguments: str = Field(description="The arguments to call the function with, as generated by the model in JSON format. Note that the model does not always generate valid JSON, and may hallucinate parameters not defined by your function schema. Validate the arguments in your code before calling your function.")
     name: str = Field(description="The name of the function to call.")
 
     def __str__(self) -> str:
-        args_preview = truncate_content(self.arguments)
-        return f'{self.name}({args_preview})'
+        return f'{self.name}({(self.arguments)})'
 
     def __repr__(self) -> str:
-        args_repr = truncate_content(repr(self.arguments))
+        args_repr = repr(self.arguments)
         return f'Function(name={repr(self.name)}, arguments={args_repr})'
 
 
@@ -154,7 +147,7 @@ class ToolCall(BaseModel):
     type: Literal['function'] = Field(default='function', description="The type of the tool. Currently, only `function` is supported.")  # type: ignore
 
     def __str__(self) -> str:
-        return f'ToolCall[{self.id}]: {self.function}'
+        return f'ToolCall[{self.id}]: {str(self.function)}'
 
     def __repr__(self) -> str:
         return f'ToolCall(id={repr(self.id)}, function={repr(self.function)})'

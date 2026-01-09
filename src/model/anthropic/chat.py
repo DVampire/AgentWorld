@@ -23,7 +23,6 @@ from src.logger import logger
 from src.model.types import LLMResponse, LLMExtra
 from src.message.types import Message, HumanMessage, SystemMessage, AssistantMessage
 from src.model.anthropic.serializer import AnthropicChatSerializer
-from src.utils import truncate_dict
 from typing import Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
