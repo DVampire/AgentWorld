@@ -202,8 +202,24 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                 task.reasoning = ""
                 task.answer = ""
                 
+            # --- 3. Evaluation ---
+            task.time = time.time() - start_time
+            print(f"🤖 [Task {task_id}] Evaluating...")
             task = await benchmark_manager.eval(benchmark_name, task)
-                
+            
+            print(f"🤖 [Task {task_id}] Answer: {task.answer[:50]}..., Ground Truth: {str(task.ground_truth)[:50]}...")
+            
+            if task.score and task.score >= 1.0:
+                print(f"✅ [Task {task_id}] Result: Correct (Score: {task.score}) | Time: {task.time:.2f}s")
+            else:
+                print(f"⚠️ [Task {task_id}] Result: Incorrect (Score: {task.score}) | Time: {task.time:.2f}s")
+
+            # --- 4. Real-time Statistics ---
+            stats = await benchmark_manager.stats(benchmark_name)
+            if stats:
+                attempted = stats.correct + stats.wrong
+                print(f"📊 Overall Progress: {attempted}/{stats.total} | Accuracy: {stats.accuracy:.2%}")
+
         except Exception as e:
             logger.error(f"❌ Error processing task {task_id}: {e}")
             import traceback
