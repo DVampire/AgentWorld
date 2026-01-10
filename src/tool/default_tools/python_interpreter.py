@@ -15,6 +15,11 @@ from src.registry import TOOL
 _PYTHON_INTERPRETER_TOOL_DESCRIPTION = """Execute Python code and return the output.
 Use this tool to run Python scripts, perform calculations, or execute any Python code.
 The tool provides a safe execution environment with access to standard Python libraries.
+
+Args:
+- code (str): The Python code to execute.
+
+Example: {"name": "python_interpreter", "args": {"code": "print('Hello, World!')"}}.
 """
 
 @TOOL.register_module(force=True)

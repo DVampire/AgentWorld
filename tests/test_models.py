@@ -79,13 +79,10 @@ async def test_chat():
     messages = [
         SystemMessage(content="You are a helpful assistant."),
         HumanMessage(content=[
-            ContentPartText(text="What are the names of the Pokémon in the image?" * 1000),
-            # ContentPartImage(image_url=ImageURL(url=image_url, detail="high")),
+            ContentPartText(text="What are the names of the Pokémon in the image?"),
+            ContentPartImage(image_url=ImageURL(url=image_url, detail="high")),
         ]),
     ]
-    
-    print(messages)
-    exit()
     
     for model in models:
         logger.info(f"| Testing {model}")
@@ -193,12 +190,12 @@ async def test_response_format():
     logger.info(f"| Testing response format with different models")
     models = [
         # OpenAI models
-        "openrouter/gpt-4o",
-        "openrouter/gpt-4.1",
-        "openrouter/gpt-5",
-        "openrouter/gpt-5.1",
-        "openrouter/gpt-5.2",
-        "openrouter/o3",
+        # "openrouter/gpt-4o",
+        # "openrouter/gpt-4.1",
+        # "openrouter/gpt-5",
+        # "openrouter/gpt-5.1",
+        # "openrouter/gpt-5.2",
+        # "openrouter/o3",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
         # "openai/gpt-5",
@@ -217,6 +214,7 @@ async def test_response_format():
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
         # "openrouter/gemini-3-pro-preview",
+        "openrouter/gemini-3-flash-preview",
         # "google/gemini-2.5-flash",
         # "google/gemini-2.5-pro",
         # "google/gemini-3-pro-preview",
@@ -354,7 +352,7 @@ async def main():
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
     await test_chat()
-    # await test_response_format()
+    await test_response_format()
     # await test_tool_calling()
     # await test_transcription()
     # await test_embedding()

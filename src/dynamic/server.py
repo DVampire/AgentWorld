@@ -320,19 +320,7 @@ class DynamicModuleManager:
         Returns:
             Human-readable text representation
         """
-        properties = schema.get("properties", {})
-        if not properties:
-            return f"{entity_type}: {name}\nDescription: {description}\nParameters: None"
-
-        required = set(schema.get("required", []))
-        text = f"{entity_type}: {name}\nDescription: {description}\nParameters:\n"
-        for param, info in properties.items():
-            raw_type = info.get("type", "string")
-            type_label = info.get(PYTHON_TYPE_FIELD) or JSON_TO_PYTHON_TYPE.get(raw_type, raw_type)
-            if param not in required and not str(type_label).startswith("Optional["):
-                type_label = f"Optional[{type_label}]"
-            default = info.get("default", "N/A")
-            text += f"    - {param} ({type_label}): {info.get('description', '')} (default: {default})\n"
+        text = f"{entity_type}: {name}\nDescription: {description}\n"
         return text
     
     def _generate_module_name(self, prefix: str = "dynamic_module") -> str:

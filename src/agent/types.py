@@ -191,66 +191,38 @@ def format_tools(tools: List[BaseModel]) -> str:
     
     return df.to_markdown(index=True)
 
-class ThinkOutputBuilder:
-    """Builder used by agents to dynamically construct ThinkOutput schemas."""
 
-    def __init__(self) -> None:
-        self.schemas: Dict[str, Type[BaseModel]] = {}
+class ToolInputArgs(BaseModel):
+    name: str = Field(description="The name of the tool.")
+    args: Dict[str, Any] = Field(default={}, description="The arguments of the tool.")
 
-    def register(self, schema: Dict[str, Type[BaseModel]]) -> "ThinkOutputBuilder":
-        """Register new args schema."""
-        self.schemas.update(schema)
-        return self  # Support chaining
+# -------- Dynamically generate ThinkOutput --------
+class ThinkOutput(BaseModel):
+    thinking: str = Field(
+        description="A structured <think>-style reasoning block."
+    )
+    evaluation_previous_goal: str = Field(
+        description="One-sentence analysis of your last tool call."
+    )
+    memory: str = Field(description="1-3 sentences of specific memory.")
+    next_goal: str = Field(
+        description="State the next immediate goals and tool calls."
+    )
+    tool: List[ToolInputArgs] = Field(
+        description='The list of tool calls to be executed in sequence. e.g., [{"name": "tool_name", "args": {"param1": "value1", "param2": "value2"}}, ...]'
+    )
 
-    def build(self) -> Type[BaseModel]:
-        """Generate Tool and ThinkOutput models."""
+    def __str__(self) -> str:
+        return (
+            f"Thinking: {self.thinking}\n"
+            f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
+            f"Memory: {self.memory}\n"
+            f"Next Goal: {self.next_goal}\n"
+            f"Tool:\n{format_tools(self.tool)}\n"
+        )
 
-        # -------- Dynamically generate Tool --------
-        schemas = self.schemas
-        ToolArgs = Union[tuple(schemas.values())]  # type: ignore[type-arg]
-
-        class Tool(BaseModel):
-            name: str = Field(description="The name of the tool.")
-            args: ToolArgs = Field(description="The arguments of the tool.")
-            output: Optional[str] = Field(
-                default=None, description="The output of the tool."
-            )
-
-            def __str__(self) -> str:
-                return f"Tool: {self.name}\nArgs: {self.args}\nOutput: {self.output}\n"
-
-            def __repr__(self) -> str:
-                return self.__str__()
-
-        # -------- Dynamically generate ThinkOutput --------
-        class ThinkOutput(BaseModel):
-            thinking: str = Field(
-                description="A structured <think>-style reasoning block."
-            )
-            evaluation_previous_goal: str = Field(
-                description="One-sentence analysis of your last tool call."
-            )
-            memory: str = Field(description="1-3 sentences of specific memory.")
-            next_goal: str = Field(
-                description="State the next immediate goals and tool calls."
-            )
-            tool: List[Tool] = Field(
-                description='[{"name": "tool_name", "args": {...}}, ...]'
-            )
-
-            def __str__(self) -> str:
-                return (
-                    f"Thinking: {self.thinking}\n"
-                    f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
-                    f"Memory: {self.memory}\n"
-                    f"Next Goal: {self.next_goal}\n"
-                    f"Tool:\n{format_tools(self.tool)}\n"
-                )
-
-            def __repr__(self) -> str:
-                return self.__str__()
-
-        return ThinkOutput
+    def __repr__(self) -> str:
+        return self.__str__()
 
 
 class Agent(BaseModel):
@@ -313,17 +285,6 @@ class Agent(BaseModel):
     async def initialize(self) -> None:
         """Initialize the agent."""
         logger.info(f"| 📁 Agent working directory: {self.workdir}")
-        # Setup think output builder
-        self.think_output_builder = ThinkOutputBuilder()
-
-        self.tool_names = config.tool_names
-        # Get all tool configs asynchronously
-        tool_configs = await asyncio.gather(*[tcp.get_info(tool_name) for tool_name in self.tool_names])
-        args_schema = {
-            tool_name: tool_config.args_schema for tool_name, tool_config in zip(self.tool_names, tool_configs) if tool_config is not None
-        }
-        self.think_output_builder.register(args_schema)
-        self.ThinkOutput = self.think_output_builder.build()
 
     def __str__(self) -> str:
         return f"Agent(name={self.name}, model={self.model_name}, prompt_name={self.prompt_name})"
@@ -594,7 +555,7 @@ __all__ = [
     "ACPRequest",
     "ACPResponse",
     "AgentConfig",
-    "ThinkOutputBuilder",
     "Agent",
     "AgentResponse",
+    "ThinkOutput",
 ]

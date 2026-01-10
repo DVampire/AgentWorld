@@ -11,6 +11,11 @@ from src.registry import TOOL
 _WEB_FETCHER_DESCRIPTION = """Visit a webpage at a given URL and return its text content.
 Use this tool to fetch and read content from web pages.
 The tool will return the page title and markdown-formatted content.
+
+Args:
+- url (str): The URL of the webpage to fetch.
+
+Example: {"name": "web_fetcher", "args": {"url": "https://www.google.com"}}.
 """
 
 @TOOL.register_module(force=True)

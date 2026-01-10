@@ -15,7 +15,7 @@ from src.utils import assemble_project_path
 from src.utils import get_file_info
 from src.utils import fetch_url
 from src.tool.types import Tool, ToolResponse, ToolExtra
-from src.tool.workflow_tools.report import Report
+from src.tool.workflow_tools.reporter import Report
 
 from src.logger import logger
 from src.model import model_manager
@@ -92,6 +92,14 @@ For images, audio, video, preserves visual information by analyzing them directl
 - Data pattern recognition
 - Multi-source information integration
 - Complex problem solving requiring multiple perspectives
+
+
+Args:
+- task (str): The task to complete.
+- files (Optional[List[str]]): Optional list of absolute file paths or specific URLs (image, video, PDF) to analyze along with the task.
+- call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
+
+Example: {"name": "deep_analyzer", "args": {"task": "Analyze the given files and provide a summary of the findings.", "files": ["/path/to/file1.txt", "/path/to/file2.pdf"], "call_id": "1234567890"}}.
 """
 
 @TOOL.register_module(force=True)

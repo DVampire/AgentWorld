@@ -6,7 +6,7 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs, AgentResponse, AgentExtra
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
@@ -55,56 +55,43 @@ class InterdayTradingAgent(Agent):
             require_grad=require_grad,
             **kwargs)
         
-        self.think_output_builder = ThinkOutputBuilder()
-        self.think_output_builder.register(tcp.args_schemas())
-        self.ThinkOutput = self.think_output_builder.build()
         
     async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
         """Think and action for one step."""
-        
-        # If the new tool is added, rebuild the ThinkOutput model
-        tcp_args_schema = tcp.args_schemas()
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
         
         done = False
         final_result = None
         final_reasoning = None
         
         try:
-            model_response = await model_manager(
+            think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=self.ThinkOutput
+                response_format=ThinkOutput
             )
-            think_output = model_response.extra.parsed_model
+            think_output = think_output.extra.parsed_model
             
             thinking = think_output.thinking
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            actions = think_output.action
+            tools = think_output.tool
             
             logger.info(f"| 💭 Thinking: {thinking}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
+            logger.info(f"| 🔧 Tools to execute: {len(tools)}")
             
-            # Execute actions sequentially
-            action_results = []
+            # Execute tools sequentially
+            tool_results = []
             
-            for i, action in enumerate(actions):
-                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action.name}")
+            for i, tool in enumerate(tools):
+                logger.info(f"| 📝 Tool {i+1}/{len(tools)}: {tool.name}")
                 
                 # Execute the tool
-                tool_name = action.name
-                tool_args = action.args.model_dump()
+                tool_name = tool.name
+                tool_args = tool.args if tool.args else {}
                 
-                logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
+                logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 
                 input = {
                     "name": tool_name,
@@ -114,13 +101,13 @@ class InterdayTradingAgent(Agent):
                 tool_result = tool_response.message
                 tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
-                logger.info(f"| ✅ Action {i+1} completed successfully")
+                logger.info(f"| ✅ Tool {i+1} completed successfully")
                 logger.info(f"| 📄 Results: {str(tool_result)}...")
                 
-                # Update action with result
-                action_dict = action.model_dump()
-                action_dict["output"] = tool_result
-                action_results.append(action_dict)
+                # Update tool with result
+                tool_dict = tool.model_dump()
+                tool_dict["output"] = tool_result
+                tool_results.append(tool_dict)
                     
                 # Check if trading environment is done
                 if tool_name == "step" and "Environment status: done" in str(tool_result):
@@ -134,7 +121,7 @@ class InterdayTradingAgent(Agent):
                 "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
                 "next_goal": next_goal,
-                "action": action_results
+                "tool": tool_results
             }
             await memory_manager.add_event(
                 memory_name=self.memory_name,
@@ -145,16 +132,6 @@ class InterdayTradingAgent(Agent):
                 task_id=task_id
             )
             self.step_number += 1
-            
-            if done:
-                await memory_manager.add_event(
-                    memory_name=self.memory_name,
-                    step_number=self.step_number,
-                    event_type=EventType.TASK_END,
-                    data=dict(result=final_result),
-                    agent_name=self.name,
-                    task_id=task_id
-                )
             
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
@@ -215,11 +192,11 @@ class InterdayTradingAgent(Agent):
                 agent_history += f"Task Start: {event.data['task']}\n"
             elif event.event_type == EventType.TASK_END:
                 agent_history += f"Task End: {event.data['result']}\n"
-            elif event.event_type == EventType.ACTION_STEP:
+            elif event.event_type == EventType.TOOL_STEP:
                 agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
                 agent_history += f"Memory: {event.data['memory']}\n"
                 agent_history += f"Next Goal: {event.data['next_goal']}\n"
-                agent_history += f"Action Results: {event.data['action']}\n"
+                agent_history += f"Tool Results: {event.data['tool']}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         

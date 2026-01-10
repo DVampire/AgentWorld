@@ -8,6 +8,12 @@ from src.registry import TOOL
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
 Use this tool to signal that a task or subtask has been finished.
 Provide the `result` and `reasoning` of the task in the result and reasoning parameters.
+
+Args:
+- result (str): The result of the task completion.
+- reasoning (str): The analysis or explanation of the task completion.
+
+Example: {"name": "done", "args": {"result": "The task has been completed.", "reasoning": "The task has been completed successfully."}}.
 """
 
 @TOOL.register_module(force=True)

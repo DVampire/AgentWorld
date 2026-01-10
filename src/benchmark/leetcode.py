@@ -4,8 +4,11 @@ import json
 import re
 import textwrap
 import asyncio
+import subprocess
+import tempfile
+import shutil
 from typing import Optional, Dict, Any, Set, List, ClassVar
-from pydantic import PrivateAttr, Field
+from pydantic import PrivateAttr, Field, ConfigDict
 from playwright.sync_api import sync_playwright
 
 
@@ -16,18 +19,58 @@ from src.logger import logger
 from src.benchmark.types import Benchmark, Task, Stats
 from src.registry import BENCHMARK
 
+
+SYSTEM_PROMPT = """
+You are a helpful assistant that solves LeetCode coding problems. Please think step by step and provide your solution code.
+
+Output format:
+The output should be a JSON object with the following fields, DO NOT add any other text like "```json" or "```" or anything else:
+{
+    "reasoning": "Your step-by-step reasoning process",
+    "code": "You solution code".
+}
+
+Example:
+Task ID: 1
+Problem Name: Two Sum
+Problem: Given an array of integers, return the two numbers such that they add up to a specific target.
+Language: python3
+Template:
+```python
+#
+# @lc app=leetcode id=1 lang=python3
+#
+# [1] Two Sum
+#
+
+# @lc code=start
+class Solution:
+    def twoSum(self, nums: List[int], target: int) -> List[int]:
+        
+# @lc code=end
+```
+
+Output:
+{
+    "reasoning": "Step 1: I need to find two numbers that sum to the target. I can use a hashmap to store each number and its index as I iterate through the array.\\n\\nStep 2: For each number, I calculate the complement (target - current number). If the complement exists in the hashmap, I found the pair. Otherwise, I add the current number to the hashmap.\\n\\nStep 3: This approach has O(n) time complexity and O(n) space complexity.",
+    "code": "#\\n# @lc app=leetcode id=1 lang=python3\\n#\\n# [1] Two Sum\\n#\\n\\n# @lc code=start\\nclass Solution:\\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\\n        hashmap = {}\\n        for i, num in enumerate(nums):\\n            complement = target - num\\n            if complement in hashmap:\\n                return [hashmap[complement], i]\\n            hashmap[num] = i\\n        return []\\n# @lc code=end"
+}
+
+Please write your solution code base on your language template.
+"""
+
 class CodeSubmitter:
     def __init__(self, headless: bool = False):
         """
         Initialization: Automatically load configuration from environment variables
+        Uses git workflow: clone -> write file -> commit -> push -> open in codespace -> submit
         """
         self.username = os.getenv("GITHUB_USERNAME")
         self.password = os.getenv("GITHUB_PASSWORD")
         self.project_url = os.getenv("PROJECT_URL")
-        # Note: Keeping your original Cookie variable here, it's recommended to put it in .env for actual use
-        self.leetcode_cookie = os.getenv("LEETCODE_COOKIE", '''gr_user_id=f5bc3375-7445-4b43-9dba-c6924bbcfbab; 87b5a3c3f1a55520_gr_last_sent_cs1=wingsjackf; __gads=ID=3314383dc9dbfd63:T=1765959508:RT=1765960725:S=ALNI_MZKM_0ftmbjBxPFmNH_MZ2VCbWhyw; __gpi=UID=000011cce2fa9e5c:T=1765959508:RT=1765960725:S=ALNI_MbcfJ91PkyeMjJ6PQSD5P84TL1iuQ; __eoi=ID=ca213cabdcdde30d:T=1765959508:RT=1765960725:S=AA-AfjZvByvqUBZM2BFwXNjTpLxd; FCCDCF=%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%223a4905a5-e4a0-4763-a6f1-5edb178b6c7e%5C%22%2C%5B1765959509%2C600000000%5D%5D%22%5D%5D%5D; FCNEC=%5B%5B%22AKsRol_nsKDRYW3BKFir-WrjYIGQzhRueop_DLCdXVdbKZkJlKLpqDk2dohSEl2k7xcVCcX_sD6WaoCw0at9T8TK80gwB9aB6cOadaFu6Co06Q3cJV4W5DqeaY3kTNhirm2PIkLSaA2Ct4WiTdfv2feHDzSnedsZyA%3D%3D%22%5D%5D; csrftoken=IT5nHJNNAfalbpaEayqDMreg9hA2nF1J; INGRESSCOOKIE=c913d62aa38b9134d1c42f708eb6ac49|8e0876c7c1464cc0ac96bc2edceabd27; ip_check=(false, "103.158.75.119"); LEETCODE_SESSION=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfYXV0aF91c2VyX2lkIjoiMjAyNzQ5NDAiLCJfYXV0aF91c2VyX2JhY2tlbmQiOiJhbGxhdXRoLmFjY291bnQuYXV0aF9iYWNrZW5kcy5BdXRoZW50aWNhdGlvbkJhY2tlbmQiLCJfYXV0aF91c2VyX2hhc2giOiI0OGQ3NDJkOTQ2MWY0NDQ5Mjg4ODE5ZWIyM2RkZWNmMGE3NTEzMGExZWU2M2NmZDNlZDY5MTQzMmNhNTY0MzBmIiwic2Vzc2lvbl91dWlkIjoiYzE4N2FmNjciLCJpZCI6MjAyNzQ5NDAsImVtYWlsIjoiemhhbmd3ZW50OTYzQGdtYWlsLmNvbSIsInVzZXJuYW1lIjoiOUcxSFpVMHFJaSIsInVzZXJfc2x1ZyI6IjlHMUhaVTBxSWkiLCJhdmF0YXIiOiJodHRwczovL2Fzc2V0cy5sZWV0Y29kZS5jb20vdXNlcnMvOUcxSFpVMHFJaS9hdmF0YXJfMTc2NTkzODgwNS5wbmciLCJyZWZyZXNoZWRfYXQiOjE3Njc0MzIzNDAsImlwIjoiMTAzLjE1OC43NS4xMTkiLCJpZGVudGl0eSI6IjY4NGZhYzNkOGU1OTU4NDU2NDBlNTA3YTkxMjJiZDU1IiwiZGV2aWNlX3dpdGhfaXAiOlsiMDdjMGViOWFlZWVlNDExOTg2YzRlMGVkNzMxZDQ4ZDMiLCIxMDMuMTU4Ljc1LjExOSJdLCJfc2Vzc2lvbl9leHBpcnkiOjEyMDk2MDB9._4L208MdmfadNb-Q7ahtAyC43KT68Aib46170PUcgZ0; 87b5a3c3f1a55520_gr_session_id=f3d4efff-188b-4d79-b5fa-d6fe979a5c29; 87b5a3c3f1a55520_gr_last_sent_sid_with_cs1=f3d4efff-188b-4d79-b5fa-d6fe979a5c29; 87b5a3c3f1a55520_gr_session_id_sent_vst=f3d4efff-188b-4d79-b5fa-d6fe979a5c29; _gid=GA1.2.292073357.1767432342; _gat=1; cf_clearance=j5hHTIUqMV7e6HwQcwdTbrbv0UIM1dcHIdhp00lmWFI-1767432349-1.2.1.1-rjaw_.2y8WCm.1oJ.mYBlnUUAaiXI_Ek4G1PbJfDFDQ5YgvBMsfftn98Rl.AukvwMJvEK2.YrRXt1EFDZJU4Crq9ENjAMe8ixUz5xhUjKQCFJcRJWtO47ocGv_8z9twEFRYnU7HsAqr2Le9CJkrxy_ltWgnZUDrWiXW39grOEBXCh0rCjPEsQEgE5CUsM1f.OjhTuYgInziAX6SzRDW7251QrzWglEHVuRbnfGKRn20; 87b5a3c3f1a55520_gr_cs1=wingsjackf; _ga_CDRWKZTDEX=GS2.1.s1767432342$o6$g1$t1767432377$j25$l0$h0; _ga=GA1.1.350590212.1765439998''')
+        self.leetcode_cookie = os.getenv("LEETCODE_COOKIE", '''gr_user_id=be5a137e-7528-4f14-b61c-4aa42990b6b2; 87b5a3c3f1a55520_gr_last_sent_cs1=9G1HZU0qIi; __gads=ID=de292e9c1cb6c106:T=1765938808:RT=1766543736:S=ALNI_MYlIoxT871eSPAyHWK_ZzIDpf4UWw; __gpi=UID=000011cca31639aa:T=1765938808:RT=1766543736:S=ALNI_MZ_wIJDgu0ssJV7kMXiHQNFnRFu_A; __eoi=ID=cf11d4e870725a42:T=1765938808:RT=1766543736:S=AA-AfjZe2WYyRLd9KO_CrSZ9-Cbn; __stripe_mid=bb795905-81bf-4fbe-ab32-6f2eab2953979d719d; FCCDCF=%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%22e01e1a3e-d1ff-484a-921a-c935b7acb5d2%5C%22%2C%5B1765938808%2C764000000%5D%5D%22%5D%5D%5D; FCNEC=%5B%5B%22AKsRol8XJWFWLRqQoxn4V5NGNacqrf2axRoZbnSzjt9FDCgio7VGlMUmfAHmuJR3eCKQOGZhbvfkzI0MQ47cmZMD0vhDI74gCne94rKDpAW4vA4lX9gCRaKAhoODVKYoyq2RLlU103h4WsiMaw49tXS_4v66HRVsww%3D%3D%22%5D%5D; _gid=GA1.2.499499743.1767949572; _gat=1; ip_check=(false, "203.149.208.10"); 87b5a3c3f1a55520_gr_last_sent_cs1=cb3c8033-d028-4fc0-b728-d34c0ded5ba8; 87b5a3c3f1a55520_gr_last_sent_sid_with_cs1=cb3c8033-d028-4fc0-b728-d34c0ded5ba8; 87b5a3c3f1a55520_gr_session_id_sent_vst=cb3c8033-d028-4fc0-b728-d34c0ded5ba8; cf_clearance=4XpweYq7AjSJxTC1LJNWUO6AxcSrBNR87kYg3r3Zmh8-1767949576-1.2.1.1-icsz6m3WwzdCzBs5MwrPyYbejFzfCAtVGEmcFgPA3ccivpDzY0EMN0oIxSBOpnYjxNvwWeujkL1yQBx_C2d_naSM56jK.1ZH654OB8ChEvSWA9Kyr1rnwWlkgy1AtCsATSyiTF3rWHGmajWygjg.8ybeCJRmLiGNIR6bcM1LpE46OavQGl4pzSvFa4kuIHZ4iE83emD2Yn_H2o2W9N14x0.OrZzcR576XeHZ9D4o0ks; csrftoken=TWzsxpzzuMjm9DfbmF2qGcdhzD6on7KN; messages=W1siX19qc29uX21lc3NhZ2UiLDAsMjUsIlN1Y2Nlc3NmdWxseSBzaWduZWQgaW4gYXMgWldULiIsIiJdXQ:1ve8Rq:SnFlIE7KwInIQOS-WtCeuJpqGhtT7Ejruq68HLahlBQ; _dd_s=rum=0&expire=1767950481494; INGRESSCOOKIE=6627697b7c459f78a36d8c57ae61cdf7|8e0876c7c1464cc0ac96bc2edceabd27; LEETCODE_SESSION=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJfYXV0aF91c2VyX2lkIjoiMjAyNzQ5NDAiLCJfYXV0aF91c2VyX2JhY2tlbmQiOiJhbGxhdXRoLmFjY291bnQuYXV0aF9iYWNrZW5kcy5BdXRoZW50aWNhdGlvbkJhY2tlbmQiLCJfYXV0aF91c2VyX2hhc2giOiI0OGQ3NDJkOTQ2MWY0NDQ5Mjg4ODE5ZWIyM2RkZWNmMGE3NTEzMGExZWU2M2NmZDNlZDY5MTQzMmNhNTY0MzBmIiwic2Vzc2lvbl91dWlkIjoiZmVmMThlMzgiLCJpZCI6MjAyNzQ5NDAsImVtYWlsIjoiemhhbmd3ZW50OTYzQGdtYWlsLmNvbSIsInVzZXJuYW1lIjoiOUcxSFpVMHFJaSIsInVzZXJfc2x1ZyI6IjlHMUhaVTBxSWkiLCJhdmF0YXIiOiJodHRwczovL2Fzc2V0cy5sZWV0Y29kZS5jb20vdXNlcnMvOUcxSFpVMHFJaS9hdmF0YXJfMTc2NTkzODgwNS5wbmciLCJyZWZyZXNoZWRfYXQiOjE3Njc5NDk1ODIsImlwIjoiMjAzLjE0OS4yMDguMTAiLCJpZGVudGl0eSI6IjY4NGZhYzNkOGU1OTU4NDU2NDBlNTA3YTkxMjJiZDU1IiwiZGV2aWNlX3dpdGhfaXAiOlsiYTlmY2E2MjVjYWJmZTFjZjNhNWQ4MDFmNGViODYwMzgiLCIyMDMuMTQ5LjIwOC4xMCJdLCJfc2Vzc2lvbl9leHBpcnkiOjEyMDk2MDB9.BjMgGvZySenDbq9FFpq5r10NhEuphwYJ40OcnSxHFYk; 87b5a3c3f1a55520_gr_cs1=9G1HZU0qIi; _ga=GA1.1.1585026129.1765938626; _ga_CDRWKZTDEX=GS2.1.s1767949571$o11$g1$t1767949588$j43$l0$h0''')
         
-        self.codespace_name = os.getenv("CODESPACE_NAME", "fuzzy memory") 
+        self.codespace_name = os.getenv("CODESPACE_NAME", "vigilant space spork")
         self.headless = headless
 
         if not all([self.username, self.password, self.project_url, self.leetcode_cookie]):
@@ -37,13 +80,18 @@ class CodeSubmitter:
         self._context = None
         self.page = None
         self._is_ready = False
-        self.target_filename = "code_submit.py" # Define target filename
+        self._work_dir = None
+        self._repo_path = None
 
     def start(self):
-        """Start browser -> Login GitHub -> Enter Codespace -> Verify LeetCode -> Prepare environment"""
+        """Setup git repo and browser -> Login GitHub -> Enter Codespace -> Verify LeetCode"""
         logger.info("[System] Starting evaluation environment...")
-        self._playwright = sync_playwright().start()
         
+        # 1. Setup git repository
+        self._setup_git_repo()
+        
+        # 2. Setup browser
+        self._playwright = sync_playwright().start()
         user_data_dir = os.path.join(os.getcwd(), "playwright_user_data")
         self._context = self._playwright.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
@@ -54,17 +102,44 @@ class CodeSubmitter:
         )
         self.page = self._context.pages[0] if self._context.pages else self._context.new_page()
         
-        # 1. Login GitHub and enter Codespace
+        # 3. Login GitHub and enter Codespace
         self._login_and_navigate()
         
-        # 2. Verify LeetCode login status
+        # 4. Verify LeetCode login status
         self._ensure_leetcode_login()
-
-        # 3. Don't force open file during initialization, leave it to submit_code or open once to confirm environment
-        self._open_editor_file(self.target_filename)
         
         self._is_ready = True
         logger.info("[System] ✅ Environment all ready, can start evaluation")
+
+    def _setup_git_repo(self):
+        """Create temp directory and clone the project"""
+        logger.info(">> Setting up git repository...")
+        
+        # Create temporary directory
+        self._work_dir = tempfile.mkdtemp(prefix="leetcode_submit_")
+        logger.info(f">> Created temp directory: {self._work_dir}")
+        
+        # Extract repo name and owner from project_url
+        # e.g., https://github.com/username/repo -> username/repo
+        url_parts = self.project_url.rstrip('/').replace('https://github.com/', '').replace('http://github.com/', '')
+        repo_name = url_parts.split('/')[-1]
+        self._repo_path = os.path.join(self._work_dir, repo_name)
+        
+        # Convert to SSH format: git@github.com:username/repo.git
+        ssh_url = f"git@github.com:{url_parts}.git"
+        
+        try:
+            subprocess.run(
+                ['git', 'clone', ssh_url, repo_name],
+                cwd=self._work_dir,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            logger.info(f">> Successfully cloned repository to {self._repo_path}")
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr if e.stderr else e.stdout if e.stdout else "Unknown error"
+            raise Exception(f"Failed to clone repository: {error_msg}")
 
     def _login_and_navigate(self):
         """Login GitHub and enter specified Codespace"""
@@ -194,58 +269,104 @@ class CodeSubmitter:
         time.sleep(2)
 
     def submit_code(self, code_content: str, filename: Optional[str] = None) -> Dict[str, Any]:
-        """Submit code and return result (includes pre and post cleanup logic)"""
+        """Submit code using git workflow: write -> commit -> push -> open in codespace -> submit"""
         if not self._is_ready:
             raise RuntimeError("Please call .start() first")
 
-        target_file = filename or self.target_filename
+        target_file = filename or "code_submit.py"
         logger.info(f"\n[Action] Preparing evaluation for {target_file}...")
         
-        # 1. Before submission: Close all open Tabs
-        self._close_all_editors()
-
-        # 2. Re-open target file
-        self._open_editor_file(target_file)
-        
-        # 3. Focus editor
-        logger.info(">> Writing code...")
-        try:
-            self.page.click('.monaco-editor', timeout=2000)
-        except:
-            self.page.mouse.click(600, 400)
-
-        # 4. Clean and paste code
+        # 1. Write code to file in repo
+        file_path = os.path.join(self._repo_path, target_file)
         clean_code = self._clean_code(code_content)
-
-        self.page.keyboard.press("Escape")
-        time.sleep(0.1)
-        self.page.keyboard.press("Meta+A")
-        time.sleep(0.1)
-        self.page.keyboard.press("Backspace")
         
-        json_str = json.dumps(clean_code)
-        self.page.evaluate(f"navigator.clipboard.writeText({json_str})")
-        time.sleep(0.2)
-        self.page.keyboard.press("Meta+V")
-        time.sleep(0.5)
-        self.page.keyboard.press("Meta+S") # Save
+        logger.info(f">> Writing code to {file_path}...")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(clean_code)
         
-        # 5. Trigger submission
+        # 2. Git add, commit, and push
+        logger.info(">> Committing and pushing to GitHub...")
+        try:
+            # Configure git user (required for commit)
+            subprocess.run(
+                ['git', 'config', 'user.name', self.username],
+                cwd=self._repo_path,
+                check=True,
+                capture_output=True
+            )
+            subprocess.run(
+                ['git', 'config', 'user.email', f'{self.username}@users.noreply.github.com'],
+                cwd=self._repo_path,
+                check=True,
+                capture_output=True
+            )
+            
+            # Git add
+            result = subprocess.run(
+                ['git', 'add', target_file],
+                cwd=self._repo_path,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            
+            # Check if there are changes to commit
+            status_result = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                cwd=self._repo_path,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            
+            if status_result.stdout.strip():
+                # Git commit
+                subprocess.run(
+                    ['git', 'commit', '-m', f'Add solution: {target_file}'],
+                    cwd=self._repo_path,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                
+                # Git push
+                subprocess.run(
+                    ['git', 'push'],
+                    cwd=self._repo_path,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                logger.info(">> Successfully pushed to GitHub")
+            else:
+                logger.info(">> No changes to commit (file unchanged)")
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
+            logger.warning(f">> Git operation failed: {error_msg}")
+            # Continue anyway, file might already be in repo or push might not be needed
+        
+        # 3. Wait a bit for GitHub to sync
+        time.sleep(3)
+        
+        # 4. Refresh codespace and open file
+        logger.info(">> Refreshing codespace and opening file...")
+        self.page.reload()
+        time.sleep(5)
+        self._open_editor_file(target_file)
+        time.sleep(2)
+        
+        # 5. Trigger LeetCode submission
         logger.info(">> Triggering LeetCode submission...")
-        time.sleep(0.5)
         self.page.keyboard.press("Control+Shift+P")
+        time.sleep(1)
+        self.page.keyboard.type("LeetCode: Submit")
+        time.sleep(1)
+        self.page.keyboard.press("Enter")
         time.sleep(1)
         
         # 6. Wait for result
         result = self._wait_for_result()
-
-        # 7. After submission: After getting result, close all Tabs (cleanup scene)
-        self._close_all_editors()
-        
-        return result
-
-        # 7. After submission: After getting result, close all Tabs (cleanup scene)
-        self._close_all_editors()
         
         return result
 
@@ -286,9 +407,20 @@ class CodeSubmitter:
         return result_data
 
     def close(self):
-        if self._context: self._context.close()
-        if self._playwright: self._playwright.stop()
+        """Cleanup browser and temp directory"""
+        if self._context: 
+            self._context.close()
+        if self._playwright: 
+            self._playwright.stop()
         self._is_ready = False
+        
+        # Cleanup temp directory
+        if self._work_dir and os.path.exists(self._work_dir):
+            try:
+                shutil.rmtree(self._work_dir)
+                logger.info(f">> Cleaned up temp directory: {self._work_dir}")
+            except Exception as e:
+                logger.warning(f">> Failed to cleanup temp directory: {e}")
 
 @BENCHMARK.register_module(force=True)
 class LeetCodeBenchmark(Benchmark):
@@ -296,9 +428,13 @@ class LeetCodeBenchmark(Benchmark):
     LeetCode Benchmark with Resume Capability.
     Automatically filters out tasks present in 'tmp/answer.jsonl'.
     """
-    name: str = "leetcode"
-    path: str = "datasets/leetcode"
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    
+    name: str = Field(default="leetcode", description="The name of the benchmark")
+    path: str = Field(default="datasets/leetcode", description="The path to the benchmark dataset")
     language: str = Field(default="python3", description="Programming language for LeetCode (e.g., python3, cpp, java)")
+    
+    system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
     
     _id_to_record_map: Dict[str, Dict] = PrivateAttr(default_factory=dict)
     _submitter: Any = PrivateAttr(default=None)
@@ -358,10 +494,44 @@ class LeetCodeBenchmark(Benchmark):
         self._filter_finished_tasks()
         await self.reset()
 
+    def _filter_finished_tasks(self):
+        """Filter out tasks that have already been completed (present in tmp/answer.jsonl)."""
+        jsonl_path = os.path.join("tmp", "answer.jsonl")
+        if not os.path.exists(jsonl_path):
+            return
+        
+        finished_task_ids = set()
+        try:
+            with open(jsonl_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        task_id = str(entry.get("task_id", ""))
+                        if task_id:
+                            finished_task_ids.add(task_id)
+                    except json.JSONDecodeError:
+                        continue
+            
+            if finished_task_ids:
+                original_count = len(self._data_records)
+                self._data_records = [
+                    record for record in self._data_records
+                    if str(record.get("id") or record.get("task_id", "")) not in finished_task_ids
+                ]
+                filtered_count = len(self._data_records)
+                logger.info(
+                    f"[{self.name}] Filtered {original_count - filtered_count} finished tasks. "
+                    f"Remaining: {filtered_count}"
+                )
+        except Exception as e:
+            logger.warning(f"[{self.name}] ⚠️ Failed to filter finished tasks: {e}")
+
     async def reset(self) -> Optional[Task]:
         self._index = 0
         self._tasks = []
-        logger.info(f"| [{self.name}] ✅ Progress reset. Ready to start.")
         return await self.step()
 
     async def step(self) -> Optional[Task]:
@@ -379,24 +549,27 @@ class LeetCodeBenchmark(Benchmark):
         lang_key = self.language.lower()
         template = templates.get(lang_key)
         
-        # Fallback for common aliases
-        if not template:
-            if lang_key == "python3": template = templates.get("python")
-            elif lang_key == "python": template = templates.get("python3")
-            elif lang_key in ["cpp", "c++"]: template = templates.get("cpp") or templates.get("c++")
-        
-        input_text = record.get("question") or record.get("prompt") or ""
-        if template:
-            input_text = (
-                f"{input_text}\n\n"
-                f"Please write the solution based on this template:\n"
-                f"```{lang_key}\n{template}\n```"
-            )
+        input_text = f"""
+TASK ID: {task_id}
+Problem Name: {record.get("name") or record.get("problem_name") or "Unknown"}
+Problem: {record.get("question") or record.get("prompt") or "Unknown"}
+Template:
+```{lang_key}
+#
+# @lc app=leetcode id={task_id} lang={lang_key}
+#
+# [{task_id}] {record.get("name") or record.get("problem_name") or "Unknown"}
+#
+# @lc code=start
+{template}
+# @lc code=end
+```
+"""
             
         return Task(
             task_id=task_id,
             input=input_text,
-            system_prompt=self.get_task_description(),
+            system_prompt=self.system_prompt,
             ground_truth=record.get("true_answer") or record.get("answer"),
             extra={k: v for k, v in record.items() if k not in ["true_answer", "answer", "task_id", "id", "question", "prompt", "code_template"]}
         )
@@ -405,12 +578,48 @@ class LeetCodeBenchmark(Benchmark):
         prediction = str(task.prediction) if task.prediction is not None else ""
         task_id = task.task_id
         
-        code_body = self._extract_inner_code(prediction)
-        if not code_body:
+        # Try to parse JSON format with reasoning and code fields
+        reasoning = None
+        code_content = None
+        
+        try:
+            # Try to extract JSON from the prediction (handle cases with markdown code blocks)
+            cleaned_prediction = prediction.strip()
+            # Remove markdown code blocks if present
+            cleaned_prediction = re.sub(r'```json\s*', '', cleaned_prediction)
+            cleaned_prediction = re.sub(r'```\s*$', '', cleaned_prediction)
+            
+            # Try to find JSON object
+            json_match = re.search(r'\{.*?"reasoning".*?"code".*?\}', cleaned_prediction, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                parsed = json.loads(json_str)
+                reasoning = parsed.get("reasoning")
+                code_content = parsed.get("code")
+        except (json.JSONDecodeError, AttributeError, KeyError):
+            pass
+        
+        # If JSON parsing failed, try to extract code directly
+        if not code_content:
+            code_body = self._extract_inner_code(prediction)
+            if code_body:
+                code_content = code_body
+        else:
+            # Extract code from the code field (which should contain @lc markers)
+            code_body = self._extract_inner_code(code_content)
+            if code_body:
+                code_content = code_body
+        
+        if not code_content:
             logger.error(f"[{task_id}] ❌ No code extracted.")
             task.score = 0.0
+            task.reasoning = reasoning
             self._tasks.append(task)
             return task
+        
+        # Store reasoning if available
+        if reasoning:
+            task.reasoning = reasoning
 
         lang_cfg = self.LANGUAGE_CONFIG.get(self.language.lower(), self.LANGUAGE_CONFIG["python3"])
         comment = lang_cfg["comment"]
@@ -433,7 +642,7 @@ class LeetCodeBenchmark(Benchmark):
             f"{comment} [{task_id}] {name}\n"
             f"{comment}\n\n"
             f"{comment} @lc code=start\n"
-            f"{code_body}\n"
+            f"{code_content}\n"
             f"{comment} @lc code=end\n"
         )
 

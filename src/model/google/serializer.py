@@ -336,54 +336,24 @@ class GoogleChatSerializer:
         Google Gemini uses response_schema:
         - Format: JSON Schema object
         - Requires response_mime_type: "application/json"
+        - CRITICAL: Google has strict nesting depth limits, so we use aggressive optimization
         
         Args:
             response_format: BaseModel class, instance, or dict
             
         Returns:
             Dictionary containing response_schema configuration:
-            - response_schema: JSON schema
+            - response_schema: JSON schema (optimized to reduce nesting depth)
             - response_mime_type: "application/json"
         """
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            # Pydantic model class - get JSON schema
-            schema = response_format.model_json_schema()
-            # Ensure additionalProperties: false for structured output
-            if schema.get("type") == "object" and "additionalProperties" not in schema:
-                schema["additionalProperties"] = False
-            elif "properties" in schema and "type" not in schema:
-                schema["type"] = "object"
-                schema["additionalProperties"] = False
-            
-            return {
-                'response_schema': schema,
-                'response_mime_type': 'application/json'
-            }
-        elif isinstance(response_format, BaseModel):
-            # BaseModel instance - get the class
-            model_class = type(response_format)
-            schema = model_class.model_json_schema()
-            # Ensure additionalProperties: false
-            if schema.get("type") == "object" and "additionalProperties" not in schema:
-                schema["additionalProperties"] = False
-            elif "properties" in schema and "type" not in schema:
-                schema["type"] = "object"
-                schema["additionalProperties"] = False
-            
-            return {
-                'response_schema': schema,
-                'response_mime_type': 'application/json'
-            }
-        elif isinstance(response_format, dict):
+        if isinstance(response_format, dict):
             # Dict format - check if it's already in response_schema format
             if "response_schema" in response_format:
-                # Already in response_schema format
                 return {
                     'response_schema': response_format.get('response_schema'),
                     'response_mime_type': response_format.get('response_mime_type', 'application/json')
                 }
             elif "type" in response_format and "json_schema" in response_format:
-                # Chat completions format - convert to Google Gemini response_schema format
                 json_schema_obj = response_format["json_schema"]
                 schema = json_schema_obj.get("schema", {})
                 return {
@@ -391,11 +361,102 @@ class GoogleChatSerializer:
                     'response_mime_type': 'application/json'
                 }
             else:
-                # Assume it's a schema dict - wrap it
                 return {
                     'response_schema': response_format,
                     'response_mime_type': 'application/json'
                 }
-        else:
+
+        model_class = response_format if isinstance(response_format, type) else type(response_format)
+        if not issubclass(model_class, BaseModel):
             raise ValueError(f"Unsupported response_format type: {type(response_format)}")
+
+        schema = model_class.model_json_schema()
+        defs = schema.pop("$defs", {})  # Remove $defs to avoid appearing in the final result
+
+        def transform(obj: Any) -> Any:
+            if not isinstance(obj, dict):
+                return obj
+            
+            # Expand all references to ensure full inlining
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                if ref_path.startswith("#/$defs/"):
+                    def_name = ref_path.split("/")[-1]
+                    if def_name in defs:
+                        return transform(defs[def_name])
+                return {"type": "object", "additionalProperties": True}
+            
+            # Handle Union structures (anyOf, oneOf, allOf) - used for handling Optional fields
+            for k in ["anyOf", "oneOf", "allOf"]:
+                if k in obj:
+                    items = obj[k]
+                    non_null = [i for i in items if isinstance(i, dict) and i.get("type") != "null"]
+                    if len(non_null) == 1:
+                        # Retain original object's description and title
+                        result = transform(non_null[0])
+                        if isinstance(result, dict):
+                            if "description" in obj and "description" not in result:
+                                result["description"] = obj["description"]
+                            if "title" in obj and "title" not in result:
+                                result["title"] = obj["title"]
+                        return result
+                    else:
+                        return {
+                            "type": "object",
+                            "description": obj.get("description", "Simplified Object"),
+                            "additionalProperties": True 
+                        }
+
+            # Handle objects
+            if obj.get("type") == "object" or "properties" in obj:
+                props = obj.get("properties", {})
+                required = obj.get("required", [])
+                new_props = {}
+                new_required = []
+                
+                for k, v in props.items():
+                    new_props[k] = transform(v)
+                    if k in required:
+                        new_required.append(k)
+                
+                # For Dict[str, Any] types (no properties or empty properties), retain additionalProperties: True
+                # Otherwise, set to False (strict mode)
+                if not new_props and obj.get("additionalProperties") is True:
+                    additional_props = True
+                else:
+                    additional_props = False
+                
+                result = {
+                    "type": "object",
+                    "properties": new_props,
+                    "required": new_required,
+                    "additionalProperties": additional_props
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # Handle arrays
+            if obj.get("type") == "array":
+                result = {
+                    "type": "array",
+                    "items": transform(obj.get("items", {}))
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # For other types, retain all fields (including description, title, etc.)
+            return obj
+
+        return {
+            'response_schema': transform(schema),
+            'response_mime_type': 'application/json'
+        }
 

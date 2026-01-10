@@ -7,7 +7,7 @@ import random
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.logger import logger
-from src.agent.types import Agent, ThinkOutputBuilder, InputArgs
+from src.agent.types import Agent, InputArgs
 from src.agent.server import acp
 from src.registry import AGENT
 

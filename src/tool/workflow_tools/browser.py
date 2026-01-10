@@ -13,7 +13,7 @@ load_dotenv(verbose=True)
 from src.utils import assemble_project_path
 from src.utils import file_lock
 from src.tool.types import Tool, ToolResponse, ToolExtra
-from src.tool.workflow_tools.report import Report
+from src.tool.workflow_tools.reporter import Report
 from src.logger import logger
 from src.registry import TOOL
 

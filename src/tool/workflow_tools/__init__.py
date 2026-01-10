@@ -7,7 +7,7 @@ including browser automation and deep research capabilities.
 from .browser import BrowserTool
 from .deep_researcher import DeepResearcherTool
 from .deep_analyzer import DeepAnalyzerTool
-from .report import ReporterTool
+from .reporter import ReporterTool
 from .tool_generator import ToolGeneratorTool
 
 __all__ = [

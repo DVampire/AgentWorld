@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
 
-from src.agent.types import Agent, AgentResponse, AgentExtra
+from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
 from src.config import config
 from src.logger import logger
 from src.utils import dedent
@@ -69,7 +69,6 @@ class ToolCallingAgent(Agent):
     
     async def initialize(self):
         """Initialize the agent."""
-        # Call parent initialize to setup think_output_builder
         await super().initialize()
         
         self.tracer = Tracer()
@@ -123,27 +122,23 @@ class ToolCallingAgent(Agent):
             "environment_context": environment_context,
         }
         
+    async def _get_tool_context(self) -> Dict[str, Any]:
+        """Get the tool context."""
+        tool_context = "<tool_context>"
+
+        tool_context += dedent(f"""
+            <available_tools>
+            {await tcp.get_contract()}
+            </available_tools>
+        """)
+
+        tool_context += "</tool_context>"
+        return {
+            "tool_context": tool_context,
+        }
+        
     async def _think_and_tool(self, messages: List[BaseMessage], task_id: str)->Dict[str, Any]:
         """Think and tool calls for one step."""
-        
-        # If the new tool is added, rebuild the ThinkOutput model
-        # Get all tools asynchronously and build args_schema dict
-        # Include both config.tool_names and tools from E2T transformation (all tools in TCP)
-        config_tool_names = config.tool_names
-        all_tcp_tools = await tcp.list()  # Get all tools registered in TCP (including from E2T)
-        # Combine config tools and all TCP tools, removing duplicates
-        tool_names = list(set(config_tool_names + all_tcp_tools))
-        tool_configs = await asyncio.gather(*[tcp.get_info(tool_name) for tool_name in tool_names])
-        tcp_args_schema = {
-            tool_config.name: tool_config.args_schema for tool_config in tool_configs if tool_config is not None
-        }
-        agent_args_schema = self.think_output_builder.schemas
-        
-        logger.info(f"| 📝 TCP Args Schema: {len(tcp_args_schema)}, Agent Args Schema: {len(agent_args_schema)}")
-        
-        if len(set(tcp_args_schema.keys()) - set(agent_args_schema.keys())) > 0:
-            self.think_output_builder.register(tcp_args_schema)
-            self.ThinkOutput = self.think_output_builder.build()
         
         done = False
         final_result = None
@@ -161,7 +156,7 @@ class ToolCallingAgent(Agent):
             think_output = await model_manager(
                 model=self.model_name,
                 messages=messages,
-                response_format=self.ThinkOutput
+                response_format=ThinkOutput
             )
             think_output = think_output.extra.parsed_model
             
@@ -179,7 +174,7 @@ class ToolCallingAgent(Agent):
             
             logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Tools to execute: {len(tools)}")
+            logger.info(f"| 🔧 Tools to execute: {tools}")
             
             # Execute tools sequentially
             tool_results = []
@@ -189,7 +184,7 @@ class ToolCallingAgent(Agent):
                 
                 # Execute the tool
                 tool_name = tool.name
-                tool_args = tool.args.model_dump()
+                tool_args = tool.args if tool.args else {}
                 
                 logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 
@@ -247,16 +242,6 @@ class ToolCallingAgent(Agent):
                     task_id=task_id
                 )
             self.step_number += 1
-            
-            if done and self.use_memory and memory_name:
-                await memory_manager.add_event(
-                    memory_name=memory_name,
-                    step_number=self.step_number,
-                    event_type=EventType.TASK_END,
-                    data=dict(result=final_result, reasoning=final_reasoning),
-                    agent_name=self.name,
-                    task_id=task_id
-                )
             
         except Exception as e:
             logger.error(f"| Error in thinking and tool step: {e}")

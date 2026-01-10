@@ -362,7 +362,7 @@ class AnthropicChatSerializer:
         - Requires beta API: client.beta.messages.create()
         - Requires betas parameter: ['structured-outputs-2025-11-13']
         - Format: {"type": "json_schema", "schema": {...}}
-        - Uses transform_schema() if available for better compatibility
+        - CRITICAL: Anthropic has strict schema requirements, optimized here to reduce complexity
         
         Args:
             response_format: BaseModel class, instance, or dict
@@ -370,51 +370,13 @@ class AnthropicChatSerializer:
         Returns:
             Dictionary containing output_format configuration:
             - type: "json_schema"
-            - schema: JSON schema (optimized with transform_schema if available)
+            - schema: JSON schema (optimized to reduce complexity and resolve references)
         """
-        if isinstance(response_format, type) and issubclass(response_format, BaseModel):
-            # Pydantic model class - use transform_schema if available
-            if transform_schema is not None:
-                schema = transform_schema(response_format)
-            else:
-                # Fallback to model_json_schema
-                schema = response_format.model_json_schema()
-                # Ensure additionalProperties: false
-                if schema.get("type") == "object" and "additionalProperties" not in schema:
-                    schema["additionalProperties"] = False
-                elif "properties" in schema and "type" not in schema:
-                    schema["type"] = "object"
-                    schema["additionalProperties"] = False
-            
-            return {
-                'type': 'json_schema',
-                'schema': schema
-            }
-        elif isinstance(response_format, BaseModel):
-            # BaseModel instance - get the class
-            model_class = type(response_format)
-            if transform_schema is not None:
-                schema = transform_schema(model_class)
-            else:
-                schema = model_class.model_json_schema()
-                # Ensure additionalProperties: false
-                if schema.get("type") == "object" and "additionalProperties" not in schema:
-                    schema["additionalProperties"] = False
-                elif "properties" in schema and "type" not in schema:
-                    schema["type"] = "object"
-                    schema["additionalProperties"] = False
-            
-            return {
-                'type': 'json_schema',
-                'schema': schema
-            }
-        elif isinstance(response_format, dict):
+        if isinstance(response_format, dict):
             # Dict format - check if it's already in output_format format
             if "type" in response_format and "schema" in response_format:
-                # Already in output_format format
                 return response_format
             elif "type" in response_format and "json_schema" in response_format:
-                # Chat completions format - convert to Anthropic output_format format
                 json_schema_obj = response_format["json_schema"]
                 schema = json_schema_obj.get("schema", {})
                 return {
@@ -422,11 +384,108 @@ class AnthropicChatSerializer:
                     'schema': schema
                 }
             else:
-                # Assume it's a schema dict - wrap it
                 return {
                     'type': 'json_schema',
                     'schema': response_format
                 }
-        else:
+
+        model_class = response_format if isinstance(response_format, type) else type(response_format)
+        if not issubclass(model_class, BaseModel):
             raise ValueError(f"Unsupported response_format type: {type(response_format)}")
+
+        # Use Anthropic's transform_schema if available, but we'll still apply our transform
+        # to ensure $defs are resolved and optional fields are simplified
+        if transform_schema is not None:
+            schema = transform_schema(model_class)
+        else:
+            schema = model_class.model_json_schema()
+        
+        defs = schema.pop("$defs", {})  # Remove $defs to avoid appearing in the final result
+
+        def transform(obj: Any) -> Any:
+            if not isinstance(obj, dict):
+                return obj
+            
+            # Expand all references to ensure full inlining
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                if ref_path.startswith("#/$defs/"):
+                    def_name = ref_path.split("/")[-1]
+                    if def_name in defs:
+                        return transform(defs[def_name])
+                return {"type": "object", "additionalProperties": True}
+            
+            # Handle Union structures (anyOf, oneOf, allOf) - used for handling Optional fields
+            for k in ["anyOf", "oneOf", "allOf"]:
+                if k in obj:
+                    items = obj[k]
+                    non_null = [i for i in items if isinstance(i, dict) and i.get("type") != "null"]
+                    if len(non_null) == 1:
+                        # Retain original object's description and title
+                        result = transform(non_null[0])
+                        if isinstance(result, dict):
+                            if "description" in obj and "description" not in result:
+                                result["description"] = obj["description"]
+                            if "title" in obj and "title" not in result:
+                                result["title"] = obj["title"]
+                        return result
+                    else:
+                        return {
+                            "type": "object",
+                            "description": obj.get("description", "Simplified Object"),
+                            "additionalProperties": True 
+                        }
+
+            # Handle objects
+            if obj.get("type") == "object" or "properties" in obj:
+                props = obj.get("properties", {})
+                required = obj.get("required", [])
+                new_props = {}
+                new_required = []
+                
+                for k, v in props.items():
+                    new_props[k] = transform(v)
+                    if k in required:
+                        new_required.append(k)
+                
+                # For Dict[str, Any] types (no properties or empty properties), retain additionalProperties: True
+                # Otherwise, set to False (strict mode)
+                if not new_props and obj.get("additionalProperties") is True:
+                    additional_props = True
+                else:
+                    additional_props = False
+                
+                result = {
+                    "type": "object",
+                    "properties": new_props,
+                    "required": new_required,
+                    "additionalProperties": additional_props
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # Handle arrays
+            if obj.get("type") == "array":
+                result = {
+                    "type": "array",
+                    "items": transform(obj.get("items", {}))
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # For other types, retain all fields (including description, title, etc.)
+            return obj
+
+        return {
+            'type': 'json_schema',
+            'schema': transform(schema)
+        }
 

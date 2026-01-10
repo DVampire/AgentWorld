@@ -204,101 +204,98 @@ class OpenAIChatSerializer:
             - type: "json_schema"
             - json_schema: Contains name, strict mode, and optimized schema
         """
-        # Get the BaseModel class if it's an instance
-        if isinstance(response_format, BaseModel) and not isinstance(response_format, type):
-            model_class = type(response_format)
-        else:
-            model_class = response_format
-        
-        # Get JSON schema from Pydantic model
+        model_class = response_format if isinstance(response_format, type) else type(response_format)
         schema = model_class.model_json_schema()
-        
-        # Build a lookup for $defs to resolve references
-        defs_lookup = schema.get("$defs", {})
-        
-        def optimize_schema(obj: Any, defs: Dict[str, Any] = None) -> Any:
-            """
-            Recursively process schema to:
-            1. Resolve $ref references
-            2. Add additionalProperties: false to all object types (OpenAI requirement)
-            """
-            if defs is None:
-                defs = defs_lookup
-            
-            if isinstance(obj, dict):
-                optimized = {}
-                
-                # Handle $ref references
-                if "$ref" in obj:
-                    ref_path = obj["$ref"]
-                    if ref_path.startswith("#/$defs/"):
-                        def_name = ref_path.split("/")[-1]
-                        if def_name in defs:
-                            return optimize_schema(defs[def_name], defs)
-                
-                # Process all keys
-                for key, value in obj.items():
-                    if key == "$ref":
-                        continue
-                    elif key == "items":
-                        # Process items and ensure it has type if it's a dict
-                        processed_items = optimize_schema(value, defs)
-                        if isinstance(processed_items, dict) and "type" not in processed_items:
-                            # If items is a dict without type, infer it from context
-                            if "properties" in processed_items:
-                                processed_items = {**processed_items, "type": "object"}
-                            elif "$ref" not in processed_items:
-                                # Default to "string" for simple types (skip if has $ref)
-                                processed_items = {**processed_items, "type": "string"}
-                        optimized[key] = processed_items
-                    elif key in ["properties"]:
-                        optimized[key] = optimize_schema(value, defs)
-                    elif key == "anyOf" or key == "oneOf" or key == "allOf":
-                        optimized[key] = [optimize_schema(item, defs) for item in value] if isinstance(value, list) else value
-                    elif isinstance(value, (dict, list)):
-                        optimized[key] = optimize_schema(value, defs)
-                    else:
-                        optimized[key] = value
-                
-                # CRITICAL: Ensure array items have type key (double-check after processing)
-                if optimized.get("type") == "array" and "items" in optimized:
-                    items = optimized["items"]
-                    if isinstance(items, dict) and "type" not in items and "$ref" not in items:
-                        # If items is a dict without type and no $ref, add default type
-                        if "properties" in items:
-                            optimized["items"] = {**items, "type": "object"}
-                        else:
-                            optimized["items"] = {**items, "type": "string"}
-                
-                # CRITICAL: Add additionalProperties: false to ALL objects for OpenAI
-                if optimized.get("type") == "object":
-                    optimized["additionalProperties"] = False
-                elif "properties" in optimized and "type" not in optimized:
-                    optimized["type"] = "object"
-                    optimized["additionalProperties"] = False
-                
-                return optimized
-            elif isinstance(obj, list):
-                return [optimize_schema(item, defs) for item in obj]
-            else:
+        defs = schema.pop("$defs", {})  # Remove $defs to avoid appearing in the final result
+
+        def transform(obj: Any) -> Any:
+            if not isinstance(obj, dict):
                 return obj
-        
-        # Optimize the entire schema
-        optimized_schema = optimize_schema(schema)
-        
-        # Ensure root schema has additionalProperties: false if it's an object
-        if optimized_schema.get("type") == "object" and "additionalProperties" not in optimized_schema:
-            optimized_schema["additionalProperties"] = False
-        elif "properties" in optimized_schema and "type" not in optimized_schema:
-            optimized_schema["type"] = "object"
-            optimized_schema["additionalProperties"] = False
-        
+            
+            # Expand all references to ensure full inlining
+            if "$ref" in obj:
+                ref_path = obj["$ref"]
+                if ref_path.startswith("#/$defs/"):
+                    def_name = ref_path.split("/")[-1]
+                    if def_name in defs:
+                        return transform(defs[def_name])
+                return {"type": "object", "additionalProperties": True}
+            
+            # Handle Union structures (anyOf, oneOf, allOf) - used for handling Optional fields
+            for k in ["anyOf", "oneOf", "allOf"]:
+                if k in obj:
+                    items = obj[k]
+                    non_null = [i for i in items if isinstance(i, dict) and i.get("type") != "null"]
+                    if len(non_null) == 1:
+                        # Retain original object's description and title
+                        result = transform(non_null[0])
+                        if isinstance(result, dict):
+                            if "description" in obj and "description" not in result:
+                                result["description"] = obj["description"]
+                            if "title" in obj and "title" not in result:
+                                result["title"] = obj["title"]
+                        return result
+                    else:
+                        return {
+                            "type": "object",
+                            "description": obj.get("description", "Simplified Object"),
+                            "additionalProperties": True 
+                        }
+
+            # Handle objects
+            if obj.get("type") == "object" or "properties" in obj:
+                props = obj.get("properties", {})
+                required = obj.get("required", [])
+                new_props = {}
+                new_required = []
+                
+                for k, v in props.items():
+                    new_props[k] = transform(v)
+                    if k in required:
+                        new_required.append(k)
+                
+                # For Dict[str, Any] types (no properties or empty properties), retain additionalProperties: True
+                # Otherwise, set to False (strict mode)
+                if not new_props and obj.get("additionalProperties") is True:
+                    additional_props = True
+                else:
+                    additional_props = False
+                
+                result = {
+                    "type": "object",
+                    "properties": new_props,
+                    "required": new_required,
+                    "additionalProperties": additional_props
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # Handle arrays
+            if obj.get("type") == "array":
+                result = {
+                    "type": "array",
+                    "items": transform(obj.get("items", {}))
+                }
+                # Retain metadata such as description and title
+                if "description" in obj:
+                    result["description"] = obj["description"]
+                if "title" in obj:
+                    result["title"] = obj["title"]
+                return result
+
+            # For other types, retain all fields (including description, title, etc.)
+            return obj
+
         return {
             "type": "json_schema",
             "json_schema": {
                 "name": "response",
                 "strict": True,
-                "schema": optimized_schema,
+                "schema": transform(schema),
             },
         }
 
