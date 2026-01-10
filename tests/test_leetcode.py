@@ -24,6 +24,7 @@ from src.benchmark import benchmark_manager
 from src.benchmark.types import Task, Stats
 from src.model.manager import model_manager
 from src.message.types import HumanMessage, SystemMessage, ContentPartText, ContentPartImage, ImageURL
+from src.benchmark.leetcode import CodeSubmitter
 
 # ==========================================
 # Configuration Section
@@ -33,11 +34,6 @@ TARGET_MODEL = "openrouter/gemini-3-flash-preview"
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
     code: str = Field(description="The final code")
-
-def sanitize_filename(name: str) -> str:
-    """Clean filename, remove illegal characters"""
-    name = str(name).replace('\n', ' ').replace('\r', '')
-    return re.sub(r'[\\/*?:"<>|]', '', name).strip()
 
 def parse_markdown_with_images(markdown_text: str) -> Union[str, list]:
     """
@@ -185,9 +181,8 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                     
                     # --- Save Response to Markdown file ---
                     try:
-                        safe_id = sanitize_filename(task_id)
-                        filename = f"{safe_id}.md"
-                        file_path = os.path.join(save_dir, filename)
+                        file_name = f"{task.extra['file_name']}.md"
+                        file_path = os.path.join(save_dir, file_name)
                         
                         with open(file_path, "w", encoding="utf-8") as f:
                             f.write(task.reasoning + "\n\n" + task.answer)
@@ -206,6 +201,8 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                 logger.error(f"| ❌ [Task {task_id}] Critical Inference Error: {e}")
                 task.reasoning = ""
                 task.answer = ""
+                
+            task = await benchmark_manager.eval(benchmark_name, task)
                 
         except Exception as e:
             logger.error(f"❌ Error processing task {task_id}: {e}")
@@ -244,6 +241,30 @@ async def main():
     await benchmark_manager.initialize(benchmark_names=[benchmark_name])
     
     await test_leetcode_benchmark(benchmark_name)
+    
+#     code = """
+# #
+# # @lc app=leetcode id=1 lang=python3
+# #
+# # [1] Two Sum
+# #
+# # @lc code=start
+# class Solution:
+#     def twoSum(self, nums: List[int], target: int) -> List[int]:
+#         hashmap = {}
+#         for i, num in enumerate(nums):
+#             complement = target - num
+#             if complement in hashmap:
+#                 return [hashmap[complement], i]
+#             hashmap[num] = i
+#         return []
+# # @lc code=end
+#     """
+    
+#     file_name = "1.two-sum.py"
+    
+#     await submitter.submit_code(code, file_name)
+    
     
     print("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()
