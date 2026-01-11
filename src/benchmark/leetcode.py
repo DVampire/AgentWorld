@@ -25,7 +25,7 @@ Output format:
 The output should be a JSON object with the following fields, DO NOT add any other text like "```json" or "```" or anything else:
 {
     "reasoning": "Your step-by-step reasoning process",
-    "code": "You solution code".
+    "result": "Your solution code".
 }
 
 Example:
@@ -51,7 +51,7 @@ class Solution:
 Output:
 {
     "reasoning": "Step 1: I need to find two numbers that sum to the target. I can use a hashmap to store each number and its index as I iterate through the array.\\n\\nStep 2: For each number, I calculate the complement (target - current number). If the complement exists in the hashmap, I found the pair. Otherwise, I add the current number to the hashmap.\\n\\nStep 3: This approach has O(n) time complexity and O(n) space complexity.",
-    "code": "#\\n# @lc app=leetcode id=1 lang=python3\\n#\\n# [1] Two Sum\\n#\\n\\n# @lc code=start\\nclass Solution:\\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\\n        hashmap = {}\\n        for i, num in enumerate(nums):\\n            complement = target - num\\n            if complement in hashmap:\\n                return [hashmap[complement], i]\\n            hashmap[num] = i\\n        return []\\n# @lc code=end"
+    "result": "#\\n# @lc app=leetcode id=1 lang=python3\\n#\\n# [1] Two Sum\\n#\\n\\n# @lc code=start\\nclass Solution:\\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\\n        hashmap = {}\\n        for i, num in enumerate(nums):\\n            complement = target - num\\n            if complement in hashmap:\\n                return [hashmap[complement], i]\\n            hashmap[num] = i\\n        return []\\n# @lc code=end"
 }
 
 Please write your solution code base on your language template.
@@ -501,7 +501,7 @@ Template:
 
     async def eval(self, task: Task) -> Optional[Task]:
         task_id = task.task_id
-        code_content = task.answer
+        code_content = task.result
 
         if not code_content:
             logger.error(f"| ❌ No code provided.")

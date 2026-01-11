@@ -447,12 +447,12 @@ class IntradayMinuteTradingAgent(Agent):
             daily_trend_forecast (str): The daily trend forecast from day analysis.
             
         Returns:
-            Tuple[bool, Any]: A tuple of (done, final_result).
+            Tuple[bool, Any]: A tuple of (done, result).
         """
         messages = await self._get_messages(data, daily_trend_forecast)
         
         done = False
-        final_result = None
+        result = None
         action_result = None
         
         try:
@@ -504,12 +504,12 @@ class IntradayMinuteTradingAgent(Agent):
             # Check if trading environment is done
             if tool_name == "step" and "Environment status: done" in str(tool_result):
                 done = True
-                final_result = tool_result
+                result = tool_result
         
         except Exception as e:
             logger.error(f"| 🚨 Error: {e}")
             done = True
-            final_result = str(e)
+            result = str(e)
         
         event_data = {
             "analysis": analysis,
@@ -528,7 +528,7 @@ class IntradayMinuteTradingAgent(Agent):
             task_id=task_id
         )
         
-        return done, final_result
+        return done, result
 
 
 # ============================================
@@ -645,14 +645,14 @@ class IntradayTradingAgent(Agent):
             self.daily_trend_forecast = daily_trend_forecast
             
         # Get minute trading decision
-        done, final_result = await self.minute_trading_agent(data, task_id, self.daily_trend_forecast)
+        done, result = await self.minute_trading_agent(data, task_id, self.daily_trend_forecast)
         
-        result = {
+        response_dict = {
             "done": done,
-            "final_result": final_result,
-            "final_reasoning": None
+            "result": result,
+            "reasoning": None
         }
-        return result
+        return response_dict
         
     
     async def __call__(
@@ -697,7 +697,7 @@ class IntradayTradingAgent(Agent):
             # Execute one step
             response = await self._think_and_action(data, task_id)
             
-            if response.done:
+            if response["done"]:
                 break
         
         # Handle max steps reached
@@ -705,8 +705,8 @@ class IntradayTradingAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             response = {
                 "done": False,
-                "final_result": "Reached maximum number of steps",
-                "final_reasoning": "Reached the maximum number of steps."
+                "result": "Reached maximum number of steps",
+                "reasoning": "Reached the maximum number of steps."
             }
         
         # End session
@@ -717,6 +717,6 @@ class IntradayTradingAgent(Agent):
         
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"] if response["final_result"] else "",
+            message=response["result"] if response["result"] else "",
             extra=AgentExtra(data=response)
         )

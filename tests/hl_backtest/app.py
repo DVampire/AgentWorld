@@ -249,17 +249,17 @@ else:
 
     def make_ts_strat(min_hold: int):
         def strat(df_, pos_, eq_):
-            return livetrading_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+            return tsmom_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
         return strat
 
     def make_lt_strat(min_hold: int):
         def strat(df_, pos_, eq_):
-            return tsmom_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+            return funding_arb_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
         return strat
 
     def make_fa_strat(min_hold: int):
         def strat(df_, pos_, eq_):
-            return funding_arb_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
+            return livetrading_baseline(df_, pos_, eq_, MIN_HOLD_BARS=int(min_hold))
         return strat
 
     def make_cm_strat(min_hold: int):

@@ -373,8 +373,8 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| 🚀 Running agent to get initial solution...")
         initial_agent_response = await agent(task=task, files=files)
         initial_agent_response_extra_data = initial_agent_response.extra.data if initial_agent_response.extra and initial_agent_response.extra.data else None
-        initial_agent_result = initial_agent_response_extra_data['final_result']
-        initial_agent_reasoning = initial_agent_response_extra_data['final_reasoning']
+        initial_agent_result = initial_agent_response_extra_data['result']
+        initial_agent_reasoning = initial_agent_response_extra_data['reasoning']
         current_solution = f"Result: {initial_agent_result}\nReasoning: {initial_agent_reasoning}" if initial_agent_reasoning else f"Result: {initial_agent_result}"
         logger.info(f"| ✅ Initial solution obtained")
         
@@ -457,8 +457,8 @@ class ReflectionOptimizer(Optimizer):
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                            current_result = agent_response_extra_data['final_result']
-                            current_reasoning = agent_response_extra_data['final_reasoning']
+                            current_result = agent_response_extra_data['result']
+                            current_reasoning = agent_response_extra_data['reasoning']
                             current_solution = f"Result: {current_result}\nReasoning: {current_reasoning}" if current_reasoning else f"Result: {current_result}"
                             logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
                         else:

@@ -268,8 +268,8 @@ class AnthropicMobileAgent(Agent):
         """Think and action for one step."""
         
         done = False
-        final_result = None
-        final_reasoning = None
+        result = None
+        reasoning = None
         
         try:
             model_response = await model_manager(model=self.model_name, messages=messages)
@@ -327,8 +327,8 @@ class AnthropicMobileAgent(Agent):
                 
             if tool_name == "done":
                 done = True
-                final_result = tool_result
-                final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                result = tool_result
+                reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
             
             event_data = {
                 "reasoning": reasoning,
@@ -349,7 +349,7 @@ class AnthropicMobileAgent(Agent):
                     memory_name=self.memory_name,
                     step_number=self.step_number,
                     event_type=EventType.TASK_END,
-                    data=dict(result=final_result),
+                    data=dict(result=result),
                     agent_name=self.name,
                     task_id=task_id
                 )
@@ -357,12 +357,12 @@ class AnthropicMobileAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
-        result = {
+        response_dict = {
             "done": done,
-            "final_result": final_result,
-            "final_reasoning": final_reasoning
+            "result": result,
+            "reasoning": reasoning
         }
-        return result
+        return response_dict
     
     async def __call__(self, 
                   task: str, 
@@ -435,8 +435,8 @@ class AnthropicMobileAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             response = {
                 "done": False,
-                "final_result": "Reached maximum number of steps",
-                "final_reasoning": "Reached the maximum number of steps."
+                "result": "Reached maximum number of steps",
+                "reasoning": "Reached the maximum number of steps."
             }
         
         # Add task end event
@@ -456,6 +456,6 @@ class AnthropicMobileAgent(Agent):
         
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"] if response["final_result"] else "Task completed",
+            message=response["result"] if response["result"] else "Task completed",
             extra=AgentExtra(data=response)
         )

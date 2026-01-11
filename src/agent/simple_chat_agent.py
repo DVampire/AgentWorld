@@ -353,15 +353,15 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         
         logger.info(f"| ✅ Multi-turn conversation completed after {conversation_round} rounds")
         
-        result = f"Conversation completed in {conversation_round} rounds"
+        result_msg = f"Conversation completed in {conversation_round} rounds"
         response = {
             "done": True,
-            "final_result": result,
-            "final_reasoning": None
+            "result": result_msg,
+            "reasoning": None
         }
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"],
+            message=response["result"],
             extra=AgentExtra(data=response)
         )
 

@@ -136,9 +136,9 @@ async def collect_reference_solutions(benchmark_name: str) -> List[Dict[str, Any
             response = await reference_agent(task=full_task, files=[])
 
             # Extract solution from response
-            reference_result = response.extra.data.get('final_result',
+            reference_result = response.extra.data.get('result',
                                                        '') if response.extra and response.extra.data else ''
-            reference_reasoning = response.extra.data.get('final_reasoning',
+            reference_reasoning = response.extra.data.get('reasoning',
                                                           '') if response.extra and response.extra.data else ''
             reference_solution = f"Result: {reference_result}\nReasoning: {reference_reasoning}" if reference_reasoning else f"Result: {reference_result}"
 

@@ -509,8 +509,8 @@ class GrpoOptimizer(Optimizer):
         logger.info(f"| 🚀 Running agent to get initial solution...")
         old_agent_response = await agent(task=task, files=files)
         old_agent_response_extra_data = old_agent_response.extra.data if old_agent_response.extra and old_agent_response.extra.data else None
-        old_agent_result = old_agent_response_extra_data['final_result']
-        old_agent_reasoning = old_agent_response_extra_data['final_reasoning']
+        old_agent_result = old_agent_response_extra_data['result']
+        old_agent_reasoning = old_agent_response_extra_data['reasoning']
         old_solution = f"Result: {old_agent_result}\nReasoning: {old_agent_reasoning}" if old_agent_reasoning else f"Result: {old_agent_result}"
         logger.info(f"| ✅ Old solution obtained")
 
@@ -529,8 +529,8 @@ class GrpoOptimizer(Optimizer):
                 for cand_idx in range(self.num_candidates):
                     candidate_response = await agent(task=task, files=files)
                     candidate_response_extra_data = candidate_response.extra.data if candidate_response.extra and candidate_response.extra.data else None
-                    candidate_result = candidate_response_extra_data.get('final_result') if candidate_response_extra_data else None
-                    candidate_reasoning = candidate_response_extra_data.get('final_reasoning') if candidate_response_extra_data else None
+                    candidate_result = candidate_response_extra_data.get('result') if candidate_response_extra_data else None
+                    candidate_reasoning = candidate_response_extra_data.get('reasoning') if candidate_response_extra_data else None
                     candidate_solution = f"Result: {candidate_result}\nReasoning: {candidate_reasoning}" if candidate_reasoning else f"Result: {candidate_result}"
                     candidate_solutions.append(candidate_solution)
 
@@ -640,8 +640,8 @@ class GrpoOptimizer(Optimizer):
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                            current_result = agent_response_extra_data['final_result']
-                            current_reasoning = agent_response_extra_data['final_reasoning']
+                            current_result = agent_response_extra_data['result']
+                            current_reasoning = agent_response_extra_data['reasoning']
                             current_solution = f"Result: {current_result}\nReasoning: {current_reasoning}" if current_reasoning else f"Result: {current_result}"
                             logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
                         else:

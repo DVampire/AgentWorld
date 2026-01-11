@@ -17,7 +17,7 @@ class Task(BaseModel):
     
     # Output
     reasoning: Optional[str] = Field(default=None, description="The reasoning process")
-    answer: Optional[Any] = Field(default=None, description="The final answer")
+    result: Optional[Any] = Field(default=None, description="The final answer")
     time: Optional[float] = Field(default=0.0, description="The time taken to complete the task in seconds")
     score: Optional[float] = Field(default=0.0, description="The score of the task")
     

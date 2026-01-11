@@ -33,7 +33,7 @@ TARGET_MODEL = "openrouter/gemini-3-flash-preview"
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
-    code: str = Field(description="The final code")
+    result: str = Field(description="The generated code")
 
 def parse_markdown_with_images(markdown_text: str) -> Union[str, list]:
     """
@@ -177,7 +177,7 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                     # Get parsed object
                     response_model = response.extra.parsed_model
                     task.reasoning = response_model.reasoning
-                    task.answer = response_model.code
+                    task.result = response_model.result
                     
                     # --- Save Response to Markdown file ---
                     try:
@@ -185,7 +185,7 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                         file_path = os.path.join(save_dir, file_name)
                         
                         with open(file_path, "w", encoding="utf-8") as f:
-                            f.write(task.reasoning + "\n\n" + task.answer)
+                            f.write(task.reasoning + "\n\n" + task.result)
                         
                         print(f"💾 [Saved] Output saved to: {file_path}")
                         
@@ -195,19 +195,19 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                 else:
                     logger.error(f"| ⚠️ [Task {task_id}] Model API Error: {response.message}")
                     task.reasoning = "" 
-                    task.answer = "" 
+                    task.result = "" 
                     
             except Exception as e:
                 logger.error(f"| ❌ [Task {task_id}] Critical Inference Error: {e}")
                 task.reasoning = ""
-                task.answer = ""
+                task.result = ""
                 
             # --- 3. Evaluation ---
             task.time = time.time() - start_time
             print(f"🤖 [Task {task_id}] Evaluating...")
             task = await benchmark_manager.eval(benchmark_name, task)
             
-            print(f"🤖 [Task {task_id}] Answer: {task.answer[:50]}..., Ground Truth: {str(task.ground_truth)[:50]}...")
+            print(f"🤖 [Task {task_id}] Answer: {task.result[:50]}..., Ground Truth: {str(task.ground_truth)[:50]}...")
             
             if task.score and task.score >= 1.0:
                 print(f"✅ [Task {task_id}] Result: Correct (Score: {task.score}) | Time: {task.time:.2f}s")

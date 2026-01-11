@@ -243,8 +243,8 @@ class OnlineTradingAgent(Agent):
         """Think and action for one step."""
         
         done = False
-        final_result = None
-        final_reasoning = None
+        result = None
+        reasoning = None
         
         record_tool = {
             "thinking": None,
@@ -315,8 +315,8 @@ class OnlineTradingAgent(Agent):
                     
                 if tool_name == "done":
                     done = True
-                    final_result = tool_result
-                    final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                    result = tool_result
+                    reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
                     break
             
             event_data = {
@@ -343,12 +343,12 @@ class OnlineTradingAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
-        result = {
+        response_dict = {
             "done": done,
-            "final_result": final_result,
-            "final_reasoning": final_reasoning
+            "result": result,
+            "reasoning": reasoning
         }
-        return result
+        return response_dict
         
     async def __call__(self, 
                   task: str, 
@@ -422,7 +422,7 @@ class OnlineTradingAgent(Agent):
             
             messages = await self._get_messages(enhanced_task)
             
-            if response.done:
+            if response["done"]:
                 break
         
         # Handle max steps reached
@@ -430,8 +430,8 @@ class OnlineTradingAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             response = {
                 "done": False,
-                "final_result": "Reached maximum number of steps",
-                "final_reasoning": "Reached the maximum number of steps."
+                "result": "Reached maximum number of steps",
+                "reasoning": "Reached the maximum number of steps."
             }
         
         # Add task end event
@@ -454,6 +454,6 @@ class OnlineTradingAgent(Agent):
         
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"] if response["final_result"] else "",
+            message=response["result"] if response["result"] else "",
             extra=AgentExtra(data=response)
         )

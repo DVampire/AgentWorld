@@ -158,7 +158,7 @@ class ToolCallingAgentRunner:
         if hasattr(result, 'message'):
             return result.message
         elif hasattr(result, 'extra') and result.extra and result.extra.data:
-            return result.extra.data.get("final_result", str(result))
+            return result.extra.data.get("result", str(result))
         return result if isinstance(result, str) else str(result)
 
     def close(self) -> None:

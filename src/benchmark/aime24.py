@@ -17,7 +17,7 @@ SYSTEM_PROMPT = dedent("""
     The output should be a JSON object with the following fields, DO NOT add any other text like "```json" or "```" or anything else:
     {
         "reasoning": "Step 1: Solve for a and b\n\na + b = 10\n\na - b = 4\n\nAdding the two equations, we get 2a = 14, so a = 7.\n\tSubstituting a = 7 into the first equation, we get 7 + b = 10, so b = 3.\n\nStep 2: Calculate a^2 - b^2\n\ta^2 - b^2 = 7^2 - 3^2 = 49 - 9 = 40\n\nStep 3: Provide the final answer\n\tThe final answer is 40.",
-        "answer": 40
+        "result": 40
     }
     
     Please solve the following problem:
@@ -71,16 +71,16 @@ class AIME24Benchmark(Benchmark):
         )
 
     async def eval(self, task: Task) -> Optional[Task]:
-        answer = str(task.answer) if task.answer is not None else ""
+        result = str(task.result) if task.result is not None else ""
         ground_truth = str(task.ground_truth) if task.ground_truth is not None else ""
 
-        clean_answer = clean_text(answer) if answer is not None else None
+        clean_result = clean_text(result) if result is not None else None
         clean_ground_truth = clean_text(ground_truth) if ground_truth is not None else None
         
-        task.answer = clean_answer
+        task.result = clean_result
         task.ground_truth = clean_ground_truth
 
-        task.score = 1.0 if clean_answer == clean_ground_truth and clean_answer is not None else 0.0
+        task.score = 1.0 if clean_result == clean_ground_truth and clean_result is not None else 0.0
         self._tasks.append(task)
         return task
 

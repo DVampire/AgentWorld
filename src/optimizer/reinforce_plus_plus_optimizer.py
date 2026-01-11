@@ -492,8 +492,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         logger.info(f"| 🚀 Running agent to get initial solution...")
         old_agent_response = await agent(task=task, files=files)
         old_agent_response_extra_data = old_agent_response.extra.data if old_agent_response.extra and old_agent_response.extra.data else None
-        old_agent_result = old_agent_response_extra_data['final_result']
-        old_agent_reasoning = old_agent_response_extra_data['final_reasoning']
+        old_agent_result = old_agent_response_extra_data['result']
+        old_agent_reasoning = old_agent_response_extra_data['reasoning']
         old_solution = f"Result: {old_agent_result}\nReasoning: {old_agent_reasoning}" if old_agent_reasoning else f"Result: {old_agent_result}"
         logger.info(f"| ✅ Initial solution obtained")
 
@@ -603,8 +603,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                            current_result = agent_response_extra_data['final_result']
-                            current_reasoning = agent_response_extra_data['final_reasoning']
+                            current_result = agent_response_extra_data['result']
+                            current_reasoning = agent_response_extra_data['reasoning']
                             current_solution = f"Result: {current_result}\nReasoning: {current_reasoning}" if current_reasoning else f"Result: {current_result}"
                             logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
                         else:

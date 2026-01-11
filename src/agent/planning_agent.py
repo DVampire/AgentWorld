@@ -168,8 +168,8 @@ class PlanningAgent(Agent):
         """Think and tool calls for one step, with support for agent calls."""
         
         done = False
-        final_result = None
-        final_reasoning = None
+        result = None
+        reasoning = None
         
         record_tool = {
             "thinking": None,
@@ -281,8 +281,8 @@ class PlanningAgent(Agent):
                         
                         if tool_name == "done":
                             done = True
-                            final_result = tool_result
-                            final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                            result = tool_result
+                            reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
                             break
                 except Exception as e:
                     # If agent lookup fails, treat as regular tool
@@ -312,8 +312,8 @@ class PlanningAgent(Agent):
                     
                     if tool_name == "done":
                         done = True
-                        final_result = tool_result
-                        final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                        result = tool_result
+                        reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
                         break
             
             event_data = {
@@ -343,12 +343,12 @@ class PlanningAgent(Agent):
         except Exception as e:
             logger.error(f"| Error in thinking and tool step: {e}")
         
-        result = {
+        response_dict = {
             "done": done,
-            "final_result": final_result,
-            "final_reasoning": final_reasoning
+            "result": result,
+            "reasoning": reasoning
         }
-        return result
+        return response_dict
         
     async def __call__(self, 
                   task: str, 
@@ -447,8 +447,8 @@ class PlanningAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             response = {
                 "done": False,
-                "final_result": "The task has not been completed.",
-                "final_reasoning": "Reached the maximum number of steps."
+                "result": "The task has not been completed.",
+                "reasoning": "Reached the maximum number of steps."
             }
         
         # Get memory system name
@@ -474,7 +474,7 @@ class PlanningAgent(Agent):
         
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"],
+            message=response["result"],
             extra=AgentExtra(
                 data=response
             )
