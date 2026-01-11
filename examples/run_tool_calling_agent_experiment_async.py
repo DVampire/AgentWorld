@@ -11,9 +11,9 @@ initial and optimized agent performance on each task, then provides comprehensiv
 statistics and analysis.
 
 Usage:
-    python run_tool_calling_agent_experiment.py --optimizer grpo --benchmark aime24_benchmark
-    python run_tool_calling_agent_experiment.py --optimizer reinforce_pp --benchmark gsm8k
-    python run_tool_calling_agent_experiment.py --optimizer reflection --benchmark aime24_benchmark
+    python run_tool_calling_agent_experiment_async.py --optimizer grpo --benchmark aime24_benchmark --concurrency 8
+    python run_tool_calling_agent_experiment_async.py --optimizer reinforce_pp --benchmark gsm8k --concurrency 4
+    python run_tool_calling_agent_experiment_async.py --optimizer reflection --benchmark aime24_benchmark --concurrency 6
 """
 
 import os
@@ -25,7 +25,8 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, List, Dict
+from datetime import datetime
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -49,6 +50,7 @@ def parse_args():
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
                        default='grpo', help="optimizer to test")
     parser.add_argument("--benchmark", default="aime24", help="benchmark name to test on")
+    parser.add_argument("--concurrency", type=int, default=4, help="number of concurrent tasks to run")
 
     parser.add_argument(
         '--cfg-options',
@@ -74,7 +76,7 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
         'workdir': config.workdir,
         'model_name': 'openrouter/gemini-3-flash-preview',
         'memory_name': 'optimizer_memory_system',
-        'optimize_trainable_variables': True,
+        'optimize_trainable_variables': False,
         'optimize_solution': True
     }
 
@@ -103,37 +105,38 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
         raise ValueError(f"Unknown optimizer type: {optimizer_type}")
 
 
-async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
-    """Test specified optimizer performance on entire benchmark dataset."""
-    logger.info(f"| 🧪 Testing {optimizer_type.upper()} optimizer on complete benchmark: {benchmark_name}")
-
-    # Get the agent instance
-    agent = await acp.get("tool_calling")
-
-    # Create fresh optimizer for each task (to avoid state carryover)
-    logger.info(f"| 🤖 Starting {optimizer_type.upper()} optimization...")
-    optimizer = create_optimizer(optimizer_type, reward_fn)
-
-    # Statistics tracking
-    total_tasks = 0
-
-    # Reset benchmark progress
+async def get_all_tasks(benchmark_name: str) -> List[Dict]:
+    """Get all tasks from benchmark manager."""
+    tasks = []
     logger.info(f"| 🔄 Resetting progress for {benchmark_name}...")
     task_data = await benchmark_manager.reset(benchmark_name)
 
     while task_data is not None:
-        total_tasks += 1
-        task_id = task_data.task_id
-        task_input = task_data.input
-        task_gt = task_data.ground_truth
-        system_instruction = task_data.system_prompt
+        tasks.append(task_data)
+        task_data = await benchmark_manager.step(benchmark_name)
 
-        # Combine system instruction with task input
-        full_task = f"{system_instruction}\n\n{task_input}"
+    return tasks
 
-        logger.info(f"\n📋 Task {total_tasks}: {task_id}")
-        print(f"\n📋 Task {total_tasks}: {task_id}")
-        logger.info(f"📋 Task: {full_task[:150]}..." if len(full_task) > 150 else f"📋 Task: {full_task}")
+
+async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int):
+    """Process a single task with the optimizer."""
+    task_id = task_data.task_id
+    task_input = task_data.input
+    task_gt = task_data.ground_truth
+    system_instruction = task_data.system_prompt
+
+    # Combine system instruction with task input
+    full_task = f"{system_instruction}\n\n{task_input}"
+
+    logger.info(f"\n📋 Task {task_index + 1}/{total_tasks}: {task_id}")
+    print(f"\n📋 Task {task_index + 1}/{total_tasks}: {task_id}")
+    logger.info(f"📋 Task: {full_task[:150]}..." if len(full_task) > 150 else f"📋 Task: {full_task}")
+
+    try:
+        # Get the agent instance
+        agent = await acp.get("tool_calling")
+        # Create optimizer
+        optimizer = create_optimizer(optimizer_type, reward_fn)
 
         # ！！！！！用于临时代替参考模型输出
         if optimizer_type == 'reinforce_pp':
@@ -157,19 +160,62 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
                                                                              ground_truth=task_gt,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
+
         _ = await benchmark_manager.eval(benchmark_name, task_data)
+        # Get current stats after processing this task
         stats = await benchmark_manager.stats(benchmark_name)
         if stats:
             attempted = stats.correct + stats.wrong
-            print(f"📊 Overall Progress: {attempted}/{stats.total} | Accuracy: {stats.accuracy:.2%}")
+            accuracy_msg = f"📊 Overall Progress: {attempted}/{stats.total} | Accuracy: {stats.accuracy:.2%}"
+            print(accuracy_msg)
+            logger.info(accuracy_msg)
 
-        # Progress indicator
-        if total_tasks % 5 == 0:
-            logger.info(f"| 📊 Progress: {total_tasks} tasks completed")
+        logger.info(f"| ✅ Task {task_id} completed successfully")
 
-        # Get next task
-        task_data = await benchmark_manager.step(benchmark_name)
+    except Exception as e:
+        logger.error(f"| ❌ Error processing task {task_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
+
+async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, concurrency: int = 4):
+    """Test specified optimizer performance on entire benchmark dataset with concurrency control."""
+    logger.info(f"| 🧪 Testing {optimizer_type.upper()} optimizer on complete benchmark: {benchmark_name}")
+    logger.info(f"| ⚡ Using concurrency level: {concurrency}")
+
+    # Get all tasks first
+    all_tasks = await get_all_tasks(benchmark_name)
+    total_tasks = len(all_tasks)
+
+    if total_tasks == 0:
+        logger.warning("⚠️ No tasks available to run (Dataset empty or all finished).")
+        return
+
+    logger.info(f"| 📋 Total tasks to process: {total_tasks}")
+
+    # Create semaphore for concurrency control
+    semaphore = asyncio.Semaphore(concurrency)
+    completed_count = 0
+
+    async def process_with_semaphore(task_data: Dict, task_index: int):
+        """Process a task with semaphore control."""
+        nonlocal completed_count
+        async with semaphore:
+            try:
+                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks)
+            finally:
+                completed_count += 1
+                # Progress reporting
+                if completed_count % concurrency == 0 or completed_count == total_tasks:
+                    progress_msg = f"| 📊 Progress: {completed_count}/{total_tasks} tasks completed"
+                    logger.info(progress_msg)
+                    print(progress_msg)
+
+    # Create all tasks and run them with semaphore-controlled concurrency
+    tasks = [process_with_semaphore(task_data, i) for i, task_data in enumerate(all_tasks)]
+    await asyncio.gather(*tasks)
+
+    logger.info(f"| ✅ All {total_tasks} tasks completed for {optimizer_type.upper()} optimizer")
 
 
 async def main():
@@ -222,7 +268,7 @@ async def main():
     logger.info(f"| ✅ Version manager initialized")
 
     # Test specified optimizer on benchmark
-    await run_optimizer_on_benchmark(args.optimizer, args.benchmark)
+    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.concurrency)
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()
@@ -231,4 +277,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
