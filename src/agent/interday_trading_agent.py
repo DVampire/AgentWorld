@@ -56,12 +56,14 @@ class InterdayTradingAgent(Agent):
             **kwargs)
         
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Think and action for one step."""
         
         done = False
         result = None
         reasoning = None
+        
+        current_step = step_number if step_number is not None else self.step_number
         
         try:
             think_output = await model_manager(
@@ -125,13 +127,13 @@ class InterdayTradingAgent(Agent):
             }
             await memory_manager.add_event(
                 memory_name=self.memory_name,
-                step_number=self.step_number,
+                step_number=current_step,
                 event_type=EventType.TOOL_STEP,
                 data=event_data,
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
-            self.step_number += 1
             
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
@@ -177,9 +179,9 @@ class InterdayTradingAgent(Agent):
         
         return SessionInfo(session_id=session_id, description=description)
     
-    async def _get_agent_history(self) -> Dict[str, Any]:
+    async def _get_agent_history(self, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -189,14 +191,14 @@ class InterdayTradingAgent(Agent):
         for event in events:
             agent_history += f"<step_{event.step_number}>\n"
             if event.event_type == EventType.TASK_START:
-                agent_history += f"Task Start: {event.data['task']}\n"
+                agent_history += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
             elif event.event_type == EventType.TASK_END:
-                agent_history += f"Task End: {event.data['result']}\n"
+                agent_history += f"Task End: {event.data.get('result', '')}\n"
             elif event.event_type == EventType.TOOL_STEP:
-                agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
-                agent_history += f"Memory: {event.data['memory']}\n"
-                agent_history += f"Next Goal: {event.data['next_goal']}\n"
-                agent_history += f"Tool Results: {event.data['tool']}\n"
+                agent_history += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
+                agent_history += f"Memory: {event.data.get('memory', '')}\n"
+                agent_history += f"Next Goal: {event.data.get('next_goal', '')}\n"
+                agent_history += f"Tool Results: {event.data.get('tool', '')}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         
@@ -213,9 +215,10 @@ class InterdayTradingAgent(Agent):
             "agent_history": agent_history,
         }
     
-    async def _get_agent_state(self, task: str) -> Dict[str, Any]:
+    async def _get_agent_state(self, task: str, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Get the agent state."""
-        step_info_description = f'Step {self.step_number + 1}'
+        current_step = step_number if step_number is not None else self.step_number
+        step_info_description = f'Step {current_step + 1}'
         if self.max_steps > 0:
             step_info_description += f' of {self.max_steps} max possible steps'
         step_info_description += '\n'
@@ -253,7 +256,7 @@ class InterdayTradingAgent(Agent):
             "environment_state": environment_state,
         }
         
-    async def _get_messages(self, task: str) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
         
         system_modules = self.prompt_modules.copy()
         # Infer prompt name from agent's prompt_name
@@ -279,8 +282,8 @@ class InterdayTradingAgent(Agent):
         )
         
         agent_message_modules = self.prompt_modules.copy()
-        agent_history = await self._get_agent_history()
-        agent_state = await self._get_agent_state(task)
+        agent_history = await self._get_agent_history(session_id=session_id)
+        agent_state = await self._get_agent_state(task, step_number=step_number)
         environment_state = await self._get_environment_state()
         agent_message_modules.update(agent_history)
         agent_message_modules.update(agent_state)
@@ -331,29 +334,29 @@ class InterdayTradingAgent(Agent):
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number, 
+            step_number=0, 
             event_type=EventType.TASK_START, 
             data=dict(task=task),
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # Initialize messages
-        messages = await self._get_messages(task)
+        messages = await self._get_messages(task, session_id=session_id, step_number=0)
         
         # Main loop
         step_number = 0
         response = None
         
         while self.max_steps == -1 or step_number < self.max_steps:
-            step_number += 1
-            logger.info(f"| 🔄 Step {step_number}")
+            logger.info(f"| 🔄 Step {step_number+1}")
             
             # Execute one step
-            response = await self._think_and_action(messages, task_id)
-            self.step_number += 1
+            response = await self._think_and_action(messages, task_id, session_id=session_id, step_number=step_number)
+            step_number += 1
             
-            messages = await self._get_messages(task)
+            messages = await self._get_messages(task, session_id=session_id, step_number=step_number)
             
             if response["done"]:
                 break
@@ -370,11 +373,12 @@ class InterdayTradingAgent(Agent):
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number,
+            step_number=step_number,
             event_type=EventType.TASK_END,
             data=response,
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # End session

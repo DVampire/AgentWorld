@@ -137,12 +137,15 @@ class ToolCallingAgent(Agent):
             "tool_context": tool_context,
         }
         
-    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str)->Dict[str, Any]:
+    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None)->Dict[str, Any]:
         """Think and tool calls for one step."""
         
         done = False
         result = None
         reasoning = None
+        
+        # Use provided step_number or fallback to instance state
+        current_step = step_number if step_number is not None else self.step_number
         
         record_tool = {
             "thinking": None,
@@ -235,13 +238,13 @@ class ToolCallingAgent(Agent):
             if self.use_memory and memory_name:
                 await memory_manager.add_event(
                     memory_name=memory_name,
-                    step_number=self.step_number,
+                    step_number=current_step,
                     event_type=EventType.TOOL_STEP,
                     data=event_data,
                     agent_name=self.name,
-                    task_id=task_id
+                    task_id=task_id,
+                    session_id=session_id
                 )
-            self.step_number += 1
             
         except Exception as e:
             logger.error(f"| Error in thinking and tool step: {e}")
@@ -316,28 +319,28 @@ class ToolCallingAgent(Agent):
             # Add task start event
             await memory_manager.add_event(
                 memory_name=memory_name,
-                step_number=self.step_number,
+                step_number=0,
                 event_type=EventType.TASK_START,
                 data=dict(task=enhanced_task),
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
         else:
             logger.info(f"| ⏭️ Memory disabled (use_memory={self.use_memory}), skipping session management")
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task)
+        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
         
         # Main loop
         step_number = 0
         
         while step_number < self.max_steps:
-            step_number += 1
-            logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
+            logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
             # Execute one step
-            response = await self._think_and_tool(messages, task_id)
-            self.step_number += 1
+            response = await self._think_and_tool(messages, task_id, session_id=session_id, step_number=step_number)
+            step_number += 1
             
             # Update tracer and save to json
             await self.tracer.add_record(observation=self.record.observation, 
@@ -347,7 +350,7 @@ class ToolCallingAgent(Agent):
             await self.tracer.save_to_json(self.tracer_save_path)
             
             # Memory is automatically saved in add_event()
-            messages = await self._get_messages(enhanced_task)
+            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
             
             if response["done"]:
                 break
@@ -368,11 +371,12 @@ class ToolCallingAgent(Agent):
         if self.use_memory and memory_name:
             await memory_manager.add_event(
                 memory_name=memory_name,
-                step_number=self.step_number,
+                step_number=step_number,
                 event_type=EventType.TASK_END,
                 data=response,
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
             
             # End session (automatically saves memory to JSON)

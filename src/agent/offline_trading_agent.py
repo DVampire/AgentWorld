@@ -84,12 +84,13 @@ class OfflineTradingAgent(Agent):
                 self.record = last_record
         
         
-    async def _get_agent_context(self, task: str) -> Dict[str, Any]:
+    async def _get_agent_context(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Get the agent context."""
         
         task = f"<task>{task}</task>"
         
-        step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
+        current_step = step_number if step_number is not None else self.step_number
+        step_info_description = f'Step {current_step + 1} of {self.max_steps} max possible steps\n'
         time_str = datetime.now().isoformat()
         step_info_description += f'Current date and time: {time_str}'
         step_info = dedent(f"""
@@ -98,7 +99,7 @@ class OfflineTradingAgent(Agent):
             </step_info>
         """)
         
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -108,13 +109,13 @@ class OfflineTradingAgent(Agent):
         for event in events:
             agent_history += f"<step_{event.step_number}>\n"
             if event.event_type == EventType.TASK_START:
-                agent_history += f"Task Start: {event.data['task']}\n"
+                agent_history += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
             elif event.event_type == EventType.TASK_END:
-                agent_history += f"Task End: {event.data['result']}\n"
+                agent_history += f"Task End: {event.data.get('result', '')}\n"
             elif event.event_type == EventType.TOOL_STEP:
-                agent_history += f"Thinking: {event.data['thinking']}\n"
-                agent_history += f"Memory: {event.data['memory']}\n"
-                agent_history += f"Tool: {event.data['tool']}\n"
+                agent_history += f"Thinking: {event.data.get('thinking', '')}\n"
+                agent_history += f"Memory: {event.data.get('memory', '')}\n"
+                agent_history += f"Tool: {event.data.get('tool', '')}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         agent_history += "</agent_history>"
@@ -209,7 +210,7 @@ class OfflineTradingAgent(Agent):
             "tool_context": tool_context,
         }
         
-    async def _get_messages(self, task: str) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
         
         system_modules = self.prompt_modules.copy()
         # Infer prompt name from agent's prompt_name
@@ -227,7 +228,7 @@ class OfflineTradingAgent(Agent):
         )
         
         agent_message_modules = self.prompt_modules.copy()
-        agent_message_modules.update(await self._get_agent_context(task))
+        agent_message_modules.update(await self._get_agent_context(task, session_id=session_id, step_number=step_number))
         agent_message_modules.update(await self._get_environment_context())
         agent_message_modules.update(await self._get_tool_context())
         agent_message = await prompt_manager.get_agent_message(
@@ -243,12 +244,14 @@ class OfflineTradingAgent(Agent):
         
         return messages
     
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Think and action for one step."""
         
         done = False
         result = None
         reasoning = None
+        
+        current_step = step_number if step_number is not None else self.step_number
         
         record_tool = {
             "thinking": None,
@@ -336,13 +339,13 @@ class OfflineTradingAgent(Agent):
             
             await memory_manager.add_event(
                 memory_name=self.memory_name,
-                step_number=self.step_number,
+                step_number=current_step,
                 event_type=EventType.TOOL_STEP,
                 data=event_data,
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
-            self.step_number += 1
             
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
@@ -393,27 +396,27 @@ class OfflineTradingAgent(Agent):
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number, 
+            step_number=0, 
             event_type=EventType.TASK_START, 
             data=dict(task=enhanced_task),
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task)
+        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
         
         # Main loop
         step_number = 0
         response = None
         
         while step_number < self.max_steps:
-            step_number += 1
-            logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
+            logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
             # Execute one step
-            response = await self._think_and_action(messages, task_id)
-            self.step_number += 1
+            response = await self._think_and_action(messages, task_id, session_id=session_id, step_number=step_number)
+            step_number += 1
             
             # Update tracer and save to json
             self.tracer.add_record(observation=self.record.observation, 
@@ -422,7 +425,7 @@ class OfflineTradingAgent(Agent):
                                    task_id=task_id)
             self.tracer.save_to_json(self.tracer_save_path)
             
-            messages = await self._get_messages(enhanced_task)
+            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
             
             if response["done"]:
                 break
@@ -439,11 +442,12 @@ class OfflineTradingAgent(Agent):
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number,
+            step_number=step_number,
             event_type=EventType.TASK_END,
             data=response,
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # End session (automatically saves memory to JSON)
