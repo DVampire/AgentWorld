@@ -150,9 +150,9 @@ class AnthropicMobileAgent(Agent):
         
         return SessionInfo(session_id=session_id, description=description)
     
-    async def _get_agent_history(self) -> Dict[str, Any]:
+    async def _get_agent_history(self, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -162,12 +162,12 @@ class AnthropicMobileAgent(Agent):
         for event in events:
             agent_history += f"<step_{event.step_number}>\n"
             if event.event_type == EventType.TASK_START:
-                agent_history += f"Task Start: {event.data['task']}\n"
+                agent_history += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
             elif event.event_type == EventType.TASK_END:
-                agent_history += f"Task End: {event.data['result']}\n"
+                agent_history += f"Task End: {event.data.get('result', '')}\n"
             elif event.event_type == EventType.ACTION_STEP:
-                agent_history += f"Action Results: {event.data['action']}\n"
-                agent_history += f"Reasoning: {event.data['reasoning']}\n"
+                agent_history += f"Action Results: {event.data.get('action', '')}\n"
+                agent_history += f"Reasoning: {event.data.get('reasoning', '')}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         
@@ -190,13 +190,14 @@ class AnthropicMobileAgent(Agent):
     
     async def _get_todo_contents(self) -> str:
         """Get the todo contents."""
-        todo_tool = tcp.get("todo")
+        todo_tool = await tcp.get("todo")
         todo_contents = todo_tool.get_todo_content()
         return todo_contents   
     
-    async def _get_agent_state(self, task: str) -> Dict[str, Any]:
+    async def _get_agent_state(self, task: str, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Get the agent state."""
-        step_info_description = f'Step {self.step_number + 1} of {self.max_steps} max possible steps\n'
+        current_step = step_number if step_number is not None else self.step_number
+        step_info_description = f'Step {current_step + 1} of {self.max_steps} max possible steps\n'
         time_str = datetime.now().isoformat()
         step_info_description += f'Current date and time: {time_str}'
         
@@ -234,7 +235,7 @@ class AnthropicMobileAgent(Agent):
             "environment_state": environment_state,
         }
         
-    async def _get_messages(self, task: str) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
         
         system_input_variables = {}
         environment_rules = ""
@@ -246,8 +247,8 @@ class AnthropicMobileAgent(Agent):
         system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
-        agent_history = await self._get_agent_history()
-        agent_state = await self._get_agent_state(task)
+        agent_history = await self._get_agent_history(session_id=session_id)
+        agent_state = await self._get_agent_state(task, step_number=step_number)
         environment_state = await self._get_environment_state()
         
         agent_input_variables.update(agent_history)
@@ -264,12 +265,14 @@ class AnthropicMobileAgent(Agent):
         return messages
     
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Think and action for one step."""
         
         done = False
-        final_result = None
-        final_reasoning = None
+        result = None
+        reasoning = None
+        
+        current_step = step_number if step_number is not None else self.step_number
         
         try:
             model_response = await model_manager(model=self.model_name, messages=messages)
@@ -327,8 +330,8 @@ class AnthropicMobileAgent(Agent):
                 
             if tool_name == "done":
                 done = True
-                final_result = tool_result
-                final_reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                result = tool_result
+                reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
             
             event_data = {
                 "reasoning": reasoning,
@@ -336,33 +339,34 @@ class AnthropicMobileAgent(Agent):
             }
             await memory_manager.add_event(
                 memory_name=self.memory_name,
-                step_number=self.step_number,
+                step_number=current_step,
                 event_type=EventType.TOOL_STEP,
                 data=event_data,
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
-            self.step_number += 1
             
             if done:
                 await memory_manager.add_event(
                     memory_name=self.memory_name,
-                    step_number=self.step_number,
+                    step_number=current_step + 1,
                     event_type=EventType.TASK_END,
-                    data=dict(result=final_result),
+                    data=dict(result=result),
                     agent_name=self.name,
-                    task_id=task_id
+                    task_id=task_id,
+                    session_id=session_id
                 )
             
         except Exception as e:
             logger.error(f"| Error in thinking and action step: {e}")
         
-        result = {
+        response_dict = {
             "done": done,
-            "final_result": final_result,
-            "final_reasoning": final_reasoning
+            "result": result,
+            "reasoning": reasoning
         }
-        return result
+        return response_dict
     
     async def __call__(self, 
                   task: str, 
@@ -403,29 +407,29 @@ class AnthropicMobileAgent(Agent):
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number, 
+            step_number=0, 
             event_type=EventType.TASK_START, 
             data=dict(task=enhanced_task),
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task)
+        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
 
          # Main loop
         step_number = 0
         response = None
         
         while step_number < self.max_steps:
-            step_number += 1
-            logger.info(f"| 🔄 Step {step_number}/{self.max_steps}")
+            logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
             # Execute one step
-            response = await self._think_and_action(messages, task_id)
-            self.step_number += 1
+            response = await self._think_and_action(messages, task_id, session_id=session_id, step_number=step_number)
+            step_number += 1
             
-            messages = await self._get_messages(enhanced_task)
+            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
             
             if response["done"]:
                 break
@@ -435,18 +439,19 @@ class AnthropicMobileAgent(Agent):
             logger.warning(f"| 🛑 Reached max steps ({self.max_steps}), stopping...")
             response = {
                 "done": False,
-                "final_result": "Reached maximum number of steps",
-                "final_reasoning": "Reached the maximum number of steps."
+                "result": "Reached maximum number of steps",
+                "reasoning": "Reached the maximum number of steps."
             }
         
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number,
+            step_number=step_number,
             event_type=EventType.TASK_END,
             data=response,
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # End session
@@ -456,6 +461,6 @@ class AnthropicMobileAgent(Agent):
         
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"] if response["final_result"] else "Task completed",
+            message=response["result"] if response["result"] else "Task completed",
             extra=AgentExtra(data=response)
         )

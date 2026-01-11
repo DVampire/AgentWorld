@@ -126,14 +126,14 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
                     except asyncio.TimeoutError:
                         logger.error(f"| ⏱️ [Task {task_id}] Model API Timeout (600s)")
                         task.reasoning = ""
-                        task.answer = ""
+                        task.result = ""
                         response = None
                     
                     if response and response.success:
                         # 获取解析后的对象
                         response_model = response.extra.parsed_model
                         task.reasoning = response_model.reasoning
-                        task.answer = response_model.answer
+                        task.result = response_model.answer
                         
                         # --- 保存 Response 到 Markdown 文件 ---
                         try:
@@ -142,7 +142,7 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
                             file_path = os.path.join(save_dir, filename)
                             
                             with open(file_path, "w", encoding="utf-8") as f:
-                                f.write(task.reasoning + "\n\n" + task.answer)
+                                f.write(task.reasoning + "\n\n" + task.result)
                             
                             print(f"💾 [Saved] Output saved to: {file_path}")
                             
@@ -152,17 +152,17 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
                     elif response:
                         logger.error(f"| ⚠️ [Task {task_id}] Model API Error: {response.message}")
                         task.reasoning = "" 
-                        task.answer = "" 
+                        task.result = "" 
                     else:
                         task.reasoning = ""
-                        task.answer = ""
+                        task.result = ""
                         
                 except Exception as e:
                     logger.error(f"| ❌ [Task {task_id}] Critical Inference Error: {e}")
                     import traceback
                     traceback.print_exc()
                     task.reasoning = ""
-                    task.answer = ""
+                    task.result = ""
 
                 # --- 3. 评测 ---
                 task.time = time.time() - start_time
@@ -181,7 +181,7 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
                     evaluated_task = task
                 
                 if evaluated_task:
-                    print(f"🤖 [Task {task_id}] Answer: {evaluated_task.answer}, Ground Truth: {evaluated_task.ground_truth}")
+                    print(f"🤖 [Task {task_id}] Answer: {evaluated_task.result}, Ground Truth: {evaluated_task.ground_truth}")
                     
                     if evaluated_task.score and evaluated_task.score >= 1.0:
                         print(f"✅ [Task {task_id}] Result: Correct (Score: {evaluated_task.score}) | Time: {evaluated_task.time:.2f}s")

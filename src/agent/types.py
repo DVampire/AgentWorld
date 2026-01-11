@@ -361,13 +361,15 @@ class Agent(BaseModel):
         logger.info(f"| ✅ Session info generated: {session_id}")
         return SessionInfo(session_id=session_id, description=description)
 
-    async def _get_agent_context(self, task: str) -> Dict[str, Any]:
+    async def _get_agent_context(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Get the agent context."""
 
         task = f"<task>{task}</task>"
 
+        # Use provided step_number or fallback to instance state (for backward compatibility)
+        current_step = step_number if step_number is not None else self.step_number
         step_info_description = (
-            f"Step {self.step_number + 1} of {self.max_steps} max possible steps\n"
+            f"Step {current_step + 1} of {self.max_steps} max possible steps\n"
         )
         time_str = datetime.now().isoformat()
         step_info_description += f"Current date and time: {time_str}"
@@ -382,6 +384,7 @@ class Agent(BaseModel):
             state = await memory_manager.get_state(
                 name=self.memory_name,
                 n=self.review_steps,
+                session_id=session_id
             )
             events = state["events"]
             summaries = state["summaries"]
@@ -396,13 +399,13 @@ class Agent(BaseModel):
         for event in events:
             agent_history += f"<step_{event.step_number}>\n"
             if event.event_type == EventType.TASK_START:
-                agent_history += f"Task Start: {event.data['task']}\n"
+                agent_history += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
             elif event.event_type == EventType.TASK_END:
-                agent_history += f"Task End: {event.data['result']}\n"
+                agent_history += f"Task End: {event.data.get('result', '')}\n"
             elif event.event_type == EventType.TOOL_STEP:
-                agent_history += f"Evaluation of Previous Step: {event.data['evaluation_previous_goal']}\n"
-                agent_history += f"Memory: {event.data['memory']}\n"
-                agent_history += f"Next Goal: {event.data['next_goal']}\n"
+                agent_history += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
+                agent_history += f"Memory: {event.data.get('memory', '')}\n"
+                agent_history += f"Next Goal: {event.data.get('next_goal', '')}\n"
                 agent_history += f"Tool Results: {event.data.get('tool', '')}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
@@ -509,13 +512,13 @@ class Agent(BaseModel):
             "tool_context": tool_context,
         }
 
-    async def _get_messages(self, task: str) -> List[Message]:
+    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
         system_modules = self.prompt_modules.copy()
 
         agent_message_modules = self.prompt_modules.copy()
-        agent_message_modules.update(await self._get_agent_context(task))
+        agent_message_modules.update(await self._get_agent_context(task, session_id=session_id, step_number=step_number))
         agent_message_modules.update(await self._get_environment_context())
         agent_message_modules.update(await self._get_tool_context())
         
@@ -527,7 +530,7 @@ class Agent(BaseModel):
 
         return messages
 
-    async def __all__(self, task: str, files: Optional[List[str]] = None) -> AgentResponse:
+    async def __call__(self, task: str, files: Optional[List[str]] = None) -> AgentResponse:
         """Run the agent. This method should be implemented by the child classes."""
         raise NotImplementedError("__all__ method is not implemented by the child class")
 

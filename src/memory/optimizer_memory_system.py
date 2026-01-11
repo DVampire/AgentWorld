@@ -721,7 +721,7 @@ class OptimizerMemorySystem(Memory):
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(save_data, f, indent=4, ensure_ascii=False)
             
-            logger.info(f"| 💾 Optimizer memory saved to {file_path}")
+            logger.debug(f"| 💾 Optimizer memory saved to {file_path}")
             return str(file_path)
     
     async def load_from_json(self, file_path: str) -> bool:

@@ -140,8 +140,8 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
             logger.info(f"| 🚀 Running agent to get initial solution...")
             reference_agent_response = await agent(task=full_task, files=[])
             reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
-            reference_agent_result = reference_agent_response_extra_data['final_result']
-            reference_agent_reasoning = reference_agent_response_extra_data['final_reasoning']
+            reference_agent_result = reference_agent_response_extra_data['result']
+            reference_agent_reasoning = reference_agent_response_extra_data['reasoning']
             reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
             logger.info(f"| ✅ Initial solution obtained")
 

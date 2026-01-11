@@ -117,7 +117,7 @@ class BenchmarkManager(BaseModel):
                     # Create a Task object for evaluation
                     task = Task(
                         task_id=t_id,
-                        prediction=pred,
+                        result=pred,
                         ground_truth=gt
                     )
                     evaluated_task = await benchmark.eval(task)

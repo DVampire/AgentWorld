@@ -82,22 +82,22 @@ class SimpleChatAgent(Agent):
         
         return SessionInfo(session_id=session_id, description=result.description)
     
-    async def _get_agent_history(self) -> str:
+    async def _get_agent_history(self, session_id: Optional[str] = None) -> str:
         """Get the agent conversation history."""
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
         
         events = state["events"]
         conversation_history = ""
         
         for event in events:
             if event.event_type == EventType.TASK_START:
-                conversation_history += f"User: {event.data['message']}\n"
+                conversation_history += f"User: {event.data.get('message', event.data.get('task', ''))}\n"
             elif event.event_type == EventType.ACTION_STEP:
-                conversation_history += f"Assistant: {event.data['response']}\n"
+                conversation_history += f"Assistant: {event.data.get('response', event.data.get('result', ''))}\n"
         
         return conversation_history
     
-    async def _get_messages(self, message: str) -> List[BaseMessage]:
+    async def _get_messages(self, message: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
         """Generate messages for the conversation."""
         system_modules = self.prompt_modules.copy()
         # Infer prompt name from agent's prompt_name
@@ -118,6 +118,8 @@ class SimpleChatAgent(Agent):
         conversation_history = ""
         if hasattr(self, '_current_global_history') and self._current_global_history:
             conversation_history = self._format_global_history(self._current_global_history)
+        else:
+            conversation_history = await self._get_agent_history(session_id=session_id)
         
         agent_message_modules = self.prompt_modules.copy()
         agent_message_modules.update({
@@ -265,6 +267,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         current_message = task
         conversation_round = 0
         max_rounds = 10  # Prevent infinite loops
+        step_number = 0
         
         logger.info(f"| 🚀 Starting conversation session: {session_id}")
         
@@ -273,7 +276,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.info(f"| 🔄 Conversation round {conversation_round}/{max_rounds}")
             
             # Get conversation history for decision making
-            conversation_history = await self._get_agent_history()
+            conversation_history = await self._get_agent_history(session_id=session_id)
             
             # Let LLM decide whether to continue the conversation
             should_continue, reasoning = await self._should_continue_conversation(current_message, conversation_history)
@@ -286,15 +289,17 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             # Add user message event
             await memory_manager.add_event(
                 memory_name=self.memory_name,
-                step_number=self.step_number, 
+                step_number=step_number, 
                 event_type=EventType.TASK_START, 
                 data=dict(message=current_message),
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
+            step_number += 1
             
             # Generate response
-            messages = await self._get_messages(current_message)
+            messages = await self._get_messages(current_message, session_id=session_id, step_number=step_number)
             model_response = await model_manager(model=self.model_name, messages=messages)
             response_text = model_response.message
             
@@ -303,12 +308,14 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             # Add response event
             await memory_manager.add_event(
                 memory_name=self.memory_name,
-                step_number=self.step_number,
-                event_type=EventType.TOOL_STEP,
+                step_number=step_number,
+                event_type=EventType.ACTION_STEP,
                 data=dict(response=response_text),
                 agent_name=self.name,
-                task_id=task_id
+                task_id=task_id,
+                session_id=session_id
             )
+            step_number += 1
             
             # Check if conversation should continue after response
             should_continue_after, continue_reasoning = await self._should_continue_conversation("", conversation_history, response_text)
@@ -341,11 +348,12 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         # Add task end event
         await memory_manager.add_event(
             memory_name=self.memory_name,
-            step_number=self.step_number,
+            step_number=step_number,
             event_type=EventType.TASK_END,
             data=dict(result=f"Conversation completed after {conversation_round} rounds"),
             agent_name=self.name,
-            task_id=task_id
+            task_id=task_id,
+            session_id=session_id
         )
         
         # End session
@@ -353,15 +361,15 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         
         logger.info(f"| ✅ Multi-turn conversation completed after {conversation_round} rounds")
         
-        result = f"Conversation completed in {conversation_round} rounds"
+        result_msg = f"Conversation completed in {conversation_round} rounds"
         response = {
             "done": True,
-            "final_result": result,
-            "final_reasoning": None
+            "result": result_msg,
+            "reasoning": None
         }
         return AgentResponse(
             success=response["done"],
-            message=response["final_result"],
+            message=response["result"],
             extra=AgentExtra(data=response)
         )
 
