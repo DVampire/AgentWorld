@@ -148,14 +148,14 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
             reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
             logger.info(f"| ✅ Initial solution obtained")
 
-            task_data.reasoning, task_data.answer = await optimizer.optimize(agent=agent,
+            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              sft_solution=reference_solution,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
         else:
-            task_data.reasoning, task_data.answer = await optimizer.optimize(agent=agent,
+            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              benchmark_task_id=task_id,

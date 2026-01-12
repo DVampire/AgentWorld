@@ -47,7 +47,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test different optimizers on benchmark tasks')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
-                       default='grpo', help="optimizer to test")
+                       default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="aime24", help="benchmark name to test on")
 
     parser.add_argument(
@@ -145,14 +145,14 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
             reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
             logger.info(f"| ✅ Initial solution obtained")
 
-            task_data.reasoning, task_data.answer = await optimizer.optimize(agent=agent,
+            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              sft_solution=reference_solution,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
         else:
-            task_data.reasoning, task_data.answer = await optimizer.optimize(agent=agent,
+            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              benchmark_task_id=task_id,

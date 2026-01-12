@@ -14,7 +14,7 @@ import tiktoken
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
-    answer: str = Field(description="The final answer")
+    result: str = Field(description="The final result")
 
 class ImprovedVariable(BaseModel):
     name: str = Field(description="The name of the variable")
@@ -528,8 +528,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         logger.info(f"| 🚀 Running agent to get initial solution...")
         agent_response = await agent(task=task, files=files)
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-        current_agent_result = agent_response_extra_data['final_result']
-        current_agent_reasoning = agent_response_extra_data['final_reasoning']
+        current_agent_result = agent_response_extra_data['result']
+        current_agent_reasoning = agent_response_extra_data['reasoning']
         current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
         logger.info(f"| ✅ Initial solution obtained")
 
@@ -590,7 +590,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                         prompt_updates = {}  # Will collect all prompt sub-variable updates
                         variables_updated = False
 
-                        for variable_name, improved_var in improved_variables.variables.items():
+                        for variable_id, improved_var in improved_variables.variables.items():
+                            variable_name = improved_var.name
                             if variable_name not in trainable_variables:
                                 logger.warning(
                                     f"| ⚠️ Variable {variable_name} not found in trainable variables, skipping")
@@ -606,20 +607,20 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                                 prompt_updates[variable_name] = variable_value
                                 logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
                             elif variable_type == "tool_code":
-                                await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
+                                await tcp.set_variables(tool_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated tool variable: {variable_name}")
                             elif variable_type == "environment_code":
-                                await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await ecp.set_variables(env_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated environment variable: {variable_name}")
                             elif variable_type == "agent_code":
-                                await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await acp.set_variables(agent_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated agent variable: {variable_name}")
                             elif variable_type == "memory_code":
-                                await memory_manager.set_variables(variable_name=variable_name,
-                                                                   variable_value=variable_value)
+                                await memory_manager.set_variables(memory_name=variable_name,
+                                                                   variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated memory variable: {variable_name}")
 
@@ -639,8 +640,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                            current_result = agent_response_extra_data['final_result']
-                            current_reasoning = agent_response_extra_data['final_reasoning']
+                            current_result = agent_response_extra_data['result']
+                            current_reasoning = agent_response_extra_data['reasoning']
                             current_solution = f"Result: {current_result}\nReasoning: {current_reasoning}" if current_reasoning else f"Result: {current_result}"
                             logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
                         else:
@@ -724,8 +725,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                     )
 
                     # Check if solution was improved
-                    if improved_solution_result.answer:
-                        current_agent_result = improved_solution_result.answer
+                    if improved_solution_result.result:
+                        current_agent_result = improved_solution_result.result
                         current_agent_reasoning = improved_solution_result.reasoning
                         current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
 

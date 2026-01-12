@@ -1129,6 +1129,12 @@ class PromptContextManager(BaseModel):
                 new_version=new_version,
                 description=description
             )
+            # Build instance for the updated prompt if class is available so subsequent get() returns instance
+            try:
+                if updated_config and getattr(updated_config, "cls", None) is not None:
+                    await self.build(updated_config)
+            except Exception as e:
+                logger.warning(f"| ⚠️ Failed to build updated prompt instance for {system_prompt_name}: {e}")
             updated_configs[system_prompt_name] = updated_config
         
         # Update agent message prompt if there are changes
@@ -1153,6 +1159,12 @@ class PromptContextManager(BaseModel):
                 new_version=new_version,
                 description=description
             )
+            # Build instance for the updated prompt if class is available so subsequent get() returns instance
+            try:
+                if updated_config and getattr(updated_config, "cls", None) is not None:
+                    await self.build(updated_config)
+            except Exception as e:
+                logger.warning(f"| ⚠️ Failed to build updated prompt instance for {agent_prompt_name}: {e}")
             updated_configs[agent_prompt_name] = updated_config
         
         if not updated_configs:
