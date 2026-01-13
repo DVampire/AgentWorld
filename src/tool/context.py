@@ -1253,20 +1253,22 @@ class ToolContextManager(BaseModel):
         Returns:
             ToolResponse: Tool result
         """
-        tool = await self.get(name)
-        if tool is None:
-            raise ValueError(f"Tool {name} not found")
+        tool_info = await self.get_info(name)
+        
+        version = tool_info.version
+        tool_instance = tool_info.instance
+        logger.info(f"| ✅ Using tool {name}@{version}")
         
         # Use provided timeout, or fall back to default_timeout
         effective_timeout = timeout if timeout is not None else self.default_timeout
         
         # If timeout is None (no timeout), call tool directly
         if effective_timeout is None:
-            return await tool(**input)
+            return await tool_instance(**input)
         
         # Otherwise, use asyncio.wait_for to enforce timeout
         try:
-            return await asyncio.wait_for(tool(**input), timeout=effective_timeout)
+            return await asyncio.wait_for(tool_instance(**input), timeout=effective_timeout)
         except asyncio.TimeoutError:
             error_msg = f"Tool '{name}' execution timed out after {effective_timeout} seconds"
             logger.error(f"| ⏱️ {error_msg}")

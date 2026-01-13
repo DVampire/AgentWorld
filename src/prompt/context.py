@@ -935,7 +935,12 @@ class PromptContextManager(BaseModel):
             **kwargs: Additional arguments (may include prompt_name for backward compatibility)
         """
         prompt_name = f"{prompt_name}_system_prompt"
-        prompt_instance = await self.get(prompt_name)
+        prompt_info = await self.get_info(prompt_name)
+        
+        version = prompt_info.version
+        prompt_instance = prompt_info.instance
+        logger.info(f"| ✅ Using prompt {prompt_name}@{version}")
+        
         return await prompt_instance.get_message(modules, reload, **kwargs)
     
     async def get_agent_message(self, 
@@ -953,7 +958,13 @@ class PromptContextManager(BaseModel):
             **kwargs: Additional arguments (may include prompt_name for backward compatibility)
         """
         prompt_name = f"{prompt_name}_agent_message_prompt"
-        prompt_instance = await self.get(prompt_name)
+        
+        prompt_info = await self.get_info(prompt_name)
+        version = prompt_info.version
+        
+        prompt_instance = prompt_info.instance
+        logger.info(f"| ✅ Using prompt {prompt_name}@{version}")
+        
         return await prompt_instance.get_message(modules, reload, **kwargs)
     
     async def get_messages(

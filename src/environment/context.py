@@ -1403,9 +1403,9 @@ class EnvironmentContextManager(BaseModel):
         if name in self._environment_configs:
             env_config = self._environment_configs[name]
             
-            instance = env_config.instance
-            if instance is None:
-                raise ValueError(f"Environment {name} is not initialized")
+            version = env_config.version
+            env_instance = env_config.instance
+            logger.info(f"| ✅ Using environment {name}@{version}")
             
             action_config = env_config.actions.get(action)
             if action_config is None:
@@ -1419,6 +1419,6 @@ class EnvironmentContextManager(BaseModel):
                 return await action_function(**input)
             else:
                 # Unbound method: pass instance as first argument
-                return await action_function(instance, **input)
+                return await action_function(env_instance, **input)
         else:
             raise ValueError(f"Environment {name} not found")

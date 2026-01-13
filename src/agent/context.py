@@ -1255,8 +1255,11 @@ class AgentContextManager(BaseModel):
         Returns:
             Agent result
         """
-        agent = await self.get(name)
-        if agent is None:
-            raise ValueError(f"Agent {name} not found")
-        return await agent(**input)
+        agent_info = await self.get_info(name)
+        
+        version = agent_info.version
+        agent_instance = agent_info.instance
+        logger.info(f"| ✅ Using agent {name}@{version}")
+        
+        return await agent_instance(**input)
 
