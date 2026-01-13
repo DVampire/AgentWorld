@@ -117,63 +117,45 @@ class GrpoOptimizer(Optimizer):
 
     async def _format_variables(self, variables: Dict[str, Any]) -> str:
         """
-        Format variables for context.
-
+        Format variables for context (now handles flattened structure).
+        
         Args:
-            variables (Dict[str, Any]): Dictionary of variables.
+            variables (Dict[str, Any]): Dictionary of flattened variables (prompt sub-variables + tool variables).
         """
-
+        
         variables_text = ""
-
-        # Step1: Format prompt variables
+        
+        # Step1: Format prompt sub-variables (now flattened, no more nesting)
         prompt_variables_text = "<prompt_variables>\n"
-        prompt_variables = {k: v for k, v in variables.items() if
-                            isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
+        prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
         for prompt_name, prompt_variable in prompt_variables.items():
             prompt_variables_text += f"<{prompt_name}>\n"
-            prompt_variables_text += f"Type: {prompt_variable.type}\n"
-            prompt_variables_text += f"Description: {prompt_variable.description}\n"
-            try:
-                value = prompt_variable.get_value() if hasattr(prompt_variable, 'get_value') else str(prompt_variable.variables)
-            except Exception as e:
-                value = f"<Error getting value: {e}>"
-            prompt_variables_text += f"```text\n{value}\n```\n"
+            prompt_variables_text += f"{prompt_variable.variables}"
             prompt_variables_text += f"</{prompt_name}>\n"
         prompt_variables_text += "</prompt_variables>\n"
         variables_text += prompt_variables_text
-
+        
         # Step2: Format tool variables
         tool_variables_text = "<tool_variables>\n"
         tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
         for tool_name, tool_variable in tool_variables.items():
             tool_variables_text += f"<{tool_name}>\n"
-            tool_variables_text += f"Description: {tool_variable.description}\n"
-            try:
-                value = tool_variable.get_value() if hasattr(tool_variable, 'get_value') else str(
-                    tool_variable.variables)
-            except Exception as e:
-                value = f"<Error getting value: {e}>"
-            tool_variables_text += f"```python\n{value}\n```\n"
+            tool_variables_text += f"{tool_variable.variables}"
             tool_variables_text += f"</{tool_name}>\n"
         tool_variables_text += "</tool_variables>\n"
         variables_text += tool_variables_text
-
+        
         # Step3: Format solution variable (if present)
         solution_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "solution"}
         if solution_variables:
             solution_variable_text = "<solution_variables>\n"
             for solution_name, solution_variable in solution_variables.items():
                 solution_variable_text += f"<{solution_name}>\n"
-                solution_variable_text += f"Description: {solution_variable.description}\n"
-                try:
-                    value = solution_variable.get_value() if hasattr(solution_variable, 'get_value') else str(solution_variable.variables)
-                except Exception as e:
-                    value = f"<Error getting value: {e}>"
-                solution_variable_text += f"```text\n{value}\n```\n"
+                solution_variable_text += f"{solution_variable.variables}"
                 solution_variable_text += f"</{solution_name}>\n"
             solution_variable_text += "</solution_variables>\n"
             variables_text += solution_variable_text
-
+        
         return variables_text
 
     async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str,
