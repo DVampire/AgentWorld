@@ -12,6 +12,10 @@ import math
 import tiktoken
 
 
+class Response(BaseModel):
+    reasoning: str = Field(description="The reasoning process")
+    result: str = Field(description="The final result")
+
 class ImprovedVariable(BaseModel):
     name: str = Field(description="The name of the variable")
     variables: str = Field(description="The value of the variable")
@@ -31,7 +35,6 @@ class ReinforcePlusPlusOptimizer(Optimizer):
     model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
     memory_name: Optional[str] = Field(default=None,
                                        description="Name of the optimizer memory system for recording optimization history")
-    benchmark_name: str = Field(default="aime24", description="The name of benchmark")
     clip_ratio: float = Field(default=0.2, description="Clipping ratio for REINFORCE++")
     beta: float = Field(default=0.01, description="KL penalty coefficient")
     reward_fn: Optional[Callable[[str,str,str], Any]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
@@ -43,7 +46,6 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                  memory_name: Optional[str] = "optimizer_memory_system",
                  optimize_trainable_variables: bool = True,
                  optimize_solution: bool = True,
-                 benchmark_name: str = "aime24",
                  clip_ratio: float = 0.2,
                  beta: float = 0.01,
                  reward_fn: Optional[Callable[[str,str,str], Any]] = None,
@@ -77,7 +79,6 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         self.optimize_trainable_variables = optimize_trainable_variables
         self.optimize_solution = optimize_solution
 
-        self.benchmark_name = benchmark_name
         # REINFORCE++ config
         self.clip_ratio = clip_ratio
         self.beta = beta
@@ -293,6 +294,41 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
 
+    async def _improve_solution(self, task: str, variables: Dict[str, Variable],
+                                 reflection_analysis: str) -> Response:
+
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+
+        # Ensure prompt_manager is initialized
+        if not hasattr(prompt_manager, 'prompt_context_manager'):
+            await prompt_manager.initialize()
+
+        # Format all variables for context
+        current_variables_text = await self._format_variables(variables)
+
+        system_modules = {}
+        agent_message_modules = {
+            "task": task,
+            "current_variables": current_variables_text,
+            "reflection_analysis": reflection_analysis
+        }
+        messages = await prompt_manager.get_messages(
+            prompt_name=f"{self.prompt_name}_improvement",
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
+        )
+
+        logger.info(f"| ✨ Generating improved solution")
+
+        try:
+            response = await model_manager(model=self.model_name, messages=messages, response_format=Response)
+            improved_solution: Response = response.extra.parsed_model
+            return improved_solution
+        except Exception as e:
+            logger.error(f"| ❌ Error improving solution: {e}")
+            raise
+
     def _calculate_advantage(self, reward: float, kl_penalty: float) -> float:
         """
         Calculate advantage using REINFORCE++ formula.
@@ -423,7 +459,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             self,
             agent: Any,
             task: str,
-            benchmark_task_id: str,
+            ground_truth: str,
             sft_solution: str,
             files: Optional[List[str]] = None,
             **kwargs
@@ -490,21 +526,21 @@ class ReinforcePlusPlusOptimizer(Optimizer):
 
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
-        old_agent_response = await agent(task=task, files=files)
-        old_agent_response_extra_data = old_agent_response.extra.data if old_agent_response.extra and old_agent_response.extra.data else None
-        old_agent_result = old_agent_response_extra_data['result']
-        old_agent_reasoning = old_agent_response_extra_data['reasoning']
-        old_solution = f"Result: {old_agent_result}\nReasoning: {old_agent_reasoning}" if old_agent_reasoning else f"Result: {old_agent_result}"
+        agent_response = await agent(task=task, files=files)
+        agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
+        current_agent_result = agent_response_extra_data['result']
+        current_agent_reasoning = agent_response_extra_data['reasoning']
+        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
         logger.info(f"| ✅ Initial solution obtained")
 
-        current_solution = old_solution
+        old_solution = current_solution
         # Run the optimization loop.
         for opt_step in range(optimization_steps):
             logger.info(f"| {'=' * 60}")
             logger.info(f"| REINFORCE++ Optimization Step {opt_step + 1}/{optimization_steps}")
             logger.info(f"| {'=' * 60}")
 
-            current_reward = await self.reward_fn(benchmark_name=self.benchmark_name, prediction=current_solution, task_id=benchmark_task_id)
+            current_reward = await self.reward_fn(answer=current_agent_result, ground_truth=ground_truth)
             logger.info(f"| 📊 Current reward: {current_reward}")
 
             initial_policy_ratio = self._calculate_text_similarity(sft_solution, current_solution)
@@ -554,7 +590,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                         prompt_updates = {}  # Will collect all prompt sub-variable updates
                         variables_updated = False
 
-                        for variable_name, improved_var in improved_variables.variables.items():
+                        for variable_id, improved_var in improved_variables.variables.items():
+                            variable_name = improved_var.name
                             if variable_name not in trainable_variables:
                                 logger.warning(
                                     f"| ⚠️ Variable {variable_name} not found in trainable variables, skipping")
@@ -570,20 +607,20 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                                 prompt_updates[variable_name] = variable_value
                                 logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
                             elif variable_type == "tool_code":
-                                await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
+                                await tcp.set_variables(tool_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated tool variable: {variable_name}")
                             elif variable_type == "environment_code":
-                                await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await ecp.set_variables(env_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated environment variable: {variable_name}")
                             elif variable_type == "agent_code":
-                                await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await acp.set_variables(agent_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated agent variable: {variable_name}")
                             elif variable_type == "memory_code":
-                                await memory_manager.set_variables(variable_name=variable_name,
-                                                                   variable_value=variable_value)
+                                await memory_manager.set_variables(memory_name=variable_name,
+                                                                   variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated memory variable: {variable_name}")
 
@@ -681,21 +718,18 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                     )
 
                     # Improve solution based on reflection
-                    improved_solution_result = await self._improve_variables(
+                    improved_solution_result = await self._improve_solution(
                         task=task,
                         variables=solution_variables,
                         reflection_analysis=solution_reflection,
                     )
 
                     # Check if solution was improved
-                    if "solution" in improved_solution_result.variables:
-                        improved_solution_var = improved_solution_result.variables["solution"]
-                        # Extract the actual value string from ImprovedVariable
-                        improved_solution_value = improved_solution_var.variables if hasattr(improved_solution_var,
-                                                                                             'variables') else improved_solution_var
+                    if improved_solution_result.result:
+                        current_agent_result = improved_solution_result.result
+                        current_agent_reasoning = improved_solution_result.reasoning
+                        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
 
-                        # Update solution
-                        current_solution = improved_solution_value
                         logger.info(f"| ✅ Phase 2 completed - solution optimized")
 
                         # Record phase 2 to memory
@@ -706,7 +740,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                                     "task": task,
                                     "reflection_analysis": solution_reflection,
                                     "before_solution": solution_variable.get_value(),
-                                    "after_solution": improved_solution_value
+                                    "after_solution": current_solution
                                 }
 
                                 await memory_manager.add_event(
@@ -773,3 +807,5 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         logger.info(f"| {'=' * 60}")
         logger.info(f"| Final solution:\n{current_solution}")
         logger.info(f"| {'=' * 60}")
+
+        return current_agent_reasoning, current_agent_result

@@ -268,9 +268,17 @@ class PromptManager(BaseModel):
         Returns:
             PromptConfig: Updated prompt configuration
         """
-        updated_config = await self.prompt_context_manager.set_variables(prompt_name=prompt_name, variable_updates=variable_updates, new_version=new_version, description=description)
-        self._registered_configs[updated_config.name] = updated_config
-        return updated_config
+        # The context manager returns a dict mapping prompt names to PromptConfig instances.
+        updated_configs = await self.prompt_context_manager.set_variables(
+            prompt_name=prompt_name,
+            variable_updates=variable_updates,
+            new_version=new_version,
+            description=description,
+        )
+        # Update local registry for each returned PromptConfig
+        for _, updated_config in updated_configs.items():
+            self._registered_configs[updated_config.name] = updated_config
+        return updated_configs[prompt_name]
     
     async def get_trainable_variables(self, prompt_name: Optional[str] = None) -> Dict[str, Variable]:
         """Get all trainable variables from a prompt.

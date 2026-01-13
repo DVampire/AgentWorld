@@ -9,6 +9,10 @@ from src.message.types import SystemMessage, HumanMessage
 from src.memory import EventType
 from src.utils import dedent
 
+class Response(BaseModel):
+    reasoning: str = Field(description="The reasoning process")
+    result: str = Field(description="The final result")
+
 class ImprovedVariable(BaseModel):
     name: str = Field(description="The name of the variable")
     variables: str = Field(description="The value of the variable")
@@ -261,7 +265,42 @@ class ReflectionOptimizer(Optimizer):
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
-    
+
+    async def _improve_solution(self, task: str, variables: Dict[str, Variable],
+                                 reflection_analysis: str) -> Response:
+
+        # Lazy import to avoid circular dependency
+        from src.prompt import prompt_manager
+
+        # Ensure prompt_manager is initialized
+        if not hasattr(prompt_manager, 'prompt_context_manager'):
+            await prompt_manager.initialize()
+
+        # Format all variables for context
+        current_variables_text = await self._format_variables(variables)
+
+        system_modules = {}
+        agent_message_modules = {
+            "task": task,
+            "current_variables": current_variables_text,
+            "reflection_analysis": reflection_analysis
+        }
+        messages = await prompt_manager.get_messages(
+            prompt_name=f"{self.prompt_name}_improvement",
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
+        )
+
+        logger.info(f"| ✨ Generating improved solution")
+
+        try:
+            response = await model_manager(model=self.model_name, messages=messages, response_format=Response)
+            improved_solution: Response = response.extra.parsed_model
+            return improved_solution
+        except Exception as e:
+            logger.error(f"| ❌ Error improving solution: {e}")
+            raise
+
     async def _evaluate_solution(self, task: str, execution_result: str) -> EvaluationResult:
         """
         Evaluate if the current solution is satisfactory.
@@ -371,11 +410,11 @@ class ReflectionOptimizer(Optimizer):
         
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
-        initial_agent_response = await agent(task=task, files=files)
-        initial_agent_response_extra_data = initial_agent_response.extra.data if initial_agent_response.extra and initial_agent_response.extra.data else None
-        initial_agent_result = initial_agent_response_extra_data['result']
-        initial_agent_reasoning = initial_agent_response_extra_data['reasoning']
-        current_solution = f"Result: {initial_agent_result}\nReasoning: {initial_agent_reasoning}" if initial_agent_reasoning else f"Result: {initial_agent_result}"
+        agent_response = await agent(task=task, files=files)
+        agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
+        current_agent_result = agent_response_extra_data['result']
+        current_agent_reasoning = agent_response_extra_data['reasoning']
+        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
         logger.info(f"| ✅ Initial solution obtained")
         
         # Run the optimization loop.
@@ -412,7 +451,8 @@ class ReflectionOptimizer(Optimizer):
                         prompt_updates = {}  # Will collect all prompt sub-variable updates
                         variables_updated = False
                         
-                        for variable_name, improved_var in improved_variables.variables.items():
+                        for variable_id, improved_var in improved_variables.variables.items():
+                            variable_name = improved_var.name
                             if variable_name not in trainable_variables:
                                 logger.warning(f"| ⚠️ Variable {variable_name} not found in trainable variables, skipping")
                                 continue
@@ -426,19 +466,19 @@ class ReflectionOptimizer(Optimizer):
                                 prompt_updates[variable_name] = variable_value
                                 logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
                             elif variable_type == "tool_code":
-                                await tcp.set_variable(variable_name=variable_name, variable_value=variable_value)
+                                await tcp.set_variables(tool_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated tool variable: {variable_name}")
                             elif variable_type == "environment_code":
-                                await ecp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await ecp.set_variables(env_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated environment variable: {variable_name}")
                             elif variable_type == "agent_code":
-                                await acp.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await acp.set_variables(agent_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated agent variable: {variable_name}")
                             elif variable_type == "memory_code":
-                                await memory_manager.set_variables(variable_name=variable_name, variable_value=variable_value)
+                                await memory_manager.set_variables(memory_name=variable_name, variable_updates=variable_value)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated memory variable: {variable_name}")
                         
@@ -457,9 +497,9 @@ class ReflectionOptimizer(Optimizer):
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                            current_result = agent_response_extra_data['result']
-                            current_reasoning = agent_response_extra_data['reasoning']
-                            current_solution = f"Result: {current_result}\nReasoning: {current_reasoning}" if current_reasoning else f"Result: {current_result}"
+                            current_agent_result = agent_response_extra_data['result']
+                            current_agent_reasoning = agent_response_extra_data['reasoning']
+                            current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
                             logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
                         else:
                             logger.info(f"| ℹ️ Phase 1: No trainable variables were updated")
@@ -527,20 +567,18 @@ class ReflectionOptimizer(Optimizer):
                     )
                     
                     # Improve solution based on reflection
-                    improved_solution_result = await self._improve_variables(
+                    improved_solution_result = await self._improve_solution(
                         task=task,
                         variables=solution_variables,
                         reflection_analysis=solution_reflection,
                     )
                     
                     # Check if solution was improved
-                    if "solution" in improved_solution_result.variables:
-                        improved_solution_var = improved_solution_result.variables["solution"]
-                        # Extract the actual value string from ImprovedVariable
-                        improved_solution_value = improved_solution_var.variables if hasattr(improved_solution_var, 'variables') else improved_solution_var
-                        
-                        # Update solution
-                        current_solution = improved_solution_value
+                    if improved_solution_result.result:
+                        current_agent_result = improved_solution_result.result
+                        current_agent_reasoning = improved_solution_result.reasoning
+                        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
+
                         logger.info(f"| ✅ Phase 2 completed - solution optimized")
                         
                         # Record phase 2 to memory
@@ -551,7 +589,7 @@ class ReflectionOptimizer(Optimizer):
                                     "task": task,
                                     "reflection_analysis": solution_reflection,
                                     "before_solution": solution_variable.get_value(),
-                                    "after_solution": improved_solution_value
+                                    "after_solution": current_solution
                                 }
                                 
                                 await memory_manager.add_event(
@@ -618,4 +656,6 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| {'='*60}")
         logger.info(f"| Final solution:\n{current_solution}")
         logger.info(f"| {'='*60}")
+
+        return current_agent_reasoning, current_agent_result
 

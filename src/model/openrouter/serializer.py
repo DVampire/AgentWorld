@@ -514,27 +514,29 @@ class OpenRouterChatSerializer:
                 required = obj.get("required", [])
                 new_props = {}
                 new_required = []
-                
+
                 for k, v in props.items():
                     new_props[k] = transform(v)
                     if k in required:
                         new_required.append(k)
-                
-                # Handle additionalProperties:
-                # - If it's a dict/schema (e.g., Dict[str, SomeModel]), transform and keep it
-                # - If it's True (e.g., Dict[str, Any]), keep it as True
-                # - Otherwise, set to False (strict mode)
-                additional_props_raw = obj.get("additionalProperties")
-                if isinstance(additional_props_raw, dict):
-                    # This is a schema for Dict[str, SomeModel] - transform and keep it
-                    additional_props = transform(additional_props_raw)
-                elif additional_props_raw is True:
-                    # Dict[str, Any] - keep as True
-                    additional_props = True
+
+                # Handle additionalProperties which can be a boolean or an inline schema (dict),
+                # e.g. for Dict[str, ImprovedVariable] pydantic emits:
+                # "additionalProperties": {"$ref": "#/$defs/ImprovedVariable"}
+                ap = obj.get("additionalProperties", None)
+                if isinstance(ap, dict):
+                    # Recursively transform the inline schema so $ref inside additionalProperties is expanded
+                    transformed_ap = transform(ap)
+                    additional_props = transformed_ap
                 else:
-                    # Regular object with fixed properties - set to False for strict mode
-                    additional_props = False
-                
+                    # Preserve the original boolean semantics for simple Dict[str, Any] cases.
+                    # If there are no explicit properties and additionalProperties is True,
+                    # keep it permissive. Otherwise use strict mode.
+                    if not new_props and ap is True:
+                        additional_props = True
+                    else:
+                        additional_props = False
+
                 result = {
                     "type": "object",
                     "properties": new_props,
