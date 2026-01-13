@@ -14,8 +14,8 @@ class Response(BaseModel):
     result: str = Field(description="The final result")
 
 class ImprovedVariable(BaseModel):
-    name: str = Field(description="The name of the variable, it should be the same as the variable name in the trainable variables")
-    variables: str = Field(description="The value of the variable")
+    name: str = Field(description="The name of the variable, it should be the same as the variable `Name` in the variables XML tags")
+    variables: str = Field(description="The improved content for this variable")
 
 class ImprovedVariables(BaseModel):
     variables: List[ImprovedVariable] = Field(default=[], description="The variables to improve")
@@ -108,7 +108,7 @@ class ReflectionOptimizer(Optimizer):
         prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
         for prompt_name, prompt_variable in prompt_variables.items():
             prompt_variables_text += f"<{prompt_name}>\n"
-            prompt_variables_text += f"Type: {prompt_variable.type}\n"
+            prompt_variables_text += f"Name: {prompt_name}\n"
             prompt_variables_text += f"Description: {prompt_variable.description}\n"
             try:
                 value = prompt_variable.get_value() if hasattr(prompt_variable, 'get_value') else str(prompt_variable.variables)
@@ -124,6 +124,7 @@ class ReflectionOptimizer(Optimizer):
         tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
         for tool_name, tool_variable in tool_variables.items():
             tool_variables_text += f"<{tool_name}>\n"
+            tool_variables_text += f"Name: {tool_name}\n"
             tool_variables_text += f"Description: {tool_variable.description}\n"
             try:
                 value = tool_variable.get_value() if hasattr(tool_variable, 'get_value') else str(tool_variable.variables)
@@ -140,6 +141,7 @@ class ReflectionOptimizer(Optimizer):
             solution_variable_text = "<solution_variables>\n"
             for solution_name, solution_variable in solution_variables.items():
                 solution_variable_text += f"<{solution_name}>\n"
+                solution_variable_text += f"Name: {solution_name}\n"
                 solution_variable_text += f"Description: {solution_variable.description}\n"
                 try:
                     value = solution_variable.get_value() if hasattr(solution_variable, 'get_value') else str(solution_variable.variables)
@@ -444,6 +446,9 @@ class ReflectionOptimizer(Optimizer):
                             variables=trainable_variables,
                             reflection_analysis=reflection_analysis,
                         )
+                        
+                        for variable_name, variable in trainable_variables.items():
+                            print(variable_name, variable)
                         
                         prompt_updates = {}
                         variables_updated = False

@@ -496,7 +496,8 @@ class PromptContextManager(BaseModel):
             new_description = prompt.get('description', original_config.description)
             prompt_template = prompt.get('template', original_config.template)
             prompt_variables = prompt.get('variables', original_config.variables)
-            prompt_cls = None
+            # Preserve original class when updating with dict
+            prompt_cls = original_config.cls
             prompt_instance = None
         else:
             raise TypeError(f"Expected Prompt instance or dict, got {type(prompt)!r}")
@@ -559,12 +560,20 @@ class PromptContextManager(BaseModel):
             description=description or f"Updated from {original_config.version}"
         )
         
+        # Build instance for the updated prompt if class is available
+        try:
+            if updated_config.cls is not None:
+                updated_config = await self.build(updated_config)
+        except Exception as e:
+            logger.warning(f"| ⚠️ Failed to build updated prompt instance for {prompt_name}: {e}")
+        
         # Persist to JSON
         await self.save_to_json()
         # Save contract to file
         await self.save_contract()
         
         logger.info(f"| 📝 Updated prompt: {prompt_name} v{updated_config.version}")
+        
         return updated_config
     
     async def copy(self, prompt_name: str, new_name: Optional[str] = None, 

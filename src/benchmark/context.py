@@ -338,7 +338,7 @@ class BenchmarkContextManager(BaseModel):
                 version=new_version,
                 cls=benchmark_cls,
                 config=benchmark_config_dict,
-                instance=benchmark_instance if isinstance(benchmark, Benchmark) else None,
+                instance=benchmark_instance,  # Always use the created instance
                 metadata=getattr(benchmark_instance, 'metadata', {}),
                 code=code,
             )
