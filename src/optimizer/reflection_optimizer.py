@@ -464,19 +464,27 @@ class ReflectionOptimizer(Optimizer):
                                 prompt_updates[variable_name] = variable_value
                                 logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
                             elif variable_type == "tool_code":
-                                await tcp.set_variables(tool_name=variable_name, variable_updates=variable_value)
+                                # tcp.set_variables expects {"name": tool_name, "variables": code_string}
+                                tool_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await tcp.set_variables(tool_name=variable_name, variable_updates=tool_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated tool variable: {variable_name}")
                             elif variable_type == "environment_code":
-                                await ecp.set_variables(env_name=variable_name, variable_updates=variable_value)
+                                # ecp.set_variables expects {"name": env_name, "variables": code_string}
+                                env_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await ecp.set_variables(env_name=variable_name, variable_updates=env_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated environment variable: {variable_name}")
                             elif variable_type == "agent_code":
-                                await acp.set_variables(agent_name=variable_name, variable_updates=variable_value)
+                                # acp.set_variables expects {"name": agent_name, "variables": code_string}
+                                agent_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await acp.set_variables(agent_name=variable_name, variable_updates=agent_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated agent variable: {variable_name}")
                             elif variable_type == "memory_code":
-                                await memory_manager.set_variables(memory_name=variable_name, variable_updates=variable_value)
+                                # memory_manager.set_variables expects {"name": memory_name, "variables": code_string}
+                                memory_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await memory_manager.set_variables(memory_name=variable_name, variable_updates=memory_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated memory variable: {variable_name}")
                         
@@ -513,12 +521,12 @@ class ReflectionOptimizer(Optimizer):
                                     "variable_changes": {}
                                 }
                                 
-                                for var_name, improved_var in improved_variables.variables.items():
+                                for var_name, improved_var in improved_variables.items():
                                     if var_name in trainable_variables:
                                         before_var = trainable_variables[var_name]
                                         before_value = before_var.get_value() if hasattr(before_var, 'get_value') else str(before_var.variables)
-                                        # Extract the actual value from ImprovedVariable
-                                        after_value = improved_var.variables if hasattr(improved_var, 'variables') else str(improved_var)
+                                        # Extract the actual value from ImprovedVariable dict
+                                        after_value = improved_var['variables'] if isinstance(improved_var, dict) else str(improved_var)
                                         
                                         event_data["variable_changes"][var_name] = {
                                             "type": before_var.type,
