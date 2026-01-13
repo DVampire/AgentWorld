@@ -204,6 +204,9 @@ class PromptContextManager(BaseModel):
                     self._prompt_history_versions[prompt_name] = {}
                 self._prompt_history_versions[prompt_name][prompt_version] = prompt_config
                 
+                # Register version to version manager
+                await version_manager.register_version("prompt", prompt_name, prompt_version)
+                
                 logger.info(f"| 📝 Registered prompt: {prompt_name} ({prompt_cls.__name__})")
                 
             except Exception as e:
