@@ -129,24 +129,24 @@ class GrpoOptimizer(Optimizer):
         prompt_variables_text = "<prompt_variables>\n"
         prompt_variables = {k: v for k, v in variables.items() if
                             isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
-        for prompt_index, (prompt_name, prompt_variable) in enumerate(prompt_variables.items()):
-            prompt_variables_text += f"<prompt_variable_{prompt_index:04d}>\n"
-            prompt_variables_text += f"Name: {prompt_name}\n"
+        for prompt_name, prompt_variable in prompt_variables.items():
+            prompt_variables_text += f"<{prompt_name}>\n"
+            prompt_variables_text += f"Type: {prompt_variable.type}\n"
             prompt_variables_text += f"Description: {prompt_variable.description}\n"
             try:
                 value = prompt_variable.get_value() if hasattr(prompt_variable, 'get_value') else str(prompt_variable.variables)
             except Exception as e:
                 value = f"<Error getting value: {e}>"
-            prompt_variables_text += f"</prompt_variable_{prompt_index:04d}>\n"
+            prompt_variables_text += f"```text\n{value}\n```\n"
+            prompt_variables_text += f"</{prompt_name}>\n"
         prompt_variables_text += "</prompt_variables>\n"
         variables_text += prompt_variables_text
 
         # Step2: Format tool variables
         tool_variables_text = "<tool_variables>\n"
         tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
-        for index, (tool_name, tool_variable) in enumerate(tool_variables.items()):
-            tool_variables_text += f"<tool_variable_{index:04d}>\n"
-            tool_variables_text += f"Name: {tool_name}\n"
+        for tool_name, tool_variable in tool_variables.items():
+            tool_variables_text += f"<{tool_name}>\n"
             tool_variables_text += f"Description: {tool_variable.description}\n"
             try:
                 value = tool_variable.get_value() if hasattr(tool_variable, 'get_value') else str(
@@ -154,25 +154,24 @@ class GrpoOptimizer(Optimizer):
             except Exception as e:
                 value = f"<Error getting value: {e}>"
             tool_variables_text += f"```python\n{value}\n```\n"
-            tool_variables_text += f"</tool_variable_{index:04d}>\n"
+            tool_variables_text += f"</{tool_name}>\n"
         tool_variables_text += "</tool_variables>\n"
         variables_text += tool_variables_text
 
         # Step3: Format solution variable (if present)
         solution_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "solution"}
         if solution_variables:
-            solution_variable_text = "<solution_variable>\n"
-            for solution_index, (solution_name, solution_variable) in enumerate(solution_variables.items()):
-                solution_variable_text += f"<solution_{solution_index:04d}>\n"
-                solution_variable_text += f"Name: {solution_name}\n"
+            solution_variable_text = "<solution_variables>\n"
+            for solution_name, solution_variable in solution_variables.items():
+                solution_variable_text += f"<{solution_name}>\n"
                 solution_variable_text += f"Description: {solution_variable.description}\n"
                 try:
                     value = solution_variable.get_value() if hasattr(solution_variable, 'get_value') else str(solution_variable.variables)
                 except Exception as e:
                     value = f"<Error getting value: {e}>"
                 solution_variable_text += f"```text\n{value}\n```\n"
-                solution_variable_text += f"</solution_{solution_index:04d}>\n"
-            solution_variable_text += "</solution_variable>\n"
+                solution_variable_text += f"</{solution_name}>\n"
+            solution_variable_text += "</solution_variables>\n"
             variables_text += solution_variable_text
 
         return variables_text
