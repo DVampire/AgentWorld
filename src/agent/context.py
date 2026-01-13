@@ -558,6 +558,7 @@ class AgentContextManager(BaseModel):
         agent_config_dict: Optional[Dict[str, Any]] = None,
         new_version: Optional[str] = None,
         description: Optional[str] = None,
+        code: Optional[str] = None,
     ) -> AgentConfig:
         """Update an existing agent with new configuration and create a new version
         
@@ -567,6 +568,8 @@ class AgentContextManager(BaseModel):
                    If None, will try to get from global config
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
+            code: Optional source code string. If provided, uses this instead of extracting from agent_cls.
+                  This is useful when agent_cls is dynamically created from code string.
             
         Returns:
             AgentConfig: Updated agent configuration
@@ -600,10 +603,13 @@ class AgentContextManager(BaseModel):
                 # Get current version from version_manager and generate next patch version
                 new_version = await version_manager.generate_next_version("agent", agent_name, "patch")
             
-            # Get agent code
-            agent_code = dynamic_manager.get_source_code(agent_cls)
-            if not agent_code:
-                logger.warning(f"| ⚠️ Agent {agent_name} is dynamic but source code cannot be extracted")
+            # Get agent code - use provided code if available (for dynamically created classes)
+            if code is not None:
+                agent_code = code
+            else:
+                agent_code = dynamic_manager.get_source_code(agent_cls)
+                if not agent_code:
+                    logger.warning(f"| ⚠️ Agent {agent_name} is dynamic but source code cannot be extracted")
             
             # Get agent parameters and build properties using dynamic_manager methods
             agent_parameters = dynamic_manager.get_parameters(agent_cls)
@@ -1214,12 +1220,14 @@ class AgentContextManager(BaseModel):
             raise ValueError(f"Failed to load agent class from code: {e}")
         
         # Use update() function to handle version management and persistence
+        # Pass the code directly to avoid re-extracting from dynamically created class
         update_description = description or f"Updated code for {agent_name}"
         return await self.update(
             agent_cls=agent_cls,
             agent_config_dict=original_config.config,
             new_version=new_version,
-            description=update_description
+            description=update_description,
+            code=new_code  # Pass code directly since agent_cls is dynamically created
         )
 
     async def cleanup(self):

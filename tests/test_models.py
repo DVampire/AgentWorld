@@ -9,7 +9,7 @@ import argparse
 from mmengine import DictAction
 import asyncio
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Dict
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -225,6 +225,10 @@ async def test_response_format():
         b: int = Field(description="The second number to add")
         result: int = Field(description="The result of the addition")
 
+    class AddDict(BaseModel):
+        adds: Dict[str, Add] = Field(description="The dictionary of additions to perform")
+        reasoning: str = Field(description="The reasoning process of the addition")
+        
     class AddList(BaseModel):
         adds: List[Add] = Field(description="The list of additions to perform")
         reasoning: str = Field(description="The reasoning process of the addition")
@@ -238,8 +242,18 @@ async def test_response_format():
     
     for model in models:
         logger.info(f"| Testing {model}")
+        response = await model_manager(model=model, messages=messages, response_format=AddDict)
+        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+        
+        parsed_response = response.extra.parsed_model
+        print(parsed_response)
+        
         response = await model_manager(model=model, messages=messages, response_format=AddList)
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
+        
+        parsed_response = response.extra.parsed_model
+        print(parsed_response)
+        
     logger.info(f"| --------------------------------------------------")
 
 async def test_tool_calling():
@@ -351,7 +365,7 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
-    await test_chat()
+    # await test_chat()
     await test_response_format()
     # await test_tool_calling()
     # await test_transcription()

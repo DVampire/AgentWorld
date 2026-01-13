@@ -547,7 +547,8 @@ class ToolContextManager(BaseModel):
                      tool_cls: Type[Tool],
                      tool_config_dict: Optional[Dict[str, Any]] = None,
                      new_version: Optional[str] = None, 
-                     description: Optional[str] = None) -> ToolConfig:
+                     description: Optional[str] = None,
+                     code: Optional[str] = None) -> ToolConfig:
         """Update an existing tool with new configuration and create a new version
         
         Args:
@@ -556,6 +557,8 @@ class ToolContextManager(BaseModel):
                    If None, will try to get from global config
             new_version: New version string. If None, auto-increments from current version.
             description: Description for this version update
+            code: Optional source code string. If provided, uses this instead of extracting from tool_cls.
+                  This is useful when tool_cls is dynamically created from code string.
             
         Returns:
             ToolConfig: Updated tool configuration
@@ -590,16 +593,19 @@ class ToolContextManager(BaseModel):
                 # Get current version from version_manager and generate next patch version
                 new_version = await version_manager.generate_next_version("tool", tool_name, "patch")
             
-            # Get tool code
-            tool_code = await dynamic_manager.get_class_source_code(tool_cls)
-            if not tool_code:
-                logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
+            # Get tool code - use provided code if available (for dynamically created classes)
+            if code is not None:
+                tool_code = code
+            else:
+                tool_code = dynamic_manager.get_source_code(tool_cls)
+                if not tool_code:
+                    logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
             
             # Get tool parameters and build properties using dynamic_manager methods
-            tool_parameters = await dynamic_manager.get_parameters(tool_cls)
-            tool_function_calling = await dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
-            tool_text = await dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
-            tool_args_schema = await dynamic_manager.build_args_schema(tool_name, tool_parameters)
+            tool_parameters = dynamic_manager.get_parameters(tool_cls)
+            tool_function_calling = dynamic_manager.build_function_calling(tool_name, tool_description, tool_parameters)
+            tool_text = dynamic_manager.build_text_representation(tool_name, tool_description, tool_parameters)
+            tool_args_schema = dynamic_manager.build_args_schema(tool_name, tool_parameters)
             
             # --- Build ToolConfig ---
             updated_config = ToolConfig(
@@ -707,15 +713,15 @@ class ToolContextManager(BaseModel):
                     new_version = await version_manager.get_version("tool", new_name)
             
             # Get tool code
-            tool_code = await dynamic_manager.get_class_source_code(original_config.cls)
+            tool_code = dynamic_manager.get_source_code(original_config.cls)
             if not tool_code:
                 logger.warning(f"| ⚠️ Tool {new_name} is dynamic but source code cannot be extracted")
             
             # Get tool parameters and build properties using dynamic_manager methods
-            tool_parameters = await dynamic_manager.get_parameters(original_config.cls)
-            tool_function_calling = await dynamic_manager.build_function_calling(new_name, tool_description, tool_parameters)
-            tool_text = await dynamic_manager.build_text_representation(new_name, tool_description, tool_parameters)
-            tool_args_schema = await dynamic_manager.build_args_schema(new_name, tool_parameters)
+            tool_parameters = dynamic_manager.get_parameters(original_config.cls)
+            tool_function_calling = dynamic_manager.build_function_calling(new_name, tool_description, tool_parameters)
+            tool_text = dynamic_manager.build_text_representation(new_name, tool_description, tool_parameters)
+            tool_args_schema = dynamic_manager.build_args_schema(new_name, tool_parameters)
             
             # --- Build ToolConfig ---
             new_config = ToolConfig(
@@ -1226,12 +1232,14 @@ class ToolContextManager(BaseModel):
             raise ValueError(f"Failed to load tool class from code: {e}")
         
         # Use update() function to handle version management and persistence
+        # Pass the code directly to avoid re-extracting from dynamically created class
         update_description = description or f"Updated code for {tool_name}"
         return await self.update(
             tool_cls=tool_cls,
             tool_config_dict=original_config.config,
             new_version=new_version,
-            description=update_description
+            description=update_description,
+            code=new_code  # Pass code directly since tool_cls is dynamically created
         )
     
     async def __call__(self, name: str, input: Dict[str, Any], timeout: Optional[float] = None) -> ToolResponse:

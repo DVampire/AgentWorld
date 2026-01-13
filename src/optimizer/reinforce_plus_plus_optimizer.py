@@ -21,7 +21,7 @@ class ImprovedVariable(BaseModel):
     variables: str = Field(description="The value of the variable")
 
 class ImprovedVariables(BaseModel):
-    variables: Dict[str, ImprovedVariable] = Field(default={}, description="The variables to improve")
+    variables: List[ImprovedVariable] = Field(default=[], description="The variables to improve")
 
 class EvaluationResult(BaseModel):
     is_satisfied: bool = Field(description="Whether the current solution and variables are satisfactory and optimization can stop")
@@ -126,24 +126,24 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         prompt_variables_text = "<prompt_variables>\n"
         prompt_variables = {k: v for k, v in variables.items() if
                             isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
-        for prompt_index, (prompt_name, prompt_variable) in enumerate(prompt_variables.items()):
-            prompt_variables_text += f"<prompt_variable_{prompt_index:04d}>\n"
-            prompt_variables_text += f"Name: {prompt_name}\n"
+        for prompt_name, prompt_variable in prompt_variables.items():
+            prompt_variables_text += f"<{prompt_name}>\n"
+            prompt_variables_text += f"Type: {prompt_variable.type}\n"
             prompt_variables_text += f"Description: {prompt_variable.description}\n"
             try:
                 value = prompt_variable.get_value() if hasattr(prompt_variable, 'get_value') else str(prompt_variable.variables)
             except Exception as e:
                 value = f"<Error getting value: {e}>"
-            prompt_variables_text += f"</prompt_variable_{prompt_index:04d}>\n"
+            prompt_variables_text += f"```text\n{value}\n```\n"
+            prompt_variables_text += f"</{prompt_name}>\n"
         prompt_variables_text += "</prompt_variables>\n"
         variables_text += prompt_variables_text
 
         # Step2: Format tool variables
         tool_variables_text = "<tool_variables>\n"
         tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
-        for index, (tool_name, tool_variable) in enumerate(tool_variables.items()):
-            tool_variables_text += f"<tool_variable_{index:04d}>\n"
-            tool_variables_text += f"Name: {tool_name}\n"
+        for tool_name, tool_variable in tool_variables.items():
+            tool_variables_text += f"<{tool_name}>\n"
             tool_variables_text += f"Description: {tool_variable.description}\n"
             try:
                 value = tool_variable.get_value() if hasattr(tool_variable, 'get_value') else str(
@@ -151,25 +151,24 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             except Exception as e:
                 value = f"<Error getting value: {e}>"
             tool_variables_text += f"```python\n{value}\n```\n"
-            tool_variables_text += f"</tool_variable_{index:04d}>\n"
+            tool_variables_text += f"</{tool_name}>\n"
         tool_variables_text += "</tool_variables>\n"
         variables_text += tool_variables_text
 
         # Step3: Format solution variable (if present)
         solution_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "solution"}
         if solution_variables:
-            solution_variable_text = "<solution_variable>\n"
-            for solution_index, (solution_name, solution_variable) in enumerate(solution_variables.items()):
-                solution_variable_text += f"<solution_{solution_index:04d}>\n"
-                solution_variable_text += f"Name: {solution_name}\n"
+            solution_variable_text = "<solution_variables>\n"
+            for solution_name, solution_variable in solution_variables.items():
+                solution_variable_text += f"<{solution_name}>\n"
                 solution_variable_text += f"Description: {solution_variable.description}\n"
                 try:
                     value = solution_variable.get_value() if hasattr(solution_variable, 'get_value') else str(solution_variable.variables)
                 except Exception as e:
                     value = f"<Error getting value: {e}>"
                 solution_variable_text += f"```text\n{value}\n```\n"
-                solution_variable_text += f"</solution_{solution_index:04d}>\n"
-            solution_variable_text += "</solution_variable>\n"
+                solution_variable_text += f"</{solution_name}>\n"
+            solution_variable_text += "</solution_variables>\n"
             variables_text += solution_variable_text
 
         return variables_text
@@ -230,7 +229,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             raise
 
     async def _improve_variables(self, task: str, variables: Dict[str, Variable],
-                                 reflection_analysis: str) -> ImprovedVariables:
+                                 reflection_analysis: str) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -242,23 +241,21 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             variable_mapping: Mapping from variable name to Variable object.
 
         Returns:
-            ImprovedVariables: Dictionary of improved variables in flattened structure
+            Dictionary of improved variables in flattened structure
             {
-                "variables": {
-                    # prompt sub-variables (flattened from system/agent prompts)
-                    "agent_context_rules": {
-                        "name": "agent_context_rules",
-                        "variables": "You are a helpful assistant."
-                    },
-                    "tool_context_rules": {
-                        "name": "tool_context_rules",
-                        "variables": "You can use the following tools: {tools}"
-                    },
-                    # tool variables
-                    "bash": {
-                        "name": "bash",
-                        "variables": "def bash_tool():\n    # tool implementation\n    pass"
-                    }
+                # prompt sub-variables (flattened from system/agent prompts)
+                "agent_context_rules": {
+                    "name": "agent_context_rules",
+                    "variables": "You are a helpful assistant."
+                },
+                "tool_context_rules": {
+                    "name": "tool_context_rules",
+                    "variables": "You can use the following tools: {tools}"
+                },
+                # tool variables
+                "bash": {
+                    "name": "bash",
+                    "variables": "def bash_tool():\n    # tool implementation\n    pass"
                 }
             }
         """
@@ -289,7 +286,10 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_format=ImprovedVariables)
             improved_variables: ImprovedVariables = response.extra.parsed_model
-            return improved_variables
+            variables = {
+                variable.name: variable.model_dump() for variable in improved_variables.variables
+            }
+            return variables
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
@@ -590,37 +590,43 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                         prompt_updates = {}  # Will collect all prompt sub-variable updates
                         variables_updated = False
 
-                        for variable_id, improved_var in improved_variables.variables.items():
-                            variable_name = improved_var.name
+                        for variable_name, improved_var in improved_variables.items():
                             if variable_name not in trainable_variables:
                                 logger.warning(
                                     f"| ⚠️ Variable {variable_name} not found in trainable variables, skipping")
                                 continue
 
                             variable_type = trainable_variables[variable_name].type
-                            # Extract the actual value string from ImprovedVariable
-                            variable_value = improved_var.variables if hasattr(improved_var,
-                                                                               'variables') else improved_var
+                            # Extract the actual value string from ImprovedVariable dict
+                            variable_value = improved_var['variables']
 
                             if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
                                 # Prompt sub-variables - collect for batch update
                                 prompt_updates[variable_name] = variable_value
                                 logger.debug(f"| 📝 Collected prompt sub-variable update: {variable_name}")
                             elif variable_type == "tool_code":
-                                await tcp.set_variables(tool_name=variable_name, variable_updates=variable_value)
+                                # tcp.set_variables expects {"name": tool_name, "variables": code_string}
+                                tool_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await tcp.set_variables(tool_name=variable_name, variable_updates=tool_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated tool variable: {variable_name}")
                             elif variable_type == "environment_code":
-                                await ecp.set_variables(env_name=variable_name, variable_updates=variable_value)
+                                # ecp.set_variables expects {"name": env_name, "variables": code_string}
+                                env_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await ecp.set_variables(env_name=variable_name, variable_updates=env_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated environment variable: {variable_name}")
                             elif variable_type == "agent_code":
-                                await acp.set_variables(agent_name=variable_name, variable_updates=variable_value)
+                                # acp.set_variables expects {"name": agent_name, "variables": code_string}
+                                agent_variable_updates = {"name": variable_name, "variables": variable_value}
+                                await acp.set_variables(agent_name=variable_name, variable_updates=agent_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated agent variable: {variable_name}")
                             elif variable_type == "memory_code":
+                                # memory_manager.set_variables expects {"name": memory_name, "variables": code_string}
+                                memory_variable_updates = {"name": variable_name, "variables": variable_value}
                                 await memory_manager.set_variables(memory_name=variable_name,
-                                                                   variable_updates=variable_value)
+                                                                   variable_updates=memory_variable_updates)
                                 variables_updated = True
                                 logger.info(f"| ✅ Updated memory variable: {variable_name}")
 
@@ -658,15 +664,15 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                                     "variable_changes": {}
                                 }
 
-                                for var_name, improved_var in improved_variables.variables.items():
+                                for var_name, improved_var in improved_variables.items():
                                     if var_name in trainable_variables:
                                         before_var = trainable_variables[var_name]
                                         before_value = before_var.get_value() if hasattr(before_var,
                                                                                          'get_value') else str(
                                             before_var.variables)
-                                        # Extract the actual value from ImprovedVariable
-                                        after_value = improved_var.variables if hasattr(improved_var,
-                                                                                        'variables') else str(
+                                        # Extract the actual value from ImprovedVariable dict
+                                        after_value = improved_var['variables'] if isinstance(improved_var,
+                                                                                        dict) else str(
                                             improved_var)
 
                                         event_data["variable_changes"][var_name] = {

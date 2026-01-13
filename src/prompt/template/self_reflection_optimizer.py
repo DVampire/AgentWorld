@@ -21,18 +21,23 @@ You excel at:
 
 REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES = """
 <reasoning_rules>
-Please analyze the execution result and all available variables, then provide:
+Please analyze the execution result and the provided variables in <current_variables>, then provide:
+
+IMPORTANT: You can ONLY analyze and suggest improvements for variables that are listed in <current_variables>. 
+Do NOT suggest creating new variables or tools that don't exist. Work with what is provided.
+
 - **What went wrong or could be improved**
    - Identify specific issues in the agent's behavior or output
    - Note any errors, inefficiencies, or suboptimal outcomes
 
-- **Which variables contributed to these issues?**
+- **Which variables (from current_variables) contributed to these issues?**
    - Analyze prompt variables (system_prompt, agent_message_prompt and their sub-variables): identify unclear instructions, missing context, or structural issues
    - Analyze tool variables (tool_code): identify bugs, missing functionality, or incorrect logic
    - Analyze solution variables: identify if the solution approach itself needs improvement
-   - Determine which specific variable(s) are most likely causing the problems
+   - Determine which specific variable(s) from <current_variables> are most likely causing the problems
 
 - **Specific recommendations for improving each problematic variable**
+   - You MUST only recommend improvements for variables that exist in <current_variables>
    - For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context
    - For tool variables: provide specific code fixes, feature additions, or logic corrections
    - For solution variables: suggest alternative approaches or improvements to the solution strategy
@@ -166,12 +171,15 @@ You are an expert at improving variables (prompts, tools, solutions) based on fe
 REFLECTION_OPTIMIZER_IMPROVEMENT_INTRODUCTION = """
 <intro>
 You excel at:
-- Improving different types of variables (prompt variables, tool code, solutions) based on feedback and analysis
+- Improving ONLY the variables provided in <current_variables> based on feedback and analysis
 - Keeping the core purpose and structure of the original variable
 - Addressing all identified issues specific to each variable type
 - Making improvements appropriate for the variable type (clearer instructions for prompts, bug fixes for tools, better strategies for solutions)
 - Removing unnecessary or problematic elements
 - Adding missing elements that would help the agent perform better
+
+IMPORTANT: You can ONLY improve variables that are listed in <current_variables>. 
+Do NOT suggest or create new variables that don't exist in the provided list.
 </intro>
 """
 
@@ -209,9 +217,13 @@ Based on the analysis and feedback provided, please improve the variable by:
 
 REFLECTION_OPTIMIZER_IMPROVEMENT_OUTPUT = """
 <output>
+CRITICAL: You MUST only improve variables that exist in <current_variables>. 
+Use the EXACT variable names as shown in <current_variables> (e.g., "tool_context_rules", "reasoning_rules", "bash").
+Do NOT invent new variable names or suggest new tools/variables that don't exist.
+
 Please provide ONLY the improved variable content:
 - For prompt variables: Provide the improved prompt text
-- For tool variables: Provide the improved tool code
+- For tool variables: Provide the improved tool code (must be a valid Python class)
 - For solution variables: Provide the improved solution approach
 Do not include any additional commentary or explanation.
 </output>
