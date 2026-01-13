@@ -18,7 +18,7 @@ class ImprovedVariable(BaseModel):
     variables: str = Field(description="The value of the variable")
 
 class ImprovedVariables(BaseModel):
-    variables: Dict[str, ImprovedVariable] = Field(default={}, description="The variables to improve")
+    variables: List[ImprovedVariable] = Field(default=[], description="The variables to improve")
 
 class EvaluationResult(BaseModel):
     is_satisfied: bool = Field(description="Whether the current solution and variables are satisfactory and optimization can stop")
@@ -29,13 +29,13 @@ class ReflectionOptimizer(Optimizer):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     prompt_name: str = Field(default="reflection_optimizer", description="The name of the prompt")
-    model_name: str = Field(default="openrouter/gpt-4o", description="The name of the model")
+    model_name: str = Field(default="openrouter/gemini-3-flash-preview", description="The name of the model")
     memory_name: Optional[str] = Field(default=None, description="Name of the optimizer memory system for recording optimization history")
     
     def __init__(self, 
                  workdir: str,
                  prompt_name: str = "reflection_optimizer",
-                 model_name: str = "openrouter/gpt-4o", 
+                 model_name: str = "openrouter/gemini-3-flash-preview", 
                  memory_name: Optional[str] = "optimizer_memory_system",
                  optimize_trainable_variables: bool = True,
                  optimize_solution: bool = True,
@@ -202,7 +202,7 @@ class ReflectionOptimizer(Optimizer):
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str) -> ImprovedVariables:
+    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -214,23 +214,21 @@ class ReflectionOptimizer(Optimizer):
             variable_mapping: Mapping from variable name to Variable object.
 
         Returns:
-            ImprovedVariables: Dictionary of improved variables in flattened structure
+            Dictionary of improved variables in flattened structure
             {
-                "variables": {
-                    # prompt sub-variables (flattened from system/agent prompts)
-                    "agent_context_rules": {
-                        "name": "agent_context_rules",
-                        "variables": "You are a helpful assistant."
-                    },
-                    "tool_context_rules": {
-                        "name": "tool_context_rules",
-                        "variables": "You can use the following tools: {tools}"
-                    },
-                    # tool variables
-                    "bash": {
-                        "name": "bash",
-                        "variables": "def bash_tool():\n    # tool implementation\n    pass"
-                    }
+                # prompt sub-variables (flattened from system/agent prompts)
+                "agent_context_rules": {
+                    "name": "agent_context_rules",
+                    "variables": "You are a helpful assistant."
+                },
+                "tool_context_rules": {
+                    "name": "tool_context_rules",
+                    "variables": "You can use the following tools: {tools}"
+                },
+                # tool variables
+                "bash": {
+                    "name": "bash",
+                    "variables": "def bash_tool():\n    # tool implementation\n    pass"
                 }
             }
         """
@@ -261,7 +259,11 @@ class ReflectionOptimizer(Optimizer):
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_format=ImprovedVariables)
             improved_variables: ImprovedVariables = response.extra.parsed_model
-            return improved_variables
+            variables = {
+                variable.name: variable.model_dump() for variable in improved_variables.variables
+            }
+            return variables
+            
         except Exception as e:
             logger.error(f"| ❌ Error improving variables: {e}")
             raise
@@ -446,20 +448,16 @@ class ReflectionOptimizer(Optimizer):
                             reflection_analysis=reflection_analysis,
                         )
                         
-                        # Update trainable variables (now flattened structure)
-                        # Group prompt sub-variables together for batch update
-                        prompt_updates = {}  # Will collect all prompt sub-variable updates
+                        prompt_updates = {}
                         variables_updated = False
-                        
-                        for variable_id, improved_var in improved_variables.variables.items():
-                            variable_name = improved_var.name
+                        for variable_name, improved_var in improved_variables.items():
                             if variable_name not in trainable_variables:
                                 logger.warning(f"| ⚠️ Variable {variable_name} not found in trainable variables, skipping")
                                 continue
                             
                             variable_type = trainable_variables[variable_name].type
                             # Extract the actual value string from ImprovedVariable
-                            variable_value = improved_var.variables if hasattr(improved_var, 'variables') else improved_var
+                            variable_value = improved_var['variables']
                             
                             if variable_type == "system_prompt" or variable_type == "agent_message_prompt":
                                 # Prompt sub-variables - collect for batch update

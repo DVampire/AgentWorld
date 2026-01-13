@@ -86,6 +86,7 @@ BASE_BUILTIN_MODULES = [
     "csv",
     "os",
     "sympy",
+    "cmath"
 ]
 
 BASE_PYTHON_TOOLS = {
