@@ -122,6 +122,7 @@ class ToolConfig(BaseModel):
             cls=cls_, 
             config=config, 
             instance=instance, 
+            code=code,
             function_calling=function_calling, 
             text=text, 
             args_schema=args_schema
