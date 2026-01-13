@@ -520,11 +520,19 @@ class OpenRouterChatSerializer:
                     if k in required:
                         new_required.append(k)
                 
-                # For Dict[str, Any] types (no properties or empty properties), retain additionalProperties: True
-                # Otherwise, set to False (strict mode)
-                if not new_props and obj.get("additionalProperties") is True:
+                # Handle additionalProperties:
+                # - If it's a dict/schema (e.g., Dict[str, SomeModel]), transform and keep it
+                # - If it's True (e.g., Dict[str, Any]), keep it as True
+                # - Otherwise, set to False (strict mode)
+                additional_props_raw = obj.get("additionalProperties")
+                if isinstance(additional_props_raw, dict):
+                    # This is a schema for Dict[str, SomeModel] - transform and keep it
+                    additional_props = transform(additional_props_raw)
+                elif additional_props_raw is True:
+                    # Dict[str, Any] - keep as True
                     additional_props = True
                 else:
+                    # Regular object with fixed properties - set to False for strict mode
                     additional_props = False
                 
                 result = {
