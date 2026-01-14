@@ -130,6 +130,7 @@ class GrpoOptimizer(Optimizer):
         prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
         for prompt_name, prompt_variable in prompt_variables.items():
             prompt_variables_text += f"<{prompt_name}>\n"
+            prompt_variables_text += f"The variable is as follows:\n"
             prompt_variables_text += f"{prompt_variable.variables}"
             prompt_variables_text += f"</{prompt_name}>\n"
         prompt_variables_text += "</prompt_variables>\n"
@@ -140,6 +141,7 @@ class GrpoOptimizer(Optimizer):
         tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
         for tool_name, tool_variable in tool_variables.items():
             tool_variables_text += f"<{tool_name}>\n"
+            tool_variables_text += f"The variable is as follows:\n"
             tool_variables_text += f"{tool_variable.variables}"
             tool_variables_text += f"</{tool_name}>\n"
         tool_variables_text += "</tool_variables>\n"
@@ -151,6 +153,7 @@ class GrpoOptimizer(Optimizer):
             solution_variable_text = "<solution_variables>\n"
             for solution_name, solution_variable in solution_variables.items():
                 solution_variable_text += f"<{solution_name}>\n"
+                solution_variable_text += f"The variable is as follows:\n"
                 solution_variable_text += f"{solution_variable.variables}"
                 solution_variable_text += f"</{solution_name}>\n"
             solution_variable_text += "</solution_variables>\n"
