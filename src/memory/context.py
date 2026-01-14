@@ -1241,14 +1241,16 @@ class MemoryContextManager(BaseModel):
         Returns:
             Dictionary containing 'events', 'summaries', and 'insights'
         """
-        instance = await self.get(memory_name)
-        if instance is None:
-            raise ValueError(f"Memory system '{memory_name}' not found")
+        memory_info = await self.get_info(memory_name)
+
+        version = memory_info.version
+        memory_instance = memory_info.instance
+        logger.info(f"| ✅ Using memory {memory_name}@{version}")
         
         # Get events, summaries, and insights from memory instance
-        events = await instance.get_event(n=n, session_id=session_id)
-        summaries = await instance.get_summary(n=n, session_id=session_id)
-        insights = await instance.get_insight(n=n, session_id=session_id)
+        events = await memory_instance.get_event(n=n, session_id=session_id)
+        summaries = await memory_instance.get_summary(n=n, session_id=session_id)
+        insights = await memory_instance.get_insight(n=n, session_id=session_id)
         
         return {
             "events": events,

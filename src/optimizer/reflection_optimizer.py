@@ -450,9 +450,6 @@ class ReflectionOptimizer(Optimizer):
                             reflection_analysis=reflection_analysis,
                         )
                         
-                        for variable_name, variable in trainable_variables.items():
-                            print(variable_name, variable)
-                        
                         prompt_updates = {}
                         variables_updated = False
                         for variable_name, improved_var in improved_variables.items():
