@@ -25,7 +25,7 @@ from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Tuple
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -64,9 +64,38 @@ def parse_args():
     return args
 
 async def reward_fn(answer: str = None, ground_truth: Any = None):
+    _, answer = parse_agent_result(answer)
     score = 1.0 if answer == ground_truth else 0.0
     print(f'answer: {answer}, ground_truth: {ground_truth}')
     return score
+
+
+def parse_agent_result(agent_result: Any) -> Tuple[str, Any]:
+    """
+    Parse agent_result that could be:
+    1. Direct string: "Final answer" → (reasoning="", result="Final answer")
+    2. JSON string: '{"reasoning": "...", "result": "..."}' → (reasoning="...", result="...")
+    """
+    import json
+
+    # Case 1: Direct string result
+    if isinstance(agent_result, str) and not agent_result.strip().startswith('{'):
+        return "", agent_result.strip()
+
+    # Case 2: JSON string with reasoning and result
+    if isinstance(agent_result, str):
+        try:
+            parsed = json.loads(agent_result.strip())
+            if isinstance(parsed, dict):
+                reasoning = parsed.get("reasoning", "")
+                result = parsed.get("result", "")
+                return reasoning, str(result)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, treat as direct string
+            return "", agent_result.strip()
+
+    # Fallback for other types
+    return "", str(agent_result) if agent_result else ""
 
 def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None):
     """Create optimizer instance based on type."""
@@ -145,18 +174,27 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str):
             reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
             logger.info(f"| ✅ Initial solution obtained")
 
-            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
+            agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              sft_solution=reference_solution,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
         else:
-            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
+            agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
+
+
+        parse_reasoning, parse_result = parse_agent_result(agent_result)
+
+        if parse_reasoning == '':
+            parse_reasoning = agent_reasoning
+        task_data.reasoning = parse_reasoning
+        task_data.result = parse_result
+
         _ = await benchmark_manager.eval(benchmark_name, task_data)
         stats = await benchmark_manager.stats(benchmark_name)
         if stats:

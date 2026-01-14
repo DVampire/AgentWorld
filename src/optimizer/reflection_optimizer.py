@@ -393,6 +393,27 @@ class ReflectionOptimizer(Optimizer):
         
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
+
+        # 【TEST】记录初始参数状态
+        initial_params = {}
+        try:
+            from src.prompt import prompt_manager
+            from src.tool import tcp
+
+            if hasattr(agent, 'prompt_name'):
+                initial_prompt_vars = await prompt_manager.get_trainable_variables(prompt_name=agent.prompt_name)
+                for var_name, var_obj in initial_prompt_vars.items():
+                    initial_params[f"prompt_{var_name}"] = var_obj.get_value()
+
+            # 记录tool参数
+            initial_tool_vars = await tcp.get_trainable_variables()
+            for var_name, var_obj in initial_tool_vars.items():
+                initial_params[f"tool_{var_name}"] = var_obj.get_value()
+
+            logger.info(f"| 🧪 [TEST] Initial run - captured {len(initial_params)} parameters")
+        except Exception as e:
+            logger.warning(f"| 🧪 [TEST] Could not capture initial parameters: {e}")
+
         agent_response = await agent(task=task, files=files)
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
@@ -483,6 +504,44 @@ class ReflectionOptimizer(Optimizer):
                             logger.info(f"| ✅ Updated {len(prompt_updates)} prompt sub-variables: {list(prompt_updates.keys())}")
                         
                         if variables_updated:
+                            # 【TEST】验证参数是否真正被更新（与初始参数对比）
+                            logger.info(f"| 🧪 [TEST] Checking if parameters were updated from initial state...")
+
+                            # 提取并对比更新后的参数（与初始参数对比）
+                            try:
+                                updated_params = {}
+                                from src.prompt import prompt_manager
+                                from src.tool import tcp
+
+                                if hasattr(agent, 'prompt_name'):
+                                    updated_prompt_vars = await prompt_manager.get_trainable_variables(prompt_name=agent.prompt_name)
+                                    for var_name, var_obj in updated_prompt_vars.items():
+                                        updated_params[f"prompt_{var_name}"] = var_obj.get_value()
+
+                                # 记录tool参数
+                                updated_tool_vars = await tcp.get_trainable_variables()
+                                for var_name, var_obj in updated_tool_vars.items():
+                                    updated_params[f"tool_{var_name}"] = var_obj.get_value()
+
+                                # 对比参数变化（与初始参数对比）
+                                changed_from_initial = []
+                                for param_name in initial_params:
+                                    if param_name in updated_params and initial_params[param_name] != updated_params[param_name]:
+                                        changed_from_initial.append(param_name)
+                                        logger.info(f"| ✅ [TEST] Parameter changed from INITIAL: {param_name}")
+                                        logger.info(f"| ✅ [TEST]   INITIAL: {initial_params[param_name][:100]}...")
+                                        logger.info(f"| ✅ [TEST]   UPDATED: {updated_params[param_name][:100]}...")
+
+                                if changed_from_initial:
+                                    logger.info(f"| ✅ [TEST] SUCCESS: {len(changed_from_initial)} parameters were updated from initial state!")
+                                else:
+                                    logger.warning(f"| ⚠️ [TEST] WARNING: Parameters are same as initial - update may not be working!")
+
+                                logger.info(f"| 🧪 [TEST] After update - captured {len(updated_params)} parameters")
+
+                            except Exception as e:
+                                logger.warning(f"| 🧪 [TEST] Could not verify parameter changes: {e}")
+
                             # Re-run agent with updated variables
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)

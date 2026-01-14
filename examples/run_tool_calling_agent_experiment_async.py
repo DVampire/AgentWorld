@@ -19,13 +19,15 @@ Usage:
 import os
 import sys
 import logging
+import json
+import time
 from dotenv import load_dotenv
 load_dotenv(verbose=True)
 from pathlib import Path
 import argparse
 from mmengine import DictAction
 import asyncio
-from typing import Optional, Callable, Any, List, Dict
+from typing import Optional, Callable, Any, List, Dict, Tuple
 from datetime import datetime
 
 root = str(Path(__file__).resolve().parents[1])
@@ -42,6 +44,85 @@ from src.environment import ecp
 from src.agent import acp
 from src.benchmark import benchmark_manager
 from src.optimizer import GrpoOptimizer, ReinforcePlusPlusOptimizer, ReflectionOptimizer
+
+
+class ExperimentResultSaver:
+    """Save experiment results to JSON file with real-time updates."""
+
+    def __init__(self, optimizer_type: str, benchmark_name: str, concurrency: int, total_tasks: int, model_name: str):
+        self.optimizer_type = optimizer_type
+        self.benchmark_name = benchmark_name
+        self.concurrency = concurrency
+        self.total_tasks = total_tasks
+        self.model_name = model_name
+        self.start_time = datetime.now()
+
+        # Create results directory if it doesn't exist
+        self.results_dir = Path("examples/results")
+        self.results_dir.mkdir(exist_ok=True)
+
+        # Generate filename with timestamp
+        timestamp = self.start_time.strftime("%Y-%m-%d_%H-%M-%S")
+        self.filename = f"{optimizer_type}_{benchmark_name}_{timestamp}.json"
+        self.filepath = self.results_dir / self.filename
+
+        # Initialize results structure
+        self.results_data = {
+            "experiment_meta": {
+                "timestamp": self.start_time.isoformat() + "Z",
+                "optimizer": optimizer_type,
+                "benchmark": benchmark_name,
+                "concurrency": concurrency,
+                "total_tasks": total_tasks,
+                "model": model_name
+            },
+            "results": [],
+            "summary": {
+                "completed_tasks": 0,
+                "correct_answers": 0,
+                "accuracy": 0.0,
+                "last_updated": self.start_time.isoformat() + "Z"
+            }
+        }
+
+        # Save initial empty results
+        self._save_to_file()
+
+    def add_task_result(self, task_data: Any, processing_time: float = None):
+        """Add a single task result and update the file."""
+        task_result = {
+            "task_id": task_data.task_id,
+            "task_input": task_data.input[:200] + "..." if len(task_data.input) > 200 else task_data.input,
+            "ground_truth": str(task_data.ground_truth),
+            "result": str(task_data.result) if hasattr(task_data, 'result') else "",
+            "reasoning": getattr(task_data, 'reasoning', ""),
+            "correct": getattr(task_data, 'result', "") == str(task_data.ground_truth),
+            "processing_time": processing_time
+        }
+
+        self.results_data["results"].append(task_result)
+
+        # Update summary
+        self.results_data["summary"]["completed_tasks"] = len(self.results_data["results"])
+        correct_count = sum(1 for r in self.results_data["results"] if r["correct"])
+        self.results_data["summary"]["correct_answers"] = correct_count
+        self.results_data["summary"]["accuracy"] = correct_count / len(self.results_data["results"]) if self.results_data["results"] else 0.0
+        self.results_data["summary"]["last_updated"] = datetime.now().isoformat() + "Z"
+
+        # Save updated results
+        self._save_to_file()
+
+    def _save_to_file(self):
+        """Save current results to JSON file."""
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                json.dump(self.results_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save results to {self.filepath}: {e}")
+
+    def get_file_path(self) -> str:
+        """Get the path to the results file."""
+        return str(self.filepath)
 
 
 def parse_args():
@@ -66,9 +147,37 @@ def parse_args():
     return args
 
 async def reward_fn(answer: str = None, ground_truth: Any = None):
+    _, answer = parse_agent_result(answer)
     score = 1.0 if answer == ground_truth else 0.0
     print(f'answer: {answer}, ground_truth: {ground_truth}')
     return score
+
+def parse_agent_result(agent_result: Any) -> Tuple[str, Any]:
+    """
+    Parse agent_result that could be:
+    1. Direct string: "Final answer" → (reasoning="", result="Final answer")
+    2. JSON string: '{"reasoning": "...", "result": "..."}' → (reasoning="...", result="...")
+    """
+    import json
+
+    # Case 1: Direct string result
+    if isinstance(agent_result, str) and not agent_result.strip().startswith('{'):
+        return "", agent_result.strip()
+
+    # Case 2: JSON string with reasoning and result
+    if isinstance(agent_result, str):
+        try:
+            parsed = json.loads(agent_result.strip())
+            if isinstance(parsed, dict):
+                reasoning = parsed.get("reasoning", "")
+                result = parsed.get("result", "")
+                return reasoning, str(result)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, treat as direct string
+            return "", agent_result.strip()
+
+    # Fallback for other types
+    return "", str(agent_result) if agent_result else ""
 
 def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None):
     """Create optimizer instance based on type."""
@@ -118,12 +227,13 @@ async def get_all_tasks(benchmark_name: str) -> List[Dict]:
     return tasks
 
 
-async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int):
+async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, result_saver: ExperimentResultSaver = None):
     """Process a single task with the optimizer."""
     task_id = task_data.task_id
     task_input = task_data.input
     task_gt = task_data.ground_truth
     system_instruction = task_data.system_prompt
+    start_time = time.time()
 
     # Combine system instruction with task input
     full_task = f"{system_instruction}\n\n{task_input}"
@@ -148,18 +258,25 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
             reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
             logger.info(f"| ✅ Initial solution obtained")
 
-            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
+            agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              sft_solution=reference_solution,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
         else:
-            task_data.reasoning, task_data.result = await optimizer.optimize(agent=agent,
+            agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
+
+        parse_reasoning, parse_result = parse_agent_result(agent_result)
+
+        if parse_reasoning == '':
+            parse_reasoning = agent_reasoning
+        task_data.reasoning = parse_reasoning
+        task_data.result = parse_result
 
         _ = await benchmark_manager.eval(benchmark_name, task_data)
         # Get current stats after processing this task
@@ -171,6 +288,11 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
             logger.info(accuracy_msg)
 
         logger.info(f"| ✅ Task {task_id} completed successfully")
+
+        # Save result if saver is provided
+        if result_saver:
+            processing_time = time.time() - start_time
+            result_saver.add_task_result(task_data, processing_time)
 
     except Exception as e:
         logger.error(f"| ❌ Error processing task {task_id}: {e}")
@@ -193,6 +315,11 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, c
 
     logger.info(f"| 📋 Total tasks to process: {total_tasks}")
 
+    # Initialize result saver
+    model_name = 'openrouter/gemini-3-flash-preview'
+    result_saver = ExperimentResultSaver(optimizer_type, benchmark_name, concurrency, total_tasks, model_name)
+    logger.info(f"| 💾 Results will be saved to: {result_saver.get_file_path()}")
+
     # Create semaphore for concurrency control
     semaphore = asyncio.Semaphore(concurrency)
     completed_count = 0
@@ -202,7 +329,7 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, c
         nonlocal completed_count
         async with semaphore:
             try:
-                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks)
+                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, result_saver)
             finally:
                 completed_count += 1
                 # Progress reporting
