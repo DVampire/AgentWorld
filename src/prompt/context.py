@@ -420,16 +420,17 @@ class PromptContextManager(BaseModel):
             logger.error(f"| ❌ Failed to register prompt: {e}")
             raise
     
-    async def build(self, prompt_config: PromptConfig) -> PromptConfig:
+    async def build(self, prompt_config: PromptConfig, force_rebuild: bool = False) -> PromptConfig:
         """Create a prompt instance and store it.
         
         Args:
             prompt_config: Prompt configuration
+            force_rebuild: If True, force rebuild the instance even if it already exists
             
         Returns:
             PromptConfig: Prompt configuration with instance
         """
-        if prompt_config.name in self._prompt_configs:
+        if not force_rebuild and prompt_config.name in self._prompt_configs:
             existing_config = self._prompt_configs[prompt_config.name]
             if existing_config.instance is not None:
                 return existing_config
@@ -440,9 +441,22 @@ class PromptContextManager(BaseModel):
             if prompt_config.cls is None:
                 raise ValueError(f"Cannot create prompt {prompt_config.name}: no class provided. Class should be loaded during initialization.")
             
-            if prompt_config.instance is None:
-                # Instantiate prompt instance
-                prompt_instance = prompt_config.cls(**prompt_config.config) if prompt_config.config else prompt_config.cls()
+            if prompt_config.instance is None or force_rebuild:
+                # Build the prompt_config dict to pass to the Prompt instance
+                # This ensures the instance uses the updated variables from PromptConfig
+                instance_prompt_config = {
+                    "name": prompt_config.name,
+                    "type": prompt_config.type,
+                    "description": prompt_config.description,
+                    "template": prompt_config.template,
+                    "variables": prompt_config.variables,
+                    "metadata": prompt_config.metadata,
+                }
+                
+                # Instantiate prompt instance with the updated prompt_config
+                init_kwargs = prompt_config.config.copy() if prompt_config.config else {}
+                init_kwargs["prompt_config"] = instance_prompt_config
+                prompt_instance = prompt_config.cls(**init_kwargs)
                 
                 # Initialize prompt if it has an initialize method
                 if hasattr(prompt_instance, "initialize"):
@@ -564,9 +578,10 @@ class PromptContextManager(BaseModel):
         )
         
         # Build instance for the updated prompt if class is available
+        # Use force_rebuild=True to ensure the instance uses the updated variables
         try:
             if updated_config.cls is not None:
-                updated_config = await self.build(updated_config)
+                updated_config = await self.build(updated_config, force_rebuild=True)
         except Exception as e:
             logger.warning(f"| ⚠️ Failed to build updated prompt instance for {prompt_name}: {e}")
         
@@ -1152,10 +1167,10 @@ class PromptContextManager(BaseModel):
                 new_version=new_version,
                 description=description
             )
-            # Build instance for the updated prompt if class is available so subsequent get() returns instance
+            # Note: update() already calls build(force_rebuild=True), so this is a safety fallback
             try:
-                if updated_config and getattr(updated_config, "cls", None) is not None:
-                    await self.build(updated_config)
+                if updated_config and getattr(updated_config, "cls", None) is not None and updated_config.instance is None:
+                    await self.build(updated_config, force_rebuild=True)
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to build updated prompt instance for {system_prompt_name}: {e}")
             updated_configs[system_prompt_name] = updated_config
@@ -1182,10 +1197,10 @@ class PromptContextManager(BaseModel):
                 new_version=new_version,
                 description=description
             )
-            # Build instance for the updated prompt if class is available so subsequent get() returns instance
+            # Note: update() already calls build(force_rebuild=True), so this is a safety fallback
             try:
-                if updated_config and getattr(updated_config, "cls", None) is not None:
-                    await self.build(updated_config)
+                if updated_config and getattr(updated_config, "cls", None) is not None and updated_config.instance is None:
+                    await self.build(updated_config, force_rebuild=True)
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to build updated prompt instance for {agent_prompt_name}: {e}")
             updated_configs[agent_prompt_name] = updated_config
