@@ -1,4 +1,10 @@
-"""Test script for AIME benchmark with REAL Model Inference (Full Loop)."""
+"""Test script for AIME benchmark with REAL Model Inference (Full Loop).
+
+支持并发推理模式：
+- 多个任务可以同时进行模型推理
+- 提交评测时自动串行化（使用锁）
+- 共享单个浏览器实例
+"""
 
 import asyncio
 import sys
@@ -10,7 +16,7 @@ from pathlib import Path
 from mmengine import DictAction
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from typing import Union
+from typing import Union, List, Optional
 
 # Load environment variables
 load_dotenv(verbose=True)
@@ -29,8 +35,14 @@ from src.benchmark.leetcode import CodeSubmitter
 # ==========================================
 # Configuration Section
 # ==========================================
-TARGET_MODEL = "openrouter/gemini-3-flash-preview" 
-
+TARGET_MODEL = "openrouter/deepseek-v3.2"
+MAX_CONCURRENT_INFERENCE = 5  # 最大并发推理数量 
+# 🚫 定义不使用图片解析的模型列表
+NON_VISION_MODELS = [
+    "openrouter/deepseek-v3.2",
+    "openrouter/qwen3-max",
+    # 你可以在这里添加任何你想强制纯文本输入的模型
+]
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
     result: str = Field(description="The generated code")
@@ -109,50 +121,49 @@ def parse_markdown_with_images(markdown_text: str) -> Union[str, list]:
     
     return content_parts
 
-async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
+async def process_single_task(
+    benchmark_name: str,
+    task: Task,
+    save_dir: str,
+    semaphore: asyncio.Semaphore
+) -> Optional[Task]:
     """
-    Test the benchmark manager specifically for LeetCode using a REAL model.
-    Uses response_format for structured output.
+    处理单个任务：推理 + 评测
+    推理使用 semaphore 限制并发数
+    评测由 benchmark 内部的 submit_lock 自动串行化
+    
+    时间记录：
+    - inference_start_time: 推理开始时间（获取信号量后）
+    - inference_time: 推理耗时
+    - submit_start_time: 提交开始时间（获取锁后，由 eval 内部设置）
+    - submit_time: 提交耗时
     """
-    print(f"🧪 Testing benchmark manager with benchmark: {benchmark_name}")
-    print(f"🤖 Using Model: {TARGET_MODEL}")
+    task_id = task.task_id
     
-    # Define save directory
-    save_dir = os.path.join(config.workdir, "benchmark", benchmark_name)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir, exist_ok=True)
-        print(f"📁 Created output directory: {save_dir}")
-    
-    # 1. Reset and get first task
-    print(f"🔄 Resetting progress for LeetCode...")
-    task = await benchmark_manager.reset(benchmark_name)
-    
-    if not task:
-        logger.warning("⚠️ No tasks available to run (Dataset empty or all finished).")
-        return
-
-    # ==========================================
-    # Loop Logic
-    # ==========================================
-    while task is not None:
-        task_id = task.task_id
-        start_time = time.time()
+    # 使用信号量限制并发推理数量
+    async with semaphore:
+        # ✅ 在获取信号量后立即记录推理开始时间
+        inference_start_time = time.time()
+        task.extra["inference_start_time"] = inference_start_time
         
         try:
-            print(f"\n" + "="*50)
-            print(f"🚀 Processing Task ID: {task_id}")
-            print("="*50)
-
+            logger.info(f"| 🚀 [Task {task_id}] Starting inference...")
+            
             # --- 1. Prepare Prompt ---
             question_text = task.input
+            # 🔥 修改点：检查模型是否支持视觉/是否被禁用视觉
+            if TARGET_MODEL in NON_VISION_MODELS:
+                logger.info(f"| 🙈 [Task {task_id}] Vision disabled for model {TARGET_MODEL}, using text only.")
+                question_content = question_text  # 直接使用纯文本，不解析图片
+            else:
+                # 原有的图片解析逻辑
+                question_content = parse_markdown_with_images(question_text)
             
-            # Parse markdown to extract images and convert to message content format
-            question_content = parse_markdown_with_images(question_text)
-            
-            # Get system_prompt directly from task
             system_prompt_text = task.system_prompt
             
             logger.info(f"| 📋 [Task {task_id}] Input length: {len(question_text)}")
+            
+            # 只有当内容是列表（即包含图片对象）时才统计图片
             if isinstance(question_content, list):
                 image_count = sum(1 for part in question_content if isinstance(part, ContentPartImage))
                 logger.info(f"| 🖼️ [Task {task_id}] Found {image_count} image(s) in question")
@@ -161,25 +172,24 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                 SystemMessage(content=system_prompt_text),
                 HumanMessage(content=question_content)
             ]
-
+            
             # --- 2. Model Inference (Structured Output) ---
-            print(f"⏳ [Task {task_id}] Model inferencing (Structured)...")
+            logger.info(f"| ⏳ [Task {task_id}] Model inferencing...")
             
             try:
-                # Call model_manager and pass response_format
                 response = await model_manager(
                     model=TARGET_MODEL,
                     messages=messages,
                     response_format=Response,
+                    max_completion_tokens=65536
                 )
                 
                 if response.success:
-                    # Get parsed object
                     response_model = response.extra.parsed_model
                     task.reasoning = response_model.reasoning
                     task.result = response_model.result
                     
-                    # --- Save Response to Markdown file ---
+                    # Save Response to Markdown file
                     try:
                         file_name = f"{task.extra['file_name']}.md"
                         file_path = os.path.join(save_dir, file_name)
@@ -187,52 +197,204 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
                         with open(file_path, "w", encoding="utf-8") as f:
                             f.write(task.reasoning + "\n\n" + task.result)
                         
-                        print(f"💾 [Saved] Output saved to: {file_path}")
+                        logger.info(f"| 💾 [Task {task_id}] Output saved to: {file_path}")
                         
                     except Exception as save_err:
-                        logger.error(f"⚠️ Failed to save markdown file: {save_err}")
+                        logger.error(f"| ⚠️ [Task {task_id}] Failed to save markdown: {save_err}")
 
                 else:
                     logger.error(f"| ⚠️ [Task {task_id}] Model API Error: {response.message}")
-                    task.reasoning = "" 
-                    task.result = "" 
+                    
+                    raw_output = (
+                        getattr(response, "raw", None)
+                        or getattr(response, "text", None)
+                        or getattr(response.extra, "raw_response", None)
+                        or getattr(response.extra, "text", None)
+                    )
+
+                    if raw_output:
+                        logger.error(f"| 🧨 [Task {task_id}] RAW MODEL OUTPUT:\n{raw_output}")
+                    else:
+                        logger.error(f"| 🧨 [Task {task_id}] No raw model output found.")
+
+                    task.reasoning = ""
+                    task.answer = ""
                     
             except Exception as e:
                 logger.error(f"| ❌ [Task {task_id}] Critical Inference Error: {e}")
                 task.reasoning = ""
-                task.result = ""
+                task.answer = ""
+            
+            # ✅ 记录推理结束时间和耗时
+            inference_end_time = time.time()
+            inference_time = inference_end_time - inference_start_time
+            task.extra["inference_time"] = inference_time
+            
+            logger.info(f"| ✅ [Task {task_id}] Inference complete in {inference_time:.2f}s, queuing for evaluation...")
                 
-            # --- 3. Evaluation ---
-            task.time = time.time() - start_time
-            print(f"🤖 [Task {task_id}] Evaluating...")
-            task = await benchmark_manager.eval(benchmark_name, task)
-            
-            print(f"🤖 [Task {task_id}] Answer: {task.result[:50]}..., Ground Truth: {str(task.ground_truth)[:50]}...")
-            
-            if task.score and task.score >= 1.0:
-                print(f"✅ [Task {task_id}] Result: Correct (Score: {task.score}) | Time: {task.time:.2f}s")
-            else:
-                print(f"⚠️ [Task {task_id}] Result: Incorrect (Score: {task.score}) | Time: {task.time:.2f}s")
-
-            # --- 4. Real-time Statistics ---
-            stats = await benchmark_manager.stats(benchmark_name)
-            if stats:
-                attempted = stats.correct + stats.wrong
-                print(f"📊 Overall Progress: {attempted}/{stats.total} | Accuracy: {stats.accuracy:.2%}")
-
         except Exception as e:
-            logger.error(f"❌ Error processing task {task_id}: {e}")
+            logger.error(f"| ❌ [Task {task_id}] Error in inference phase: {e}")
             import traceback
             traceback.print_exc()
-        
-        # ==========================================
-        # Get Next Task
-        # ==========================================
-        print(f"⏭️ Fetching next task...")
-        task = await benchmark_manager.step(benchmark_name)
-        
-    print("\n🎉 All tasks in the benchmark have been processed.")
+            task.reasoning = ""
+            task.answer = ""
+            task.extra["inference_time"] = time.time() - inference_start_time
+    
+    # --- 3. 评测阶段 (锁在 benchmark.eval 内部自动处理) ---
+    # 这里不需要 semaphore，因为 eval 内部有 submit_lock
+    try:
+        logger.info(f"| 📤 [Task {task_id}] Submitting for evaluation (waiting for lock)...")
+        task = await benchmark_manager.eval(benchmark_name, task)
+        logger.info(f"| 🏁 [Task {task_id}] Evaluation complete, score: {task.score}")
+    except Exception as e:
+        logger.error(f"| ❌ [Task {task_id}] Error in evaluation phase: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return task
 
+
+async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
+    """
+    Test the benchmark manager specifically for LeetCode using a REAL model.
+    Uses concurrent inference with serial submission.
+    
+    并发模式说明：
+    - 多个任务同时进行模型推理（受 MAX_CONCURRENT_INFERENCE 限制）
+    - 提交到 LeetCode 评测时自动串行化（共享一个浏览器）
+    """
+    print(f"🧪 Testing benchmark manager with benchmark: {benchmark_name}")
+    print(f"🤖 Using Model: {TARGET_MODEL}")
+    print(f"⚡ Max concurrent inference: {MAX_CONCURRENT_INFERENCE}")
+    
+    # Define save directory
+    save_dir = os.path.join(config.workdir, "benchmark", benchmark_name)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+        print(f"📁 Created output directory: {save_dir}")
+    
+    # 1. Reset and collect all tasks
+    print(f"🔄 Resetting progress for LeetCode...")
+    task = await benchmark_manager.reset(benchmark_name)
+    
+    if not task:
+        logger.warning("⚠️ No tasks available to run (Dataset empty or all finished).")
+        summarize_benchmark_results(benchmark_name)
+        return
+
+    # ==========================================
+    # 收集所有待处理任务
+    # ==========================================
+    all_tasks: List[Task] = [task]
+    while True:
+        next_task = await benchmark_manager.step(benchmark_name)
+        if next_task is None:
+            break
+        all_tasks.append(next_task)
+    
+    print(f"📋 Collected {len(all_tasks)} tasks for processing")
+    
+    # ==========================================
+    # 创建信号量限制并发推理数量
+    # ==========================================
+    inference_semaphore = asyncio.Semaphore(MAX_CONCURRENT_INFERENCE)
+    
+    # ==========================================
+    # 并发执行所有任务
+    # ==========================================
+    print(f"🚀 Starting concurrent processing...")
+    start_time = time.time()
+    
+    # 创建所有任务的协程
+    task_coroutines = [
+        process_single_task(benchmark_name, t, save_dir, inference_semaphore)
+        for t in all_tasks
+    ]
+    
+    # 并发执行
+    results = await asyncio.gather(*task_coroutines, return_exceptions=True)
+    
+    # 统计结果
+    elapsed_time = time.time() - start_time
+    success_count = sum(1 for r in results if isinstance(r, Task))
+    error_count = sum(1 for r in results if isinstance(r, Exception))
+    
+    print(f"\n" + "="*50)
+    print(f"🎉 All {len(all_tasks)} tasks processed!")
+    print(f"⏱️ Total time: {elapsed_time:.2f}s")
+    print(f"✅ Successful: {success_count}")
+    print(f"❌ Errors: {error_count}")
+    print("="*50)
+    
+    # 打印任何异常
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            logger.error(f"| Task {i} failed with exception: {r}")
+    
+    summarize_benchmark_results(benchmark_name)
+
+def summarize_benchmark_results(benchmark_name: str):
+    """
+    Summarize benchmark results from results.jsonl.
+    """
+
+    import os
+    import json
+    from collections import Counter
+
+    results_path = os.path.join(
+        config.workdir, "benchmark", benchmark_name, "results.jsonl"
+    )
+
+    if not os.path.exists(results_path):
+        logger.warning(f"⚠️ Results file not found: {results_path}")
+        return
+
+    total = 0
+    score_1_cnt = 0
+    pred_counter = Counter()
+
+    with open(results_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("⚠️ Skipping invalid json line")
+                continue
+
+            total += 1
+
+            if data.get("score") == 1.0:
+                score_1_cnt += 1
+
+            pred = data.get("prediction", "").strip()
+            if pred:
+                pred_counter[pred] += 1
+
+    # =========================
+    # 📊 Print Summary
+    # =========================
+    print("\n" + "=" * 60)
+    print(f"📊 Benchmark Summary: {benchmark_name}")
+    print("=" * 60)
+    print(f"Total tasks: {total}")
+    print(f"score == 1.0 (Accepted): {score_1_cnt}")
+
+    # 常见失败类型
+    for key in [
+        "Time Limit Exceeded",
+        "Timeout",
+        "Memory Limit Exceeded",
+        "Compile Error",
+        "Runtime Error",
+        "Wrong Answer",
+        "response_error",
+    ]:
+        print(f"{key}: {pred_counter.get(key, 0)}")
+
+    print("=" * 60)
 
 async def main():
     parser = argparse.ArgumentParser(description='Test Benchmark Loop')
@@ -288,3 +450,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

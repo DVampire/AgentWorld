@@ -51,18 +51,16 @@ class LeetCodeDataset:
                 rel_file_path = row.get("file", "")
                 question_content = ""
                 
+                metadata_dir = os.path.dirname(os.path.abspath(metadata_file))
+
                 if rel_file_path:
-                    # Remove potential "./" prefix and join with full path
-                    # Assume question folder and metadata.jsonl are in the same split directory
-                    clean_rel_path = rel_file_path.replace("./", "") 
-                    abs_file_path = os.path.join(path, split, clean_rel_path)
-                    
+                    raw_path = os.path.join(metadata_dir, rel_file_path)
+                    abs_file_path = os.path.normpath(raw_path)
                     if os.path.exists(abs_file_path):
                         with open(abs_file_path, "r", encoding="utf-8") as qf:
                             question_content = qf.read()
                     else:
-                        print(f"[Warning] Question file not found: {abs_file_path}")
-                        # If description file is missing, skip this problem
+                        print(f"[Warning] 路径不存在: {abs_file_path}")
                         continue
                     
                 code_template = row.get("code_template", {})
