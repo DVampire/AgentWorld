@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
                        default='reflection', help="optimizer to test")
-    parser.add_argument("--benchmark", default="aime24", help="benchmark name to test on")
+    parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
 
     parser.add_argument(
         '--cfg-options',
@@ -103,7 +103,7 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
         'workdir': config.workdir,
         'model_name': 'openrouter/gemini-3-flash-preview',
         'memory_name': 'optimizer_memory_system',
-        'optimize_trainable_variables': True,
+        'optimize_trainable_variables': False,
         'optimize_solution': True
     }
 
@@ -264,6 +264,7 @@ async def main():
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()
+    logger.shutdown()  # 确保所有日志都被写入文件
     logger.info("| 🚪 Experiment completed")
 
 

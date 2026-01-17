@@ -31,15 +31,15 @@ agent_names = [
     "tool_calling"
 ]
 tool_names = [
-    'bash',        
-    'python_interpreter', 
-    'done', 
-    'todo',  
-    'mdify', 
-    "deep_analyzer",
-    "deep_researcher",
+    # 'bash',
+    # 'python_interpreter',
+    'done',
+    'todo',
+    # 'mdify',
+    # "deep_analyzer",
+    # "deep_researcher",
     # "browser",
-    "plotter",
+    # "plotter",
 ]
 
 #-----------------BASH TOOL CONFIG-----------------

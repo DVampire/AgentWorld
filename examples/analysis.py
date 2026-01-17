@@ -46,6 +46,7 @@ from src.benchmark import benchmark_manager
 from src.optimizer import GrpoOptimizer, ReinforcePlusPlusOptimizer, ReflectionOptimizer
 
 
+
 class ExperimentResultSaver:
     """Save experiment results to JSON file with real-time updates."""
 
@@ -88,17 +89,47 @@ class ExperimentResultSaver:
         # Save initial empty results
         self._save_to_file()
 
-    def add_task_result(self, task_data: Any, processing_time: float = None):
+    def add_task_result(self, task_data: Any, processing_time: float = None,
+                        optimizer_data: Dict[str, Any] = None):
         """Add a single task result and update the file."""
-        task_result = {
-            "task_id": task_data.task_id,
-            "task_input": task_data.input[:200] + "..." if len(task_data.input) > 200 else task_data.input,
-            "ground_truth": str(task_data.ground_truth),
-            "result": str(task_data.result) if hasattr(task_data, 'result') else "",
-            "reasoning": getattr(task_data, 'reasoning', ""),
-            "correct": getattr(task_data, 'result', "") == str(task_data.ground_truth),
-            "processing_time": processing_time
-        }
+        _, answer = parse_agent_result(task_data.result)
+
+        task_result = {"task_id": task_data.task_id,
+                       "task_input": task_data.input,
+                       "ground_truth": str(task_data.ground_truth),
+                       "result": answer,
+                       "reasoning": getattr(task_data, 'reasoning', ""),
+                       "correct": getattr(task_data, 'result', "") == str(task_data.ground_truth),
+                       "processing_time": processing_time, "reflection_process": {
+                "initial_reasoning": optimizer_data.get("initial_agent_reasoning", ""),
+                "initial_result": optimizer_data.get("initial_agent_result", ""),
+                "reflection_rounds": []
+            }}
+
+        # Add detailed reflection process data for reflection optimizer
+
+        # Process each reflection round
+        reflection_texts = optimizer_data.get("reflecion_text", [])
+        improved_solutions = optimizer_data.get("improved_solution", [])
+
+        max_rounds = max(len(reflection_texts), len(improved_solutions))
+        for i in range(max_rounds):
+            round_data = {}
+
+            # Add reflection text for this round
+            if i < len(reflection_texts):
+                round_data["reflection_text"] = reflection_texts[i]
+
+            # Add improved solution for this round
+            if i < len(improved_solutions):
+                round_data["improved_solution"] = improved_solutions[i]
+
+            if round_data:
+                task_result["reflection_process"]["reflection_rounds"].append(round_data)
+
+        # Final results
+        task_result["reflection_process"]["final_reasoning"] = optimizer_data.get("agent_reasoning", "")
+        task_result["reflection_process"]["final_result"] = optimizer_data.get("agent_result", "")
 
         self.results_data["results"].append(task_result)
 
@@ -132,9 +163,12 @@ def parse_args():
                        default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
     parser.add_argument("--concurrency", type=int, default=4, help="number of concurrent tasks to run")
+    parser.add_argument("--experiment_file", type =str, default=r'D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\reflection_gpqa_2026-01-17_14-47-53.json', help="")
+
 
     parser.add_argument(
         '--cfg-options',
+
         nargs='+',
         action=DictAction,
         help='override some settings in the used config, the key-value pair '
@@ -157,76 +191,26 @@ def parse_agent_result(agent_result: Any) -> Tuple[str, Any]:
     Parse agent_result that could be:
     1. Direct string: "Final answer" → (reasoning="", result="Final answer")
     2. JSON string: '{"reasoning": "...", "result": "..."}' → (reasoning="...", result="...")
-    3. Dict object: {"reasoning": "...", "result": "..."} → (reasoning="...", result="...")
     """
     import json
 
-    # 1) If it's already a dict (upstream parsed JSON), return fields directly
-    if isinstance(agent_result, dict):
-        reasoning = agent_result.get("reasoning", "")
-        result = agent_result.get("result", "")
-        return reasoning, str(result)
+    # Case 1: Direct string result
+    if isinstance(agent_result, str) and not agent_result.strip().startswith('{'):
+        return "", agent_result.strip()
 
-    # 2) If it's a string, it may be:
-    #    - plain text answer
-    #    - a JSON string representing a dict
-    #    - a JSON string that itself is an escaped JSON string (double-encoded)
+    # Case 2: JSON string with reasoning and result
     if isinstance(agent_result, str):
-        s = agent_result.strip()
-
-        # If labeled plain output like "Result: D Reasoning: ..." appear, extract them (case-insensitive, allow newlines)
-        if 'result:' in s.lower() or 'reasoning:' in s.lower():
-            import re
-            # Manual, permissive extraction: find 'result' label and capture first letter, find 'reasoning' label and capture rest
-            low = s.lower()
-            result = ""
-            reasoning = ""
-
-            ridx = low.find('result:')
-            if ridx != -1:
-                after = s[ridx + len('result:'):].strip()
-                m = re.search(r'([A-Za-z])', after)
-                if m:
-                    result = m.group(1).upper()
-
-            rridx = low.find('reasoning:')
-            if rridx != -1:
-                reasoning = s[rridx + len('reasoning:'):].strip()
-
-            if result:
-                return reasoning, result
-
-        # Quick heuristic: if it doesn't look like JSON (or a quoted JSON), treat as plain text
-        if not (s.startswith("{") or s.startswith('"') or s.startswith("'")):
-            return "", s
-
-        # Try to parse JSON once
         try:
-            parsed = json.loads(s)
+            parsed = json.loads(agent_result.strip())
+            if isinstance(parsed, dict):
+                reasoning = parsed.get("reasoning", "")
+                result = parsed.get("result", "")
+                return reasoning, str(result)
         except json.JSONDecodeError:
-            # Not valid JSON -> return as plain string
-            return "", s
+            # If JSON parsing fails, treat as direct string
+            return "", agent_result.strip()
 
-        # If parsed to a dict, extract fields
-        if isinstance(parsed, dict):
-            reasoning = parsed.get("reasoning", "")
-            result = parsed.get("result", "")
-            return reasoning, str(result)
-
-        # If parsed to a string, attempt a second parse (handles double-encoded JSON)
-        if isinstance(parsed, str):
-            try:
-                inner = json.loads(parsed)
-                if isinstance(inner, dict):
-                    reasoning = inner.get("reasoning", "")
-                    result = inner.get("result", "")
-                    return reasoning, str(result)
-                else:
-                    return "", parsed
-            except json.JSONDecodeError:
-                return "", parsed
-
-    # 3) Fallback for other types
+    # Fallback for other types
     return "", str(agent_result) if agent_result else ""
 
 def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None):
@@ -235,7 +219,7 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
         'workdir': config.workdir,
         'model_name': 'openrouter/gemini-3-flash-preview',
         'memory_name': 'optimizer_memory_system',
-        'optimize_trainable_variables': True,
+        'optimize_trainable_variables': False,
         'optimize_solution': True
     }
 
@@ -276,6 +260,53 @@ async def get_all_tasks(benchmark_name: str) -> List[Dict]:
 
     return tasks
 
+async def get_all_incorrect_tasks(experiment_file: str, benchmark_name: str) -> List[Any]:
+    """
+    Get all incorrect tasks by combining experiment results with benchmark data.
+
+    Args:
+        experiment_file: Path to the experiment results JSON file
+        benchmark_name: Name of the benchmark to load tasks from
+
+    Returns:
+        List of task_data objects for incorrect samples
+    """
+    # Load experiment results to find incorrect task_ids
+    print(f"Loading experiment results from: {experiment_file}")
+    with open(experiment_file, 'r', encoding='utf-8') as f:
+        experiment_data = json.load(f)
+
+    all_results = experiment_data.get('results', [])
+    incorrect_samples = [sample for sample in all_results if not sample.get('correct', True)]
+
+    # Extract incorrect task_ids
+    incorrect_task_ids = {sample['task_id'] for sample in incorrect_samples}
+    print(f"Found {len(incorrect_task_ids)} incorrect task_ids")
+
+    all_tasks = await get_all_tasks(benchmark_name)
+
+    # Create task_id to task mapping
+    task_map = {}
+    for task in all_tasks:
+        task_id = getattr(task, 'task_id', None)
+        if task_id:
+            task_map[task_id] = task
+
+    # Find incorrect task_data objects
+    incorrect_tasks = []
+    found_count = 0
+
+    for task_id in incorrect_task_ids:
+        if task_id in task_map:
+            incorrect_tasks.append(task_map[task_id])
+            found_count += 1
+            print(f"Found incorrect task: {task_id}")
+        else:
+            print(f"Warning: Could not find task_data for task_id {task_id}")
+
+    print(f"Successfully retrieved {found_count} incorrect task_data objects out of {len(incorrect_task_ids)}")
+
+    return incorrect_tasks
 
 async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, result_saver: ExperimentResultSaver = None):
     """Process a single task with the optimizer."""
@@ -308,14 +339,14 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
             reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
             logger.info(f"| ✅ Initial solution obtained")
 
-            _, _, _, _, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
+            initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              sft_solution=reference_solution,
                                                                              benchmark_task_id=task_id,
                                                                              files=[])
         else:
-            _, _, _, _, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
+            initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                              task=full_task,
                                                                              ground_truth=task_gt,
                                                                              benchmark_task_id=task_id,
@@ -342,7 +373,20 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         # Save result if saver is provided
         if result_saver:
             processing_time = time.time() - start_time
-            result_saver.add_task_result(task_data, processing_time)
+
+            # Prepare optimizer data for detailed saving
+            optimizer_data = None
+            if optimizer_type == "reflection":
+                optimizer_data = {
+                    "initial_agent_result": initial_agent_result,
+                    "initial_agent_reasoning": initial_agent_reasoning,
+                    "reflecion_text": reflecion_text,
+                    "improved_solution": improved_solution,
+                    "agent_reasoning": agent_reasoning,
+                    "agent_result": agent_result
+                }
+
+            result_saver.add_task_result(task_data, processing_time, optimizer_data)
 
     except Exception as e:
         logger.error(f"| ❌ Error processing task {task_id}: {e}")
@@ -350,13 +394,13 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         traceback.print_exc()
 
 
-async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, concurrency: int = 4):
+async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, experiment_file: str, concurrency: int = 4):
     """Test specified optimizer performance on entire benchmark dataset with concurrency control."""
     logger.info(f"| 🧪 Testing {optimizer_type.upper()} optimizer on complete benchmark: {benchmark_name}")
     logger.info(f"| ⚡ Using concurrency level: {concurrency}")
 
     # Get all tasks first
-    all_tasks = await get_all_tasks(benchmark_name)
+    all_tasks = await get_all_incorrect_tasks(experiment_file, benchmark_name)
     total_tasks = len(all_tasks)
 
     if total_tasks == 0:
@@ -445,7 +489,7 @@ async def main():
     logger.info(f"| ✅ Version manager initialized")
 
     # Test specified optimizer on benchmark
-    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.concurrency)
+    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.experiment_file, args.concurrency)
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()

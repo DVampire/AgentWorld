@@ -423,7 +423,13 @@ class ReflectionOptimizer(Optimizer):
         current_agent_reasoning = agent_response_extra_data['reasoning']
         current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
         logger.info(f"| ✅ Initial solution obtained")
-        
+
+        # For analysis
+        initial_agent_result = current_agent_result
+        initial_agent_reasoning = current_agent_reasoning
+
+        reflecion_text = []
+        improved_solution = []
         # Run the optimization loop.
         for opt_step in range(optimization_steps):
             logger.info(f"\n| {'='*60}")
@@ -614,6 +620,9 @@ class ReflectionOptimizer(Optimizer):
                         variables=solution_variables,
                         execution_result=current_solution,
                     )
+
+                    # For analysis
+                    reflecion_text.append(solution_reflection)
                     
                     # Improve solution based on reflection
                     improved_solution_result = await self._improve_solution(
@@ -621,6 +630,8 @@ class ReflectionOptimizer(Optimizer):
                         variables=solution_variables,
                         reflection_analysis=solution_reflection,
                     )
+
+                    improved_solution.append(f'Result: {improved_solution_result.result}\nReasoning: {improved_solution_result.reasoning}')
                     
                     # Check if solution was improved
                     if improved_solution_result.result:
@@ -706,5 +717,5 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| Final solution:\n{current_solution}")
         logger.info(f"| {'='*60}")
 
-        return current_agent_reasoning, current_agent_result
-
+        return initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, current_agent_reasoning, current_agent_result
+        # return current_agent_reasoning, current_agent_result
