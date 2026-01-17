@@ -1,2 +1,0 @@
-playwright==1.41.0
-markdownify>=0.11.6

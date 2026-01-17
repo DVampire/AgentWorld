@@ -1,3 +1,0 @@
-GITHUB_USERNAME=your_username
-GITHUB_PASSWORD=your_password
-PROJECT_URL=https://github.com/WingsJackF/LeetCode_test

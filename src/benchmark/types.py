@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, List, Tuple, Type
 from pydantic import BaseModel, Field, PrivateAttr, ConfigDict
 import inflection
+from datetime import datetime
 
 from src.logger import logger
 from src.dynamic import dynamic_manager
@@ -22,6 +23,26 @@ class Task(BaseModel):
     score: Optional[float] = Field(default=0.0, description="The score of the task")
     
     extra: Optional[Dict[str, Any]] = Field(default=None, description="Additional task-specific metadata")
+
+class Result(BaseModel):
+    """Data model for the evaluation result of a single task"""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    # Identifiers
+    task_id: str = Field(..., description="Unique identifier corresponding to the task")
+    
+    # Timing
+    start_time: datetime = Field(..., description="Timestamp when the evaluation started")
+    end_time: datetime = Field(..., description="Timestamp when the evaluation ended")
+    spend_time: float = Field(..., description="Total duration of the task execution in seconds")
+    
+    # Evaluation Data
+    prediction: Any = Field(..., description="The actual output produced by the model")
+    ground_truth: Optional[Any] = Field(default=None, description="The reference correct answer")
+    score: float = Field(default=0.0, description="The numerical score assigned to the prediction")
+    
+    # Metadata
+    extra: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional metadata or intermediate evaluation metrics")
 
 class Stats(BaseModel):
     """Data model for benchmark statistics"""
@@ -77,6 +98,13 @@ class Benchmark(BaseModel):
 
     async def stats(self) -> Optional[Stats]:
         """Calculate current overall statistics."""
+        raise NotImplementedError
+    
+    async def save_result(self, result: Result) -> Optional[Result]:
+        """
+        Save the result and return the saved instance (e.g., with an updated ID),
+        or return None if the saving process was skipped.
+        """
         raise NotImplementedError
     
     async def cleanup(self):
