@@ -46,85 +46,6 @@ from src.benchmark import benchmark_manager
 from src.optimizer import GrpoOptimizer, ReinforcePlusPlusOptimizer, ReflectionOptimizer
 
 
-class ExperimentResultSaver:
-    """Save experiment results to JSON file with real-time updates."""
-
-    def __init__(self, optimizer_type: str, benchmark_name: str, concurrency: int, total_tasks: int, model_name: str):
-        self.optimizer_type = optimizer_type
-        self.benchmark_name = benchmark_name
-        self.concurrency = concurrency
-        self.total_tasks = total_tasks
-        self.model_name = model_name
-        self.start_time = datetime.now()
-
-        # Create results directory if it doesn't exist
-        self.results_dir = Path(__file__).parent / "workdir/results"
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate filename with timestamp
-        timestamp = self.start_time.strftime("%Y-%m-%d_%H-%M-%S")
-        self.filename = f"{optimizer_type}_{benchmark_name}_{timestamp}.json"
-        self.filepath = self.results_dir / self.filename
-
-        # Initialize results structure
-        self.results_data = {
-            "experiment_meta": {
-                "timestamp": self.start_time.isoformat() + "Z",
-                "optimizer": optimizer_type,
-                "benchmark": benchmark_name,
-                "concurrency": concurrency,
-                "total_tasks": total_tasks,
-                "model": model_name
-            },
-            "results": [],
-            "summary": {
-                "completed_tasks": 0,
-                "correct_answers": 0,
-                "accuracy": 0.0,
-                "last_updated": self.start_time.isoformat() + "Z"
-            }
-        }
-
-        # Save initial empty results
-        self._save_to_file()
-
-    def add_task_result(self, task_data: Any, processing_time: float = None):
-        """Add a single task result and update the file."""
-        task_result = {
-            "task_id": task_data.task_id,
-            "task_input": task_data.input[:200] + "..." if len(task_data.input) > 200 else task_data.input,
-            "ground_truth": str(task_data.ground_truth),
-            "result": str(task_data.result) if hasattr(task_data, 'result') else "",
-            "reasoning": getattr(task_data, 'reasoning', ""),
-            "correct": getattr(task_data, 'result', "") == str(task_data.ground_truth),
-            "processing_time": processing_time
-        }
-
-        self.results_data["results"].append(task_result)
-
-        # Update summary
-        self.results_data["summary"]["completed_tasks"] = len(self.results_data["results"])
-        correct_count = sum(1 for r in self.results_data["results"] if r["correct"])
-        self.results_data["summary"]["correct_answers"] = correct_count
-        self.results_data["summary"]["accuracy"] = correct_count / len(self.results_data["results"]) if self.results_data["results"] else 0.0
-        self.results_data["summary"]["last_updated"] = datetime.now().isoformat() + "Z"
-
-        # Save updated results
-        self._save_to_file()
-
-    def _save_to_file(self):
-        """Save current results to JSON file."""
-        try:
-            with open(self.filepath, 'w', encoding='utf-8') as f:
-                json.dump(self.results_data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"Failed to save results to {self.filepath}: {e}")
-
-    def get_file_path(self) -> str:
-        """Get the path to the results file."""
-        return str(self.filepath)
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description='Test different optimizers on benchmark tasks')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
@@ -132,6 +53,9 @@ def parse_args():
                        default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
     parser.add_argument("--concurrency", type=int, default=4, help="number of concurrent tasks to run")
+    parser.add_argument("--split", type=str, default='test', help="the split of dataset", choices=['train', 'test'])
+    parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
+    parser.add_argument("--model_name", type=str, default='openrouter/grok-4.1-fast', help="")
 
     parser.add_argument(
         '--cfg-options',
@@ -146,11 +70,247 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-async def reward_fn(answer: str = None, ground_truth: Any = None):
-    _, answer = parse_agent_result(answer)
-    score = 1.0 if answer == ground_truth else 0.0
-    print(f'answer: {answer}, ground_truth: {ground_truth}')
-    return score
+class ExperimentResultSaver:
+    """Save experiment results to JSON file with real-time updates."""
+
+    def __init__(self, optimizer_type: str, benchmark_name: str, concurrency: int, total_tasks: int, model_name: str, split: str = "test"):
+        self.optimizer_type = optimizer_type
+        self.benchmark_name = benchmark_name
+        self.concurrency = concurrency
+        self.total_tasks = total_tasks
+        self.model_name = model_name
+        self.split = split
+        self.start_time = datetime.now()
+
+        # Create results directory if it doesn't exist
+        self.results_dir = Path(__file__).parent / "workdir/results"
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename with timestamp
+        timestamp = self.start_time.strftime("%Y-%m-%d_%H-%M-%S")
+        self.filename = f"{optimizer_type}_{benchmark_name}_{split}_{timestamp}.json"
+        self.filepath = self.results_dir / self.filename
+
+        # Initialize thread lock for file operations
+        self.file_lock = asyncio.Lock()
+
+        # Initialize results structure
+        self.results_data = {
+            "experiment_meta": {
+                "timestamp": self.start_time.isoformat() + "Z",
+                "optimizer": optimizer_type,
+                "benchmark": benchmark_name,
+                "split": split,
+                "concurrency": concurrency,
+                "total_tasks": total_tasks,
+                "model": model_name
+            },
+            "results": [],
+            "summary": {
+                "completed_tasks": 0,
+                "correct_answers": 0,
+                "accuracy": 0.0,
+                "last_updated": self.start_time.isoformat() + "Z"
+            }
+        }
+
+        # Save initial empty results
+        asyncio.create_task(self._save_to_file())
+
+    async def add_task_result(self, task_data: Any, processing_time: float = None,
+                              optimizer_data: Dict[str, Any] = None):
+        """Add a single task result and update the file."""
+        async with self.file_lock:
+            if optimizer_data == None:
+                task_result = {
+                    "task_id": task_data.task_id,
+                    "task_input": task_data.input[:200] + "..." if len(task_data.input) > 200 else task_data.input,
+                    "ground_truth": str(task_data.ground_truth),
+                    "result": str(task_data.result) if hasattr(task_data, 'result') else "",
+                    "reasoning": getattr(task_data, 'reasoning', ""),
+                    "correct": task_data.score == 1.0,
+                    "processing_time": processing_time
+                }
+            else:
+                _, answer = parse_agent_result(task_data.result)
+
+                task_result = {"task_id": task_data.task_id,
+                               "task_input": task_data.input,
+                               "ground_truth": str(task_data.ground_truth),
+                               "result": answer,
+                               "reasoning": getattr(task_data, 'reasoning', ""),
+                               "correct": task_data.score == 1.0,
+                               "processing_time": processing_time, "reflection_process": {
+                        "initial_reasoning": optimizer_data.get("initial_agent_reasoning", ""),
+                        "initial_result": optimizer_data.get("initial_agent_result", ""),
+                        "reflection_rounds": []
+                    }}
+
+                # Add detailed reflection process data for reflection optimizer
+                # Support both legacy list format and new structured dict format:
+                # - legacy: {"reflecion_text": [...], "improved_solution": [...]}
+                # - structured: {"reflecion_text": {"phase1": [...], "phase2": [...]}, "improved_solution": {"phase1": [...], "phase2": [...]}}
+                reflection_raw = optimizer_data.get("reflecion_text", [])
+                improved_raw = optimizer_data.get("improved_solution", [])
+
+                # Normalize to per-phase lists
+                phase1_reflections, phase2_reflections = [], []
+                phase1_improvements, phase2_improvements = [], []
+
+                if isinstance(reflection_raw, dict):
+                    phase1_reflections = reflection_raw.get("phase1", []) or []
+                    phase2_reflections = reflection_raw.get("phase2", []) or []
+                else:
+                    # legacy: treat all as phase2 reflections
+                    phase2_reflections = reflection_raw or []
+
+                if isinstance(improved_raw, dict):
+                    phase1_improvements = improved_raw.get("phase1", []) or []
+                    phase2_improvements = improved_raw.get("phase2", []) or []
+                else:
+                    # legacy: treat all as phase2 improvements
+                    phase2_improvements = improved_raw or []
+
+                # Build rounds preserving phase information (phase1 rounds first, then phase2)
+                rounds = []
+                # Phase 1 rounds
+                max_p1 = max(len(phase1_reflections), len(phase1_improvements))
+                for i in range(max_p1):
+                    round_data = {"phase": 1}
+                    if i < len(phase1_reflections):
+                        round_data["reflection_text"] = phase1_reflections[i]
+                    if i < len(phase1_improvements):
+                        round_data["improved_solution"] = phase1_improvements[i]
+                    rounds.append(round_data)
+                # Phase 2 rounds
+                max_p2 = max(len(phase2_reflections), len(phase2_improvements))
+                for i in range(max_p2):
+                    round_data = {"phase": 2}
+                    if i < len(phase2_reflections):
+                        round_data["reflection_text"] = phase2_reflections[i]
+                    if i < len(phase2_improvements):
+                        round_data["improved_solution"] = phase2_improvements[i]
+                    rounds.append(round_data)
+
+                if rounds:
+                    task_result["reflection_process"]["reflection_rounds"].extend(rounds)
+
+                # Final results
+                task_result["reflection_process"]["final_reasoning"] = optimizer_data.get("agent_reasoning", "")
+                task_result["reflection_process"]["final_result"] = optimizer_data.get("agent_result", "")
+
+
+            self.results_data["results"].append(task_result)
+
+            # Update summary
+            self.results_data["summary"]["completed_tasks"] = len(self.results_data["results"])
+            correct_count = sum(1 for r in self.results_data["results"] if r["correct"])
+            self.results_data["summary"]["correct_answers"] = correct_count
+            self.results_data["summary"]["accuracy"] = correct_count / len(self.results_data["results"]) if self.results_data["results"] else 0.0
+            self.results_data["summary"]["last_updated"] = datetime.now().isoformat() + "Z"
+
+            # Save updated results
+            await self._save_to_file()
+
+    async def _save_to_file(self):
+        """Save current results to JSON file."""
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                json.dump(self.results_data, f, indent=2, ensure_ascii=False)
+                f.flush()  # Force write to disk
+                os.fsync(f.fileno())  # Ensure data is written to disk
+            logger.debug(f"Successfully saved results to {self.filepath}")
+        except Exception as e:
+            logger.error(f"Failed to save results to {self.filepath}: {e}")
+            raise  # Re-raise exception to ensure it's not silently ignored
+
+    def get_file_path(self) -> str:
+        """Get the path to the results file."""
+        return str(self.filepath)
+
+async def eval_without_recording(benchmark_name: str, code_str: str):
+    """
+    Evaluate `code_str` on `benchmark_name` using the benchmark.eval(...) flow
+    but avoid recording the task into benchmark._tasks or saving results to disk.
+    Returns the evaluated Task (with score populated) or None on error.
+    """
+    import time
+    import uuid
+    from src.benchmark import benchmark_manager
+    from src.benchmark.types import Task
+
+    benchmark = await benchmark_manager.get(benchmark_name)
+    if benchmark is None:
+        raise RuntimeError(f"Benchmark '{benchmark_name}' is not initialized.")
+
+    # Construct a temporary Task
+    temp_id = f"temp_{uuid.uuid4().hex}"
+
+    # Determine file extension if benchmark exposes LANGUAGE_CONFIG / language
+    file_ext = "py"
+    try:
+        lang = getattr(benchmark, "language", None)
+        lang_cfg = getattr(benchmark, "LANGUAGE_CONFIG", None)
+        if lang and lang_cfg and isinstance(lang_cfg, dict):
+            file_ext = lang_cfg.get(lang, {}).get("ext", file_ext)
+    except Exception:
+        pass
+
+    temp_task = Task(
+        task_id=temp_id,
+        input="",
+        result=code_str,
+        extra={"file_name": temp_id, "file_ext": file_ext, "inference_time": 0.0}
+    )
+
+    # Monkeypatch _tasks and submitter.save_result to avoid side-effects
+    orig_tasks = getattr(benchmark, "_tasks", None)
+    class _TempList(list):
+        def append(self, x):
+            return None
+
+    benchmark._tasks = _TempList()
+
+    orig_save = None
+    if getattr(benchmark, "_submitter", None) and hasattr(benchmark._submitter, "save_result"):
+        orig_save = benchmark._submitter.save_result
+        async def _noop_save(*args, **kwargs):
+            return None
+        benchmark._submitter.save_result = _noop_save
+
+    try:
+        evaluated = await benchmark.eval(temp_task)
+    finally:
+        # Restore originals
+        if orig_save:
+            benchmark._submitter.save_result = orig_save
+        benchmark._tasks = orig_tasks
+
+    return evaluated
+
+
+async def reward_fn(answer: str = None, ground_truth: Any = None, benchmark_name: str = "leetcode"):
+    """
+    Reward function that evaluates agent `answer` (code) on specified `benchmark_name`
+    using the benchmark's eval flow but without recording the evaluation into stats/results.
+    """
+    if benchmark_name != "leetcode":
+        _, answer = parse_agent_result(answer)
+        score = 1.0 if answer == ground_truth else 0.0
+        print(f'answer: {answer}, ground_truth: {ground_truth}')
+        return score
+    # If no code/result, return zero reward
+    if not answer:
+        return 0.0
+
+    try:
+        evaluated_task = await eval_without_recording(benchmark_name, answer)
+        score = float(evaluated_task.score) if evaluated_task and evaluated_task.score is not None else 0.0
+        print(f"[Reward] score={score} for benchmark={benchmark_name}")
+        return score
+    except Exception as e:
+        logger.warning(f"[Reward] evaluation failed: {e}")
+        return 0.0
 
 def parse_agent_result(agent_result: Any) -> Tuple[str, Any]:
     """
@@ -229,14 +389,16 @@ def parse_agent_result(agent_result: Any) -> Tuple[str, Any]:
     # 3) Fallback for other types
     return "", str(agent_result) if agent_result else ""
 
-def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None):
+def create_optimizer(optimizer_type: str, model_name: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None, batchsize: int = 10):
     """Create optimizer instance based on type."""
     base_config = {
         'workdir': config.workdir,
-        'model_name': 'openrouter/gemini-3-flash-preview',
+        'batchsize': batchsize,
+        # 'model_name': 'openrouter/gemini-3-flash-preview',
+        'model_name': model_name,
         'memory_name': 'optimizer_memory_system',
         'optimize_trainable_variables': True,
-        'optimize_solution': True
+        'optimize_solution': True,
     }
 
     if optimizer_type == 'grpo':
@@ -264,11 +426,11 @@ def create_optimizer(optimizer_type: str, reward_fn: Optional[Callable[[str, str
         raise ValueError(f"Unknown optimizer type: {optimizer_type}")
 
 
-async def get_all_tasks(benchmark_name: str) -> List[Dict]:
+async def get_all_tasks(benchmark_name: str, split: str = "test") -> List[Dict]:
     """Get all tasks from benchmark manager."""
     tasks = []
-    logger.info(f"| 🔄 Resetting progress for {benchmark_name}...")
-    task_data = await benchmark_manager.reset(benchmark_name)
+    logger.info(f"| 🔄 Resetting progress for {benchmark_name} (split: {split})...")
+    task_data = await benchmark_manager.reset(benchmark_name, split=split)
 
     while task_data is not None:
         tasks.append(task_data)
@@ -277,10 +439,14 @@ async def get_all_tasks(benchmark_name: str) -> List[Dict]:
     return tasks
 
 
-async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, result_saver: ExperimentResultSaver = None):
+async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, split: str, batchsize: int, model_name: str, result_saver: ExperimentResultSaver = None):
     """Process a single task with the optimizer."""
     task_id = task_data.task_id
     task_input = task_data.input
+    if benchmark_name != "leetcode":
+        task_gt = None
+    else:
+        task_gt = task_data.ground_truth
     task_gt = task_data.ground_truth
     system_instruction = task_data.system_prompt
     start_time = time.time()
@@ -296,30 +462,44 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         # Get the agent instance
         agent = await acp.get("tool_calling")
         # Create optimizer
-        optimizer = create_optimizer(optimizer_type, reward_fn)
+        if split=='train' or optimizer_type=='reflection':
+            # Bind benchmark_name to reward_fn so eval uses correct benchmark instance
+            import functools
+            bound_reward = functools.partial(reward_fn, benchmark_name=benchmark_name)
+            optimizer = create_optimizer(optimizer_type, model_name, bound_reward, batchsize)
 
-        # ！！！！！用于临时代替参考模型输出
-        if optimizer_type == 'reinforce_pp':
+            # ！！！！！用于临时代替参考模型输出
+            if optimizer_type == 'reinforce_pp':
+                logger.info(f"| 🚀 Running agent to get initial solution...")
+                reference_agent_response = await agent(task=full_task, files=[])
+                reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
+                reference_agent_result = reference_agent_response_extra_data['result']
+                reference_agent_reasoning = reference_agent_response_extra_data['reasoning']
+                reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
+                logger.info(f"| ✅ Initial solution obtained")
+
+                initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
+                                                                                 task=full_task,
+                                                                                 ground_truth=task_gt,
+                                                                                 sft_solution=reference_solution,
+                                                                                 benchmark_task_id=task_id,
+                                                                                 files=[],
+                                                                                 results_file_path=result_saver.get_file_path() if result_saver else None)
+            else:
+                initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
+                                                                                 task=full_task,
+                                                                                 ground_truth=task_gt,
+                                                                                 benchmark_task_id=task_id,
+                                                                                 files=[],
+                                                                                 results_file_path=result_saver.get_file_path() if result_saver else None)
+        else:
             logger.info(f"| 🚀 Running agent to get initial solution...")
-            reference_agent_response = await agent(task=full_task, files=[])
-            reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
-            reference_agent_result = reference_agent_response_extra_data['final_result']
-            reference_agent_reasoning = reference_agent_response_extra_data['final_reasoning']
-            reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
+            agent_response = await agent(task=full_task, files=[])
+            agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
+            agent_result = agent_response_extra_data['final_result']
+            agent_reasoning = agent_response_extra_data['final_reasoning']
             logger.info(f"| ✅ Initial solution obtained")
 
-            _, _, _, _, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
-                                                                             task=full_task,
-                                                                             ground_truth=task_gt,
-                                                                             sft_solution=reference_solution,
-                                                                             benchmark_task_id=task_id,
-                                                                             files=[])
-        else:
-            _, _, _, _, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
-                                                                             task=full_task,
-                                                                             ground_truth=task_gt,
-                                                                             benchmark_task_id=task_id,
-                                                                             files=[])
 
         parse_reasoning, parse_result = parse_agent_result(agent_result)
 
@@ -342,7 +522,20 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         # Save result if saver is provided
         if result_saver:
             processing_time = time.time() - start_time
-            result_saver.add_task_result(task_data, processing_time)
+
+            # Prepare optimizer data for detailed saving
+            optimizer_data = None
+            if split == 'train' or optimizer_type == 'reflection':
+                optimizer_data = {
+                    "initial_agent_result": initial_agent_result,
+                    "initial_agent_reasoning": initial_agent_reasoning,
+                    "reflecion_text": reflecion_text,
+                    "improved_solution": improved_solution,
+                    "agent_reasoning": agent_reasoning,
+                    "agent_result": agent_result
+                }
+
+            await result_saver.add_task_result(task_data, processing_time, optimizer_data)
 
     except Exception as e:
         logger.error(f"| ❌ Error processing task {task_id}: {e}")
@@ -350,13 +543,14 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         traceback.print_exc()
 
 
-async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, concurrency: int = 4):
+async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, split: str, batchsize: int, model_name: str, concurrency: int = 4):
     """Test specified optimizer performance on entire benchmark dataset with concurrency control."""
     logger.info(f"| 🧪 Testing {optimizer_type.upper()} optimizer on complete benchmark: {benchmark_name}")
     logger.info(f"| ⚡ Using concurrency level: {concurrency}")
+    logger.info(f"| 📊 Using dataset split: {split}")
 
     # Get all tasks first
-    all_tasks = await get_all_tasks(benchmark_name)
+    all_tasks = await get_all_tasks(benchmark_name, split=split)
     total_tasks = len(all_tasks)
 
     if total_tasks == 0:
@@ -366,8 +560,7 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, c
     logger.info(f"| 📋 Total tasks to process: {total_tasks}")
 
     # Initialize result saver
-    model_name = 'openrouter/gemini-3-flash-preview'
-    result_saver = ExperimentResultSaver(optimizer_type, benchmark_name, concurrency, total_tasks, model_name)
+    result_saver = ExperimentResultSaver(optimizer_type, benchmark_name, concurrency, total_tasks, model_name, split)
     logger.info(f"| 💾 Results will be saved to: {result_saver.get_file_path()}")
 
     # Create semaphore for concurrency control
@@ -379,7 +572,7 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, c
         nonlocal completed_count
         async with semaphore:
             try:
-                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, result_saver)
+                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, split, batchsize, model_name, result_saver)
             finally:
                 completed_count += 1
                 # Progress reporting
@@ -445,7 +638,7 @@ async def main():
     logger.info(f"| ✅ Version manager initialized")
 
     # Test specified optimizer on benchmark
-    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.concurrency)
+    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.split, args.batchsize, args.model_name, args.concurrency)
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()

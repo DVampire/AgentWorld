@@ -10,6 +10,8 @@ from src.memory import EventType
 from src.utils import dedent
 import math
 import tiktoken
+import json
+import os
 
 
 class Response(BaseModel):
@@ -38,6 +40,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
     clip_ratio: float = Field(default=0.2, description="Clipping ratio for REINFORCE++")
     beta: float = Field(default=0.01, description="KL penalty coefficient")
     reward_fn: Optional[Callable[[str,str,str], Any]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
+    batchsize: int = Field(default=10, description="Batch size for aggregating historical reflections")
 
     def __init__(self,
                  workdir: str,
@@ -49,6 +52,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                  clip_ratio: float = 0.2,
                  beta: float = 0.01,
                  reward_fn: Optional[Callable[[str,str,str], Any]] = None,
+                 batchsize: int = 10,
                  **kwargs
                  ):
         """
@@ -83,9 +87,50 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         self.clip_ratio = clip_ratio
         self.beta = beta
         self.reward_fn = reward_fn
+        self.batchsize = batchsize
 
         # Initialize tokenizer for text similarity calculation
         self.tokenizer = tiktoken.encoding_for_model('gpt-4o')
+
+    async def _read_historical_reflections(self, results_file_path: str) -> List[str]:
+        """
+        Read historical phase 1 reflections from results file.
+
+        Args:
+            results_file_path: Path to the results JSON file
+
+        Returns:
+            List of historical reflection texts (phase 1)
+        """
+        import json
+        historical_reflections = []
+
+        try:
+            if not os.path.exists(results_file_path):
+                logger.warning(f"Results file not found: {results_file_path}")
+                return historical_reflections
+
+            with open(results_file_path, 'r', encoding='utf-8') as f:
+                results_data = json.load(f)
+
+            results = results_data.get('results', [])
+            for result in reversed(results):  # Start from most recent
+                reflection_process = result.get('reflection_process', {})
+                phase1_reflections = reflection_process.get('reflection_rounds', [])
+
+                # Extract the last phase 1 reflection from all rounds
+                if phase1_reflections:
+                    # Find all phase 1 rounds and get the last one
+                    phase1_rounds = [r for r in phase1_reflections if r.get('phase') == 1]
+                    if phase1_rounds and 'reflection_text' in phase1_rounds[-1]:
+                        historical_reflections.append(phase1_rounds[-1]['reflection_text'])
+
+            logger.info(f"Loaded {len(historical_reflections)} historical phase 1 reflections")
+            return historical_reflections
+
+        except Exception as e:
+            logger.warning(f"Failed to read historical reflections: {e}")
+            return historical_reflections
 
     async def get_trainable_variables(self, agent: Optional[Any] = None) -> Dict[str, Any]:
         """
@@ -214,7 +259,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             raise
 
     async def _improve_variables(self, task: str, variables: Dict[str, Variable],
-                                 reflection_analysis: str) -> Dict[str, Any]:
+                                 reflection_analysis: str, historical_reflections: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -254,11 +299,28 @@ class ReinforcePlusPlusOptimizer(Optimizer):
         # Format all variables for context
         current_variables_text = await self._format_variables(variables)
 
+        # Combine current reflection with historical reflections if available
+        combined_reflection = reflection_analysis
+        if historical_reflections:
+            logger.info(f"Aggregating {len(historical_reflections)} historical reflections with current reflection for batch processing")
+            combined_reflection = f"""
+Current Task Reflection:
+{reflection_analysis}
+
+Historical Reflections from Previous Tasks:
+"""
+            for i, hist_reflection in enumerate(historical_reflections):
+                combined_reflection += f"\n--- Historical Reflection {i+1} ---\n{hist_reflection}"
+
+            combined_reflection += "\n\nPlease analyze all the above reflections (current and historical) to identify common reasoning patterns and provide more generalizable improvements that work across multiple tasks."
+        else:
+            logger.info("No historical reflections available, using current reflection only")
+
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
-            "reflection_analysis": reflection_analysis
+            "reflection_analysis": combined_reflection
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_improvement",
@@ -413,7 +475,8 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             Task: {task}
 
             Review the current solution and reasoning provided below and decide if the optimization process can stop.
-            If the solution is correct, complete, and follows all requirements, set is_satisfied to True.
+            Evaluate both the correctness of the content and the format compliance. The solution must be correct, complete, follow all requirements, and be in the proper format that can be correctly parsed by the evaluation system.
+            If the solution is correct, complete, follows all requirements, and is properly formatted, set is_satisfied to True.
             Otherwise, set is_satisfied to False and provide the reason.
 
             Return your decision in the specified structured format.
@@ -447,6 +510,7 @@ class ReinforcePlusPlusOptimizer(Optimizer):
             ground_truth: str,
             sft_solution: str,
             files: Optional[List[str]] = None,
+            results_file_path: Optional[str] = None,
             **kwargs
     ):
         """
@@ -563,11 +627,19 @@ class ReinforcePlusPlusOptimizer(Optimizer):
                             objective=objective_current,
                         )
 
-                        # Improve trainable variables based on reflection
+                        # Read historical reflections and improve trainable variables
+                        historical_reflections = None
+                        if results_file_path:
+                            historical_reflections = await self._read_historical_reflections(results_file_path)
+                            # Take only the most recent batchsize-1 reflections
+                            if len(historical_reflections) >= self.batchsize - 1:
+                                historical_reflections = historical_reflections[:(self.batchsize - 1)]
+
                         improved_variables = await self._improve_variables(
                             task=task,
                             variables=trainable_variables,
                             reflection_analysis=reflection_analysis,
+                            historical_reflections=historical_reflections,
                         )
 
                         # Update trainable variables (now flattened structure)

@@ -48,7 +48,7 @@ Please analyze the execution result and the provided variables in <current_varia
    - You MUST only recommend improvements for variables that exist in <current_variables>
    - For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context
    - For tool variables: provide specific code fixes, feature additions, or logic corrections
-   - For solution variables: suggest alternative approaches or improvements to the solution strategy
+   - For solution variables: suggest alternative approaches or improvements to the solution strategy, ensuring the format meets task requirements and can be correctly parsed
    - Focus on making each variable type more effective for the given task
 </reasoning_rules>
 """
@@ -243,14 +243,14 @@ Based on the analysis and feedback provided, please improve the variable by:
    - Ensure no problems are left unresolved
 
 3. **Make improvements appropriate for the variable type**
-   - For prompt variables: Make instructions clearer and more specific, replace vague language with precise instructions, add concrete examples, clarify ambiguous requirements
+   - For prompt variables: Make instructions clearer and more specific, replace vague language with precise instructions, add concrete examples, clarify ambiguous requirements. When improving prompts intended for problem-solving, consider phrasing that activates the model's reasoning.
    - For tool variables: Fix bugs, correct logic errors, add missing functionality, improve error handling
    - For solution variables: Suggest better approaches, improve strategy, refine the solution method
 
 4. **Better organization**
    - For prompts: Improve the logical flow of instructions, group related concepts together, use clear headings and structure
    - For tools: Organize code better, improve readability, add proper documentation
-   - For solutions: Structure the approach more clearly, break down complex steps
+   - For solutions: Structure the approach more clearly, break down complex steps, ensuring the format meets task requirements and can be correctly parsed
 
 5. **Remove unnecessary elements**
    - Eliminate redundant or confusing parts

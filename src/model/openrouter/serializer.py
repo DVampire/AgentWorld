@@ -485,7 +485,7 @@ class OpenRouterChatSerializer:
                     def_name = ref_path.split("/")[-1]
                     if def_name in defs:
                         return transform(defs[def_name])
-                return {"type": "object", "additionalProperties": True}
+                return {"type": "object", "additionalProperties": False}
             
             # Handle Union structures (anyOf, oneOf, allOf) - used for handling Optional fields
             for k in ["anyOf", "oneOf", "allOf"]:
@@ -505,7 +505,7 @@ class OpenRouterChatSerializer:
                         return {
                             "type": "object",
                             "description": obj.get("description", "Simplified Object"),
-                            "additionalProperties": True 
+                            "additionalProperties": False
                         }
 
             # Handle objects

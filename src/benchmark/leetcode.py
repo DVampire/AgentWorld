@@ -341,7 +341,7 @@ class CodeSubmitter:
         json_cookie = json.dumps(self.leetcode_cookie)
         await self.page.evaluate(f"navigator.clipboard.writeText({json_cookie})")
         await asyncio.sleep(0.2)
-        await self.page.keyboard.press("Meta+V") 
+        await self.page.keyboard.press("Control+V") 
         await asyncio.sleep(0.5)
         await self.page.keyboard.press("Enter")
         
@@ -359,7 +359,7 @@ class CodeSubmitter:
             pass
 
         # 唤起命令面板
-        await self.page.keyboard.press("Meta+Shift+P")
+        await self.page.keyboard.press("Control+Shift+P")
         await asyncio.sleep(1)
         
         # 输入并执行 Git Pull
@@ -375,7 +375,7 @@ class CodeSubmitter:
         """Open explorer and open code file"""
         logger.info(f"| 🔍 Opening work file: {filename}")
         
-        await self.page.keyboard.press("Meta+Shift+P")
+        await self.page.keyboard.press("Control+Shift+P")
 
 # 2. 输入 "Close All Editors" 并回车
         await self.page.keyboard.type("Close All Editors")
@@ -395,7 +395,7 @@ class CodeSubmitter:
             await self.page.mouse.click(500, 500)
             
         await asyncio.sleep(0.5)
-        await self.page.keyboard.press("Meta+P")
+        await self.page.keyboard.press("Control+P")
         await asyncio.sleep(0.5)
         await self.page.keyboard.type(filename)
         await asyncio.sleep(1)
@@ -455,7 +455,7 @@ class CodeSubmitter:
         
         # 6. Trigger LeetCode submission
         logger.info("| 🔍 Triggering LeetCode submission...")
-        await self.page.keyboard.press("Meta+Shift+P")
+        await self.page.keyboard.press("Control+Shift+P")
         await asyncio.sleep(1)
         await self.page.keyboard.type("LeetCode: Submit to LeetCode")
         await asyncio.sleep(1)
@@ -465,7 +465,7 @@ class CodeSubmitter:
         # 7. Wait for result
         result = await self._wait_for_result()
         # 1. 打开命令面板
-        await self.page.keyboard.press("Meta+Shift+P")
+        await self.page.keyboard.press("Control+Shift+P")
 
 # 2. 输入 "Close All Editors" 并回车
         await self.page.keyboard.type("Close All Editors")

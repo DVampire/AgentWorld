@@ -467,11 +467,17 @@ class BenchmarkContextManager(BaseModel):
         self._benchmark_history_versions.clear()
         logger.info("| 🧹 Benchmark context manager cleaned up")
 
-    async def reset(self, name: str) -> Optional[Task]:
+    async def reset(self, name: str, split: Optional[str] = None) -> Optional[Task]:
         """Reset benchmark progress (delegates to benchmark instance)."""
         instance = await self.get(name)
         if instance is None:
             raise ValueError(f"Benchmark '{name}' not found")
+        # Update split if provided
+        if split is not None and hasattr(instance, 'split'):
+            instance.split = split
+            # Re-initialize benchmark with new split
+            if hasattr(instance, "initialize"):
+                await instance.initialize()
         return await instance.reset()
 
     async def step(self, name: str) -> Optional[Task]:

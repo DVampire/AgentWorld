@@ -25,7 +25,7 @@ class LeetCodeDataset:
         self.lang = lang
 
         # 1. Path normalization
-        #path = assemble_project_path(path)
+        path = assemble_project_path(path)
         
         # 2. Load metadata file
         # Expected path structure: /data/leetcode/test/metadata.jsonl

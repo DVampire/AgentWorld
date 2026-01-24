@@ -9,7 +9,7 @@ from src.benchmark.utils import clean_text
 from src.utils import dedent
 
 SYSTEM_PROMPT = dedent("""
-    You are a helpful assistant that solves math contest problems. Please think step by step and provide the final answer.
+    You are a helpful assistant that solves math contest problems. Please think step by step, deliver both the reasoning and the result, and strictly follow the provided output format.
     
     Example:
     Problem: If a + b = 10 and a - b = 4, what is the value of a^2 - b^2?

@@ -37,6 +37,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="zxh@1.tcp.cpolar.cn:21614 password (code6)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="zxh@1.tcp.cpolar.cn:21614 password (minimind)">
         <serverdata>
           <mappings>

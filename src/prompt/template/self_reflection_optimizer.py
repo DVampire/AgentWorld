@@ -38,9 +38,9 @@ Do NOT suggest creating new variables or tools that don't exist. Work with what 
 
 - **Specific recommendations for improving each problematic variable**
    - You MUST only recommend improvements for variables that exist in <current_variables>
-   - For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context
+   - For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context. When improving prompts intended for problem-solving, consider phrasing that activates the model's reasoning.
    - For tool variables: provide specific code fixes, feature additions, or logic corrections
-   - For solution variables: suggest alternative approaches or improvements to the solution strategy
+   - For solution variables: suggest alternative approaches or improvements to the solution strategy, ensuring the format meets task requirements and can be correctly parsed
    - Focus on making each variable type more effective for the given task
 </reasoning_rules>
 """
@@ -62,6 +62,7 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ task }}
 {{ current_variables }}
 {{ execution_result }}
+{{ previous_evaluation }}
 """
 
 REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT = {
@@ -134,6 +135,14 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
             "require_grad": False,
             "template": None,
             "variables": None
+        },
+        "previous_evaluation": {
+            "name": "previous_evaluation",
+            "type": "agent_message_prompt",
+            "description": "Previous evaluation result to inform the reflection.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
         }
     }
 }
@@ -203,7 +212,7 @@ Based on the analysis and feedback provided, please improve the variable by:
 4. **Better organization**
    - For prompts: Improve the logical flow of instructions, group related concepts together, use clear headings and structure
    - For tools: Organize code better, improve readability, add proper documentation
-   - For solutions: Structure the approach more clearly, break down complex steps
+   - For solutions: Structure the approach more clearly, break down complex steps, ensuring the format meets task requirements and can be correctly parsed
 
 5. **Remove unnecessary elements**
    - Eliminate redundant or confusing parts

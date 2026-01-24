@@ -8,6 +8,8 @@ from src.model import model_manager
 from src.message.types import SystemMessage, HumanMessage
 from src.memory import EventType
 from src.utils import dedent
+import json
+import os
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -31,6 +33,7 @@ class ReflectionOptimizer(Optimizer):
     prompt_name: str = Field(default="reflection_optimizer", description="The name of the prompt")
     model_name: str = Field(default="openrouter/gemini-3-flash-preview", description="The name of the model")
     memory_name: Optional[str] = Field(default=None, description="Name of the optimizer memory system for recording optimization history")
+    batchsize: int = Field(default=10, description="Batch size for aggregating historical reflections")
     
     def __init__(self, 
                  workdir: str,
@@ -39,6 +42,7 @@ class ReflectionOptimizer(Optimizer):
                  memory_name: Optional[str] = "optimizer_memory_system",
                  optimize_trainable_variables: bool = True,
                  optimize_solution: bool = True,
+                 batchsize: int = 10,
                  **kwargs
                  ):
         """
@@ -64,9 +68,50 @@ class ReflectionOptimizer(Optimizer):
         if prompt_name:
             self.prompt_name = prompt_name
         self.memory_name = memory_name
+        self.batchsize = batchsize
         
         self.optimize_trainable_variables = optimize_trainable_variables
         self.optimize_solution = optimize_solution
+        
+    async def _read_historical_reflections(self, results_file_path: str) -> List[str]:
+        """
+        Read historical phase 1 reflections from results file.
+
+        Args:
+            results_file_path: Path to the results JSON file
+
+        Returns:
+            List of historical reflection texts (phase 1)
+        """
+        import json
+        historical_reflections = []
+
+        try:
+            if not os.path.exists(results_file_path):
+                logger.warning(f"Results file not found: {results_file_path}")
+                return historical_reflections
+
+            with open(results_file_path, 'r', encoding='utf-8') as f:
+                results_data = json.load(f)
+
+            results = results_data.get('results', [])
+            for result in reversed(results):  # Start from most recent
+                reflection_process = result.get('reflection_process', {})
+                phase1_reflections = reflection_process.get('reflection_rounds', [])
+
+                # Extract the last phase 1 reflection from all rounds
+                if phase1_reflections:
+                    # Find all phase 1 rounds and get the last one
+                    phase1_rounds = [r for r in phase1_reflections if r.get('phase') == 1]
+                    if phase1_rounds and 'reflection_text' in phase1_rounds[-1]:
+                        historical_reflections.append(phase1_rounds[-1]['reflection_text'])
+
+            logger.info(f"Loaded {len(historical_reflections)} historical phase 1 reflections")
+            return historical_reflections
+
+        except Exception as e:
+            logger.warning(f"Failed to read historical reflections: {e}")
+            return historical_reflections
         
     async def get_trainable_variables(self, agent: Optional[Any] = None) -> Dict[str, Any]:
         """
@@ -140,7 +185,7 @@ class ReflectionOptimizer(Optimizer):
         return variables_text
         
     
-    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str) -> str:
+    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str, previous_evaluation: Optional[EvaluationResult] = None) -> str:
         """
         Generate the reflection analysis for all variables.
 
@@ -148,6 +193,7 @@ class ReflectionOptimizer(Optimizer):
             task (str): Task description.
             variables (Dict[str, Any]): Dictionary of variables.
             execution_result (str): Agent execution result.
+            previous_evaluation (Optional[EvaluationResult]): Previous evaluation result to inform the reflection.
         Returns:
             str: Reflection analysis identifying which variables to optimize and how.
         """
@@ -159,12 +205,23 @@ class ReflectionOptimizer(Optimizer):
             await prompt_manager.initialize()
         
         current_variables_text = await self._format_variables(variables)
- 
+
+        # Format previous evaluation if available
+        previous_evaluation_text = ""
+        if previous_evaluation:
+            previous_evaluation_text = f"""
+Previous Evaluation Result:
+- Satisfied: {previous_evaluation.is_satisfied}
+- Reasoning: {previous_evaluation.reasoning}
+
+"""
+
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
             "execution_result": execution_result,
+            "previous_evaluation": previous_evaluation_text,
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_reflection",
@@ -186,7 +243,7 @@ class ReflectionOptimizer(Optimizer):
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str) -> Dict[str, Any]:
+    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str, historical_reflections: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -226,11 +283,28 @@ class ReflectionOptimizer(Optimizer):
         # Format all variables for context
         current_variables_text = await self._format_variables(variables)
         
+        # Combine current reflection with historical reflections if available
+        combined_reflection = reflection_analysis
+        if historical_reflections:
+            logger.info(f"Aggregating {len(historical_reflections)} historical reflections with current reflection for batch processing")
+            combined_reflection = f"""
+Current Task Reflection:
+{reflection_analysis}
+
+Historical Reflections from Previous Tasks:
+"""
+            for i, hist_reflection in enumerate(historical_reflections):
+                combined_reflection += f"\n--- Historical Reflection {i+1} ---\n{hist_reflection}"
+
+            combined_reflection += "\n\nPlease analyze all the above reflections (current and historical) to identify common reasoning patterns and provide more generalizable improvements that work across multiple tasks."
+        else:
+            logger.info("No historical reflections available, using current reflection only")
+        
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
-            "reflection_analysis": reflection_analysis
+            "reflection_analysis": combined_reflection
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_improvement",
@@ -299,7 +373,8 @@ class ReflectionOptimizer(Optimizer):
             Task: {task}
 
             Review the current solution and reasoning provided below and decide if the optimization process can stop.
-            If the solution is correct, complete, and follows all requirements, set is_satisfied to True.
+            Evaluate both the correctness of the content and the format compliance. The solution must be correct, complete, follow all requirements, and be in the proper format that can be correctly parsed by the evaluation system.
+            If the solution is correct, complete, follows all requirements, and is properly formatted, set is_satisfied to True.
             Otherwise, set is_satisfied to False and provide the reasoning.
 
             Return your decision in the specified structured format.
@@ -331,6 +406,7 @@ class ReflectionOptimizer(Optimizer):
         agent: Any,
         task: str,
         files: Optional[List[str]] = None,
+        results_file_path: Optional[str] = None,
         **kwargs
     ):
         """
@@ -428,8 +504,12 @@ class ReflectionOptimizer(Optimizer):
         initial_agent_result = current_agent_result
         initial_agent_reasoning = current_agent_reasoning
 
-        reflecion_text = []
-        improved_solution = []
+        # Separate storage for Phase 1 and Phase 2
+        phase1_reflections = []
+        phase1_improvements = []
+        phase2_reflections = []
+        phase2_improvements = []
+        previous_evaluation: Optional[EvaluationResult] = None
         # Run the optimization loop.
         for opt_step in range(optimization_steps):
             logger.info(f"\n| {'='*60}")
@@ -450,14 +530,36 @@ class ReflectionOptimizer(Optimizer):
                             task=task,
                             variables=trainable_variables,
                             execution_result=current_solution,
+                            previous_evaluation=previous_evaluation,
                         )
+                        # Save phase 1 reflection text for later reporting
+                        try:
+                            phase1_reflections.append(reflection_analysis)
+                        except Exception:
+                            pass
                         
-                        # Improve trainable variables based on reflection
+                        # Read historical reflections and improve trainable variables
+                        historical_reflections = None
+                        if results_file_path:
+                            historical_reflections = await self._read_historical_reflections(results_file_path)
+                            # Take only the most recent batchsize-1 reflections
+                            if len(historical_reflections) >= self.batchsize - 1:
+                                historical_reflections = historical_reflections[:(self.batchsize - 1)]
+
                         improved_variables = await self._improve_variables(
                             task=task,
                             variables=trainable_variables,
                             reflection_analysis=reflection_analysis,
+                            historical_reflections=historical_reflections,
                         )
+                        # Save phase 1 improved variables (stringified) for later reporting
+                        try:
+                            phase1_improvements.append(json.dumps(improved_variables, ensure_ascii=False))
+                        except Exception:
+                            try:
+                                phase1_improvements.append(str(improved_variables))
+                            except Exception:
+                                pass
                         
                         prompt_updates = {}
                         variables_updated = False
@@ -619,10 +721,11 @@ class ReflectionOptimizer(Optimizer):
                         task=task,
                         variables=solution_variables,
                         execution_result=current_solution,
+                        previous_evaluation=previous_evaluation,
                     )
 
-                    # For analysis
-                    reflecion_text.append(solution_reflection)
+                    # For analysis (Phase 2)
+                    phase2_reflections.append(solution_reflection)
                     
                     # Improve solution based on reflection
                     improved_solution_result = await self._improve_solution(
@@ -631,7 +734,7 @@ class ReflectionOptimizer(Optimizer):
                         reflection_analysis=solution_reflection,
                     )
 
-                    improved_solution.append(f'Result: {improved_solution_result.result}\nReasoning: {improved_solution_result.reasoning}')
+                    phase2_improvements.append(f'Result: {improved_solution_result.result}\nReasoning: {improved_solution_result.reasoning}')
                     
                     # Check if solution was improved
                     if improved_solution_result.result:
@@ -673,7 +776,10 @@ class ReflectionOptimizer(Optimizer):
                     task=task,
                     execution_result=current_solution
                 )
-                
+
+                # Update previous evaluation for next iteration
+                previous_evaluation = evaluation
+
                 if evaluation.is_satisfied:
                     logger.info(f"| 🎉 Early termination triggered: {evaluation.reasoning}")
                     break
@@ -717,5 +823,9 @@ class ReflectionOptimizer(Optimizer):
         logger.info(f"| Final solution:\n{current_solution}")
         logger.info(f"| {'='*60}")
 
-        return initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, current_agent_reasoning, current_agent_result
+        # Structure phase-separated outputs
+        reflecion_text_struct = {"phase1": phase1_reflections, "phase2": phase2_reflections}
+        improved_solution_struct = {"phase1": phase1_improvements, "phase2": phase2_improvements}
+
+        return initial_agent_result, initial_agent_reasoning, reflecion_text_struct, improved_solution_struct, current_agent_reasoning, current_agent_result
         # return current_agent_reasoning, current_agent_result
