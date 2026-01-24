@@ -11,7 +11,8 @@ from pathlib import Path
 from mmengine import DictAction
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from typing import Union
+from typing import Union, Optional, Any, List
+from datetime import datetime
 
 # 加载环境变量
 load_dotenv(verbose=True)
@@ -29,7 +30,97 @@ from src.message.types import HumanMessage, SystemMessage
 # ==========================================
 # 配置区域
 # ==========================================
-TARGET_MODEL = "openrouter/gemini-3-flash-preview" 
+# TARGET_MODEL = "openrouter/grok-4.1-fast"
+TARGET_MODEL = "openrouter/gemini-3-flash-preview"
+
+class BenchmarkResultSaver:
+    """Save benchmark results to JSON file with real-time updates."""
+
+    def __init__(self, benchmark_name: str, concurrency: int, total_tasks: int, model_name: str):
+        self.benchmark_name = benchmark_name
+        self.concurrency = concurrency
+        self.total_tasks = total_tasks
+        self.model_name = model_name
+        self.start_time = datetime.now()
+
+        # Create results directory if it doesn't exist
+        self.results_dir = Path(__file__).parent / "workdir/results"
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate filename with timestamp
+        timestamp = self.start_time.strftime("%Y-%m-%d_%H-%M-%S")
+        self.filename = f"benchmark_{benchmark_name}_{timestamp}.json"
+        self.filepath = self.results_dir / self.filename
+
+        # Initialize thread lock for file operations
+        self.file_lock = asyncio.Lock()
+
+        # Initialize results structure
+        self.results_data = {
+            "experiment_meta": {
+                "timestamp": self.start_time.isoformat() + "Z",
+                "benchmark": benchmark_name,
+                "concurrency": concurrency,
+                "total_tasks": total_tasks,
+                "model": model_name
+            },
+            "results": [],
+            "summary": {
+                "completed_tasks": 0,
+                "correct_answers": 0,
+                "accuracy": 0.0,
+                "last_updated": self.start_time.isoformat() + "Z"
+            }
+        }
+
+        # Save initial empty results
+        asyncio.create_task(self._save_to_file())
+
+    async def add_task_result(self, task: Task, processing_time: float = None):
+        """Add a single task result and update the file."""
+        async with self.file_lock:
+            task_result = {
+                "task_id": task.task_id,
+                "task_input": task.input[:200] + "..." if len(task.input) > 200 else task.input,
+                "ground_truth": str(task.ground_truth) if task.ground_truth else "",
+                "result": str(task.result) if task.result else "",
+                "reasoning": getattr(task, 'reasoning', ""),
+                "correct": task.score == 1.0 if task.score is not None else False,
+                "processing_time": processing_time or getattr(task, 'time', 0.0)
+            }
+
+            self.results_data["results"].append(task_result)
+
+            # Update summary
+            self.results_data["summary"]["completed_tasks"] = len(self.results_data["results"])
+            correct_count = sum(1 for r in self.results_data["results"] if r["correct"])
+            self.results_data["summary"]["correct_answers"] = correct_count
+            self.results_data["summary"]["accuracy"] = correct_count / len(self.results_data["results"]) if self.results_data["results"] else 0.0
+            self.results_data["summary"]["last_updated"] = datetime.now().isoformat() + "Z"
+
+            # Save updated results
+            await self._save_to_file()
+
+    async def _save_to_file(self):
+        """Save current results to JSON file."""
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                json.dump(self.results_data, f, indent=2, ensure_ascii=False)
+                f.flush()  # Force write to disk
+                os.fsync(f.fileno())  # Ensure data is written to disk
+            logger.debug(f"Successfully saved results to {self.filepath}")
+        except Exception as e:
+            logger.error(f"Failed to save results to {self.filepath}: {e}")
+            raise  # Re-raise exception to ensure it's not silently ignored
+
+    def update_total_tasks(self, total_tasks: int):
+        """Update the total number of tasks."""
+        self.total_tasks = total_tasks
+        self.results_data["experiment_meta"]["total_tasks"] = total_tasks
+
+    def get_file_path(self) -> str:
+        """Get the path to the results file."""
+        return str(self.filepath) 
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -40,14 +131,15 @@ def sanitize_filename(name: str) -> str:
     name = str(name).replace('\n', ' ').replace('\r', '')
     return re.sub(r'[\\/*?:"<>|]', '', name).strip()
 
-async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: int = 5):
+async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: int = 5, result_saver: Optional[BenchmarkResultSaver] = None):
     """
     Test the benchmark manager specifically for Math/AIME using a REAL model.
     Uses response_format for structured output with concurrent processing.
-    
+
     Args:
         benchmark_name: Name of the benchmark to test
         max_concurrency: Maximum number of concurrent tasks to process
+        result_saver: Optional result saver for recording results
     """
     print(f"🧪 Testing benchmark manager with benchmark: {benchmark_name}")
     print(f"🤖 Using Model: {TARGET_MODEL}")
@@ -76,7 +168,11 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
     
     total_tasks = len(all_tasks)
     print(f"✅ Collected {total_tasks} tasks. Starting concurrent processing...")
-    
+
+    # Update result saver with actual task count
+    if result_saver:
+        result_saver.update_total_tasks(total_tasks)
+
     # 创建 Semaphore 限制并发数
     semaphore = asyncio.Semaphore(max_concurrency)
     
@@ -84,7 +180,7 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
     completed_count = 0
     completed_lock = asyncio.Lock()
     
-    async def process_single_task(task: Task) -> Task:
+    async def process_single_task(task: Task, result_saver: Optional[BenchmarkResultSaver] = None) -> Task:
         """处理单个任务的协程函数"""
         nonlocal completed_count  # 必须在函数开始处声明
         task_id = task.task_id
@@ -182,19 +278,29 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
                 
                 if evaluated_task:
                     print(f"🤖 [Task {task_id}] Answer: {evaluated_task.result}, Ground Truth: {evaluated_task.ground_truth}")
-                    
+
                     if evaluated_task.score and evaluated_task.score >= 1.0:
                         print(f"✅ [Task {task_id}] Result: Correct (Score: {evaluated_task.score}) | Time: {evaluated_task.time:.2f}s")
                     else:
                         print(f"⚠️ [Task {task_id}] Result: Incorrect (Score: {evaluated_task.score}) | Time: {evaluated_task.time:.2f}s")
-                    
+
+                    # Save result if saver is provided
+                    if result_saver:
+                        processing_time = time.time() - start_time
+                        await result_saver.add_task_result(evaluated_task, processing_time)
+
                     # 更新进度
                     async with completed_lock:
                         completed_count += 1
                         print(f"📊 Progress: {completed_count}/{total_tasks} tasks completed ({completed_count/total_tasks*100:.1f}%)")
-                    
+
                     return evaluated_task
                 else:
+                    # Save result if saver is provided (even for failed tasks)
+                    if result_saver:
+                        processing_time = time.time() - start_time
+                        await result_saver.add_task_result(task, processing_time)
+
                     async with completed_lock:
                         completed_count += 1
                         print(f"📊 Progress: {completed_count}/{total_tasks} tasks completed ({completed_count/total_tasks*100:.1f}%)")
@@ -213,7 +319,7 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
     print(f"🚀 Starting concurrent processing of {total_tasks} tasks...")
     try:
         processed_tasks = await asyncio.gather(
-            *[process_single_task(t) for t in all_tasks],
+            *[process_single_task(t, result_saver) for t in all_tasks],
             return_exceptions=True
         )
         
@@ -255,8 +361,8 @@ async def test_math_benchmark(benchmark_name: str = "aime25", max_concurrency: i
 async def main():
     parser = argparse.ArgumentParser(description='Test Benchmark Loop')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
-    parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test")
-    parser.add_argument("--max-concurrency", type=int, default=16, help="Maximum number of concurrent tasks (default: 5)")
+    parser.add_argument("--benchmark", default="leetcode", help="benchmark name to test")
+    parser.add_argument("--max-concurrency", type=int, default=4, help="Maximum number of concurrent tasks (default: 5)")
     parser.add_argument(
         '--cfg-options',
         nargs='+',
@@ -274,8 +380,13 @@ async def main():
     benchmark_name = args.benchmark
     logger.info(f"| 🛠️ Initializing benchmark manager for {benchmark_name}...")
     await benchmark_manager.initialize(benchmark_names=[benchmark_name])
-    
-    await test_math_benchmark(benchmark_name, max_concurrency=args.max_concurrency)
+
+    # Initialize result saver
+    logger.info(f"| 💾 Initializing result saver...")
+    result_saver = BenchmarkResultSaver(benchmark_name, args.max_concurrency, 0, TARGET_MODEL)  # We'll update total_tasks later
+    logger.info(f"| ✅ Results will be saved to: {result_saver.get_file_path()}")
+
+    await test_math_benchmark(benchmark_name, max_concurrency=args.max_concurrency, result_saver=result_saver)
     
     print("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()

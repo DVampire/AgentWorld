@@ -18,7 +18,8 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "openrouter/gemini-3-flash-preview"
+# model_name = "openrouter/gemini-3-flash-preview"
+model_name = "openrouter/grok-4.1-fast"
 
 env_names = [
     "file_system"
@@ -31,15 +32,15 @@ agent_names = [
     "tool_calling"
 ]
 tool_names = [
-    'bash',        
-    'python_interpreter', 
-    'done', 
-    'todo',  
-    'mdify', 
-    "deep_analyzer",
-    "deep_researcher",
+    # 'bash',
+    # 'python_interpreter',
+    'done',
+    'todo',
+    # 'mdify',
+    # "deep_analyzer",
+    # "deep_researcher",
     # "browser",
-    "plotter",
+    # "plotter",
 ]
 
 #-----------------BASH TOOL CONFIG-----------------

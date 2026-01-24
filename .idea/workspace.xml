@@ -1,0 +1,765 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="55dfa174-fc76-455c-ab9a-2ba94298d1cb" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/deployment.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/deployment.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/configs/tool_calling_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/tool_calling_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/datasets/leetcode/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/datasets/leetcode/question.jsonl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/datasets/leetcode/question/1206.design_skiplist.md" beforeDir="false" afterPath="$PROJECT_DIR$/datasets/leetcode/question/1206.design_skiplist.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/datasets/leetcode/question_list.jsonl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/run_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/run_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/run_tool_calling_agent_experiment_async.py" beforeDir="false" afterPath="$PROJECT_DIR$/examples/run_tool_calling_agent_experiment_async.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use" beforeDir="false" afterPath="$PROJECT_DIR$/libs/browser-use" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.dockerignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.env.example" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.gitattributes" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/.git-blame-ignore-revs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/CONTRIBUTING.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/ISSUE_TEMPLATE/1_element_detection_bug.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/ISSUE_TEMPLATE/2_bug_report.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/ISSUE_TEMPLATE/3_feature_request.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/ISSUE_TEMPLATE/4_docs_issue.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/ISSUE_TEMPLATE/config.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/SECURITY.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/build-base-image.yml.disabled" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/claude.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/cloud_evals.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/docker.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/eval-on-pr.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/lint.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/package.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/publish.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/stale-bot.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.github/workflows/test.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.pre-commit-config.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/.python-version" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/AGENTS.MD" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/CLAUDE.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/Dockerfile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/Dockerfile.fast" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/LICENSE" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/bin/lint.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/bin/setup.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/bin/test.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/element.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/mouse.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/playground/flights.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/playground/mixed_automation.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/playground/playground.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/actor/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/cloud_events.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/gif.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/message_manager/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/message_manager/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/message_manager/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/prompts.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/system_prompt.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/system_prompt_flash.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/system_prompt_no_thinking.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/agent/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/cloud.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/events.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/profile.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/python_highlights.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/session.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/session_manager.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/video_recorder.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdog_base.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/aboutblank_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/crash_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/default_action_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/dom_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/downloads_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/local_browser_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/permissions_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/popups_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/recording_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/screenshot_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/security_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/browser/watchdogs/storage_state_watchdog.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/cli.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/cli_templates/advanced_template.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/cli_templates/default_template.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/cli_templates/tools_template.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/formatting.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/namespace.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/notebook_export.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/system_prompt.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/code_use/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/config.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/controller/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/enhanced_snapshot.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/markdown_extractor.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/playground/extraction.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/playground/multi_act.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/serializer/clickable_elements.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/serializer/code_use_serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/serializer/eval_serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/serializer/html_serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/serializer/paint_order.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/serializer/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/dom/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/exceptions.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/filesystem/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/filesystem/file_system.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/init_cmd.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/integrations/gmail/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/integrations/gmail/actions.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/integrations/gmail/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/anthropic/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/anthropic/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/aws/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/aws/chat_anthropic.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/aws/chat_bedrock.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/aws/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/azure/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/base.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/browser_use/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/browser_use/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/cerebras/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/cerebras/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/deepseek/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/deepseek/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/exceptions.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/google/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/google/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/google/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/groq/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/groq/parser.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/groq/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/messages.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/models.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/oci_raw/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/oci_raw/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/oci_raw/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/oci_raw/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/ollama/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/ollama/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/openai/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/openai/like.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/openai/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/openrouter/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/openrouter/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/schema.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/tests/test_anthropic_cache.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/tests/test_chat_models.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/tests/test_gemini_image.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/tests/test_groq_loop.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/tests/test_single_step.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/llm/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/logging_config.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/.dxtignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/__main__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/client.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/controller.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/manifest.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/mcp/server.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/observability.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/py.typed" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/screenshots/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/screenshots/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/sync/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/sync/auth.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/sync/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/telemetry/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/telemetry/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/telemetry/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tokens/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tokens/custom_pricing.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tokens/mappings.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tokens/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tokens/tests/test_cost.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tokens/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tools/registry/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tools/registry/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tools/service.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/tools/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/browser_use/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docker/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docker/base-images/chromium/Dockerfile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docker/base-images/python-deps/Dockerfile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docker/base-images/system/Dockerfile" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docker/build-base-images.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/actor/all-parameters.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/actor/basics.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/actor/examples.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/agent/all-parameters.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/agent/basics.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/agent/output-format.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/agent/prompting-guide.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/browser/all-parameters.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/browser/basics.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/browser/real-browser.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/browser/remote.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/code-agent/all-parameters.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/code-agent/basics.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/code-agent/example-products.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/code-agent/exporting.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/hooks.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/integrations/docs-mcp.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/integrations/mcp-server.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/tools/add.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/tools/available.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/tools/basics.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/tools/remove.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/customize/tools/response.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/get-help.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/monitoring/costs.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/monitoring/observability.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/monitoring/openlit.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/monitoring/telemetry.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/n8n-integration.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/roadmap.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/setup/contribution-guide.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/development/setup/local-setup.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/docs.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/apps/ad-use.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/apps/msg-use.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/apps/news-use.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/apps/vibetest-use.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/fast-agent.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/follow-up-tasks.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/more-examples.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/parallel-browser.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/playwright-integration.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/secure.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/examples/templates/sensitive-data.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/favicon.ico" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/favicon.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/browser-use-banner-dark.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/browser-use-banner.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/checks-passed.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/cloud-banner-dark.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/cloud-banner-js.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/cloud-banner-python.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/cloud-banner.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/images/laminar.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/introduction.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/logo/dark.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/logo/light.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/quickstart.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/quickstart_llm.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/docs/supported-models.mdx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/api/search/search_url.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/api/search/simple_search.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/ad-use/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/ad-use/ad_generator.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/ad-use/output/ad_20250908_150030.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/ad-use/output/landing_page_20250908_150030.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/msg-use/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/msg-use/login.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/msg-use/scheduler.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/news-use/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/apps/news-use/news_monitor.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/browser/cloud_browser.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/browser/parallel_browser.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/browser/playwright_integration.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/browser/real_browser.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/browser/save_cookies.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/browser/using_cdp.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/01_basic_task.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/02_fast_mode_gemini.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/03_structured_output.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/04_proxy_usage.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/05_search_api.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/cloud/env.example" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/code_agent/extract_products.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/code_agent/filter_webvoyager_dataset.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/2fa.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/action_filters.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/actor_use.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/advanced_search.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/cua.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/file_upload.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/notification.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/onepassword_2fa.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/parallel_agents.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/custom-functions/save_to_file_hugging_face.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/add_image_context.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/blocked_domains.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/custom_output.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/custom_system_prompt.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/download_file.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/follow_up_task.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/follow_up_tasks.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/initial_actions.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/large_blocklist.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/multi_tab.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/parallel_agents.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/process_agent_output.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/rerun_history.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/restrict_urls.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/scrolling_page.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/secure.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/sensitive_data.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/small_model_for_extraction.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/stop_externally.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/features/video_recording.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/file_system/alphabet_earnings.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/file_system/excel_sheet.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/file_system/file_system.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/getting_started/01_basic_search.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/getting_started/02_form_filling.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/getting_started/03_data_extraction.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/getting_started/04_multi_step_task.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/getting_started/05_fast_agent.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/agentmail/2fa.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/agentmail/email_tools.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/discord/discord_api.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/discord/discord_example.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/gmail_2fa_integration.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/slack/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/slack/slack_api.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/integrations/slack/slack_example.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/mcp/advanced_client.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/mcp/advanced_server.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/mcp/simple_client.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/mcp/simple_server.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/aws.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/azure_openai.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/browser_use_llm.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/cerebras_example.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/claude-4-sonnet.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/deepseek-chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/gemini.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/gpt-4.1.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/gpt-5-mini.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/langchain/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/langchain/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/langchain/chat.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/langchain/example.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/langchain/serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/lazy_import.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/llama4-groq.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/modelscope_example.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/novita.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/oci_models.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/ollama.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/openrouter.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/models/qwen.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/observability/openLLMetry.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/simple.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/ui/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/ui/command_line.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/ui/gradio_demo.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/ui/streamlit_demo.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/apply_to_job.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/buy_groceries.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/captcha.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/check_appointment.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/extract_pdf_content.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/find_influencer_profiles.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/onepassword.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/pcpartpicker.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/phone_comparison.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/examples/use-cases/shopping.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/pyproject.toml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/static/NiceHack69.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/static/browser-use-dark.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/static/browser-use.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/agent_tasks/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/agent_tasks/amazon_laptop.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/agent_tasks/browser_use_pip.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/iframe_template.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_cloud_browser.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_cross_origin_click.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_dom_serializer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_navigation.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_output_paths.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_page_stacked_template.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_page_template.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_proxy.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_screenshot.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_session_start.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_tabs.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/browser/test_true_cross_origin_click.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/conftest.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/evaluate_tasks.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/infrastructure/test_config.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/infrastructure/test_filesystem.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/infrastructure/test_registry_action_parameter_injection.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/infrastructure/test_registry_core.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/infrastructure/test_registry_validation.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/infrastructure/test_url_shortening.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/interactions/test_dropdown_aria_menus.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/interactions/test_dropdown_native.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/interactions/test_radio_buttons.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/interactions/test_radio_buttons.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/model_test_helper.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/test_llm_anthropic.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/test_llm_azure.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/test_llm_browseruse.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/test_llm_google.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/test_llm_openai.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/models/test_llm_schema_optimizer.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/security/test_domain_filtering.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/security/test_ip_blocking.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/security/test_security_flags.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/security/test_sensitive_data.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/ci/test_tools.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/mind2web_data/processed.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/scripts/debug_iframe_scrolling.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/libs/browser-use/tests/scripts/test_frame_hierarchy.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/agent/intraday_trading_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/agent/intraday_trading_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/agent/types.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/agent/types.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/aime24.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/aime24.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/aime25.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/aime25.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/context.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/context.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/gpqa.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/gpqa.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/gsm8k.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/gsm8k.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/leetcode.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/leetcode.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/benchmark/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/benchmark/server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/data/leetcode.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/data/leetcode.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/memory/types.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/memory/types.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/model/manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/model/manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/model/openrouter/serializer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/model/openrouter/serializer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/optimizer/grpo_optimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/optimizer/grpo_optimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/optimizer/reflection_optimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/optimizer/reflection_optimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/optimizer/reinforce_plus_plus_optimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/optimizer/reinforce_plus_plus_optimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/prompt/template/grpo_optimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/prompt/template/grpo_optimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/prompt/template/reinforce_plus_plus_optimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/prompt/template/reinforce_plus_plus_optimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/prompt/template/self_reflection_optimizer.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/prompt/template/self_reflection_optimizer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_benchmark.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_benchmark.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_leetcode.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_leetcode.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
+  <component name="ProjectId" id="37paP1zCQMSxXZ7PF3xOYmPieO6" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowPanel.toolwindow.highlight.mappings&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowPanel.toolwindow.highlight.symlinks&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowPanel.toolwindow.show.date&quot;: &quot;false&quot;,
+    &quot;WebServerToolWindowPanel.toolwindow.show.permissions&quot;: &quot;false&quot;,
+    &quot;WebServerToolWindowPanel.toolwindow.show.size&quot;: &quot;false&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/86134/Documents/GitHub/AgentWorld/examples/workdir/results/phase_2&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_2" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_1\ckpt\workdir" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_1+2\ckpt\workdir" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\direct" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_2\gpt-4o" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_2\gemini-3-flash-preview" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_1\gemini-3-flash-preview" />
+      <recent name="D:\86134\Documents\GitHub\AgentWorld\examples\workdir\results\phase_1" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.run_benchmark">
+    <configuration name="run_benchmark" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="AgentWorld" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/run_benchmark.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="run_tool_calling_agent_experiment_async" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="AgentWorld" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/examples/run_tool_calling_agent_experiment_async.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="test_leetcode" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="AgentWorld" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tests" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tests/test_leetcode.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="test_real_log" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="AgentWorld" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_real_log.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest in run_benchmark.py" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
+      <module name="AgentWorld" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/examples" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/examples/run_benchmark.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Python.test_leetcode" />
+      <item itemvalue="Python.run_benchmark" />
+      <item itemvalue="Python.test_real_log" />
+      <item itemvalue="Python.run_tool_calling_agent_experiment_async" />
+      <item itemvalue="Python tests.pytest in run_benchmark.py" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.run_benchmark" />
+        <item itemvalue="Python.run_tool_calling_agent_experiment_async" />
+        <item itemvalue="Python tests.pytest in run_benchmark.py" />
+        <item itemvalue="Python.test_leetcode" />
+        <item itemvalue="Python.test_real_log" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="55dfa174-fc76-455c-ab9a-2ba94298d1cb" name="Changes" comment="" />
+      <created>1767602438987</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1767602438987</updated>
+      <workItem from="1767602441712" duration="26472000" />
+      <workItem from="1767672931725" duration="21197000" />
+      <workItem from="1767754765449" duration="1007000" />
+      <workItem from="1767773323516" duration="66127000" />
+      <workItem from="1767934418069" duration="48967000" />
+      <workItem from="1768107915339" duration="39103000" />
+      <workItem from="1768231629000" duration="12714000" />
+      <workItem from="1768284724448" duration="25665000" />
+      <workItem from="1768376057470" duration="305000" />
+      <workItem from="1768452884190" duration="23794000" />
+      <workItem from="1768540194276" duration="66312000" />
+      <workItem from="1768723750012" duration="90011000" />
+      <workItem from="1768939258209" duration="24138000" />
+      <workItem from="1768999284855" duration="26399000" />
+      <workItem from="1769147449258" duration="8826000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/optimizer/reinforce_plus_plus_optimizer.py</url>
+          <line>237</line>
+          <option name="timeStamp" value="25" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/examples/run_tool_calling_agent_experiment.py</url>
+          <line>169</line>
+          <option name="timeStamp" value="40" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/optimizer/grpo_optimizer.py</url>
+          <line>819</line>
+          <option name="timeStamp" value="57" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/optimizer/grpo_optimizer.py</url>
+          <line>640</line>
+          <option name="timeStamp" value="58" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/prompt/context.py</url>
+          <line>1131</line>
+          <option name="timeStamp" value="60" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/tool/context.py</url>
+          <line>1218</line>
+          <option name="timeStamp" value="67" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/optimizer/reflection_optimizer.py</url>
+          <line>563</line>
+          <option name="timeStamp" value="72" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/examples/run_tool_calling_agent_experiment_async.py</url>
+          <line>510</line>
+          <option name="timeStamp" value="73" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/model/openrouter/chat.py</url>
+          <line>510</line>
+          <option name="timeStamp" value="74" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/model/openrouter/chat.py</url>
+          <line>541</line>
+          <option name="timeStamp" value="75" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/model/openrouter/chat.py</url>
+          <line>241</line>
+          <option name="timeStamp" value="77" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+    <watches-manager>
+      <configuration name="PythonConfigurationType">
+        <watch expression="messages" />
+        <watch expression="updated_prompt_vars" />
+      </configuration>
+    </watches-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/AgentWorld$run_tool_calling_agent_experiment.coverage" NAME="run_tool_calling_agent_experiment Coverage Results" MODIFIED="1768459031816" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$reflection_optimizer.coverage" NAME="reflection_optimizer Coverage Results" MODIFIED="1768565159853" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/optimizer" />
+    <SUITE FILE_PATH="coverage/AgentWorld$run_tool_calling_agent_experiment_test_optimizer_on_benchmark.coverage" NAME="run_tool_calling_agent_experiment.test_optimizer_on_benchmark Coverage Results" MODIFIED="1767620796669" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$match_reflection_keywords.coverage" NAME="match_reflection_keywords Coverage Results" MODIFIED="1768805470634" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/scripts" />
+    <SUITE FILE_PATH="coverage/AgentWorld$extract_incorrect_samples.coverage" NAME="extract_incorrect_samples Coverage Results" MODIFIED="1768550762388" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$pytest_in_test_real_log_py.coverage" NAME="pytest in test_real_log.py Coverage Results" MODIFIED="1768839394699" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/AgentWorld$pytest_in_run_benchmark_py.coverage" NAME="pytest in run_benchmark.py Coverage Results" MODIFIED="1769065587722" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$verify_phase1_samples.coverage" NAME="verify_phase1_samples Coverage Results" MODIFIED="1768806683018" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/scripts" />
+    <SUITE FILE_PATH="coverage/AgentWorld$run_tool_calling_agent_experiment_async.coverage" NAME="run_tool_calling_agent_experiment_async Coverage Results" MODIFIED="1769071369209" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$run_tool_calling_agent_reflection.coverage" NAME="run_tool_calling_agent_reflection Coverage Results" MODIFIED="1767775273360" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$run_benchmark.coverage" NAME="run_benchmark Coverage Results" MODIFIED="1769157678787" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$test_leetcode.coverage" NAME="test_leetcode Coverage Results" MODIFIED="1768970601974" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/AgentWorld$pytest_for_run_tool_calling_agent_experiment_test_optimizer_on_benchmark.coverage" NAME="pytest for run_tool_calling_agent_experiment.test_optimizer_on_benchmark Coverage Results" MODIFIED="1767620815501" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$pytest_for_test_benchmark_test_benchmark_manager.coverage" NAME="pytest for test_benchmark.test_benchmark_manager Coverage Results" MODIFIED="1767603234066" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/AgentWorld$pytest_in_test_benchmark_py.coverage" NAME="pytest in test_benchmark.py Coverage Results" MODIFIED="1767956390277" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/AgentWorld$test_benchmark.coverage" NAME="test_benchmark Coverage Results" MODIFIED="1767956405978" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/AgentWorld$temp.coverage" NAME="temp Coverage Results" MODIFIED="1768234555810" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/AgentWorld$test_real_log.coverage" NAME="test_real_log Coverage Results" MODIFIED="1768839499035" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/AgentWorld$analysis.coverage" NAME="analysis Coverage Results" MODIFIED="1768639997792" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$run_tool_calling_agent_experiment_asyncV2.coverage" NAME="run_tool_calling_agent_experiment_asyncV2 Coverage Results" MODIFIED="1768030728471" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/examples" />
+    <SUITE FILE_PATH="coverage/AgentWorld$test.coverage" NAME="test Coverage Results" MODIFIED="1768742651492" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+  </component>
+</project>

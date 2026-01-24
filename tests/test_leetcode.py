@@ -35,12 +35,13 @@ from src.benchmark.leetcode import CodeSubmitter
 # ==========================================
 # Configuration Section
 # ==========================================
-TARGET_MODEL = "openrouter/deepseek-v3.2"
-MAX_CONCURRENT_INFERENCE = 5  # 最大并发推理数量 
+TARGET_MODEL = "openrouter/gemini-3-flash-preview"
+MAX_CONCURRENT_INFERENCE = 1  # 最大并发推理数量
 # 🚫 定义不使用图片解析的模型列表
 NON_VISION_MODELS = [
     "openrouter/deepseek-v3.2",
     "openrouter/qwen3-max",
+    "openrouter/gemini-3-flash-preview",
     # 你可以在这里添加任何你想强制纯文本输入的模型
 ]
 class Response(BaseModel):

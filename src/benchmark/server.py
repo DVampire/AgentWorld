@@ -72,9 +72,9 @@ class BenchmarkManager(BaseModel):
         """Get benchmark instance by name."""
         return await self.benchmark_context_manager.get(name)
 
-    async def reset(self, name: str) -> Optional[Task]:
+    async def reset(self, name: str, split: Optional[str] = None) -> Optional[Task]:
         """Reset benchmark progress."""
-        return await self.benchmark_context_manager.reset(name)
+        return await self.benchmark_context_manager.reset(name, split)
 
     async def step(self, name: str) -> Optional[Task]:
         """Get next benchmark task."""

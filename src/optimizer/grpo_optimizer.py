@@ -1,4 +1,4 @@
-from os import name
+import os
 from typing import List, Optional, Any, Dict, Union, Callable
 from pydantic import ConfigDict, Field
 from pydantic import BaseModel
@@ -11,6 +11,7 @@ from src.memory import EventType
 from src.utils import dedent
 import math
 import tiktoken
+import json
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -39,6 +40,7 @@ class GrpoOptimizer(Optimizer):
     clip_ratio: float = Field(default=0.2, description="Clipping ratio for GRPO")
     beta: float = Field(default=0.01, description="KL penalty coefficient")
     reward_fn: Optional[Callable[[str,str,str], Any]] = Field(default=None, description="Custom reward function for evaluating a single candidate")
+    batchsize: int = Field(default=10, description="Batch size for aggregating historical reflections")
 
     def __init__(self,
                  workdir: str,
@@ -51,6 +53,7 @@ class GrpoOptimizer(Optimizer):
                  clip_ratio: float = 0.2,
                  beta: float = 0.01,
                  reward_fn: Optional[Callable[[str,str,str], Any]] = None,
+                 batchsize: int = 10,
                  **kwargs
                  ):
         """
@@ -86,9 +89,50 @@ class GrpoOptimizer(Optimizer):
         self.clip_ratio = clip_ratio
         self.beta = beta
         self.reward_fn = reward_fn
+        self.batchsize = batchsize
 
         # Initialize tokenizer for text similarity calculation
         self.tokenizer = tiktoken.encoding_for_model('gpt-4o')
+
+    async def _read_historical_reflections(self, results_file_path: str) -> List[str]:
+        """
+        Read historical phase 1 reflections from results file.
+
+        Args:
+            results_file_path: Path to the results JSON file
+
+        Returns:
+            List of historical reflection texts (phase 1)
+        """
+        import json
+        historical_reflections = []
+
+        try:
+            if not os.path.exists(results_file_path):
+                logger.warning(f"Results file not found: {results_file_path}")
+                return historical_reflections
+
+            with open(results_file_path, 'r', encoding='utf-8') as f:
+                results_data = json.load(f)
+
+            results = results_data.get('results', [])
+            for result in reversed(results):  # Start from most recent
+                reflection_process = result.get('reflection_process', {})
+                phase1_reflections = reflection_process.get('reflection_rounds', [])
+
+                # Extract the last phase 1 reflection from all rounds
+                if phase1_reflections:
+                    # Find all phase 1 rounds and get the last one
+                    phase1_rounds = [r for r in phase1_reflections if r.get('phase') == 1]
+                    if phase1_rounds and 'reflection_text' in phase1_rounds[-1]:
+                        historical_reflections.append(phase1_rounds[-1]['reflection_text'])
+
+            logger.info(f"Loaded {len(historical_reflections)} historical phase 1 reflections")
+            return historical_reflections
+
+        except Exception as e:
+            logger.warning(f"Failed to read historical reflections: {e}")
+            return historical_reflections
 
     async def get_trainable_variables(self, agent: Optional[Any] = None) -> Dict[str, Any]:
         """
@@ -163,7 +207,7 @@ class GrpoOptimizer(Optimizer):
 
     async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str,
                                   candidate_solutions: List[str], rewards: List[float], advantages: List[float],
-                                  policy_ratios: List[float], objectives: List[float]) -> str:
+                                  policy_ratios: List[float], objectives: List[float], previous_evaluation: Optional[EvaluationResult] = None) -> str:
         """
         Generate the reflection analysis for all variables based on RL metrics and candidate solutions.
 
@@ -200,6 +244,16 @@ class GrpoOptimizer(Optimizer):
             candidates_text += f"Solution:\n{solution}\n"
             candidates_text += f"</candidate_{i+1}>\n\n"
 
+            # Format previous evaluation if available
+            previous_evaluation_text = ""
+            if previous_evaluation:
+                previous_evaluation_text = f"""
+        Previous Evaluation Result:
+        - Satisfied: {previous_evaluation.is_satisfied}
+        - Reasoning: {previous_evaluation.reasoning}
+
+        """
+
         system_modules = {}
         agent_message_modules = {
             "task": task,
@@ -228,7 +282,7 @@ class GrpoOptimizer(Optimizer):
             raise
 
     async def _improve_variables(self, task: str, variables: Dict[str, Variable],
-                                 reflection_analysis: str) -> Dict[str, Any]:
+                                 reflection_analysis: str, historical_reflections: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -268,11 +322,28 @@ class GrpoOptimizer(Optimizer):
         # Format all variables for context
         current_variables_text = await self._format_variables(variables)
 
+        # Combine current reflection with historical reflections if available
+        combined_reflection = reflection_analysis
+        if historical_reflections:
+            logger.info(f"Aggregating {len(historical_reflections)} historical reflections with current reflection for batch processing")
+            combined_reflection = f"""
+Current Task Reflection:
+{reflection_analysis}
+
+Historical Reflections from Previous Tasks:
+"""
+            for i, hist_reflection in enumerate(historical_reflections):
+                combined_reflection += f"\n--- Historical Reflection {i+1} ---\n{hist_reflection}"
+
+            combined_reflection += "\n\nPlease analyze all the above reflections (current and historical) to identify common reasoning patterns and provide more generalizable improvements that work across multiple tasks."
+        else:
+            logger.info("No historical reflections available, using current reflection only")
+
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
-            "reflection_analysis": reflection_analysis
+            "reflection_analysis": combined_reflection
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_improvement",
@@ -429,7 +500,8 @@ class GrpoOptimizer(Optimizer):
             Task: {task}
 
             Review the current solution and reasoning provided below and decide if the optimization process can stop.
-            If the solution is correct, complete, and follows all requirements, set is_satisfied to True.
+            Evaluate both the correctness of the content and the format compliance. The solution must be correct, complete, follow all requirements, and be in the proper format that can be correctly parsed by the evaluation system.
+            If the solution is correct, complete, follows all requirements, and is properly formatted, set is_satisfied to True.
             Otherwise, set is_satisfied to False and provide the reason.
 
             Return your decision in the specified structured format.
@@ -462,6 +534,7 @@ class GrpoOptimizer(Optimizer):
             task: str,
             ground_truth: str,
             files: Optional[List[str]] = None,
+            results_file_path: Optional[str] = None,
             **kwargs
     ):
         """
@@ -530,10 +603,22 @@ class GrpoOptimizer(Optimizer):
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
         current_agent_reasoning = agent_response_extra_data['reasoning']
-        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {old_agent_result}"
+        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
         logger.info(f"| ✅ Old solution obtained")
 
         old_solution = current_solution
+
+        # For analysis
+        initial_agent_result = current_agent_result
+        initial_agent_reasoning = current_agent_reasoning
+
+        # Separate storage for Phase 1 and Phase 2
+        phase1_reflections = []
+        phase1_improvements = []
+        phase2_reflections = []
+        phase2_improvements = []
+        previous_evaluation: Optional[EvaluationResult] = None
+
         # Run the optimization loop.
         for opt_step in range(optimization_steps):
             logger.info(f"| {'=' * 60}")
@@ -590,14 +675,36 @@ class GrpoOptimizer(Optimizer):
                             advantages=advantages,
                             policy_ratios=policy_ratios,
                             objectives=grpo_objectives,
+                            previous_evaluation=previous_evaluation,
                         )
+                        # Record phase 1 reflection text for later saving/analysis
+                        try:
+                            phase1_reflections.append(reflection_analysis)
+                        except Exception:
+                            pass
 
-                        # Improve trainable variables based on reflection
+                        # Read historical reflections and improve trainable variables
+                        historical_reflections = None
+                        if results_file_path:
+                            historical_reflections = await self._read_historical_reflections(results_file_path)
+                            # Take only the most recent batchsize-1 reflections
+                            if len(historical_reflections) >= self.batchsize - 1:
+                                historical_reflections = historical_reflections[:(self.batchsize - 1)]
+
                         improved_variables = await self._improve_variables(
                             task=task,
                             variables=trainable_variables,
                             reflection_analysis=reflection_analysis,
+                            historical_reflections=historical_reflections,
                         )
+                        # Record phase 1 improved variables (stringified) for later saving/analysis
+                        try:
+                            phase1_improvements.append(json.dumps(improved_variables, ensure_ascii=False))
+                        except Exception:
+                            try:
+                                phase1_improvements.append(str(improved_variables))
+                            except Exception:
+                                pass
 
                         # Update trainable variables (now flattened structure)
                         # Group prompt sub-variables together for batch update
@@ -736,7 +843,11 @@ class GrpoOptimizer(Optimizer):
                         advantages=advantages,
                         policy_ratios=policy_ratios,
                         objectives=grpo_objectives,
+                        previous_evaluation=previous_evaluation,
                     )
+
+                    # For analysis
+                    phase2_reflections.append(solution_reflection)
 
                     # Improve solution based on reflection
                     improved_solution_result = await self._improve_solution(
@@ -744,6 +855,8 @@ class GrpoOptimizer(Optimizer):
                         variables=solution_variables,
                         reflection_analysis=solution_reflection,
                     )
+
+                    phase2_improvements.append(f'Result: {improved_solution_result.result}\nReasoning: {improved_solution_result.reasoning}')
 
                     # Check if solution was improved
                     if improved_solution_result.result:
@@ -785,6 +898,9 @@ class GrpoOptimizer(Optimizer):
                     task=task,
                     execution_result=current_solution
                 )
+
+                # Update previous evaluation for next iteration
+                previous_evaluation = evaluation
 
                 if evaluation.is_satisfied:
                     logger.info(f"| 🎉 Early termination triggered: {evaluation.reason}")
@@ -829,4 +945,9 @@ class GrpoOptimizer(Optimizer):
         logger.info(f"| Final solution:\n{current_solution}")
         logger.info(f"| {'=' * 60}")
 
-        return current_agent_reasoning, current_agent_result
+        # Combine phase data into structured dicts to preserve phase separation
+        reflecion_text_struct = {"phase1": phase1_reflections, "phase2": phase2_reflections}
+        improved_solution_struct = {"phase1": phase1_improvements, "phase2": phase2_improvements}
+
+        return initial_agent_result, initial_agent_reasoning, reflecion_text_struct, improved_solution_struct, current_agent_reasoning, current_agent_result
+        # return current_agent_reasoning, current_agent_result
