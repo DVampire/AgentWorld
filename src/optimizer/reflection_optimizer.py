@@ -20,7 +20,7 @@ class ImprovedVariable(BaseModel):
     variables: str = Field(description="The improved content for this variable")
 
 class ImprovedVariables(BaseModel):
-    variables: List[ImprovedVariable] = Field(default=[], description="The variables to improve")
+    variables: List[ImprovedVariable] = Field(description="The variables to improve")
 
 class EvaluationResult(BaseModel):
     is_satisfied: bool = Field(description="Whether the current solution and variables are satisfactory and optimization can stop")

@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
                        default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
-    parser.add_argument("--concurrency", type=int, default=1, help="number of concurrent tasks to run")
+    parser.add_argument("--concurrency", type=int, default=8, help="number of concurrent tasks to run")
     parser.add_argument("--split", type=str, default='test', help="the split of dataset", choices=['train', 'test'])
     parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
     parser.add_argument("--model_name", type=str, default='openrouter/gpt-4o', help="")

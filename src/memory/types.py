@@ -58,11 +58,11 @@ class Importance(Enum):
     LOW = "low"
 
 class Insight(BaseModel):
-    id: str = Field(..., description="The unique identifier for the insight.")
-    content: str = Field(..., description="The insight content")
-    importance: Importance = Field(..., description="Importance level")
-    source_event_id: Optional[str] = Field(None, description="ID of the event that generated this insight")
-    tags: List[str] = Field(default_factory=list, description="Tags for categorization")
+    id: str = Field(description="The unique identifier for the insight.")
+    content: str = Field(description="The insight content")
+    importance: Importance = Field(description="Importance level")
+    source_event_id: str = Field(description="ID of the event that generated this insight")
+    tags: List[str] = Field(description="Tags for categorization")
     
     def __str__(self):
         string = dedent(f"""<insight>
@@ -78,9 +78,9 @@ class Insight(BaseModel):
         return self.__str__()
 
 class Summary(BaseModel):
-    id: str = Field(..., description="The unique identifier for the summary.")
-    importance: Importance = Field(..., description="Importance level")
-    content: str = Field(..., description="The summary content")
+    id: str = Field(description="The unique identifier for the summary.")
+    importance: Importance = Field(description="Importance level")
+    content: str = Field(description="The summary content")
     
     def __str__(self):
         string = dedent(f"""<summary>
