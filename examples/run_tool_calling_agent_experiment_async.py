@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
     parser.add_argument("--model_name", type=str, default='openrouter/gpt-4o', help="")
     parser.add_argument("--optimize_trainable_variables", action='store_true', default=True, help="optimize trainable variables")
-    parser.add_argument("--optimize_solution", action='store_true', default=True, help="optimize solution")
+    parser.add_argument("--optimize_solution", action='store_true', default=False, help="optimize solution")
     parser.add_argument("--resume", action='store_true', default=True,
                        help="Resume from the latest results file. Will automatically find the most recent "
                             "matching results file, remove incorrect answers, and only retry failed tasks.")

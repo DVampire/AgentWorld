@@ -192,7 +192,7 @@ class ToolCallingAgent(Agent):
                 if tool_args:
                     try:
                         tool_args = dirtyjson.loads(tool_args)
-                    except (dirtyjson.JSONDecodeError, TypeError):
+                    except (dirtyjson.Error, ValueError, TypeError):
                         tool_args = {}
                 
                 logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
