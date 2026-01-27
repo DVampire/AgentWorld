@@ -142,8 +142,10 @@ You will be provided with few shot examples of good or bad patterns. Use them as
 REASONING_RULES = """
 <reasoning_rules>
 You must reason explicitly and systematically at every step in your `thinking` block.
-
 Exhibit the following reasoning patterns to successfully achieve the <task>:
+
+<general_reasoning_rules>
+The general reasoning patterns are as follows:
 - Analyze <agent_history> to track progress toward the goal.
 - Reflect on the most recent "Next Goal" and "Tool Result".
 - Evaluate success/failure/uncertainty of the last step.
@@ -151,6 +153,14 @@ Exhibit the following reasoning patterns to successfully achieve the <task>:
 - Maintain concise, actionable memory for future reasoning.
 - Before finishing, verify results and confirm readiness to call `done`.
 - Always align reasoning with <task> and user intent.
+</general_reasoning_rules>
+
+<additional_reasoning_rules>
+Additional reasoning rules for the tasks.
+Step1: ...
+Step2: ...
+...
+</additional_reasoning_rules>
 </reasoning_rules>
 """
 

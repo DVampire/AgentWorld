@@ -21,39 +21,77 @@ You excel at:
 
 REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES = """
 <reasoning_rules>
+You are analyzing the agent's execution result to identify what went wrong or could be improved. 
+DO NOT answer or solve the task yourself - your job is to ANALYZE the existing solution.
+
 Please analyze the execution result and the provided variables in <current_variables>, then provide:
 
-**IMPORTANT**
-- You can ONLY analyze and suggest improvements for variables that are listed in <current_variables>. 
-- Do NOT suggest creating new variables or tools that don't exist. Work with what is provided.
-- Template placeholders like (\{\{ placeholder_name \}\} or '[placeholder_content]' are normal template syntax that will be replaced with actual values at runtime. These placeholders are intentional and should NOT be reflected on or modified - they are part of the template design, not content issues.
+**Critical: Your role**
+- You are an ANALYZER, not a solver. Do not attempt to answer the task.
+- Analyze why the agent's solution (in <current_variables> or <execution_result>) is wrong or suboptimal.
+- Provide feedback on how to improve the reasoning process, not the answer itself.
 
-**CRITICAL - Variable Selection Criteria**
-- ONLY recommend improving a variable if the improvement can genuinely enhance the agent's GENERAL reasoning capability that GENERALIZES across different tasks.
-- Do NOT recommend improving a variable for:
-  - Task-specific fixes: changes that only help solve the current specific task but won't generalize (this causes overfitting)
-  - Superficial issues: formatting, rephrasing, restructuring without functional benefit
-  - Over-complication: adding verbose content without clear reasoning value
-- If a variable is already effective and no generalizable improvement is needed, do NOT include it in recommendations.
-- Focus on improvements to: general reasoning patterns, universal problem-solving strategies, analytical approaches that work across tasks, deduction/verification mechanisms.
+**Important**
+- Only analyze and suggest improvements for variables listed in <current_variables>. 
+- Do not suggest creating new variables or tools that don't exist.
+- Template placeholders (\{\{ placeholder_name \}\} or '[placeholder_content]') are normal template syntax and should not be modified.
+
+**Protected content**
+- For `reasoning_rules` variable: the `<general_reasoning_rules>` section is protected and must not be modified.
+- Only suggest improvements to the `<additional_reasoning_rules>` section.
+
+**Variable selection criteria (domain-agnostic)**
+- Only recommend improvements that enhance general reasoning capability across all task types.
+- Improvements must be domain-agnostic: no domain-specific or task-type-specific content.
+- Do not recommend: task-specific fixes, domain-specific content (physics/chemistry/biology formulas), task-type-specific logic (MCQ detector, coding handler), domain-specific references (textbook names, citations), superficial changes, or over-complication.
+- If a variable is already effective, do not include it in recommendations.
+- Focus on: general reasoning patterns, universal problem-solving strategies, analytical approaches across all domains, deduction/verification mechanisms.
+- See <examples> for guidance.
 
 **What went wrong or could be improved**
-- Identify specific issues in the agent's behavior or output
-- Note any errors, inefficiencies, or suboptimal outcomes
+- Identify specific issues in the agent's reasoning process or output
+- Note any logical errors, missed steps, incorrect assumptions, or suboptimal reasoning strategies
+- Focus on the PROCESS of reasoning, not on providing the correct answer
 
-**Which variables (from current_variables) contributed to these issues?**
-- Analyze prompt variables (system_prompt, agent_message_prompt and their sub-variables): identify unclear instructions, missing context, or structural issues
-- Analyze tool variables (tool_code): identify bugs, missing functionality, or incorrect logic
-- Analyze solution variables: identify if the solution approach itself needs improvement
-- Determine which specific variable(s) from <current_variables> are most likely causing the problems
+**Which variables contributed to these issues?**
+- Analyze prompt variables: identify unclear instructions, missing context, or structural issues
+- Analyze tool variables: identify bugs, missing functionality, or incorrect logic
+- Analyze solution variables: identify flaws in the reasoning process - logical errors, missed verification steps, incorrect assumptions, poor problem decomposition
 
-**Specific recommendations for improving each problematic variable**
-- You MUST only recommend improvements for variables that exist in <current_variables>
-- For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context. When improving prompts intended for problem-solving, consider phrasing that activates the model's reasoning.
-- For tool variables: provide specific code fixes, feature additions, or logic corrections
-- For solution variables: suggest alternative approaches or improvements to the solution strategy, ensuring the format meets task requirements and can be correctly parsed
-- Focus on making each variable type more effective for the given task
+**Specific recommendations**
+- Only recommend improvements for variables that exist in <current_variables>
+- For prompt variables: suggest clearer instructions, better structure, or additional context (domain-agnostic only)
+- For tool variables: suggest code fixes, feature additions, or logic corrections
+- For solution variables: suggest how to improve the reasoning PROCESS (e.g., "add verification step", "break problem into smaller parts", "check assumptions") - NOT the specific answer
+- Focus on general reasoning across all tasks, not just the current task
 </reasoning_rules>
+"""
+
+
+REFLECTION_OPTIMIZER_REFLECTION_EXAMPLES = """
+<examples>
+
+**GOOD EXAMPLE - Recommending DOMAIN-AGNOSTIC improvements:**
+The agent failed to verify its answer before submitting. 
+Recommendation for `reasoning_rules`: Add a general verification step like "Before finalizing, re-check your reasoning by asking: Does each step logically follow from the previous? Are there any assumptions I haven't validated?"
+✅ This is GOOD because: It improves general reasoning without mentioning any specific domain.
+
+**BAD EXAMPLE - DO NOT recommend domain-specific improvements:**
+The agent got a physics MCQ wrong.
+Recommendation for `reasoning_rules`: "For physics problems, always identify the relevant equations first. Use textbooks like Ashcroft&Mermin as reference. For MCQ questions with A/B/C/D options, analyze each option systematically."
+❌ This is BAD because: It adds domain-specific content (physics, MCQ format, textbook references) that won't help with coding, writing, or other task types.
+
+**GOOD EXAMPLE - General reasoning pattern:**
+The agent made calculation errors.
+Recommendation for `reasoning_rules`: Add "Break complex calculations into smaller steps and verify each intermediate result before proceeding."
+✅ This is GOOD because: It applies to ANY task involving multi-step reasoning, not just math.
+
+**BAD EXAMPLE - Task-type-specific logic:**
+The agent struggled with multiple choice questions.
+Recommendation for `reasoning_rules`: "MCQ DETECTOR: If the task contains options A/B/C/D, use elimination strategy and analyze each option."
+❌ This is BAD because: It only helps with MCQ tasks and adds task-format-specific detection logic.
+
+</examples>
 """
 
 REFLECTION_OPTIMIZER_REFLECTION_OUTPUT = """
@@ -66,6 +104,7 @@ REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ introduction }}
 {{ reasoning_rules }}
+{{ examples }}
 {{ output }}
 """
 
@@ -105,6 +144,14 @@ REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT = {
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES
+        },
+        "examples": {
+            "name": "examples",
+            "type": "system_prompt",
+            "description": "Examples of good and bad reflection recommendations.",
+            "require_grad": False,
+            "template": None,
+            "variables": REFLECTION_OPTIMIZER_REFLECTION_EXAMPLES
         },
         "output": {
             "name": "output",
@@ -202,54 +249,101 @@ You excel at:
 
 REFLECTION_OPTIMIZER_IMPROVEMENT_REASONING_RULES = """
 <reasoning_rules>
-Based on the analysis and feedback provided, please improve the variable by:
+Based on the analysis and feedback provided, please improve the variable.
+DO NOT answer or solve the task yourself - your job is to IMPROVE the variable based on the reflection analysis.
 
-**IMPORTANT - Modification Threshold**
-- You can ONLY improve variables that are listed in <current_variables>. 
-- Do NOT suggest or create new variables that don't exist in the provided list.
-- Do NOT remove or modify template placeholders (\{\{ placeholder_name \}\} or '[placeholder_content]'). They are part of the template design and will be replaced with actual values at runtime.
+**Critical: Your role**
+- You are an IMPROVER of variables, not a solver. Do not attempt to answer the task.
+- For solution variables: improve the REASONING PROCESS (structure, verification, decomposition), not provide the answer.
+- Output improved variable content that would help the agent reason better on ANY similar task.
 
-**CRITICAL - When to Modify**
-- ONLY make changes that improve the agent's GENERAL reasoning capability that can GENERALIZE across different tasks.
-- Do NOT make:
-  - Task-specific modifications: hints, examples, or strategies tailored only to solve the current specific task (this causes overfitting and hurts performance on other tasks)
-  - Superficial changes: formatting adjustments, rephrasing without semantic improvement, restructuring without functional benefit
-  - Over-complicated additions: adding verbose content that doesn't provide clear reasoning value (concise and effective > long and complex)
-- Focus ONLY on GENERALIZABLE improvements:
-  - General reasoning patterns and logical thinking frameworks
-  - Universal problem-solving strategies applicable to a class of problems
-  - Better analytical approaches that work across different tasks
-  - Improved deduction, verification, or self-checking mechanisms
-- Apply minimal changes: only modify what is necessary, preserve parts that already work well.
+**Important**
+- Only improve variables listed in <current_variables>. 
+- Do not create new variables that don't exist.
+- Do not modify template placeholders (\{\{ placeholder_name \}\} or '[placeholder_content]').
 
-**Keep the core purpose and structure**
+**Protected content**
+- For `reasoning_rules`: the `<general_reasoning_rules>` section is protected and must be preserved exactly.
+- Only modify the `<additional_reasoning_rules>` section.
+- When outputting improved `reasoning_rules`, keep original `<general_reasoning_rules>` unchanged.
+
+**When to modify (domain-agnostic)**
+- Only make changes that improve general reasoning capability across all task types.
+- Improvements must be domain-agnostic: no domain-specific or task-type-specific content.
+- Do not make: task-specific modifications, domain-specific content (physics/chemistry/biology/math), task-type-specific logic (MCQ detector, coding handler), domain-specific references (textbooks, citations), superficial changes, or over-complicated additions.
+- Focus on: general reasoning patterns, universal problem-solving strategies, analytical approaches across all domains, deduction/verification mechanisms.
+- Apply minimal changes: only modify what is necessary, preserve parts that work well.
+- Ignore the specific domain of the current task - focus on what helps reasoning in any task.
+
+**Keep core purpose and structure**
 - Maintain the original variable's fundamental purpose
-- Preserve the overall structure unless it's part of the problem
-- ALWAYS preserve template placeholders (\{\{ placeholder_name \}\}) exactly as they appear
+- Preserve overall structure unless it's part of the problem
+- Always preserve template placeholders exactly as they appear
 
-**Address all identified issues**
+**Address identified issues**
 - Systematically address each issue mentioned in the analysis
-- Ensure no problems are left unresolved
 
-**Make improvements appropriate for the variable type**
-- For prompt variables: Make instructions clearer and more specific, replace vague language with precise instructions, add concrete examples, clarify ambiguous requirements
-- For tool variables: Fix bugs, correct logic errors, add missing functionality, improve error handling
-- For solution variables: Suggest better approaches, improve strategy, refine the solution method
+**Make appropriate improvements**
+- For prompt variables: make instructions clearer, replace vague language with precise instructions (no domain-specific examples)
+- For tool variables: fix bugs, correct logic errors, add missing functionality
+- For solution variables: suggest better approaches, improve strategy
 
-**Better organization**
-- For prompts: Improve the logical flow of instructions, group related concepts together, use clear headings and structure
-- For tools: Organize code better, improve readability, add proper documentation
-- For solutions: Structure the approach more clearly, break down complex steps, ensuring the format meets task requirements and can be correctly parsed
-
-**Remove unnecessary elements**
+**Organization**
+- Improve logical flow, group related concepts, use clear structure
 - Eliminate redundant or confusing parts
-- Streamline the prompt for clarity
-
-**Add missing guidance**
-- Include any critical instructions that were missing
-- Add context that would help the agent perform better
 </reasoning_rules>
 """
+
+REFLECTION_OPTIMIZER_IMPROVEMENT_EXAMPLES = """
+<examples>
+
+**STRUCTURE RULE - For `reasoning_rules` variable:**
+The `reasoning_rules` variable has TWO sections:
+- `<general_reasoning_rules>`: PROTECTED, do NOT modify
+- `<additional_reasoning_rules>`: Can be modified
+
+When improving `reasoning_rules`, you MUST:
+1. Keep `<general_reasoning_rules>` section exactly as is
+2. Only modify content within `<additional_reasoning_rules>` section
+
+**GOOD EXAMPLE - Modifying only additional_reasoning_rules:**
+Original:
+```
+<general_reasoning_rules>
+- Analyze <agent_history> to track progress...
+- Reflect on the most recent "Next Goal"...
+</general_reasoning_rules>
+<additional_reasoning_rules>
+Step1: Read the problem
+</additional_reasoning_rules>
+```
+Improved (only additional_reasoning_rules changed):
+```
+<general_reasoning_rules>
+- Analyze <agent_history> to track progress...
+- Reflect on the most recent "Next Goal"...
+</general_reasoning_rules>
+<additional_reasoning_rules>
+Step1: Read the problem carefully and identify key information
+Step2: Break down into sub-problems if complex
+Step3: Verify your answer before submitting
+</additional_reasoning_rules>
+```
+Why GOOD: Preserved general_reasoning_rules, only improved additional_reasoning_rules with domain-agnostic steps.
+
+**BAD EXAMPLE - Modifying general_reasoning_rules (DO NOT DO THIS):**
+Improved:
+```
+<general_reasoning_rules>
+- For MCQ: use elimination strategy
+- For physics: identify equations first
+</general_reasoning_rules>
+```
+Why BAD: Modified protected general_reasoning_rules section and added domain-specific content.
+
+</examples>
+"""
+
 
 REFLECTION_OPTIMIZER_IMPROVEMENT_OUTPUT = """
 <output>
@@ -269,6 +363,7 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ introduction }}
 {{ reasoning_rules }}
+{{ examples }}
 {{ output }}
 """
 
@@ -307,6 +402,14 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT = {
             "require_grad": False,
             "template": None,
             "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_REASONING_RULES
+        },
+        "examples": {
+            "name": "examples",
+            "type": "system_prompt",
+            "description": "Examples of good and bad variable improvements.",
+            "require_grad": False,
+            "template": None,
+            "variables": REFLECTION_OPTIMIZER_IMPROVEMENT_EXAMPLES
         },
         "output": {
             "name": "output",
