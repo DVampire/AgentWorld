@@ -194,7 +194,7 @@ def format_tools(tools: List[BaseModel]) -> str:
 
 class ToolInputArgs(BaseModel):
     name: str = Field(description="The name of the tool.")
-    args: Dict[str, Any] = Field(default={}, description="The arguments of the tool.")
+    args: str = Field(description='The arguments of the tool as a JSON string. Must be a valid JSON object string, not empty. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
 
 # -------- Dynamically generate ThinkOutput --------
 class ThinkOutput(BaseModel):
@@ -209,7 +209,7 @@ class ThinkOutput(BaseModel):
         description="State the next immediate goals and tool calls."
     )
     tool: List[ToolInputArgs] = Field(
-        description='The list of tool calls to be executed in sequence. e.g., [{"name": "tool_name", "args": {"param1": "value1", "param2": "value2"}}, ...]'
+        description='The list of tool calls. args must be a JSON string, not an object. e.g., [{"name": "done", "args": "{\"result\": \"D\", \"reasoning\": \"The answer is D because...\"}"}]'
     )
 
     def __str__(self) -> str:

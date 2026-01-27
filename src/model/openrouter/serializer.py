@@ -388,7 +388,8 @@ class OpenRouterChatSerializer:
     
     @staticmethod
     def serialize_response_format(
-        response_format: Union[Type[BaseModel], BaseModel]
+        response_format: Union[Type[BaseModel], BaseModel],
+        model_name: str = "openrouter/gemini-3-flash-preview",
     ) -> Dict[str, Any]:
         """
         Format response_format from Pydantic model to OpenRouter JSON schema format.
@@ -536,7 +537,11 @@ class OpenRouterChatSerializer:
                         additional_props = True
                     else:
                         additional_props = False
-
+                
+                # Strict mode for OpenAI models    
+                if model_name in ["openai/gpt-4o", "openai/gpt-4.1", "openai/gpt-5", "openai/gpt-5.1", "openai/gpt-5.2", "openai/o3"]:
+                    additional_props = False
+                    
                 result = {
                     "type": "object",
                     "properties": new_props,

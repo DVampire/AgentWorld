@@ -9,7 +9,7 @@ import argparse
 from mmengine import DictAction
 import asyncio
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List, Dict, Any
 
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
@@ -41,7 +41,7 @@ async def test_chat():
     logger.info(f"| Testing chat with different models")
     models = [
         # OpenAI models
-        # "openrouter/gpt-4o",
+        "openrouter/gpt-4o",
         # "openrouter/gpt-4.1",
         # "openrouter/gpt-5",
         # "openrouter/gpt-5.1",
@@ -67,7 +67,7 @@ async def test_chat():
         # Gemini models
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
-        "openrouter/gemini-3-flash-preview",
+        # "openrouter/gemini-3-flash-preview",
         # "openrouter/gemini-3-pro-preview",
         # "google/gemini-2.5-flash",
         # "google/gemini-2.5-pro",
@@ -220,35 +220,41 @@ async def test_response_format():
         # "google/gemini-3-pro-preview",
     ]
     
-    class Add(BaseModel):
-        a: int = Field(description="The first number to add")
-        b: int = Field(description="The second number to add")
-        result: int = Field(description="The result of the addition")
-
-    class AddDict(BaseModel):
-        adds: Dict[str, Add] = Field(description="The dictionary of additions to perform")
-        reasoning: str = Field(description="The reasoning process of the addition")
-        
-    class AddList(BaseModel):
-        adds: List[Add] = Field(description="The list of additions to perform")
-        reasoning: str = Field(description="The reasoning process of the addition")
+    class ToolInputArgs(BaseModel):
+        name: str = Field(description="The name of the tool")
+        args: Dict[str, Any] = Field(description="The arguments of the tool")
+    
+    class ThinkOutput(BaseModel):
+        thinking: str = Field(description="The thinking process of the assistant")
+        previous_goal: str = Field(description="The previous goal of the assistant")
+        next_goal: str = Field(description="The next goal of the assistant")
+        tool: List[ToolInputArgs] = Field(description="The list of tools to call")
+    
+    prompt = """
+    <available_tools>
+    available_tools:
+    <done>
+    done: DoneTool
+     - result: The result of the task
+     - reasoning: The reasoning process of the task
+    </done>
+    <example>
+    Example: {"name": "done", "args": {"result": "The task has been completed.", "reasoning": "The task has been completed successfully."}}
+    </example>
+    
+    Please add the numbers 1 and 2, get the result and call the done tool with the result.
+    """
     
     messages = [
         SystemMessage(content="You are a helpful assistant."),
         HumanMessage(content=[
-            ContentPartText(text="Please add the numbers 1 and 2, 3 and 4, 5 and 6, 7 and 8, 9 and 10."),
+            ContentPartText(text=prompt),
         ]),
     ]
     
     for model in models:
-        logger.info(f"| Testing {model}")
-        response = await model_manager(model=model, messages=messages, response_format=AddDict)
-        logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
-        
-        parsed_response = response.extra.parsed_model
-        print(parsed_response)
-        
-        response = await model_manager(model=model, messages=messages, response_format=AddList)
+    
+        response = await model_manager(model=model, messages=messages, response_format=ThinkOutput)
         logger.info(f"| {model} Response: {json.dumps(response.model_dump(), indent=4)}")
         
         parsed_response = response.extra.parsed_model

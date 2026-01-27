@@ -51,10 +51,12 @@ def parse_args():
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
                        default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
-    parser.add_argument("--concurrency", type=int, default=8, help="number of concurrent tasks to run")
+    parser.add_argument("--concurrency", type=int, default=1, help="number of concurrent tasks to run")
     parser.add_argument("--split", type=str, default='test', help="the split of dataset", choices=['train', 'test'])
     parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
-    parser.add_argument("--model_name", type=str, default='openrouter/grok-4.1-fast', help="")
+    parser.add_argument("--model_name", type=str, default='openrouter/gpt-4o', help="")
+    parser.add_argument("--optimize_trainable_variables", action='store_true', default=True, help="optimize trainable variables")
+    parser.add_argument("--optimize_solution", action='store_true', default=True, help="optimize solution")
     parser.add_argument("--resume", action='store_true', default=True,
                        help="Resume from the latest results file. Will automatically find the most recent "
                             "matching results file, remove incorrect answers, and only retry failed tasks.")
@@ -404,7 +406,7 @@ def parse_agent_result(agent_result: Any) -> Tuple[str, Any]:
     # 3) Fallback for other types
     return "", str(agent_result) if agent_result else ""
 
-def create_optimizer(optimizer_type: str, model_name: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None, batchsize: int = 10):
+def create_optimizer(optimizer_type: str, model_name: str, reward_fn: Optional[Callable[[str, str, str], Any]] = None, batchsize: int = 10, optimize_trainable_variables: bool = True, optimize_solution: bool = True):
     """Create optimizer instance based on type."""
     base_config = {
         'workdir': config.workdir,
@@ -412,8 +414,8 @@ def create_optimizer(optimizer_type: str, model_name: str, reward_fn: Optional[C
         # 'model_name': 'openrouter/gemini-3-flash-preview',
         'model_name': model_name,
         'memory_name': 'optimizer_memory_system',
-        'optimize_trainable_variables': True,
-        'optimize_solution': True,
+        'optimize_trainable_variables': optimize_trainable_variables,
+        'optimize_solution': optimize_solution,
     }
 
     if optimizer_type == 'grpo':
@@ -535,7 +537,7 @@ async def get_all_tasks(benchmark_name: str, split: str = "test", results_file: 
         return tasks
 
 
-async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, split: str, batchsize: int, model_name: str, result_saver: ExperimentResultSaver = None):
+async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, split: str, batchsize: int, model_name: str, result_saver: ExperimentResultSaver = None, optimize_trainable_variables: bool = True, optimize_solution: bool = True):
     """Process a single task with the optimizer."""
     task_id = task_data.task_id
     task_input = task_data.input
@@ -561,7 +563,7 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
             # Bind benchmark_name to reward_fn so eval uses correct benchmark instance
             import functools
             bound_reward = functools.partial(reward_fn, benchmark_name=benchmark_name)
-            optimizer = create_optimizer(optimizer_type, model_name, bound_reward, batchsize)
+            optimizer = create_optimizer(optimizer_type, model_name, bound_reward, batchsize, optimize_trainable_variables, optimize_solution)
 
             # ！！！！！用于临时代替参考模型输出
             if optimizer_type == 'reinforce_pp':
@@ -638,7 +640,7 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         traceback.print_exc()
 
 
-async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, split: str, batchsize: int, model_name: str, concurrency: int = 4, resume: bool = False):
+async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, split: str, batchsize: int, model_name: str, concurrency: int = 4, resume: bool = False, optimize_trainable_variables: bool = True, optimize_solution: bool = True):
     """Test specified optimizer performance on entire benchmark dataset with concurrency control."""
     logger.info(f"| 🧪 Testing {optimizer_type.upper()} optimizer on complete benchmark: {benchmark_name}")
     logger.info(f"| ⚡ Using concurrency level: {concurrency}")
@@ -677,7 +679,7 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, s
         nonlocal completed_count
         async with semaphore:
             try:
-                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, split, batchsize, model_name, result_saver)
+                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, split, batchsize, model_name, result_saver, optimize_trainable_variables, optimize_solution)
             finally:
                 completed_count += 1
                 # Progress reporting
@@ -743,7 +745,7 @@ async def main():
     logger.info(f"| ✅ Version manager initialized")
 
     # Test specified optimizer on benchmark
-    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.split, args.batchsize, args.model_name, args.concurrency, args.resume)
+    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.split, args.batchsize, args.model_name, args.concurrency, args.resume, args.optimize_trainable_variables, args.optimize_solution)
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()

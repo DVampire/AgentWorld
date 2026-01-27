@@ -6,6 +6,7 @@ from typing import List, Optional, Dict, Any
 from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
+import dirtyjson
 
 from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
 from src.config import config
@@ -187,7 +188,12 @@ class ToolCallingAgent(Agent):
                 
                 # Execute the tool
                 tool_name = tool.name
-                tool_args = tool.args if tool.args else {}
+                tool_args = tool.args
+                if tool_args:
+                    try:
+                        tool_args = dirtyjson.loads(tool_args)
+                    except (dirtyjson.JSONDecodeError, TypeError):
+                        tool_args = {}
                 
                 logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 

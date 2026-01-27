@@ -242,10 +242,10 @@ class ChatOpenRouter(BaseModel):
         if response_format:
             if isinstance(response_format, type) and issubclass(response_format, BaseModel):
                 # Pydantic model class - convert to JSON schema format using serializer
-                params['response_format'] = OpenRouterChatSerializer.serialize_response_format(response_format)
+                params['response_format'] = OpenRouterChatSerializer.serialize_response_format(response_format, model_name=self.model)
             elif isinstance(response_format, BaseModel):
                 # BaseModel instance - convert to JSON schema format using serializer
-                params['response_format'] = OpenRouterChatSerializer.serialize_response_format(response_format)
+                params['response_format'] = OpenRouterChatSerializer.serialize_response_format(response_format, model_name=self.model)
             elif isinstance(response_format, dict):
                 # Dict format - use directly
                 params['response_format'] = response_format

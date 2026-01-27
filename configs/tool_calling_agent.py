@@ -19,7 +19,7 @@ log_path = "agent.log"
 use_local_proxy = True
 version = "0.1.0"
 # model_name = "openrouter/gemini-3-flash-preview"
-model_name = "openrouter/grok-4.1-fast"
+model_name = "openrouter/gpt-4o"
 
 env_names = [
     "file_system"
