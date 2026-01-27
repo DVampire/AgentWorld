@@ -504,7 +504,7 @@ Historical Reflections from Previous Tasks:
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
         current_agent_reasoning = agent_response_extra_data['reasoning']
-        current_solution = json.dumps(dict(result=current_agent_result, reasoning=current_agent_reasoning), ensure_ascii=False, indent=4)
+        current_solution = json.dumps(dict(reasoning=current_agent_reasoning, result=current_agent_result), ensure_ascii=False, indent=4)
         logger.info(f"| ✅ Initial solution obtained:\n{current_solution}")
 
         # For analysis
@@ -661,9 +661,9 @@ Historical Reflections from Previous Tasks:
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
                             agent_response = await agent(task=task, files=files)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-                            current_agent_result = agent_response_extra_data['result']
                             current_agent_reasoning = agent_response_extra_data['reasoning']
-                            current_solution = json.dumps(dict(result=current_agent_result, reasoning=current_agent_reasoning), ensure_ascii=False, indent=4)
+                            current_agent_result = agent_response_extra_data['result']
+                            current_solution = json.dumps(dict(reasoning=current_agent_reasoning, result=current_agent_result), ensure_ascii=False, indent=4)
                             logger.info(f"| ✅ Phase 1 completed - trainable variables updated:\n{current_solution}")
                         else:
                             logger.info(f"| ℹ️ Phase 1: No trainable variables were updated")
@@ -741,13 +741,13 @@ Historical Reflections from Previous Tasks:
                         reflection_analysis=solution_reflection,
                     )
 
-                    phase2_improvements.append(json.dumps(dict(result=improved_solution_result.result, reasoning=improved_solution_result.reasoning), ensure_ascii=False, indent=4))
+                    phase2_improvements.append(json.dumps(dict(reasoning=improved_solution_result.reasoning, result=improved_solution_result.result), ensure_ascii=False, indent=4))
                     
                     # Check if solution was improved
                     if improved_solution_result.result:
                         current_agent_result = improved_solution_result.result
                         current_agent_reasoning = improved_solution_result.reasoning
-                        current_solution = json.dumps(dict(result=current_agent_result, reasoning=current_agent_reasoning), ensure_ascii=False, indent=4)
+                        current_solution = json.dumps(dict(reasoning=current_agent_reasoning, result=current_agent_result), ensure_ascii=False, indent=4)
 
                         logger.info(f"| ✅ Phase 2 completed - solution optimized")
                         
@@ -834,5 +834,5 @@ Historical Reflections from Previous Tasks:
         reflecion_text_struct = {"phase1": phase1_reflections, "phase2": phase2_reflections}
         improved_solution_struct = {"phase1": phase1_improvements, "phase2": phase2_improvements}
 
-        return initial_agent_result, initial_agent_reasoning, reflecion_text_struct, improved_solution_struct, current_agent_reasoning, current_agent_result
+        return initial_agent_reasoning, initial_agent_result, reflecion_text_struct, improved_solution_struct, current_agent_reasoning, current_agent_result
         # return current_agent_reasoning, current_agent_result

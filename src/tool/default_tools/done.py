@@ -13,7 +13,7 @@ Args:
 - result (str): The result of the task completion.
 - reasoning (str): The analysis or explanation of the task completion.
 
-Example: {"name": "done", "args": {"result": "The task has been completed.", "reasoning": "The task has been completed successfully."}}.
+Example: {"name": "done", "args": {"reasoning": "The task has been completed successfully.","result": "The task has been completed."}}.
 """
 
 @TOOL.register_module(force=True)
@@ -30,14 +30,14 @@ class DoneTool(Tool):
         super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(self, 
-                       result: str,
                        reasoning: str = None,
+                       result: str = None,
                        **kwargs) -> ToolResponse:
         """
         Indicate that the task has been completed.
 
         Args:
+            reasoning (str): The reasoning of the task completion.
             result (str): The result of the task completion.
-            reasoning (str): The analysis or explanation of the task completion.
         """
-        return ToolResponse(success=True, message=result, extra=ToolExtra(data={"result": result, "reasoning": reasoning}))
+        return ToolResponse(success=True, message=result, extra=ToolExtra(data={"reasoning": reasoning, "result": result}))

@@ -570,12 +570,12 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
                 logger.info(f"| 🚀 Running agent to get initial solution...")
                 reference_agent_response = await agent(task=full_task, files=[])
                 reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
-                reference_agent_result = reference_agent_response_extra_data['result']
                 reference_agent_reasoning = reference_agent_response_extra_data['reasoning']
-                reference_solution = f"Result: {reference_agent_result}\nReasoning: {reference_agent_reasoning}" if reference_agent_reasoning else f"Result: {reference_agent_result}"
+                reference_agent_result = reference_agent_response_extra_data['result']
+                reference_solution = json.dumps(dict(reasoning=reference_agent_reasoning, result=reference_agent_result), ensure_ascii=False, indent=4)
                 logger.info(f"| ✅ Initial solution obtained")
 
-                initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
+                initial_agent_reasoning, initial_agent_result, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                                  task=full_task,
                                                                                  ground_truth=task_gt,
                                                                                  sft_solution=reference_solution,
@@ -583,7 +583,7 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
                                                                                  files=[],
                                                                                  results_file_path=result_saver.get_file_path() if result_saver else None)
             else:
-                initial_agent_result, initial_agent_reasoning, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
+                initial_agent_reasoning, initial_agent_result, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                                  task=full_task,
                                                                                  ground_truth=task_gt,
                                                                                  benchmark_task_id=task_id,
@@ -593,8 +593,8 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
             logger.info(f"| 🚀 Running agent to get initial solution...")
             agent_response = await agent(task=full_task, files=[])
             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
-            agent_result = agent_response_extra_data['final_result']
             agent_reasoning = agent_response_extra_data['final_reasoning']
+            agent_result = agent_response_extra_data['final_result']
             logger.info(f"| ✅ Initial solution obtained")
 
 
