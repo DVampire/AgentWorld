@@ -153,7 +153,6 @@ class ReflectionOptimizer(Optimizer):
         prompt_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and (v.type == "system_prompt" or v.type == "agent_message_prompt")}
         for prompt_name, prompt_variable in prompt_variables.items():
             prompt_variables_text += f"<{prompt_name}>\n"
-            prompt_variables_text += f"The variable is as follows:\n"
             prompt_variables_text += f"{prompt_variable.variables}"
             prompt_variables_text += f"</{prompt_name}>\n"
         prompt_variables_text += "</prompt_variables>\n"
@@ -164,7 +163,6 @@ class ReflectionOptimizer(Optimizer):
         tool_variables = {k: v for k, v in variables.items() if isinstance(v, Variable) and v.type == "tool_code"}
         for tool_name, tool_variable in tool_variables.items():
             tool_variables_text += f"<{tool_name}>\n"
-            tool_variables_text += f"The variable is as follows:\n"
             tool_variables_text += f"{tool_variable.variables}"
             tool_variables_text += f"</{tool_name}>\n"
         tool_variables_text += "</tool_variables>\n"
@@ -176,7 +174,6 @@ class ReflectionOptimizer(Optimizer):
             solution_variable_text = "<solution_variables>\n"
             for solution_name, solution_variable in solution_variables.items():
                 solution_variable_text += f"<{solution_name}>\n"
-                solution_variable_text += f"The variable is as follows:\n"
                 solution_variable_text += f"{solution_variable.variables}"
                 solution_variable_text += f"</{solution_name}>\n"
             solution_variable_text += "</solution_variables>\n"
@@ -317,6 +314,16 @@ Historical Reflections from Previous Tasks:
         try:
             response = await model_manager(model=self.model_name, messages=messages, response_format=ImprovedVariables)
             improved_variables: ImprovedVariables = response.extra.parsed_model
+            
+            # Handle case where parsing failed or no variables to improve
+            if improved_variables is None or improved_variables.variables is None:
+                logger.warning(f"| ⚠️ No improved variables returned (parsed_model is None or empty)")
+                return {}
+            
+            if len(improved_variables.variables) == 0:
+                logger.info(f"| ℹ️ No variables need improvement")
+                return {}
+            
             variables = {
                 variable.name: variable.model_dump() for variable in improved_variables.variables
             }
@@ -497,8 +504,8 @@ Historical Reflections from Previous Tasks:
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
         current_agent_reasoning = agent_response_extra_data['reasoning']
-        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
-        logger.info(f"| ✅ Initial solution obtained")
+        current_solution = json.dumps(dict(result=current_agent_result, reasoning=current_agent_reasoning), ensure_ascii=False, indent=4)
+        logger.info(f"| ✅ Initial solution obtained:\n{current_solution}")
 
         # For analysis
         initial_agent_result = current_agent_result
@@ -656,8 +663,8 @@ Historical Reflections from Previous Tasks:
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
                             current_agent_result = agent_response_extra_data['result']
                             current_agent_reasoning = agent_response_extra_data['reasoning']
-                            current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
-                            logger.info(f"| ✅ Phase 1 completed - trainable variables updated")
+                            current_solution = json.dumps(dict(result=current_agent_result, reasoning=current_agent_reasoning), ensure_ascii=False, indent=4)
+                            logger.info(f"| ✅ Phase 1 completed - trainable variables updated:\n{current_solution}")
                         else:
                             logger.info(f"| ℹ️ Phase 1: No trainable variables were updated")
                         
@@ -734,13 +741,13 @@ Historical Reflections from Previous Tasks:
                         reflection_analysis=solution_reflection,
                     )
 
-                    phase2_improvements.append(f'Result: {improved_solution_result.result}\nReasoning: {improved_solution_result.reasoning}')
+                    phase2_improvements.append(json.dumps(dict(result=improved_solution_result.result, reasoning=improved_solution_result.reasoning), ensure_ascii=False, indent=4))
                     
                     # Check if solution was improved
                     if improved_solution_result.result:
                         current_agent_result = improved_solution_result.result
                         current_agent_reasoning = improved_solution_result.reasoning
-                        current_solution = f"Result: {current_agent_result}\nReasoning: {current_agent_reasoning}" if current_agent_reasoning else f"Result: {current_agent_result}"
+                        current_solution = json.dumps(dict(result=current_agent_result, reasoning=current_agent_reasoning), ensure_ascii=False, indent=4)
 
                         logger.info(f"| ✅ Phase 2 completed - solution optimized")
                         

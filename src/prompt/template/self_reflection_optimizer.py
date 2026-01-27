@@ -23,25 +23,36 @@ REFLECTION_OPTIMIZER_REFLECTION_REASONING_RULES = """
 <reasoning_rules>
 Please analyze the execution result and the provided variables in <current_variables>, then provide:
 
-IMPORTANT: You can ONLY analyze and suggest improvements for variables that are listed in <current_variables>. 
-Do NOT suggest creating new variables or tools that don't exist. Work with what is provided.
+**IMPORTANT**
+- You can ONLY analyze and suggest improvements for variables that are listed in <current_variables>. 
+- Do NOT suggest creating new variables or tools that don't exist. Work with what is provided.
+- Template placeholders like (\{\{ placeholder_name \}\} or '[placeholder_content]' are normal template syntax that will be replaced with actual values at runtime. These placeholders are intentional and should NOT be reflected on or modified - they are part of the template design, not content issues.
 
-- **What went wrong or could be improved**
-   - Identify specific issues in the agent's behavior or output
-   - Note any errors, inefficiencies, or suboptimal outcomes
+**CRITICAL - Variable Selection Criteria**
+- ONLY recommend improving a variable if the improvement can genuinely enhance the agent's GENERAL reasoning capability that GENERALIZES across different tasks.
+- Do NOT recommend improving a variable for:
+  - Task-specific fixes: changes that only help solve the current specific task but won't generalize (this causes overfitting)
+  - Superficial issues: formatting, rephrasing, restructuring without functional benefit
+  - Over-complication: adding verbose content without clear reasoning value
+- If a variable is already effective and no generalizable improvement is needed, do NOT include it in recommendations.
+- Focus on improvements to: general reasoning patterns, universal problem-solving strategies, analytical approaches that work across tasks, deduction/verification mechanisms.
 
-- **Which variables (from current_variables) contributed to these issues?**
-   - Analyze prompt variables (system_prompt, agent_message_prompt and their sub-variables): identify unclear instructions, missing context, or structural issues
-   - Analyze tool variables (tool_code): identify bugs, missing functionality, or incorrect logic
-   - Analyze solution variables: identify if the solution approach itself needs improvement
-   - Determine which specific variable(s) from <current_variables> are most likely causing the problems
+**What went wrong or could be improved**
+- Identify specific issues in the agent's behavior or output
+- Note any errors, inefficiencies, or suboptimal outcomes
 
-- **Specific recommendations for improving each problematic variable**
-   - You MUST only recommend improvements for variables that exist in <current_variables>
-   - For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context. When improving prompts intended for problem-solving, consider phrasing that activates the model's reasoning.
-   - For tool variables: provide specific code fixes, feature additions, or logic corrections
-   - For solution variables: suggest alternative approaches or improvements to the solution strategy, ensuring the format meets task requirements and can be correctly parsed
-   - Focus on making each variable type more effective for the given task
+**Which variables (from current_variables) contributed to these issues?**
+- Analyze prompt variables (system_prompt, agent_message_prompt and their sub-variables): identify unclear instructions, missing context, or structural issues
+- Analyze tool variables (tool_code): identify bugs, missing functionality, or incorrect logic
+- Analyze solution variables: identify if the solution approach itself needs improvement
+- Determine which specific variable(s) from <current_variables> are most likely causing the problems
+
+**Specific recommendations for improving each problematic variable**
+- You MUST only recommend improvements for variables that exist in <current_variables>
+- For prompt variables: provide concrete suggestions for clearer instructions, better structure, or additional context. When improving prompts intended for problem-solving, consider phrasing that activates the model's reasoning.
+- For tool variables: provide specific code fixes, feature additions, or logic corrections
+- For solution variables: suggest alternative approaches or improvements to the solution strategy, ensuring the format meets task requirements and can be correctly parsed
+- Focus on making each variable type more effective for the given task
 </reasoning_rules>
 """
 
@@ -186,9 +197,6 @@ You excel at:
 - Making improvements appropriate for the variable type (clearer instructions for prompts, bug fixes for tools, better strategies for solutions)
 - Removing unnecessary or problematic elements
 - Adding missing elements that would help the agent perform better
-
-IMPORTANT: You can ONLY improve variables that are listed in <current_variables>. 
-Do NOT suggest or create new variables that don't exist in the provided list.
 </intro>
 """
 
@@ -196,31 +204,50 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_REASONING_RULES = """
 <reasoning_rules>
 Based on the analysis and feedback provided, please improve the variable by:
 
-1. **Keep the core purpose and structure**
-   - Maintain the original variable's fundamental purpose
-   - Preserve the overall structure unless it's part of the problem
+**IMPORTANT - Modification Threshold**
+- You can ONLY improve variables that are listed in <current_variables>. 
+- Do NOT suggest or create new variables that don't exist in the provided list.
+- Do NOT remove or modify template placeholders (\{\{ placeholder_name \}\} or '[placeholder_content]'). They are part of the template design and will be replaced with actual values at runtime.
 
-2. **Address all identified issues**
-   - Systematically address each issue mentioned in the analysis
-   - Ensure no problems are left unresolved
+**CRITICAL - When to Modify**
+- ONLY make changes that improve the agent's GENERAL reasoning capability that can GENERALIZE across different tasks.
+- Do NOT make:
+  - Task-specific modifications: hints, examples, or strategies tailored only to solve the current specific task (this causes overfitting and hurts performance on other tasks)
+  - Superficial changes: formatting adjustments, rephrasing without semantic improvement, restructuring without functional benefit
+  - Over-complicated additions: adding verbose content that doesn't provide clear reasoning value (concise and effective > long and complex)
+- Focus ONLY on GENERALIZABLE improvements:
+  - General reasoning patterns and logical thinking frameworks
+  - Universal problem-solving strategies applicable to a class of problems
+  - Better analytical approaches that work across different tasks
+  - Improved deduction, verification, or self-checking mechanisms
+- Apply minimal changes: only modify what is necessary, preserve parts that already work well.
 
-3. **Make improvements appropriate for the variable type**
-   - For prompt variables: Make instructions clearer and more specific, replace vague language with precise instructions, add concrete examples, clarify ambiguous requirements
-   - For tool variables: Fix bugs, correct logic errors, add missing functionality, improve error handling
-   - For solution variables: Suggest better approaches, improve strategy, refine the solution method
+**Keep the core purpose and structure**
+- Maintain the original variable's fundamental purpose
+- Preserve the overall structure unless it's part of the problem
+- ALWAYS preserve template placeholders (\{\{ placeholder_name \}\}) exactly as they appear
 
-4. **Better organization**
-   - For prompts: Improve the logical flow of instructions, group related concepts together, use clear headings and structure
-   - For tools: Organize code better, improve readability, add proper documentation
-   - For solutions: Structure the approach more clearly, break down complex steps, ensuring the format meets task requirements and can be correctly parsed
+**Address all identified issues**
+- Systematically address each issue mentioned in the analysis
+- Ensure no problems are left unresolved
 
-5. **Remove unnecessary elements**
-   - Eliminate redundant or confusing parts
-   - Streamline the prompt for clarity
+**Make improvements appropriate for the variable type**
+- For prompt variables: Make instructions clearer and more specific, replace vague language with precise instructions, add concrete examples, clarify ambiguous requirements
+- For tool variables: Fix bugs, correct logic errors, add missing functionality, improve error handling
+- For solution variables: Suggest better approaches, improve strategy, refine the solution method
 
-6. **Add missing guidance**
-   - Include any critical instructions that were missing
-   - Add context that would help the agent perform better
+**Better organization**
+- For prompts: Improve the logical flow of instructions, group related concepts together, use clear headings and structure
+- For tools: Organize code better, improve readability, add proper documentation
+- For solutions: Structure the approach more clearly, break down complex steps, ensuring the format meets task requirements and can be correctly parsed
+
+**Remove unnecessary elements**
+- Eliminate redundant or confusing parts
+- Streamline the prompt for clarity
+
+**Add missing guidance**
+- Include any critical instructions that were missing
+- Add context that would help the agent perform better
 </reasoning_rules>
 """
 

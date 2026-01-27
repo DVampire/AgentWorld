@@ -128,7 +128,6 @@ You have access to a `todo` tool for task planning. Use it strategically based o
 
 <available_tools>
 You will be provided with the available tools in <tool_context>.
-[A list of available tools.]
 </available_tools>
 
 </tool_context_rules>

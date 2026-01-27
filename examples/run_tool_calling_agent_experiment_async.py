@@ -18,7 +18,6 @@ Usage:
 
 import os
 import sys
-import logging
 import json
 import time
 from dotenv import load_dotenv
@@ -52,10 +51,13 @@ def parse_args():
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
                        default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
-    parser.add_argument("--concurrency", type=int, default=4, help="number of concurrent tasks to run")
+    parser.add_argument("--concurrency", type=int, default=8, help="number of concurrent tasks to run")
     parser.add_argument("--split", type=str, default='test', help="the split of dataset", choices=['train', 'test'])
     parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
     parser.add_argument("--model_name", type=str, default='openrouter/grok-4.1-fast', help="")
+    parser.add_argument("--resume", action='store_true', default=True,
+                       help="Resume from the latest results file. Will automatically find the most recent "
+                            "matching results file, remove incorrect answers, and only retry failed tasks.")
 
     parser.add_argument(
         '--cfg-options',
@@ -73,7 +75,7 @@ def parse_args():
 class ExperimentResultSaver:
     """Save experiment results to JSON file with real-time updates."""
 
-    def __init__(self, optimizer_type: str, benchmark_name: str, concurrency: int, total_tasks: int, model_name: str, split: str = "test"):
+    def __init__(self, optimizer_type: str, benchmark_name: str, concurrency: int, total_tasks: int, model_name: str, split: str = "test", existing_file: str = None):
         self.optimizer_type = optimizer_type
         self.benchmark_name = benchmark_name
         self.concurrency = concurrency
@@ -83,39 +85,52 @@ class ExperimentResultSaver:
         self.start_time = datetime.now()
 
         # Create results directory if it doesn't exist
-        self.results_dir = Path(__file__).parent / "workdir/results"
+        self.results_dir = Path(os.path.join(config.workdir, "results"))
         self.results_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate filename with timestamp
-        timestamp = self.start_time.strftime("%Y-%m-%d_%H-%M-%S")
-        self.filename = f"{optimizer_type}_{benchmark_name}_{split}_{timestamp}.json"
-        self.filepath = self.results_dir / self.filename
 
         # Initialize thread lock for file operations
         self.file_lock = asyncio.Lock()
 
-        # Initialize results structure
-        self.results_data = {
-            "experiment_meta": {
-                "timestamp": self.start_time.isoformat() + "Z",
-                "optimizer": optimizer_type,
-                "benchmark": benchmark_name,
-                "split": split,
-                "concurrency": concurrency,
-                "total_tasks": total_tasks,
-                "model": model_name
-            },
-            "results": [],
-            "summary": {
-                "completed_tasks": 0,
-                "correct_answers": 0,
-                "accuracy": 0.0,
-                "last_updated": self.start_time.isoformat() + "Z"
-            }
-        }
+        # If existing_file is provided, use it; otherwise create a new file
+        if existing_file:
+            self.filepath = Path(existing_file)
+            self.filename = self.filepath.name
+            # Load existing results
+            try:
+                with open(self.filepath, 'r', encoding='utf-8') as f:
+                    self.results_data = json.load(f)
+                logger.info(f"| 📂 Loaded existing results file: {self.filepath}")
+            except Exception as e:
+                logger.error(f"| ❌ Failed to load existing file {existing_file}: {e}")
+                raise
+        else:
+            # Generate filename with timestamp
+            timestamp = self.start_time.strftime("%Y-%m-%d_%H-%M-%S")
+            self.filename = f"{optimizer_type}_{benchmark_name}_{split}_{timestamp}.json"
+            self.filepath = self.results_dir / self.filename
 
-        # Save initial empty results
-        asyncio.create_task(self._save_to_file())
+            # Initialize results structure
+            self.results_data = {
+                "experiment_meta": {
+                    "timestamp": self.start_time.isoformat() + "Z",
+                    "optimizer": optimizer_type,
+                    "benchmark": benchmark_name,
+                    "split": split,
+                    "concurrency": concurrency,
+                    "total_tasks": total_tasks,
+                    "model": model_name
+                },
+                "results": [],
+                "summary": {
+                    "completed_tasks": 0,
+                    "correct_answers": 0,
+                    "accuracy": 0.0,
+                    "last_updated": self.start_time.isoformat() + "Z"
+                }
+            }
+
+            # Save initial empty results
+            asyncio.create_task(self._save_to_file())
 
     async def add_task_result(self, task_data: Any, processing_time: float = None,
                               optimizer_data: Dict[str, Any] = None):
@@ -426,8 +441,32 @@ def create_optimizer(optimizer_type: str, model_name: str, reward_fn: Optional[C
         raise ValueError(f"Unknown optimizer type: {optimizer_type}")
 
 
-async def get_all_tasks(benchmark_name: str, split: str = "test") -> List[Dict]:
-    """Get all tasks from benchmark manager."""
+def find_latest_results_file(optimizer_type: str, benchmark_name: str, split: str) -> Optional[str]:
+    """Find the most recent results file matching the pattern."""
+    results_dir = Path(os.path.join(config.workdir, "results"))
+    if not results_dir.exists():
+        return None
+    
+    # Pattern: {optimizer}_{benchmark}_{split}_*.json
+    pattern = f"{optimizer_type}_{benchmark_name}_{split}_*.json"
+    matching_files = list(results_dir.glob(pattern))
+    
+    if not matching_files:
+        return None
+    
+    # Sort by modification time, get the latest
+    latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
+    return str(latest_file)
+
+
+async def get_all_tasks(benchmark_name: str, split: str = "test", results_file: str = None) -> List[Dict]:
+    """Get all tasks from benchmark manager.
+    
+    If results_file is provided:
+    1. Load existing results from the JSON file
+    2. Remove incorrect results (ground_truth != result) from the file and save
+    3. Return only tasks that were answered incorrectly (for retry)
+    """
     tasks = []
     logger.info(f"| 🔄 Resetting progress for {benchmark_name} (split: {split})...")
     task_data = await benchmark_manager.reset(benchmark_name, split=split)
@@ -436,7 +475,64 @@ async def get_all_tasks(benchmark_name: str, split: str = "test") -> List[Dict]:
         tasks.append(task_data)
         task_data = await benchmark_manager.step(benchmark_name)
 
-    return tasks
+    # If no results file provided, return all tasks
+    if not results_file:
+        return tasks
+    
+    # Load existing results and filter
+    results_path = Path(results_file)
+    if not results_path.exists():
+        logger.warning(f"| ⚠️ Results file not found: {results_file}, returning all tasks")
+        return tasks
+    
+    try:
+        with open(results_path, 'r', encoding='utf-8') as f:
+            results_data = json.load(f)
+        
+        existing_results = results_data.get("results", [])
+        logger.info(f"| 📂 Loaded {len(existing_results)} existing results from {results_file}")
+        
+        # Separate correct and incorrect results
+        correct_results = []
+        incorrect_task_ids = set()
+        
+        for result in existing_results:
+            task_id = result.get("task_id")
+            ground_truth = str(result.get("ground_truth", "")).strip()
+            answer = str(result.get("result", "")).strip()
+            
+            if ground_truth == answer:
+                correct_results.append(result)
+            else:
+                incorrect_task_ids.add(task_id)
+                logger.info(f"| ❌ Task {task_id} was incorrect: expected '{ground_truth}', got '{answer}'")
+        
+        logger.info(f"| ✅ Correct: {len(correct_results)}, ❌ Incorrect: {len(incorrect_task_ids)}")
+        
+        # Update the results file with only correct results
+        results_data["results"] = correct_results
+        results_data["summary"]["completed_tasks"] = len(correct_results)
+        results_data["summary"]["correct_answers"] = len(correct_results)
+        results_data["summary"]["accuracy"] = 1.0 if correct_results else 0.0
+        results_data["summary"]["last_updated"] = datetime.now().isoformat() + "Z"
+        
+        with open(results_path, 'w', encoding='utf-8') as f:
+            json.dump(results_data, f, indent=2, ensure_ascii=False)
+        logger.info(f"| 💾 Updated results file with {len(correct_results)} correct results")
+        
+        # Filter tasks to only include incorrect ones
+        correct_task_ids = {r.get("task_id") for r in correct_results}
+        filtered_tasks = [task for task in tasks if task.task_id not in correct_task_ids]
+        
+        logger.info(f"| 📋 Filtered tasks: {len(filtered_tasks)} remaining (excluding {len(correct_task_ids)} already correct)")
+        
+        return filtered_tasks
+        
+    except Exception as e:
+        logger.error(f"| ❌ Error loading/processing results file: {e}")
+        import traceback
+        traceback.print_exc()
+        return tasks
 
 
 async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, split: str, batchsize: int, model_name: str, result_saver: ExperimentResultSaver = None):
@@ -454,9 +550,8 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
     # Combine system instruction with task input
     full_task = f"{system_instruction}\n\n{task_input}"
 
-    logger.info(f"\n📋 Task {task_index + 1}/{total_tasks}: {task_id}")
-    print(f"\n📋 Task {task_index + 1}/{total_tasks}: {task_id}")
-    logger.info(f"📋 Task: {full_task[:150]}..." if len(full_task) > 150 else f"📋 Task: {full_task}")
+    logger.info(f"| 📋 Task {task_index + 1}/{total_tasks}: {task_id}, Ground Truth: {task_gt}")
+    logger.info(f"| 📋 Task: {full_task[:150]}..." if len(full_task) > 150 else f"| 📋 Task: {full_task}")
 
     try:
         # Get the agent instance
@@ -543,14 +638,24 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         traceback.print_exc()
 
 
-async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, split: str, batchsize: int, model_name: str, concurrency: int = 4):
+async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, split: str, batchsize: int, model_name: str, concurrency: int = 4, resume: bool = False):
     """Test specified optimizer performance on entire benchmark dataset with concurrency control."""
     logger.info(f"| 🧪 Testing {optimizer_type.upper()} optimizer on complete benchmark: {benchmark_name}")
     logger.info(f"| ⚡ Using concurrency level: {concurrency}")
     logger.info(f"| 📊 Using dataset split: {split}")
+    
+    # Find results file if resuming
+    results_file = None
+    if resume:
+        results_file = find_latest_results_file(optimizer_type, benchmark_name, split)
+        if results_file:
+            logger.info(f"| 📂 Found latest results file: {results_file}")
+        else:
+            logger.warning(f"| ⚠️ No existing results file found for {optimizer_type}_{benchmark_name}_{split}_*.json, starting fresh")
 
-    # Get all tasks first
-    all_tasks = await get_all_tasks(benchmark_name, split=split)
+    # Get all tasks first (filtered if results_file found)
+    all_tasks = await get_all_tasks(benchmark_name, split=split, results_file=results_file)
+    # all_tasks = all_tasks[8:9]
     total_tasks = len(all_tasks)
 
     if total_tasks == 0:
@@ -559,8 +664,8 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, s
 
     logger.info(f"| 📋 Total tasks to process: {total_tasks}")
 
-    # Initialize result saver
-    result_saver = ExperimentResultSaver(optimizer_type, benchmark_name, concurrency, total_tasks, model_name, split)
+    # Initialize result saver (continue using existing file if resuming)
+    result_saver = ExperimentResultSaver(optimizer_type, benchmark_name, concurrency, total_tasks, model_name, split, existing_file=results_file)
     logger.info(f"| 💾 Results will be saved to: {result_saver.get_file_path()}")
 
     # Create semaphore for concurrency control
@@ -638,7 +743,7 @@ async def main():
     logger.info(f"| ✅ Version manager initialized")
 
     # Test specified optimizer on benchmark
-    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.split, args.batchsize, args.model_name, args.concurrency)
+    await run_optimizer_on_benchmark(args.optimizer, args.benchmark, args.split, args.batchsize, args.model_name, args.concurrency, args.resume)
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()
