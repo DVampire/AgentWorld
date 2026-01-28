@@ -51,12 +51,12 @@ def parse_args():
     parser.add_argument("--optimizer", choices=['grpo', 'reinforce_pp', 'reflection'],
                        default='reflection', help="optimizer to test")
     parser.add_argument("--benchmark", default="gpqa", help="benchmark name to test on")
-    parser.add_argument("--concurrency", type=int, default=8, help="number of concurrent tasks to run")
+    parser.add_argument("--concurrency", type=int, default=16, help="number of concurrent tasks to run")
     parser.add_argument("--split", type=str, default='test', help="the split of dataset", choices=['train', 'test'])
     parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
-    parser.add_argument("--model_name", type=str, default='openrouter/gpt-4o', help="")
+    parser.add_argument("--model_name", type=str, default='openrouter/gpt-4.1', help="")
     parser.add_argument("--optimize_trainable_variables", action='store_true', default=True, help="optimize trainable variables")
-    parser.add_argument("--optimize_solution", action='store_true', default=False, help="optimize solution")
+    parser.add_argument("--optimize_solution", action='store_true', default=True, help="optimize solution")
     parser.add_argument("--resume", action='store_true', default=True,
                        help="Resume from the latest results file. Will automatically find the most recent "
                             "matching results file, remove incorrect answers, and only retry failed tasks.")
