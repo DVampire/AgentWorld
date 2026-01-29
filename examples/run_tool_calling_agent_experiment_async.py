@@ -54,9 +54,10 @@ def parse_args():
     parser.add_argument("--concurrency", type=int, default=16, help="number of concurrent tasks to run")
     parser.add_argument("--split", type=str, default='test', help="the split of dataset", choices=['train', 'test'])
     parser.add_argument("--batchsize", type=int, default=8, help="batch size for aggregating historical reflections")
-    parser.add_argument("--model_name", type=str, default='openrouter/gpt-4.1', help="")
-    parser.add_argument("--optimize_trainable_variables", action='store_true', default=True, help="optimize trainable variables")
-    parser.add_argument("--optimize_solution", action='store_true', default=True, help="optimize solution")
+    parser.add_argument("--max_steps", type=int, default=5, help="max steps for optimization")
+    parser.add_argument("--model_name", type=str, default='openrouter/claude-sonnet-4.5', help="")
+    parser.add_argument("--optimize_trainable_variables", action='store_true', default=False, help="optimize trainable variables")
+    parser.add_argument("--optimize_solution", action='store_true', default=False, help="optimize solution")
     parser.add_argument("--resume", action='store_true', default=True,
                        help="Resume from the latest results file. Will automatically find the most recent "
                             "matching results file, remove incorrect answers, and only retry failed tasks.")
@@ -416,6 +417,7 @@ def create_optimizer(optimizer_type: str, model_name: str, reward_fn: Optional[C
         'memory_name': 'optimizer_memory_system',
         'optimize_trainable_variables': optimize_trainable_variables,
         'optimize_solution': optimize_solution,
+        'max_steps': config.max_steps,
     }
 
     if optimizer_type == 'grpo':

@@ -9,11 +9,13 @@ from .deep_researcher import DeepResearcherTool
 from .deep_analyzer import DeepAnalyzerTool
 from .reporter import ReporterTool
 from .tool_generator import ToolGeneratorTool
+from .todo import TodoTool
 
 __all__ = [
     "BrowserTool",
     "DeepResearcherTool",
     "DeepAnalyzerTool",
     "ReporterTool",
-    "ToolGeneratorTool"
+    "ToolGeneratorTool",
+    "TodoTool"
 ]

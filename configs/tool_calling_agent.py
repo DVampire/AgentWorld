@@ -19,7 +19,7 @@ log_path = "agent.log"
 use_local_proxy = True
 version = "0.1.0"
 # model_name = "openrouter/gemini-3-flash-preview"
-model_name = "openrouter/gpt-4.1"
+model_name = "openrouter/claude-sonnet-4.5"
 
 env_names = [
     "file_system"
@@ -49,42 +49,42 @@ bash_tool.update(
 )
 #-----------------MDIFY TOOL CONFIG-----------------
 mdify_tool.update(
-    base_dir=f"{workdir}/tool/mdify",
+    base_dir="tool/mdify",
 )
 #-----------------BROWSER TOOL CONFIG-----------------
 # browser_tool.update(
 #     model_name="openrouter/gpt-4.1",
-#     base_dir=f"{workdir}/tool/browser",
+#     base_dir="tool/browser",
 # )
 #-----------------DEEP RESEARCHER TOOL CONFIG-----------------
 deep_researcher_tool.update(
     model_name="openrouter/o3",
-    base_dir=f"{workdir}/tool/deep_researcher",
+    base_dir="tool/deep_researcher",
 )
 
 #-----------------DEEP ANALYZER TOOL CONFIG-----------------
 deep_analyzer_tool.update(
     model_name="openrouter/o3",
-    base_dir=f"{workdir}/tool/deep_analyzer",
+    base_dir="tool/deep_analyzer",
     require_grad=False,
 )
 
 #-----------------PLOTTER TOOL CONFIG-----------------
 plotter_tool.update(
     model_name="openrouter/o3",
-    base_dir=f"{workdir}/tool/plotter",
+    base_dir="tool/plotter",
 )
 
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
-    base_dir=f"{workdir}/memory/general_memory_system",
+    base_dir="memory/general_memory_system",
     model_name=model_name,
     max_summaries=10,
     max_insights=10,
     require_grad=False,
 )
 optimizer_memory_system.update(
-    base_dir=f"{workdir}/memory/optimizer_memory_system",
+    base_dir="memory/optimizer_memory_system",
     model_name=model_name,
     max_records_per_session=10,
     require_grad=False,
@@ -92,7 +92,7 @@ optimizer_memory_system.update(
 
 #-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
 file_system_environment.update(
-    base_dir=f"{workdir}/environment/file_system",
+    base_dir="environment/file_system",
     require_grad=False,
 )
 

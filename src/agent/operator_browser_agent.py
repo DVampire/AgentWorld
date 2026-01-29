@@ -192,10 +192,13 @@ class OperatorBrowserAgent(Agent):
             "agent_history": agent_history,
         }
     
-    async def _get_todo_contents(self) -> str:
-        """Get the todo contents."""
+    async def _get_todo_contents(self, call_id: Optional[str] = None) -> str:
+        """Get the todo contents for a specific call_id."""
         todo_tool = await tcp.get("todo")
-        todo_contents = todo_tool.get_todo_content()
+        if call_id:
+            todo_contents = todo_tool.get_todo_content(call_id)
+        else:
+            todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
         return todo_contents   
     
     async def _get_agent_state(self, task: str, step_number: Optional[int] = None) -> Dict[str, Any]:
@@ -341,6 +344,10 @@ class OperatorBrowserAgent(Agent):
                 
             # Execute the first action
             action_results = []
+            
+            # Auto-inject call_id for todo tool using session_id
+            if tool_name == "todo" and session_id:
+                tool_args["call_id"] = session_id
             
             logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
             

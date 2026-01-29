@@ -194,6 +194,12 @@ class ToolCallingAgent(Agent):
                         tool_args = dirtyjson.loads(tool_args)
                     except (dirtyjson.Error, ValueError, TypeError):
                         tool_args = {}
+                else:
+                    tool_args = {}
+                
+                # Auto-inject call_id for todo tool using session_id
+                if tool_name == "todo" and session_id:
+                    tool_args["call_id"] = session_id
                 
                 logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 

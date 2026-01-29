@@ -43,6 +43,7 @@ class ReflectionOptimizer(Optimizer):
                  optimize_trainable_variables: bool = True,
                  optimize_solution: bool = True,
                  batchsize: int = 10,
+                 max_steps: int = 5,
                  **kwargs
                  ):
         """
@@ -69,6 +70,8 @@ class ReflectionOptimizer(Optimizer):
             self.prompt_name = prompt_name
         self.memory_name = memory_name
         self.batchsize = batchsize
+        
+        self.max_steps = max_steps
         
         self.optimize_trainable_variables = optimize_trainable_variables
         self.optimize_solution = optimize_solution

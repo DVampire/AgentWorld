@@ -3,6 +3,7 @@ tag = "base"
 workdir = f"workdir/{tag}"
 log_path = "base.log"
 use_local_proxy = False
+model_name = "oenrouter/gemini-3-flash-preview"
 
 #---------------MEMORY CONFIG---------------
 memory_config = dict(

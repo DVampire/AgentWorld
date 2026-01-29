@@ -435,7 +435,7 @@ class Agent(BaseModel):
         memory += "</memory>"
 
         todo = "<todo>"
-        todo_contents = await self._get_todo_contents()
+        todo_contents = await self._get_todo_contents(session_id)
         todo += todo_contents
         todo += "</todo>"
 
@@ -453,10 +453,13 @@ class Agent(BaseModel):
             "agent_context": agent_context,
         }
 
-    async def _get_todo_contents(self) -> str:
-        """Get the todo contents."""
+    async def _get_todo_contents(self, call_id: Optional[str] = None) -> str:
+        """Get the todo contents for a specific call_id."""
         todo_tool = await tcp.get("todo")
-        todo_contents = todo_tool.get_todo_content()
+        if call_id:
+            todo_contents = todo_tool.get_todo_content(call_id)
+        else:
+            todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
         return todo_contents
 
     async def _get_environment_context(self) -> Dict[str, Any]:
