@@ -595,7 +595,7 @@ class InterdayTradingEnvironment(Environment):
     
     @ecp.action(name = "step",
                 description = "Step the trading environment.")
-    async def step(self, action: str) -> Dict[str, Any]:
+    async def step(self, action: str, **kwargs) -> Dict[str, Any]:
         """Step the trading environment.
         
         Args:
@@ -699,7 +699,7 @@ class InterdayTradingEnvironment(Environment):
                 "extra": {"error": str(e), "action": action}
             }
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the Trading Offline environment."""
         try:
             timestamp = self.state["timestamp"]

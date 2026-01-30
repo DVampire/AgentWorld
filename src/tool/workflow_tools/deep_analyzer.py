@@ -31,7 +31,7 @@ from src.message import (
     VideoURL, 
     ContentPartPdf, 
     PdfURL)
-from src.utils import make_file_url
+from src.utils import make_file_url, generate_unique_id
 from src.registry import TOOL
 
 class FileTypeInfo(BaseModel):
@@ -97,9 +97,8 @@ For images, audio, video, preserves visual information by analyzing them directl
 Args:
 - task (str): The task to complete.
 - files (Optional[List[str]]): Optional list of absolute file paths or specific URLs (image, video, PDF) to analyze along with the task.
-- call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
 
-Example: {"name": "deep_analyzer", "args": {"task": "Analyze the given files and provide a summary of the findings.", "files": ["/path/to/file1.txt", "/path/to/file2.pdf"], "call_id": "1234567890"}}.
+Example: {"name": "deep_analyzer", "args": {"task": "Analyze the given files and provide a summary of the findings.", "files": ["/path/to/file1.txt", "/path/to/file2.pdf"]}}.
 """
 
 @TOOL.register_module(force=True)
@@ -402,26 +401,24 @@ class DeepAnalyzerTool(Tool):
         
         return result
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None, call_id: Optional[str] = None, **kwargs) -> ToolResponse:
+    async def __call__(self, task: str, files: Optional[List[str]] = None, **kwargs) -> ToolResponse:
         """Execute deep analysis workflow.
 
         Args:
             task (str): The analysis task or question to investigate
             files (Optional[List[str]]): Optional list of absolute file paths or specific URLs (image, video, PDF) to analyze along with the task
-            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
         """
         try:
             logger.info(f"| 🚀 Starting DeepAnalyzerTool: {task}")
             if files:
                 logger.info(f"| 📂 Attached files: {files}")
             
-            # Generate unique call_id if not provided
-            if call_id is None:
-                call_id = uuid.uuid4().hex[:8]
+            # Generate unique id for this deep analyzer
+            id = generate_unique_id(prefix="deep_analyzer")
             
             # Create per-call local variables to avoid race conditions in concurrent calls
             # Create file path for markdown report
-            md_filename = f"analysis_{call_id}.md"
+            md_filename = f"{id}.md"
             report_file_path = os.path.join(self.base_dir, md_filename) if self.base_dir else None
             
             # Initialize Report instance

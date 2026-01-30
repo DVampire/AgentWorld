@@ -9,12 +9,11 @@ if TYPE_CHECKING:
 
 import os
 from pydantic import BaseModel, ConfigDict, Field
-import inspect
 
 from src.logger import logger
 from src.config import config
 from src.environment.context import EnvironmentContextManager
-from src.environment.types import Environment, EnvironmentConfig
+from src.environment.types import Environment, EnvironmentConfig, EnvironmentContext
 from src.utils import assemble_project_path
 
 class ECPServer(BaseModel):
@@ -142,16 +141,17 @@ class ECPServer(BaseModel):
         """
         return await self.environment_context_manager.get_info(env_name)
     
-    async def get_state(self, env_name: str) -> Optional[Dict[str, Any]]:
+    async def get_state(self, env_name: str, ctx: EnvironmentContext = None, **kwargs) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
         
         Args:
             env_name: Environment name
+            ctx: Environment context
             
         Returns:
             Optional[Dict[str, Any]]: State of the environment or None if not found
         """
-        return await self.environment_context_manager.get_state(env_name)
+        return await self.environment_context_manager.get_state(env_name, ctx, **kwargs)
     
     async def cleanup(self):
         """Cleanup all environments"""
@@ -290,18 +290,24 @@ class ECPServer(BaseModel):
         self._registered_configs[updated_config.name] = updated_config
         return updated_config
 
-    async def __call__(self, name: str, action: str, input: Dict[str, Any]) -> Any:
+    async def __call__(self, 
+                       name: str, 
+                       action: str, 
+                       input: Dict[str, Any], 
+                       ctx: EnvironmentContext = None,
+                       **kwargs) -> Any:
         """Call an environment action
         
         Args:
             name (str): Name of the environment
             action (str): Name of the action
             input (Dict[str, Any]): Input for the action
+            ctx (EnvironmentContext): Environment context
             
         Returns:
             Any: Action result
         """
-        return await self.environment_context_manager(name, action, input)
+        return await self.environment_context_manager(name, action, input, ctx, **kwargs)
 
 
 # Global ECP server instance

@@ -11,12 +11,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import json
 import os
+import asyncio
 
 from src.logger import logger
 from src.model import model_manager
-from src.utils import dedent
+from src.utils import dedent, generate_unique_id
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
-from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, SessionInfo, Memory
+from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, Memory, MemoryContext
 from src.utils import file_lock
 from src.registry import MEMORY_SYSTEM
 
@@ -320,20 +321,57 @@ class GeneralMemorySystem(Memory):
         self.max_summaries = max_summaries
         self.max_insights = max_insights
     
-        self.session_memory: Dict[str, CombinedMemory] = {}
-        self.session_info: Dict[str, SessionInfo] = {}
-        self.current_session_id: Optional[str] = None
-        
-    async def _check_session_id(self, session_id: Optional[str] = None):
-        if session_id is None:
-            session_id = self.current_session_id
-        return session_id
+        # Per-session cache and locks for concurrent safety
+        # Key: session_id (str), Value: CombinedMemory instance
+        self._session_memory_cache: Dict[str, CombinedMemory] = {}
+        # Key: session_id (str), Value: asyncio.Lock for that session
+        self._session_locks: Dict[str, asyncio.Lock] = {}
+        # Lock for managing the cache dictionaries themselves
+        self._cache_lock = asyncio.Lock()
 
-    async def start_session(self, 
-                            session_id: str, 
+    async def _get_or_create_session_memory(self, id: str) -> tuple[CombinedMemory, asyncio.Lock]:
+        """Get or create a CombinedMemory instance for the given id with proper locking.
+        
+        Args:
+            id: The unique identifier for the session
+            
+        Returns:
+            tuple[CombinedMemory, asyncio.Lock]: The session memory instance and its lock
+        """
+        async with self._cache_lock:
+            # Get or create lock for this session
+            if id not in self._session_locks:
+                self._session_locks[id] = asyncio.Lock()
+            
+            # Get or create session memory for this session
+            if id not in self._session_memory_cache:
+                self._session_memory_cache[id] = CombinedMemory(
+                    model_name=self.model_name,
+                    max_summaries=self.max_summaries,
+                    max_insights=self.max_insights
+                )
+                logger.info(f"| 📝 Created new session memory cache for id: {id}")
+            else:
+                logger.debug(f"| 📂 Using existing session memory cache for id: {id}")
+            
+            return self._session_memory_cache[id], self._session_locks[id]
+
+    async def _cleanup_session_memory(self, ctx: MemoryContext):
+        """Remove session memory from cache."""
+        async with self._cache_lock:
+            id = ctx.id
+            if id in self._session_memory_cache:
+                del self._session_memory_cache[id]
+                logger.info(f"| 🧹 Removed session memory from cache: {id}")
+            if id in self._session_locks:
+                del self._session_locks[id]
+
+    async def start_session(self,
                             agent_name: Optional[str] = None, 
                             task_id: Optional[str] = None, 
-                            description: Optional[str] = None
+                            description: Optional[str] = None,
+                            ctx: MemoryContext = None, 
+                            **kwargs
                             ) -> str:
         """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
         # Auto-load from JSON if file exists and save_path is set
@@ -341,39 +379,24 @@ class GeneralMemorySystem(Memory):
             logger.info(f"| 📂 Loading memory from JSON: {self.save_path}")
             await self.load_from_json(self.save_path)
             logger.info(f"| ✅ Memory loaded from JSON")
+            
+        if ctx is None:
+            ctx = MemoryContext()
+        id = ctx.id
         
-        session_info = SessionInfo(
-            session_id=session_id,
-            agent_name=agent_name,
-            task_id=task_id,
-            description=description
-        )
-        self.session_info[session_id] = session_info
-        self.current_session_id = session_id
+        # Initialize CombinedMemory for this session (with proper locking)
+        await self._get_or_create_session_memory(id)
         
-        # Initialize CombinedMemory for this session if it doesn't exist
-        if session_id not in self.session_memory:
-            self.session_memory[session_id] = CombinedMemory(
-                model_name=self.model_name, 
-                max_summaries=self.max_summaries,
-                max_insights=self.max_insights
-            )
-        
-        return session_id
+        return id
     
-    async def end_session(self, session_id: Optional[str] = None):
+    async def end_session(self, ctx: MemoryContext = None, **kwargs):
         """End session. Automatically saves to JSON if save_path is set."""
-        session_id = await self._check_session_id(session_id)
-            
-        if session_id and session_id in self.session_info:
-            self.session_info[session_id].end_time = datetime.now()
-            
-            if session_id == self.current_session_id:
-                self.current_session_id = None
-            
-            # Auto-save to JSON if save_path is set
-            if self.save_path:
-                await self.save_to_json(self.save_path)
+        id = ctx.id
+        
+        # Get session memory with proper locking
+        session_memory, session_lock = await self._get_or_create_session_memory(id)
+        async with session_lock:
+            await session_memory.end_session()
     
     async def add_event(self,
                         step_number: int,
@@ -381,7 +404,7 @@ class GeneralMemorySystem(Memory):
                         data: Any,
                         agent_name: str,
                         task_id: Optional[str] = None,
-                        session_id: Optional[str] = None,
+                        ctx: MemoryContext = None,
                         **kwargs):
         """Add event to memory system.
         
@@ -390,14 +413,11 @@ class GeneralMemorySystem(Memory):
             event_type: Event type (EventType enum)
             data: Event data
             agent_name: Agent name
+            session_id: Session ID (required)
             task_id: Optional task ID
-            session_id: Optional session ID. If None, uses current session.
             **kwargs: Additional arguments
         """
-        session_id = await self._check_session_id(session_id)
-        if session_id is None:
-            logger.warning("| No session ID available for add_event")
-            return
+        id = ctx.id
         
         # Ensure event_type is EventType enum
         if not isinstance(event_type, EventType):
@@ -412,7 +432,7 @@ class GeneralMemorySystem(Memory):
                 logger.warning(f"| ⚠️ Invalid event_type type '{type(event_type)}', defaulting to TOOL_STEP")
                 event_type = EventType.TOOL_STEP
         
-        event_id = "event_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        event_id = generate_unique_id(prefix="event")
         
         event = ChatEvent(
             id=event_id,
@@ -421,85 +441,74 @@ class GeneralMemorySystem(Memory):
             data=data,
             agent_name=agent_name,
             task_id=task_id,
-            session_id=session_id
+            session_id = id
         )
     
-        if session_id in self.session_memory:
-            await self.session_memory[session_id].add_event(event)
-            
-            # Auto-save to JSON if save_path is set
-            if self.save_path:
-                await self.save_to_json(self.save_path)
+        # Get session memory with proper locking
+        session_memory, session_lock = await self._get_or_create_session_memory(id)
+        async with session_lock:
+            await session_memory.add_event(event)
+        
+        # Auto-save to JSON if save_path is set
+        if self.save_path:
+            await self.save_to_json(self.save_path)
     
-    async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
-        session_id = await self._check_session_id(session_id)
-            
+    async def get(self, ctx: MemoryContext = None) -> CombinedMemory:
         """Get session info"""
-        return self.session_info.get(session_id)
+        id = ctx.id
+        if id in self._session_memory_cache:
+            return self._session_memory_cache[id]
+        return None
     
-    async def clear_session(self, session_id: Optional[str] = None):
-        session_id = await self._check_session_id(session_id)
-            
+    async def clear_session(self, ctx: MemoryContext = None):
         """Clear specific session"""
-        if session_id in self.session_info:
-            del self.session_info[session_id]
+        id = ctx.id
+        if id in self._session_memory_cache:
+            await self._session_memory_cache[id].clear()
+            await self._cleanup_session_memory(ctx)
             
-            # Clear CombinedMemory
-            if session_id in self.session_memory:
-                await self.session_memory[session_id].clear()
-                del self.session_memory[session_id]
-            
-            if session_id == self.current_session_id:
-                self.current_session_id = None
-                
-    async def clear(self):
-        """Clear all sessions"""
-        for session_id in list(self.session_info.keys()):
-            await self.clear_session(session_id)
-            
-    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[ChatEvent]:
+    async def get_event(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[ChatEvent]:
         """Get events from memory system.
         
         Args:
             n: Number of events to retrieve. If None, returns all events.
-            session_id: Optional session ID. If None, uses current session.
+            ctx: Memory context
             
         Returns:
             List of events
         """
-        session_id = await self._check_session_id(session_id)
-        if session_id and session_id in self.session_memory:
-            return await self.session_memory[session_id].get_event(n=n)
+        id = ctx.id
+        if id in self._session_memory_cache:
+            return await self._session_memory_cache[id].get_event(n=n)
         return []
     
-    async def get_summary(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[Summary]:
+    async def get_summary(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[Summary]:
         """Get summaries from memory system.
         
         Args:
             n: Number of summaries to retrieve. If None, returns all summaries.
-            session_id: Optional session ID. If None, uses current session.
+            ctx: Memory context
             
         Returns:
             List of summaries
         """
-        session_id = await self._check_session_id(session_id)
-        if session_id and session_id in self.session_memory:
-            return await self.session_memory[session_id].get_summary(n=n)
+        id = ctx.id
+        if id in self._session_memory_cache:
+            return await self._session_memory_cache[id].get_summary(n=n)
         return []
     
-    async def get_insight(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[Insight]:
+    async def get_insight(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[Insight]:
         """Get insights from memory system.
         
         Args:
             n: Number of insights to retrieve. If None, returns all insights.
-            session_id: Optional session ID. If None, uses current session.
-            
+            ctx: Memory context
         Returns:
             List of insights
         """
-        session_id = await self._check_session_id(session_id)
-        if session_id and session_id in self.session_memory:
-            return await self.session_memory[session_id].get_insight(n=n)
+        id = ctx.id
+        if id in self._session_memory_cache:
+            return await self._session_memory_cache[id].get_insight(n=n)
         return []
     
     async def save_to_json(self, file_path: str) -> str:
@@ -509,12 +518,10 @@ class GeneralMemorySystem(Memory):
         {
             "metadata": {
                 "memory_system_type": str,
-                "current_session_id": str,
                 "session_ids": [str, ...]
             },
             "sessions": {
                 "session_id": {
-                    "session_info": {...},
                     "session_memory": {
                         "events": [...],
                         "summaries": [...],
@@ -537,36 +544,22 @@ class GeneralMemorySystem(Memory):
             # Prepare metadata
             metadata = {
                 "memory_system_type": "general_memory_system",
-                "current_session_id": self.current_session_id,
-                "session_ids": list(self.session_info.keys())
+                "session_ids": list(self._session_memory_cache.keys())
             }
             
             # Prepare sessions data
             sessions = {}
-            for session_id in self.session_info.keys():
-                session_data = {
-                    "session_info": None,
-                    "session_memory": {
-                        "events": [],
-                        "summaries": [],
-                        "insights": []
+            async with self._cache_lock:
+                for id in self._session_memory_cache.keys():
+                    session_memory = self._session_memory_cache[id]
+                    session_data = {
+                        "session_memory": {
+                            "events": [event.model_dump(mode="json") for event in session_memory.events],
+                            "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                            "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                        }
                     }
-                }
-                
-                # Save session info
-                if session_id in self.session_info:
-                    session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
-                
-                # Save session memory
-                if session_id in self.session_memory:
-                    session_memory = self.session_memory[session_id]
-                    session_data["session_memory"] = {
-                        "events": [event.model_dump(mode="json") for event in session_memory.events],
-                        "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
-                        "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
-                    }
-                
-                sessions[session_id] = session_data
+                    sessions[id] = session_data
             
             # Prepare save data
             save_data = {
@@ -588,12 +581,10 @@ class GeneralMemorySystem(Memory):
         {
             "metadata": {
                 "memory_system_type": str,
-                "current_session_id": str,
                 "session_ids": [str, ...]
             },
             "sessions": {
-                "session_id": {
-                    "session_info": {...},
+                "id": {
                     "session_memory": {
                         "events": [...],
                         "summaries": [...],
@@ -630,67 +621,55 @@ class GeneralMemorySystem(Memory):
                         f"got keys: {list(load_data.keys())}"
                     )
                 
-                # Restore metadata
-                metadata = load_data.get("metadata", {})
-                self.current_session_id = metadata.get("current_session_id")
-                
                 # Restore sessions
                 sessions_data = load_data.get("sessions", {})
                 logger.debug(f"| 📊 Restoring {len(sessions_data)} sessions from JSON")
                 
-                for session_id, session_data in sessions_data.items():
-                    logger.debug(f"| 🔄 Restoring session: {session_id}")
-                    # Restore session info
-                    session_info_data = session_data.get("session_info")
-                    if session_info_data:
-                        # Parse datetime strings
-                        if session_info_data.get("start_time"):
-                            session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
-                        if session_info_data.get("end_time"):
-                            session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                async with self._cache_lock:
+                    for id, session_data in sessions_data.items():
+                        logger.debug(f"| 🔄 Restoring session: {id}")
                         
-                        self.session_info[session_id] = SessionInfo(**session_info_data)
-                    
-                    # Ensure session memory exists (skip auto-load to avoid recursion)
-                    if session_id not in self.session_memory:
-                        # Create CombinedMemory directly without calling start_session to avoid recursion
-                        self.session_memory[session_id] = CombinedMemory(
-                            model_name=self.model_name, 
-                            max_summaries=self.max_summaries,
-                            max_insights=self.max_insights
-                        )
-                    
-                    session_memory = self.session_memory[session_id]
-                    session_memory_data = session_data.get("session_memory", {})
-                    
-                    # Restore events
-                    if "events" in session_memory_data:
-                        events = []
-                        for event_data in session_memory_data["events"]:
-                            if event_data.get("timestamp"):
-                                event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
-                            if event_data.get("event_type"):
-                                event_data["event_type"] = EventType(event_data["event_type"])
-                            events.append(ChatEvent(**event_data))
-                        session_memory.events = events
-                    
-                    # Restore summaries
-                    if "summaries" in session_memory_data:
-                        summaries = []
-                        for summary_data in session_memory_data["summaries"]:
-                            if summary_data.get("importance"):
-                                summary_data["importance"] = Importance(summary_data["importance"])
-                            summaries.append(Summary(**summary_data))
-                        session_memory.summaries = summaries
-                    
-                    # Restore insights
-                    if "insights" in session_memory_data:
-                        insights = []
-                        for insight_data in session_memory_data["insights"]:
-                            if insight_data.get("importance"):
-                                insight_data["importance"] = Importance(insight_data["importance"])
-                            insights.append(Insight(**insight_data))
-                        session_memory.insights = insights
+                        # Ensure session memory exists (skip auto-load to avoid recursion)
+                        if id not in self._session_memory_cache:
+                            # Create CombinedMemory directly without calling start_session to avoid recursion
+                            self._session_memory_cache[id] = CombinedMemory(
+                                model_name=self.model_name, 
+                                max_summaries=self.max_summaries,
+                                max_insights=self.max_insights
+                            )
+                            self._session_locks[id] = asyncio.Lock()
+                        
+                        session_memory = self._session_memory_cache[id]
+                        session_memory_data = session_data.get("session_memory", {})
+                        
+                        # Restore events
+                        if "events" in session_memory_data:
+                            events = []
+                            for event_data in session_memory_data["events"]:
+                                if event_data.get("timestamp"):
+                                    event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
+                                if event_data.get("event_type"):
+                                    event_data["event_type"] = EventType(event_data["event_type"])
+                                events.append(ChatEvent(**event_data))
+                            session_memory.events = events
+                        
+                        # Restore summaries
+                        if "summaries" in session_memory_data:
+                            summaries = []
+                            for summary_data in session_memory_data["summaries"]:
+                                if summary_data.get("importance"):
+                                    summary_data["importance"] = Importance(summary_data["importance"])
+                                summaries.append(Summary(**summary_data))
+                            session_memory.summaries = summaries
+                        
+                        # Restore insights
+                        if "insights" in session_memory_data:
+                            insights = []
+                            for insight_data in session_memory_data["insights"]:
+                                if insight_data.get("importance"):
+                                    insight_data["importance"] = Importance(insight_data["importance"])
+                                insights.append(Insight(**insight_data))
+                            session_memory.insights = insights
                 
                 logger.info(f"| 📂 Memory loaded from {file_path}")
                 return True

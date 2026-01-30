@@ -252,7 +252,7 @@ class PlotterTool(Tool):
             output_filename (Optional[str]): Optional custom filename for the output PNG. If not provided, a default name will be generated.
         """
         try:
-            logger.info(f"| 🚀 Starting PlotterTool with input: {input_data[:100]}...")
+            logger.info(f"| 🚀 Starting PlotterTool with input: {input_data}")
 
             # Determine input type
             if self._is_csv_file(input_data):
@@ -282,7 +282,7 @@ class PlotterTool(Tool):
                 
                 # Generate conversion code
                 conversion_code = await self._generate_csv_conversion_code(input_data, csv_path)
-                logger.info(f"| 📝 Generated conversion code:\n{conversion_code[:200]}...")
+                logger.info(f"| 📝 Generated conversion code:\n{conversion_code}")
                 
                 # Execute conversion code
                 logger.info(f"| ⚙️ Executing conversion code...")
@@ -295,7 +295,7 @@ class PlotterTool(Tool):
                     )
                 
                 logger.info(f"| ✅ CSV conversion successful: {csv_path}")
-                logger.info(f"| 📄 Conversion output: {conversion_result.message[:200]}...")
+                logger.info(f"| 📄 Conversion output: {conversion_result.message}")
                 
                 # Verify CSV file was created
                 if not os.path.exists(csv_path):
@@ -326,7 +326,7 @@ class PlotterTool(Tool):
             
             # Generate plotting code
             plotting_code = await self._generate_plotting_code(csv_path, png_path)
-            logger.info(f"| 📝 Generated plotting code:\n{plotting_code[:200]}...")
+            logger.info(f"| 📝 Generated plotting code:\n{plotting_code}")
             
             # Execute plotting code
             logger.info(f"| ⚙️ Executing plotting code...")
@@ -339,7 +339,7 @@ class PlotterTool(Tool):
                 )
             
             logger.info(f"| ✅ Plot generation successful: {png_path}")
-            logger.info(f"| 📄 Plotting output: {plotting_result.message[:200]}...")
+            logger.info(f"| 📄 Plotting output: {plotting_result.message}")
             
             # Verify PNG file was created
             if not os.path.exists(png_path):

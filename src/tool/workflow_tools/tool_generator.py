@@ -28,9 +28,8 @@ Args:
 - task (str): The task to complete.
 - tool_name (Optional[str]): Optional explicit tool name. If not provided, will be generated from task.
 - description (Optional[str]): Optional explicit tool description. If not provided, will be generated from task.
-- call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls. If not provided, a UUID will be generated.
 
-Example: {"name": "tool_generator", "args": {"task": "Analyze the given files and provide a summary of the findings.", "tool_name": "deep_analyzer", "description": "Analyze the given files and provide a summary of the findings.", "call_id": "1234567890"}}.
+Example: {"name": "tool_generator", "args": {"task": "Analyze the given files and provide a summary of the findings.", "tool_name": "deep_analyzer", "description": "Analyze the given files and provide a summary of the findings."}}.
 """
 
 class ToolSpecification(BaseModel):
@@ -102,7 +101,6 @@ class ToolGeneratorTool(Tool):
                        task: str,
                        tool_name: Optional[str] = None,
                        description: Optional[str] = None,
-                       call_id: Optional[str] = None,
                        **kwargs) -> ToolResponse:
         """
         Execute tool generation workflow.
@@ -111,14 +109,9 @@ class ToolGeneratorTool(Tool):
             task (str): The task description that requires a tool. This will be analyzed to determine tool requirements.
             tool_name (Optional[str]): Optional explicit tool name. If not provided, will be generated from task.
             description (Optional[str]): Optional explicit tool description. If not provided, will be generated from task.
-            call_id (Optional[str]): Unique identifier for this call to avoid file conflicts in concurrent calls.
         """
         try:
             logger.info(f"🔨 Starting tool generation for task: {task}")
-            
-            # Generate unique call ID if not provided
-            if call_id is None:
-                call_id = uuid.uuid4().hex[:8]
             
             # Step 1: Task Analysis - Extract tool specifications
             logger.info("📋 Step 1: Analyzing task requirements...")

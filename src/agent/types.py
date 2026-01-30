@@ -6,12 +6,11 @@ abstractions, aligned with the design of `src.tool.types`.
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Type, Union, get_type_hints
+from typing import Any, Dict, List, Optional, Type, Union
+
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,14 +19,15 @@ from src.config import config
 from src.dynamic import dynamic_manager
 from src.environment.server import ecp
 from src.logger import logger
-from src.memory import EventType, SessionInfo, memory_manager
+from src.memory import EventType, memory_manager
 from src.message.types import HumanMessage, Message, SystemMessage
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.tool.server import tcp
 from src.utils import (
     dedent,
-    get_file_info
+    get_file_info,
+    generate_unique_id
 )
 
 class InputArgs(BaseModel):
@@ -224,6 +224,10 @@ class ThinkOutput(BaseModel):
     def __repr__(self) -> str:
         return self.__str__()
 
+class AgentContext(BaseModel):
+    """Agent context."""
+    id: str = Field(default_factory=lambda: generate_unique_id("agent"), description="The unique identifier for the agent context.")
+    step_number: int = Field(default=0, description="The step number of the agent context.")
 
 class Agent(BaseModel):
     """Base class for all agents, mirroring the design of `Tool`."""
@@ -246,12 +250,12 @@ class Agent(BaseModel):
         prompt_name: Optional[str] = None,
         prompt_modules: Optional[Dict[str, Any]] = None,
         memory_name: Optional[str] = None,
-        use_memory: bool = True,
         max_tools: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
-        log_max_length: int = 1000,
         require_grad: bool = False,
+        use_memory: bool = True,
+        use_todo: bool = True,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -272,15 +276,11 @@ class Agent(BaseModel):
         self.model_name = model_name
 
         # Setup steps
-        self.prompt_modules = prompt_modules or {}
         self.max_steps = max_steps if max_steps > 0 else int(1e8)
         self.max_tools = max_tools
-        if self.max_tools > 0:
-            self.prompt_modules["max_tools"] = self.max_tools
-        self.prompt_modules["workdir"] = self.workdir
+
         self.review_steps = review_steps
-        self.step_number = 0
-        self.log_max_length = log_max_length
+        self.use_todo = use_todo
 
     async def initialize(self) -> None:
         """Initialize the agent."""
@@ -339,37 +339,25 @@ class Agent(BaseModel):
 
         enhanced_task = dedent(
             f"""
-        - Task:
-        {task}
-        - Attach files:
-        {attach_files_string}
-        """
-        )
+            - Task:
+            {task}
+            - Attach files:
+            {attach_files_string}
+        """)
         return enhanced_task
 
-    async def _generate_session_info(self, task: str) -> SessionInfo:
-        """Generate a session id based on task without extra LLM calls."""
-
-        # Generate a simple session_id based on task content (first 50 chars) and timestamp
-        task_hash = hashlib.md5(task.encode("utf-8")).hexdigest()[:8]
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        session_id = f"{self.name}_{timestamp}_{task_hash}"
-
-        # Generate a simple description (first 100 chars of task)
-        description = task[:100] + "..." if len(task) > 100 else task
-
-        logger.info(f"| ✅ Session info generated: {session_id}")
-        return SessionInfo(session_id=session_id, description=description)
-
-    async def _get_agent_context(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _get_agent_context(self, 
+                                 task: str,
+                                 ctx: AgentContext,
+                                 **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
-
         task = f"<task>{task}</task>"
+        
+        id = ctx.id
+        step_number = ctx.step_number
 
-        # Use provided step_number or fallback to instance state (for backward compatibility)
-        current_step = step_number if step_number is not None else self.step_number
         step_info_description = (
-            f"Step {current_step + 1} of {self.max_steps} max possible steps\n"
+            f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
         )
         time_str = datetime.now().isoformat()
         step_info_description += f"Current date and time: {time_str}"
@@ -380,70 +368,74 @@ class Agent(BaseModel):
         """)
 
         # Get memory state if use_memory is enabled
+        memory = ""
         if self.use_memory and self.memory_name:
             state = await memory_manager.get_state(
                 name=self.memory_name,
                 n=self.review_steps,
-                session_id=session_id
+                session_id=id
             )
             events = state["events"]
             summaries = state["summaries"]
             insights = state["insights"]
-        else:
-            # Use empty memory state when memory is disabled
-            events = []
-            summaries = []
-            insights = []
+            
+            # Generate agent history
+            memory += "<agent_history>"
+            for event in events:
+                memory += f"<step_{event.step_number}>\n"
+                if event.event_type == EventType.TASK_START:
+                    memory += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
+                elif event.event_type == EventType.TASK_END:
+                    memory += f"Task End: {event.data.get('result', '')}\n"
+                elif event.event_type == EventType.TOOL_STEP:
+                    memory += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
+                    memory += f"Memory: {event.data.get('memory', '')}\n"
+                    memory += f"Next Goal: {event.data.get('next_goal', '')}\n"
+                    memory += f"Tool Results: {event.data.get('tool', '')}\n"
+                memory += "\n"
+                memory += f"</step_{event.step_number}>\n"
+            memory += "</agent_history>"
+            
+            # Generate memory
+            memory += "<memory>"
+            if len(summaries) > 0:
+                memory += dedent(
+                    f"""
+                    <summaries>
+                    {chr(10).join([str(summary) for summary in summaries])}
+                    </summaries>
+                """
+                )
+            else:
+                memory += "<summaries>[Current summaries are empty.]</summaries>\n"
+            if len(insights) > 0:
+                memory += dedent(
+                    f"""
+                    <insights>
+                    {chr(10).join([str(insight) for insight in insights])}
+                    </insights>
+                """
+                )
+            else:
+                memory += "<insights>[Current insights are empty.]</insights>\n"
+            memory += "</memory>"
 
-        agent_history = "<agent_history>"
-        for event in events:
-            agent_history += f"<step_{event.step_number}>\n"
-            if event.event_type == EventType.TASK_START:
-                agent_history += f"Task Start: {event.data.get('task', event.data.get('message', ''))}\n"
-            elif event.event_type == EventType.TASK_END:
-                agent_history += f"Task End: {event.data.get('result', '')}\n"
-            elif event.event_type == EventType.TOOL_STEP:
-                agent_history += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
-                agent_history += f"Memory: {event.data.get('memory', '')}\n"
-                agent_history += f"Next Goal: {event.data.get('next_goal', '')}\n"
-                agent_history += f"Tool Results: {event.data.get('tool', '')}\n"
-            agent_history += "\n"
-            agent_history += f"</step_{event.step_number}>\n"
-        agent_history += "</agent_history>"
-
-        memory = "<memory>"
-        if len(summaries) > 0:
-            memory += dedent(
-                f"""
-                <summaries>
-                {chr(10).join([str(summary) for summary in summaries])}
-                </summaries>
-            """
-            )
         else:
-            memory += "<summaries>[Current summaries are empty.]</summaries>\n"
-        if len(insights) > 0:
-            memory += dedent(
-                f"""
-                <insights>
-                {chr(10).join([str(insight) for insight in insights])}
-                </insights>
-            """
-            )
-        else:
-            memory += "<insights>[Current insights are empty.]</insights>\n"
-        memory += "</memory>"
+            memory += "<agent_history>[Agent history is disabled.]</agent_history>\n"
+            memory += "<memory>[Memory is disabled.]</memory>\n"
 
-        todo = "<todo>"
-        todo_contents = await self._get_todo_contents(session_id)
-        todo += todo_contents
-        todo += "</todo>"
+        if self.use_todo:
+            todo = "<todo>"
+            todo_contents = await self._get_todo_contents(id)
+            todo += todo_contents
+            todo += "</todo>"
+        else:
+            todo = "<todo>[Todo is disabled.]</todo>\n"
 
         agent_context = dedent(f"""
             <agent_context>
             {task}
             {step_info}
-            {agent_history}
             {memory}
             {todo}
             </agent_context>
@@ -453,16 +445,15 @@ class Agent(BaseModel):
             "agent_context": agent_context,
         }
 
-    async def _get_todo_contents(self, call_id: Optional[str] = None) -> str:
-        """Get the todo contents for a specific call_id."""
+    async def _get_todo_contents(self, id: str) -> str:
+        """Get the todo contents for a specific id."""
         todo_tool = await tcp.get("todo")
-        if call_id:
-            todo_contents = todo_tool.get_todo_content(call_id)
-        else:
-            todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
+        todo_contents = todo_tool.get_todo_content(id)
         return todo_contents
 
-    async def _get_environment_context(self) -> Dict[str, Any]:
+    async def _get_environment_context(self,
+                                       ctx: AgentContext,
+                                       **kwargs) -> Dict[str, Any]:
         """Get the environment state."""
         environment_context = "<environment_context>"
         # Only iterate over environments specified in config, not all registered environments
@@ -515,7 +506,10 @@ class Agent(BaseModel):
             "tool_context": tool_context,
         }
 
-    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[Message]:
+    async def _get_messages(self, 
+                            task: str, 
+                            session_id: Optional[str] = None, 
+                            step_number: Optional[int] = None) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
         system_modules = self.prompt_modules.copy()
@@ -533,7 +527,12 @@ class Agent(BaseModel):
 
         return messages
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None) -> AgentResponse:
+    async def __call__(self, 
+                       task: str, 
+                       files: Optional[List[str]] = None,
+                       ctx: Optional[AgentContext] = None,
+                       **kwargs: Any,
+                       ) -> AgentResponse:
         """Run the agent. This method should be implemented by the child classes."""
         raise NotImplementedError("__all__ method is not implemented by the child class")
 

@@ -11,7 +11,7 @@ from .utils import (
 from .record_utils import Record, TradingRecords, PortfolioRecords
 from .token_utils import get_token_count
 from .calender_utils import TimeLevel, TimeLevelFormat, get_start_end_timestamp, calculate_time_info, get_standard_timestamp
-from .string_utils import extract_boxed_content, dedent
+from .string_utils import extract_boxed_content, dedent, generate_unique_id
 from .misc import get_world_size, get_rank
 from .name_utils import get_tag_name, get_newspage_name, get_md5
 from .url_utils import fetch_url
@@ -57,4 +57,5 @@ __all__ = [
     "get_jsonparsed_data",
     "generate_intervals",
     "push_to_hub_folder",
+    "generate_unique_id",
 ]

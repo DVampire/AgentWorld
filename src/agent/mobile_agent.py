@@ -190,11 +190,11 @@ class MobileAgent(Agent):
             "agent_history": agent_history,
         }
     
-    async def _get_todo_contents(self, call_id: Optional[str] = None) -> str:
-        """Get the todo contents for a specific call_id."""
+    async def _get_todo_contents(self, id: Optional[str] = None) -> str:
+        """Get the todo contents for a specific id."""
         todo_tool = await tcp.get("todo")
-        if call_id:
-            todo_contents = todo_tool.get_todo_content(call_id)
+        if id:
+            todo_contents = todo_tool.get_todo_content(id)
         else:
             todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
         return todo_contents   
@@ -339,9 +339,9 @@ class MobileAgent(Agent):
             # Execute the first action
             action_results = []
             
-            # Auto-inject call_id for todo tool using session_id
+            # Auto-inject id for todo tool using session_id
             if tool_name == "todo" and session_id:
-                tool_args["call_id"] = session_id
+                tool_args["id"] = session_id
             
             logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
             

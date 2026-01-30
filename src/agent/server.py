@@ -3,9 +3,8 @@
 Server implementation for the Agent Context Protocol with lazy loading support.
 """
 
-import asyncio
 import os
-from typing import Any, Dict, List, Optional, Type, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.optimizer.types import Variable
