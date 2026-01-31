@@ -78,6 +78,7 @@ class ToolContextManager(BaseModel):
         
         self._cleanup_registered = False
         self._faiss_service = None
+        self._variables_lock = asyncio.Lock()  # Lock for get/set trainable variables
         
     async def initialize(self, tool_names: Optional[List[str]] = None):
         """Initialize the tool context manager."""
@@ -1173,16 +1174,17 @@ class ToolContextManager(BaseModel):
                 - require_grad: True
                 - variables: tool's code (as string value)
         """
-        # Get all variables first
-        all_variables = await self.get_variables(tool_name=tool_name)
-        
-        # Filter to only include variables with require_grad=True
-        trainable_variables = {
-            name: variable for name, variable in all_variables.items()
-            if variable.require_grad is True
-        }
-        
-        return trainable_variables
+        async with self._variables_lock:
+            # Get all variables first
+            all_variables = await self.get_variables(tool_name=tool_name)
+            
+            # Filter to only include variables with require_grad=True
+            trainable_variables = {
+                name: variable for name, variable in all_variables.items()
+                if variable.require_grad is True
+            }
+            
+            return trainable_variables
     
     async def set_variables(self, tool_name: str, variable_updates: Dict[str, Any], new_version: Optional[str] = None, description: Optional[str] = None) -> ToolConfig:
         """Set variable values in a tool and create a new version.
@@ -1202,45 +1204,46 @@ class ToolContextManager(BaseModel):
         Returns:
             ToolConfig: Updated tool configuration
         """
-        original_config = self._tool_configs.get(tool_name)
-        if original_config is None:
-            raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
-        
-        # For tools, variable_updates format is {"name": "tool_name", "variables": "tool code"}
-        # Extract the new code from "variables" field
-        if "variables" not in variable_updates:
-            raise ValueError(f"variable_updates must contain 'variables' field with tool code, got: {list(variable_updates.keys())}")
-        
-        new_code = variable_updates["variables"]
-        if not isinstance(new_code, str):
-            raise ValueError(f"Tool code must be a string, got {type(new_code)}")
-        
-        # Load tool class from code
-        class_name = dynamic_manager.extract_class_name_from_code(new_code)
-        if not class_name:
-            raise ValueError(f"Cannot extract class name from code")
-        
-        try:
-            tool_cls = dynamic_manager.load_class(
-                new_code,
-                class_name=class_name,
-                base_class=Tool,
-                context="tool"
+        async with self._variables_lock:
+            original_config = self._tool_configs.get(tool_name)
+            if original_config is None:
+                raise ValueError(f"Tool {tool_name} not found. Use register() to register a new tool.")
+            
+            # For tools, variable_updates format is {"name": "tool_name", "variables": "tool code"}
+            # Extract the new code from "variables" field
+            if "variables" not in variable_updates:
+                raise ValueError(f"variable_updates must contain 'variables' field with tool code, got: {list(variable_updates.keys())}")
+            
+            new_code = variable_updates["variables"]
+            if not isinstance(new_code, str):
+                raise ValueError(f"Tool code must be a string, got {type(new_code)}")
+            
+            # Load tool class from code
+            class_name = dynamic_manager.extract_class_name_from_code(new_code)
+            if not class_name:
+                raise ValueError(f"Cannot extract class name from code")
+            
+            try:
+                tool_cls = dynamic_manager.load_class(
+                    new_code,
+                    class_name=class_name,
+                    base_class=Tool,
+                    context="tool"
+                )
+            except Exception as e:
+                logger.error(f"| ❌ Failed to load tool class from code: {e}")
+                raise ValueError(f"Failed to load tool class from code: {e}")
+            
+            # Use update() function to handle version management and persistence
+            # Pass the code directly to avoid re-extracting from dynamically created class
+            update_description = description or f"Updated code for {tool_name}"
+            return await self.update(
+                tool_cls=tool_cls,
+                tool_config_dict=original_config.config,
+                new_version=new_version,
+                description=update_description,
+                code=new_code  # Pass code directly since tool_cls is dynamically created
             )
-        except Exception as e:
-            logger.error(f"| ❌ Failed to load tool class from code: {e}")
-            raise ValueError(f"Failed to load tool class from code: {e}")
-        
-        # Use update() function to handle version management and persistence
-        # Pass the code directly to avoid re-extracting from dynamically created class
-        update_description = description or f"Updated code for {tool_name}"
-        return await self.update(
-            tool_cls=tool_cls,
-            tool_config_dict=original_config.config,
-            new_version=new_version,
-            description=update_description,
-            code=new_code  # Pass code directly since tool_cls is dynamically created
-        )
     
     async def __call__(self,
                        name: str,

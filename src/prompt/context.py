@@ -1,5 +1,6 @@
 """Prompt Context Manager for managing prompt lifecycle and resources with version management."""
 
+import asyncio
 import atexit
 import os
 import json
@@ -68,6 +69,7 @@ class PromptContextManager(BaseModel):
         self._prompt_history_versions: Dict[str, Dict[str, PromptConfig]] = {}
         
         self._cleanup_registered = False
+        self._variables_lock = asyncio.Lock()  # Lock for get/set trainable variables
         
         # Register cleanup on exit
         if not self._cleanup_registered:
@@ -1048,33 +1050,34 @@ class PromptContextManager(BaseModel):
                                 Only includes variables where require_grad=True.
                                 Returns flattened structure without parent wrappers.
         """
-        system_prompt_name = f"{prompt_name}_system_prompt"
-        agent_prompt_name = f"{prompt_name}_agent_message_prompt"
-        system_prompt_instance = await self.get(system_prompt_name)
-        agent_prompt_instance = await self.get(agent_prompt_name)
-        variables: Dict[str, 'Variable'] = {}
-        
-        # Extract trainable sub-variables from system prompt
-        if system_prompt_instance is not None:
-            system_var = await system_prompt_instance.get_variable()
-            trainable_sub_vars = system_var.get_trainable_variables()
-            for var_name, var in trainable_sub_vars.items():
-                variables[var_name] = var
-                logger.debug(f"| ✅ Extracted trainable variable '{var_name}' from {system_prompt_name}")
-        else:
-            logger.debug(f"| ⚠️ System prompt instance {system_prompt_name} not found")
-        
-        # Extract trainable sub-variables from agent message prompt
-        if agent_prompt_instance is not None:
-            agent_var = await agent_prompt_instance.get_variable()
-            trainable_sub_vars = agent_var.get_trainable_variables()
-            for var_name, var in trainable_sub_vars.items():
-                variables[var_name] = var
-                logger.debug(f"| ✅ Extracted trainable variable '{var_name}' from {agent_prompt_name}")
-        else:
-            logger.debug(f"| ⚠️ Agent prompt instance {agent_prompt_name} not found")
-        
-        return variables
+        async with self._variables_lock:
+            system_prompt_name = f"{prompt_name}_system_prompt"
+            agent_prompt_name = f"{prompt_name}_agent_message_prompt"
+            system_prompt_instance = await self.get(system_prompt_name)
+            agent_prompt_instance = await self.get(agent_prompt_name)
+            variables: Dict[str, 'Variable'] = {}
+            
+            # Extract trainable sub-variables from system prompt
+            if system_prompt_instance is not None:
+                system_var = await system_prompt_instance.get_variable()
+                trainable_sub_vars = system_var.get_trainable_variables()
+                for var_name, var in trainable_sub_vars.items():
+                    variables[var_name] = var
+                    logger.debug(f"| ✅ Extracted trainable variable '{var_name}' from {system_prompt_name}")
+            else:
+                logger.debug(f"| ⚠️ System prompt instance {system_prompt_name} not found")
+            
+            # Extract trainable sub-variables from agent message prompt
+            if agent_prompt_instance is not None:
+                agent_var = await agent_prompt_instance.get_variable()
+                trainable_sub_vars = agent_var.get_trainable_variables()
+                for var_name, var in trainable_sub_vars.items():
+                    variables[var_name] = var
+                    logger.debug(f"| ✅ Extracted trainable variable '{var_name}' from {agent_prompt_name}")
+            else:
+                logger.debug(f"| ⚠️ Agent prompt instance {agent_prompt_name} not found")
+            
+            return variables
     
     async def set_variables(self, 
                             prompt_name: str, 
@@ -1104,112 +1107,113 @@ class PromptContextManager(BaseModel):
             Dict[str, PromptConfig]: Dictionary mapping prompt names to updated configurations
                                      (e.g., {"tool_calling_system_prompt": PromptConfig, ...})
         """
-        import copy
-        
-        system_prompt_name = f"{prompt_name}_system_prompt"
-        agent_prompt_name = f"{prompt_name}_agent_message_prompt"
-        
-        # Get both prompt instances
-        system_prompt_instance = await self.get(system_prompt_name)
-        agent_prompt_instance = await self.get(agent_prompt_name)
-        
-        # Group updates by parent prompt type
-        system_updates = {}
-        agent_updates = {}
-        
-        # Classify each variable update by checking which prompt contains it
-        for var_name, new_value in variable_updates.items():
-            found = False
+        async with self._variables_lock:
+            import copy
             
-            # Check if variable belongs to system prompt
-            if system_prompt_instance is not None:
+            system_prompt_name = f"{prompt_name}_system_prompt"
+            agent_prompt_name = f"{prompt_name}_agent_message_prompt"
+            
+            # Get both prompt instances
+            system_prompt_instance = await self.get(system_prompt_name)
+            agent_prompt_instance = await self.get(agent_prompt_name)
+            
+            # Group updates by parent prompt type
+            system_updates = {}
+            agent_updates = {}
+            
+            # Classify each variable update by checking which prompt contains it
+            for var_name, new_value in variable_updates.items():
+                found = False
+                
+                # Check if variable belongs to system prompt
+                if system_prompt_instance is not None:
+                    system_config = self._prompt_configs.get(system_prompt_name)
+                    if system_config and isinstance(system_config.variables, dict):
+                        if var_name in system_config.variables:
+                            system_updates[var_name] = new_value
+                            found = True
+                            logger.debug(f"| 📍 Variable '{var_name}' belongs to {system_prompt_name}")
+                
+                # Check if variable belongs to agent message prompt
+                if not found and agent_prompt_instance is not None:
+                    agent_config = self._prompt_configs.get(agent_prompt_name)
+                    if agent_config and isinstance(agent_config.variables, dict):
+                        if var_name in agent_config.variables:
+                            agent_updates[var_name] = new_value
+                            found = True
+                            logger.debug(f"| 📍 Variable '{var_name}' belongs to {agent_prompt_name}")
+                
+                if not found:
+                    logger.warning(f"| ⚠️ Variable '{var_name}' not found in any prompt")
+            
+            # Update each prompt with its respective variables
+            updated_configs = {}
+            
+            # Update system prompt if there are changes
+            if system_updates:
                 system_config = self._prompt_configs.get(system_prompt_name)
-                if system_config and isinstance(system_config.variables, dict):
-                    if var_name in system_config.variables:
-                        system_updates[var_name] = new_value
-                        found = True
-                        logger.debug(f"| 📍 Variable '{var_name}' belongs to {system_prompt_name}")
+                updated_variables = copy.deepcopy(system_config.variables)
+                
+                for var_name, new_value in system_updates.items():
+                    if isinstance(updated_variables[var_name], dict):
+                        updated_variables[var_name]['variables'] = new_value
+                        logger.info(f"| ✅ Updated variable '{var_name}' in {system_prompt_name}")
+                    elif hasattr(updated_variables[var_name], 'variables'):
+                        updated_variables[var_name].variables = new_value
+                        logger.info(f"| ✅ Updated variable '{var_name}' in {system_prompt_name}")
+                
+                prompt_dict = system_config.model_dump()
+                prompt_dict['variables'] = updated_variables
+                
+                updated_config = await self.update(
+                    prompt_name=system_prompt_name,
+                    prompt=prompt_dict,
+                    new_version=new_version,
+                    description=description
+                )
+                # Note: update() already calls build(force_rebuild=True), so this is a safety fallback
+                try:
+                    if updated_config and getattr(updated_config, "cls", None) is not None and updated_config.instance is None:
+                        await self.build(updated_config, force_rebuild=True)
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to build updated prompt instance for {system_prompt_name}: {e}")
+                updated_configs[system_prompt_name] = updated_config
             
-            # Check if variable belongs to agent message prompt
-            if not found and agent_prompt_instance is not None:
+            # Update agent message prompt if there are changes
+            if agent_updates:
                 agent_config = self._prompt_configs.get(agent_prompt_name)
-                if agent_config and isinstance(agent_config.variables, dict):
-                    if var_name in agent_config.variables:
-                        agent_updates[var_name] = new_value
-                        found = True
-                        logger.debug(f"| 📍 Variable '{var_name}' belongs to {agent_prompt_name}")
+                updated_variables = copy.deepcopy(agent_config.variables)
+                
+                for var_name, new_value in agent_updates.items():
+                    if isinstance(updated_variables[var_name], dict):
+                        updated_variables[var_name]['variables'] = new_value
+                        logger.info(f"| ✅ Updated variable '{var_name}' in {agent_prompt_name}")
+                    elif hasattr(updated_variables[var_name], 'variables'):
+                        updated_variables[var_name].variables = new_value
+                        logger.info(f"| ✅ Updated variable '{var_name}' in {agent_prompt_name}")
+                
+                prompt_dict = agent_config.model_dump()
+                prompt_dict['variables'] = updated_variables
+                
+                updated_config = await self.update(
+                    prompt_name=agent_prompt_name,
+                    prompt=prompt_dict,
+                    new_version=new_version,
+                    description=description
+                )
+                # Note: update() already calls build(force_rebuild=True), so this is a safety fallback
+                try:
+                    if updated_config and getattr(updated_config, "cls", None) is not None and updated_config.instance is None:
+                        await self.build(updated_config, force_rebuild=True)
+                except Exception as e:
+                    logger.warning(f"| ⚠️ Failed to build updated prompt instance for {agent_prompt_name}: {e}")
+                updated_configs[agent_prompt_name] = updated_config
             
-            if not found:
-                logger.warning(f"| ⚠️ Variable '{var_name}' not found in any prompt")
-        
-        # Update each prompt with its respective variables
-        updated_configs = {}
-        
-        # Update system prompt if there are changes
-        if system_updates:
-            system_config = self._prompt_configs.get(system_prompt_name)
-            updated_variables = copy.deepcopy(system_config.variables)
+            if not updated_configs:
+                raise ValueError(f"No variables were updated. Check variable names: {list(variable_updates.keys())}")
             
-            for var_name, new_value in system_updates.items():
-                if isinstance(updated_variables[var_name], dict):
-                    updated_variables[var_name]['variables'] = new_value
-                    logger.info(f"| ✅ Updated variable '{var_name}' in {system_prompt_name}")
-                elif hasattr(updated_variables[var_name], 'variables'):
-                    updated_variables[var_name].variables = new_value
-                    logger.info(f"| ✅ Updated variable '{var_name}' in {system_prompt_name}")
-            
-            prompt_dict = system_config.model_dump()
-            prompt_dict['variables'] = updated_variables
-            
-            updated_config = await self.update(
-                prompt_name=system_prompt_name,
-                prompt=prompt_dict,
-                new_version=new_version,
-                description=description
-            )
-            # Note: update() already calls build(force_rebuild=True), so this is a safety fallback
-            try:
-                if updated_config and getattr(updated_config, "cls", None) is not None and updated_config.instance is None:
-                    await self.build(updated_config, force_rebuild=True)
-            except Exception as e:
-                logger.warning(f"| ⚠️ Failed to build updated prompt instance for {system_prompt_name}: {e}")
-            updated_configs[system_prompt_name] = updated_config
-        
-        # Update agent message prompt if there are changes
-        if agent_updates:
-            agent_config = self._prompt_configs.get(agent_prompt_name)
-            updated_variables = copy.deepcopy(agent_config.variables)
-            
-            for var_name, new_value in agent_updates.items():
-                if isinstance(updated_variables[var_name], dict):
-                    updated_variables[var_name]['variables'] = new_value
-                    logger.info(f"| ✅ Updated variable '{var_name}' in {agent_prompt_name}")
-                elif hasattr(updated_variables[var_name], 'variables'):
-                    updated_variables[var_name].variables = new_value
-                    logger.info(f"| ✅ Updated variable '{var_name}' in {agent_prompt_name}")
-            
-            prompt_dict = agent_config.model_dump()
-            prompt_dict['variables'] = updated_variables
-            
-            updated_config = await self.update(
-                prompt_name=agent_prompt_name,
-                prompt=prompt_dict,
-                new_version=new_version,
-                description=description
-            )
-            # Note: update() already calls build(force_rebuild=True), so this is a safety fallback
-            try:
-                if updated_config and getattr(updated_config, "cls", None) is not None and updated_config.instance is None:
-                    await self.build(updated_config, force_rebuild=True)
-            except Exception as e:
-                logger.warning(f"| ⚠️ Failed to build updated prompt instance for {agent_prompt_name}: {e}")
-            updated_configs[agent_prompt_name] = updated_config
-        
-        if not updated_configs:
-            raise ValueError(f"No variables were updated. Check variable names: {list(variable_updates.keys())}")
-        
-        logger.info(f"| ✅ Updated {len(system_updates) + len(agent_updates)} variables across {len(updated_configs)} prompts")
-        return updated_configs
+            logger.info(f"| ✅ Updated {len(system_updates) + len(agent_updates)} variables across {len(updated_configs)} prompts")
+            return updated_configs
     
     async def save_contract(self, prompt_names: Optional[List[str]] = None):
         """Save the contract for prompts
