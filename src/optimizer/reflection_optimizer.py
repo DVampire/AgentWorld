@@ -190,7 +190,63 @@ class ReflectionOptimizer(Optimizer):
         return variables_text
         
     
-    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str, previous_evaluation: Optional[EvaluationResult] = None) -> str:
+    async def _get_memory_context(self, ctx: "OptimizerContext") -> str:
+        """
+        Get summaries and insights from optimizer memory.
+        
+        Args:
+            ctx: Optimizer context containing the session id.
+            
+        Returns:
+            str: Formatted memory context with summaries and insights.
+        """
+        from src.memory import memory_manager
+        from src.memory.types import MemoryContext
+        
+        memory_context = ""
+        
+        if not self.memory_name:
+            return memory_context
+        
+        try:
+            id = ctx.id if ctx else None
+            memory_ctx = MemoryContext(id=id)
+            
+            # Get state from memory (includes summaries and insights)
+            state = await memory_manager.get_state(
+                name=self.memory_name,
+                n=10,  # Get recent summaries/insights
+                ctx=memory_ctx
+            )
+            
+            summaries = state.get("summaries", [])
+            insights = state.get("insights", [])
+            
+            # Format summaries
+            if len(summaries) > 0:
+                memory_context += "<optimization_summaries>\n"
+                memory_context += "These are summaries from previous optimization sessions that may help guide the current optimization:\n"
+                for summary in summaries:
+                    memory_context += f"- {str(summary)}\n"
+                memory_context += "</optimization_summaries>\n"
+            
+            # Format insights
+            if len(insights) > 0:
+                memory_context += "<optimization_insights>\n"
+                memory_context += "These are insights learned from previous optimizations that should be applied:\n"
+                for insight in insights:
+                    memory_context += f"- {str(insight)}\n"
+                memory_context += "</optimization_insights>\n"
+            
+            if memory_context:
+                logger.info(f"| 📚 Loaded {len(summaries)} summaries and {len(insights)} insights from memory")
+            
+        except Exception as e:
+            logger.warning(f"| ⚠️ Failed to get memory context: {e}")
+        
+        return memory_context
+
+    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str, previous_evaluation: Optional[EvaluationResult] = None, ctx: "OptimizerContext" = None) -> str:
         """
         Generate the reflection analysis for all variables.
 
@@ -199,6 +255,7 @@ class ReflectionOptimizer(Optimizer):
             variables (Dict[str, Any]): Dictionary of variables.
             execution_result (str): Agent execution result.
             previous_evaluation (Optional[EvaluationResult]): Previous evaluation result to inform the reflection.
+            ctx (OptimizerContext): Optimizer context for accessing memory.
         Returns:
             str: Reflection analysis identifying which variables to optimize and how.
         """
@@ -221,12 +278,16 @@ Previous Evaluation Result:
 
 """
 
+        # Get memory context with summaries and insights
+        memory_context = await self._get_memory_context(ctx)
+
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
             "execution_result": execution_result,
             "previous_evaluation": previous_evaluation_text,
+            "memory_context": memory_context,
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_reflection",
@@ -248,7 +309,7 @@ Previous Evaluation Result:
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str, historical_reflections: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str, historical_reflections: Optional[List[str]] = None, ctx: "OptimizerContext" = None) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -258,6 +319,7 @@ Previous Evaluation Result:
             variables: List of Variable objects to potentially improve.
             reflection_analysis (str): Reflection analysis output.
             variable_mapping: Mapping from variable name to Variable object.
+            ctx (OptimizerContext): Optimizer context for accessing memory.
 
         Returns:
             Dictionary of improved variables in flattened structure
@@ -305,11 +367,15 @@ Historical Reflections from Previous Tasks:
         else:
             logger.info("No historical reflections available, using current reflection only")
         
+        # Get memory context with summaries and insights
+        memory_context = await self._get_memory_context(ctx)
+        
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
-            "reflection_analysis": combined_reflection
+            "reflection_analysis": combined_reflection,
+            "memory_context": memory_context,
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_improvement",
@@ -342,7 +408,7 @@ Historical Reflections from Previous Tasks:
             raise
 
     async def _improve_solution(self, task: str, variables: Dict[str, Variable],
-                                 reflection_analysis: str) -> Response:
+                                 reflection_analysis: str, ctx: "OptimizerContext" = None) -> Response:
 
         # Lazy import to avoid circular dependency
         from src.prompt import prompt_manager
@@ -354,11 +420,15 @@ Historical Reflections from Previous Tasks:
         # Format all variables for context
         current_variables_text = await self._format_variables(variables)
 
+        # Get memory context with summaries and insights
+        memory_context = await self._get_memory_context(ctx)
+
         system_modules = {}
         agent_message_modules = {
             "task": task,
             "current_variables": current_variables_text,
-            "reflection_analysis": reflection_analysis
+            "reflection_analysis": reflection_analysis,
+            "memory_context": memory_context,
         }
         messages = await prompt_manager.get_messages(
             prompt_name=f"{self.prompt_name}_improvement",
@@ -545,6 +615,7 @@ Historical Reflections from Previous Tasks:
                             variables=trainable_variables,
                             execution_result=current_solution,
                             previous_evaluation=previous_evaluation,
+                            ctx=ctx,
                         )
                         # Save phase 1 reflection text for later reporting
                         try:
@@ -565,6 +636,7 @@ Historical Reflections from Previous Tasks:
                             variables=trainable_variables,
                             reflection_analysis=reflection_analysis,
                             historical_reflections=historical_reflections,
+                            ctx=ctx,
                         )
                         # Save phase 1 improved variables (stringified) for later reporting
                         try:
@@ -736,6 +808,7 @@ Historical Reflections from Previous Tasks:
                         variables=solution_variables,
                         execution_result=current_solution,
                         previous_evaluation=previous_evaluation,
+                        ctx=ctx,
                     )
 
                     # For analysis (Phase 2)
@@ -746,6 +819,7 @@ Historical Reflections from Previous Tasks:
                         task=task,
                         variables=solution_variables,
                         reflection_analysis=solution_reflection,
+                        ctx=ctx,
                     )
 
                     phase2_improvements.append(json.dumps(dict(reasoning=improved_solution_result.reasoning, result=improved_solution_result.result), ensure_ascii=False, indent=4))

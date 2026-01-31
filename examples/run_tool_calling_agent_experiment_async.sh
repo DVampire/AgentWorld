@@ -17,7 +17,7 @@ fi
 python examples/run_tool_calling_agent_experiment_async.py \
     --config configs/tool_calling_agent.py \
     --benchmark ${benchmark} \
-    --concurrency 1 \
+    --concurrency 4 \
     --model_name openrouter/${model_name} \
     $OPT_ARGS \
     --cfg-options model_name=openrouter/${model_name} workdir=workdir/${tag} tag=${tag} tool_calling_agent.model_name=openrouter/${model_name} tool_calling_agent.workdir=workdir/${tag}

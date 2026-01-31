@@ -31,6 +31,12 @@ Please analyze the execution result and the provided variables in <current_varia
 - Analyze why the agent's solution (in <current_variables> or <execution_result>) is wrong or suboptimal.
 - Provide feedback on how to improve the reasoning process, not the answer itself.
 
+**Use Memory Context**
+- If <optimization_summaries> is provided, review the summaries from previous optimization sessions to understand patterns and recurring issues.
+- If <optimization_insights> is provided, leverage these insights to guide your analysis - they contain learned lessons from past optimizations.
+- Apply relevant insights to identify similar issues in the current execution.
+- Avoid suggesting improvements that contradict proven insights from previous sessions.
+
 **Important**
 - Only analyze and suggest improvements for variables listed in <current_variables>. 
 - Do not suggest creating new variables or tools that don't exist.
@@ -113,6 +119,7 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ current_variables }}
 {{ execution_result }}
 {{ previous_evaluation }}
+{{ memory_context }}
 """
 
 REFLECTION_OPTIMIZER_REFLECTION_SYSTEM_PROMPT = {
@@ -201,6 +208,14 @@ REFLECTION_OPTIMIZER_REFLECTION_AGENT_MESSAGE_PROMPT = {
             "require_grad": False,
             "template": None,
             "variables": None
+        },
+        "memory_context": {
+            "name": "memory_context",
+            "type": "agent_message_prompt",
+            "description": "Summaries and insights from previous optimization sessions.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
         }
     }
 }
@@ -256,6 +271,13 @@ DO NOT answer or solve the task yourself - your job is to IMPROVE the variable b
 - You are an IMPROVER of variables, not a solver. Do not attempt to answer the task.
 - For solution variables: improve the REASONING PROCESS (structure, verification, decomposition), not provide the answer.
 - Output improved variable content that would help the agent reason better on ANY similar task.
+
+**Use Memory Context**
+- If <optimization_summaries> is provided, review summaries from previous optimization sessions to understand what improvements have worked well.
+- If <optimization_insights> is provided, apply these proven insights when making improvements - they contain validated lessons from past optimizations.
+- Incorporate successful patterns and strategies identified in past optimization sessions.
+- Avoid making changes that have been shown to be ineffective in previous sessions.
+- Use insights to prioritize which improvements are most likely to be effective.
 
 **Important**
 - Only improve variables listed in <current_variables>. 
@@ -371,6 +393,7 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ task }}
 {{ current_variables }}
 {{ reflection_analysis }}
+{{ memory_context }}
 """
 
 REFLECTION_OPTIMIZER_IMPROVEMENT_SYSTEM_PROMPT = {
@@ -449,6 +472,14 @@ REFLECTION_OPTIMIZER_IMPROVEMENT_AGENT_MESSAGE_PROMPT = {
             "name": "reflection_analysis",
             "type": "agent_message_prompt",
             "description": "Describes the reflection analysis for the current variables.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "memory_context": {
+            "name": "memory_context",
+            "type": "agent_message_prompt",
+            "description": "Summaries and insights from previous optimization sessions.",
             "require_grad": False,
             "template": None,
             "variables": None
