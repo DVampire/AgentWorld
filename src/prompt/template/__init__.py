@@ -63,6 +63,11 @@ from .grpo_optimizer import (
     GrpoOptimizerImprovementAgentMessagePrompt,
 )
 
+from .trading_strategy import (
+    TradingStrategySystemPrompt,
+    TradingStrategyAgentMessagePrompt,
+)
+
 __all__ = [
     "AnthropicMobileSystemPrompt",
     "AnthropicMobileAgentMessagePrompt",
@@ -100,4 +105,6 @@ __all__ = [
     "GrpoOptimizerReflectionAgentMessagePrompt",
     "GrpoOptimizerImprovementSystemPrompt",
     "GrpoOptimizerImprovementAgentMessagePrompt",
+    "TradingStrategySystemPrompt",
+    "TradingStrategyAgentMessagePrompt",
 ]
