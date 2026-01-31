@@ -413,9 +413,8 @@ class GeneralMemorySystem(Memory):
             event_type: Event type (EventType enum)
             data: Event data
             agent_name: Agent name
-            session_id: Session ID (required)
             task_id: Optional task ID
-            **kwargs: Additional arguments
+            ctx: Memory context
         """
         id = ctx.id
         
