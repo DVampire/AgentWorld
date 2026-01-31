@@ -118,3 +118,4 @@ pylatexenc>=2.10
 mathruler>=0.1.0
 dirtyjson>=1.0.8
 backtrader
+empyrical
