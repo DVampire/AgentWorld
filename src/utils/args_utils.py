@@ -64,5 +64,5 @@ def parse_tool_args(args_str: str) -> Dict[str, Any]:
         logger.debug(f"| Regex extraction failed: {e}")
     
     # All strategies failed
-    logger.error(f"| ❌ All parsing strategies failed for args: {args_str[:200]}...")
+    logger.error(f"| ❌ All parsing strategies failed for args: {args_str}...")
     return {}

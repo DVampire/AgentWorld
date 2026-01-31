@@ -6,6 +6,7 @@ from typing import List, Optional, Dict, Any
 from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
+
 from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput, AgentContext
 from src.config import config
 from src.logger import logger

@@ -117,3 +117,4 @@ nano-vectordb>=0.0.4.3
 pylatexenc>=2.10
 mathruler>=0.1.0
 dirtyjson>=1.0.8
+backtrader
