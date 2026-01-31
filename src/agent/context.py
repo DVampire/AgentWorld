@@ -17,9 +17,10 @@ from src.environment.faiss.types import FaissAddRequest
 from src.utils import (
     assemble_project_path,
     gather_with_concurrency,
-    file_lock
+    file_lock,
+    generate_unique_id
 )
-from src.agent.types import Agent, AgentConfig
+from src.agent.types import Agent, AgentConfig, AgentContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import AGENT
@@ -1245,21 +1246,29 @@ class AgentContextManager(BaseModel):
         except Exception as e:
             logger.error(f"| ❌ Error during agent context manager cleanup: {e}")
             
-    async def __call__(self, name: str, input: Dict[str, Any]) -> Any:
+    async def __call__(self, name: str, input: Dict[str, Any], ctx: AgentContext = None, **kwargs) -> Any:
         """Call an agent by name
         
         Args:
             name: Agent name
             input: Input for the agent
-            
+            ctx: Agent context
         Returns:
             Agent result
         """
+        if ctx is None:
+            ctx = AgentContext()
+        
         agent_info = await self.get_info(name)
+        
+        # Agent args
+        agent_args = {
+            "ctx": ctx,
+        }
         
         version = agent_info.version
         agent_instance = agent_info.instance
         logger.info(f"| ✅ Using agent {name}@{version}")
         
-        return await agent_instance(**input)
+        return await agent_instance(**input, **agent_args)
 

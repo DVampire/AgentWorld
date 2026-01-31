@@ -1,7 +1,7 @@
 """Memory module for managing agent execution history."""
 
 from .server import MemoryManager, memory_manager
-from .types import ChatEvent, EventType, SessionInfo, Memory, MemoryConfig
+from .types import ChatEvent, EventType, Memory, MemoryConfig
 from .context import MemoryContextManager
 from .general_memory_system import GeneralMemorySystem
 from .online_trading_memory_system import OnlineTradingMemorySystem
@@ -20,5 +20,4 @@ __all__ = [
     "OptimizerMemorySystem",
     "ChatEvent",
     "EventType",
-    "SessionInfo",
 ]

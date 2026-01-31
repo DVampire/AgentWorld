@@ -17,6 +17,7 @@ from src.utils import assemble_project_path
 from src.utils import file_lock
 from src.registry import TOOL
 from src.logger import logger
+from src.tool.types import ToolContext
 
 
 class Step(BaseModel):
@@ -776,13 +777,16 @@ class TodoTool(Tool):
         except Exception as e:
             return ToolResponse(success=False, message=f"Error exporting todo.md: {str(e)}")
 
-    def get_todo_content(self, id: str) -> str:
+    def get_todo_content(self, ctx: ToolContext, **kwargs) -> str:
         """Get the content of the todo.md file for a specific id.
         
-        Note: This is a synchronous method for compatibility. For async usage,
-        prefer using the 'show' action.
+        Args:
+            ctx: Tool context
+        
+        Returns:
+            str: The content of the todo.md file
         """
+        id = ctx.id
         if id not in self._todo_cache:
             return "[Current todo.md is empty, fill it with your plan when applicable]"
-        
         return self._todo_cache[id].get_content()

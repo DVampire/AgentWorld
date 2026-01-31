@@ -6,10 +6,11 @@ import asyncio
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
-from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, AgentContext
 from src.logger import logger
 from src.agent.server import acp
-from src.memory import memory_manager, SessionInfo, EventType
+from src.memory import memory_manager, EventType
+from src.memory.types import MemoryContext
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
@@ -33,7 +34,6 @@ class SimpleChatAgent(Agent):
         prompt_name: Optional[str] = None,
         max_steps: int = 1,  # Simple chat only needs one step
         review_steps: int = 1,
-        log_max_length: int = 1000,
         require_grad: bool = False,
         **kwargs
     ):
@@ -49,7 +49,6 @@ class SimpleChatAgent(Agent):
             prompt_name=prompt_name,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
         
@@ -60,31 +59,9 @@ class SimpleChatAgent(Agent):
         self.tools = []
         self.model = self.model  # Use the base model without tool binding
     
-    async def _generate_session_info(self, message: str) -> SessionInfo:
-        """Generate session info for the chat."""
-        prompt = f"""Generate a session info for a simple chat agent.
-        
-        The user message is: {message}
-        
-        Create a concise session ID and description for this conversation."""
-        
-        messages = [HumanMessage(content=prompt)]
-        
-        model_response = await model_manager(
-            model=self.model_name,
-            messages=messages,
-            response_format=SessionInfo
-        )
-        result = model_response.extra.parsed_model
-        
-        timestamp = datetime.now().isoformat()
-        session_id = f"{self.name}_{timestamp}"
-        
-        return SessionInfo(session_id=session_id, description=result.description)
-    
-    async def _get_agent_history(self, session_id: Optional[str] = None) -> str:
+    async def _get_agent_history(self, ctx: MemoryContext = None) -> str:
         """Get the agent conversation history."""
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=ctx)
         
         events = state["events"]
         conversation_history = ""
@@ -97,9 +74,12 @@ class SimpleChatAgent(Agent):
         
         return conversation_history
     
-    async def _get_messages(self, message: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
+    async def _get_messages(self, message: str, ctx: AgentContext = None, **kwargs) -> List[BaseMessage]:
         """Generate messages for the conversation."""
-        system_modules = self.prompt_modules.copy()
+        id = ctx.id if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
+        
+        system_modules = {}
         # Infer prompt name from agent's prompt_name
         if self.prompt_name:
             system_prompt_name = f"{self.prompt_name}_system_prompt"
@@ -119,9 +99,9 @@ class SimpleChatAgent(Agent):
         if hasattr(self, '_current_global_history') and self._current_global_history:
             conversation_history = self._format_global_history(self._current_global_history)
         else:
-            conversation_history = await self._get_agent_history(session_id=session_id)
+            conversation_history = await self._get_agent_history(ctx=memory_ctx)
         
-        agent_message_modules = self.prompt_modules.copy()
+        agent_message_modules = {}
         agent_message_modules.update({
             "user_message": message,
             "conversation_history": conversation_history,
@@ -235,32 +215,18 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.error(f"Error getting user input: {e}")
             return None
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None) -> AgentResponse:
-        """
-        Main entry point for simple chat agent through acp.
+    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None, ctx: AgentContext = None, **kwargs) -> AgentResponse:
+        """Main entry point for simple chat agent through acp."""
+        logger.info(f"| 💬 SimpleChatAgent starting multi-turn conversation: {task[:1000]}...")
         
-        Args:
-            task (str): The conversation task/message to process.
-            files (Optional[List[str]]): The files to attach to the task.
-            global_conversation_history (Optional[List[Dict]]): The global conversation history for multi-agent scenarios.
-            
-        Returns:
-            AgentResponse: The response of the agent.
-        """
-        logger.info(f"| 💬 SimpleChatAgent starting multi-turn conversation: {task[:self.log_max_length]}...")
-        
-        # Generate session info
-        session_info = await self._generate_session_info(task)
-        session_id = session_info.session_id
-        description = session_info.description
+        # Get id from ctx
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        memory_ctx = MemoryContext(id=id)
         
         # Start session
-        await memory_manager.start_session(
-            memory_name=self.memory_name,
-            session_id=session_id,
-            agent_name=self.name,
-            description=description
-        )
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         # Initialize conversation
         task_id = "chat_" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -269,14 +235,14 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         max_rounds = 10  # Prevent infinite loops
         step_number = 0
         
-        logger.info(f"| 🚀 Starting conversation session: {session_id}")
+        logger.info(f"| 🚀 Starting conversation session: {id}")
         
         while conversation_round < max_rounds:
             conversation_round += 1
             logger.info(f"| 🔄 Conversation round {conversation_round}/{max_rounds}")
             
             # Get conversation history for decision making
-            conversation_history = await self._get_agent_history(session_id=session_id)
+            conversation_history = await self._get_agent_history(ctx=memory_ctx)
             
             # Let LLM decide whether to continue the conversation
             should_continue, reasoning = await self._should_continue_conversation(current_message, conversation_history)
@@ -294,16 +260,17 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                 data=dict(message=current_message),
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             step_number += 1
             
             # Generate response
-            messages = await self._get_messages(current_message, session_id=session_id, step_number=step_number)
+            ctx.step_number = step_number
+            messages = await self._get_messages(current_message, ctx=ctx)
             model_response = await model_manager(model=self.model_name, messages=messages)
             response_text = model_response.message
             
-            logger.info(f"| 🤖 Assistant response: {response_text[:self.log_max_length]}...")
+            logger.info(f"| 🤖 Assistant response: {response_text[:1000]}...")
             
             # Add response event
             await memory_manager.add_event(
@@ -313,7 +280,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                 data=dict(response=response_text),
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             step_number += 1
             
@@ -327,7 +294,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             
             # Agent proactively generates next question and waits for user input
             next_question = await self._generate_proactive_question(response_text, conversation_history)
-            logger.info(f"| 🤔 Agent's next question: {next_question[:self.log_max_length]}...")
+            logger.info(f"| 🤔 Agent's next question: {next_question[:1000]}...")
             
             # Wait for user input with timeout
             try:
@@ -340,7 +307,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                     logger.info(f"| ⏰ Timeout waiting for user input, ending conversation")
                     break
                 current_message = user_input
-                logger.info(f"| 👤 User response: {current_message[:self.log_max_length]}...")
+                logger.info(f"| 👤 User response: {current_message[:1000]}...")
             except asyncio.TimeoutError:
                 logger.info(f"| ⏰ Timeout waiting for user input, ending conversation")
                 break
@@ -353,11 +320,11 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             data=dict(result=f"Conversation completed after {conversation_round} rounds"),
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # End session
-        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         logger.info(f"| ✅ Multi-turn conversation completed after {conversation_round} rounds")
         
@@ -390,7 +357,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
 
     async def ainvoke_stream(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None):
         """Process conversation with streaming output for multi-agent debate."""
-        logger.info(f"| 💬 {self.name} starting debate turn: {task[:self.log_max_length]}...")
+        logger.info(f"| 💬 {self.name} starting debate turn: {task[:1000]}...")
         
         # Use global conversation history if provided
         if global_conversation_history:
@@ -438,7 +405,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             }
             return
         
-        logger.info(f"| 🤖 {self.name} response: {response_content[:self.log_max_length]}...")
+        logger.info(f"| 🤖 {self.name} response: {response_content[:1000]}...")
         
         # Final response
         yield {
@@ -450,7 +417,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
 
     async def ainvoke_simple(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None):
         """Simple single response for debate scenarios."""
-        logger.info(f"| 💬 {self.name} responding to: {task[:self.log_max_length]}...")
+        logger.info(f"| 💬 {self.name} responding to: {task[:1000]}...")
         
         # Set global conversation history for this agent
         self._current_global_history = global_conversation_history or []
@@ -482,7 +449,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             # Extract response content
             response_text = model_response.message
             
-            logger.info(f"| 🤖 {self.name} response: {response_text[:self.log_max_length]}...")
+            logger.info(f"| 🤖 {self.name} response: {response_text[:1000]}...")
             
             return response_text
             

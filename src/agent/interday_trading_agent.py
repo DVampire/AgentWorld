@@ -6,14 +6,15 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput, AgentContext
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.memory import memory_manager, SessionInfo, EventType
-from src.tool.types import ToolResponse
+from src.memory import memory_manager, EventType
+from src.memory.types import MemoryContext
+from src.tool.types import ToolResponse, ToolContext
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
@@ -36,7 +37,6 @@ class InterdayTradingAgent(Agent):
         memory_config: Optional[Dict[str, Any]] = None,
         max_steps: int = -1,  # -1 means unlimited steps for trading
         review_steps: int = 5,
-        log_max_length: int = 1000,
         require_grad: bool = False,
         **kwargs
     ):
@@ -51,13 +51,17 @@ class InterdayTradingAgent(Agent):
             memory_config=memory_config,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
         
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, ctx: AgentContext = None) -> Dict[str, Any]:
         """Think and action for one step."""
+        
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
+        tool_ctx = ToolContext(id=id) if id else None
         
         done = False
         result = None
@@ -97,7 +101,8 @@ class InterdayTradingAgent(Agent):
                 
                 input = {
                     "name": tool_name,
-                    "input": tool_args
+                    "input": tool_args,
+                    "ctx": tool_ctx
                 }
                 tool_response = await tcp(**input)
                 tool_result = tool_response.message
@@ -132,7 +137,7 @@ class InterdayTradingAgent(Agent):
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             
         except Exception as e:
@@ -145,43 +150,9 @@ class InterdayTradingAgent(Agent):
         }
         return response_dict
     
-    async def _generate_session_info(self, task: str) -> SessionInfo:
-        """Use the llm to generate a session id."""
-        from langchain_core.messages import SystemMessage, HumanMessage
-        
-        system_prompt = f"You are a helpful assistant that generates a session info for agent {self.name}."
-        user_prompt = dedent(f"""
-            <intro>
-            1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-            2. The session description should provide a concise description of the task.
-            </intro>
-            <task>
-            {task}
-            </task>"""
-        )
-        
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        model_response = await model_manager(
-            model=self.model_name,
-            messages=messages,
-            response_format=SessionInfo
-        )
-        result = model_response.extra.parsed_model
-        
-        timestamp = datetime.now().isoformat()
-        
-        session_id = f"{self.name}_{timestamp}"
-        description = result.description
-        
-        return SessionInfo(session_id=session_id, description=description)
-    
-    async def _get_agent_history(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+    async def _get_agent_history(self, ctx: MemoryContext = None) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=ctx)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -256,9 +227,13 @@ class InterdayTradingAgent(Agent):
             "environment_state": environment_state,
         }
         
-    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, ctx: AgentContext = None, **kwargs) -> List[BaseMessage]:
         
-        system_modules = self.prompt_modules.copy()
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
+        
+        system_modules = {}
         # Infer prompt name from agent's prompt_name
         if self.prompt_name:
             system_prompt_name = f"{self.prompt_name}_system_prompt"
@@ -281,8 +256,8 @@ class InterdayTradingAgent(Agent):
             reload=False
         )
         
-        agent_message_modules = self.prompt_modules.copy()
-        agent_history = await self._get_agent_history(session_id=session_id)
+        agent_message_modules = {}
+        agent_history = await self._get_agent_history(ctx=memory_ctx)
         agent_state = await self._get_agent_state(task, step_number=step_number)
         environment_state = await self._get_environment_state()
         agent_message_modules.update(agent_history)
@@ -304,34 +279,28 @@ class InterdayTradingAgent(Agent):
         
     async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None
+                  files: Optional[List[str]] = None,
+                  ctx: AgentContext = None,
+                  **kwargs
                   ) -> AgentResponse:
         """
         Main entry point for interday trading agent through acp.
-        
-        Args:
-            task (str): The task to complete.
-            files (Optional[List[str]]): The files to attach to the task.
-            
-        Returns:
-            AgentResponse: The response of the agent.
         """
         logger.info(f"| 🚀 Starting InterdayTradingAgent: {task}")
         
-        session_info = await self._generate_session_info(task)
-        session_id = session_info.session_id
-        description = session_info.description
+        # Get id from ctx
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        memory_ctx = MemoryContext(id=id)
+        
+        logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
         
         # Start session
-        await memory_manager.start_session(
-            memory_name=self.memory_name,
-            session_id=session_id,
-            agent_name=self.name,
-            description=description
-        )
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         # Add task start event
-        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=0, 
@@ -339,11 +308,12 @@ class InterdayTradingAgent(Agent):
             data=dict(task=task),
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # Initialize messages
-        messages = await self._get_messages(task, session_id=session_id, step_number=0)
+        ctx.step_number = 0
+        messages = await self._get_messages(task, ctx=ctx)
         
         # Main loop
         step_number = 0
@@ -352,11 +322,14 @@ class InterdayTradingAgent(Agent):
         while self.max_steps == -1 or step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number+1}")
             
+            ctx.step_number = step_number
+            
             # Execute one step
-            response = await self._think_and_action(messages, task_id, session_id=session_id, step_number=step_number)
+            response = await self._think_and_action(messages, task_id, ctx=ctx)
             step_number += 1
             
-            messages = await self._get_messages(task, session_id=session_id, step_number=step_number)
+            ctx.step_number = step_number
+            messages = await self._get_messages(task, ctx=ctx)
             
             if response["done"]:
                 break
@@ -378,11 +351,11 @@ class InterdayTradingAgent(Agent):
             data=response,
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # End session
-        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         logger.info(f"| ✅ Agent completed after {step_number} steps")
         

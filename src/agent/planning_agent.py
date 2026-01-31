@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
 
-from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
+from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput, AgentContext
 from src.config import config
 from src.logger import logger
 from src.utils import dedent
@@ -15,7 +15,8 @@ from src.tool.server import tcp
 from src.agent.server import acp
 from src.environment.server import ecp
 from src.memory import memory_manager, EventType
-from src.tool.types import ToolResponse
+from src.memory.types import MemoryContext
+from src.tool.types import ToolResponse, ToolContext
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.registry import AGENT
@@ -38,12 +39,10 @@ class PlanningAgent(Agent):
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
-        prompt_modules: Optional[Dict[str, Any]] = None,
         memory_name: Optional[str] = None,
         max_tools: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
-        log_max_length: int = 1000,
         require_grad: bool = False,
         **kwargs
     ):
@@ -58,12 +57,10 @@ class PlanningAgent(Agent):
             metadata=metadata,
             model_name=model_name,
             prompt_name=prompt_name,
-            prompt_modules=prompt_modules,
             memory_name=memory_name,
             max_tools=max_tools,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
         
@@ -72,21 +69,24 @@ class PlanningAgent(Agent):
     async def initialize(self):
         """Initialize the agent."""
         await super().initialize()
-        
-        self.tracer = Tracer()
-        self.record = Record()
+    
+    async def _get_tracer_and_record(self) -> tuple[Tracer, Record]:
+        """Get tracer and record for current call (coroutine-safe)."""
+        tracer = Tracer()
+        record = Record()
         
         if os.path.exists(self.tracer_save_path):
-            await self.tracer.load_from_json(self.tracer_save_path)
-            # Get the last record from current session if any exist
-            last_record = await self.tracer.get_last_record()
+            await tracer.load_from_json(self.tracer_save_path)
+            last_record = await tracer.get_last_record()
             if last_record:
-                self.record = last_record
+                record = last_record
+        
+        return tracer, record
     
-    async def _get_agent_context(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _get_agent_context(self, task: str, ctx: AgentContext = None, **kwargs) -> Dict[str, Any]:
         """Get the agent context including available agents."""
         # Get base agent context from parent
-        base_context = await super()._get_agent_context(task, session_id=session_id, step_number=step_number)
+        base_context = await super()._get_agent_context(task, ctx=ctx)
         
         # Extract the base agent context string
         base_agent_context = base_context["agent_context"]
@@ -123,7 +123,7 @@ class PlanningAgent(Agent):
             "agent_context": agent_context,
         }
     
-    async def _get_environment_context(self) -> Dict[str, Any]:
+    async def _get_environment_context(self, record: Record = None) -> Dict[str, Any]:
         """Get the environment state."""
         environment_context = "<environment_context>"
         
@@ -157,15 +157,21 @@ class PlanningAgent(Agent):
                 </{env_name}>
             """)
         
-        self.record.observation = record_observation
+        if record is not None:
+            record.observation = record_observation
         
         environment_context += "</environment_context>"
         return {
             "environment_context": environment_context,
         }
         
-    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str, ctx: AgentContext = None, record: Record = None) -> Dict[str, Any]:
         """Think and tool calls for one step, with support for agent calls."""
+        
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
+        tool_ctx = ToolContext(id=id) if id else None
         
         done = False
         result = None
@@ -201,7 +207,7 @@ class PlanningAgent(Agent):
             record_tool["memory"] = memory
             record_tool["next_goal"] = next_goal
             
-            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
+            logger.info(f"| 💭 Thinking: {thinking[:1000]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Tools/Agents to execute: {len(tools)}")
             
@@ -243,7 +249,7 @@ class PlanningAgent(Agent):
                             tool_result = str(agent_result)
                         
                         logger.info(f"| ✅ Agent {i+1} completed successfully")
-                        logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                        logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
                         
                         # Update tool with result
                         tool_dict = tool.model_dump()
@@ -260,14 +266,15 @@ class PlanningAgent(Agent):
                         # This is a regular tool call
                         input = {
                             "name": tool_name,
-                            "input": tool_args
+                            "input": tool_args,
+                            "ctx": tool_ctx
                         }
                         tool_response = await tcp(**input)
                         tool_result = tool_response.message
                         tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                         
                         logger.info(f"| ✅ Tool {i+1} completed successfully")
-                        logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                        logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
                         
                         # Update tool with result
                         tool_dict = tool.model_dump()
@@ -291,14 +298,15 @@ class PlanningAgent(Agent):
                     logger.info(f"| 🔧 Treating {tool_name} as regular tool (agent lookup failed: {e})")
                     input = {
                         "name": tool_name,
-                        "input": tool_args
+                        "input": tool_args,
+                        "ctx": tool_ctx
                     }
                     tool_response = await tcp(**input)
                     tool_result = tool_response.message
                     tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                     
                     logger.info(f"| ✅ Tool {i+1} completed successfully")
-                    logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                    logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
                     
                     # Update tool with result
                     tool_dict = tool.model_dump()
@@ -327,7 +335,8 @@ class PlanningAgent(Agent):
             }
             
             # Update record tool
-            self.record.tool = record_tool
+            if record is not None:
+                record.tool = record_tool
             
             # Get memory system name
             memory_name = self.memory_name
@@ -339,7 +348,7 @@ class PlanningAgent(Agent):
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             
         except Exception as e:
@@ -354,19 +363,15 @@ class PlanningAgent(Agent):
         
     async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None
+                  files: Optional[List[str]] = None,
+                  ctx: AgentContext = None,
+                  **kwargs
                   ) -> AgentResponse:
-        """
-        Main entry point for planning agent through acp.
-        
-        Args:
-            task (str): The task to complete.
-            files (Optional[List[str]]): The files to attach to the task.
-            
-        Returns:
-            AgentResponse: The response of the agent.
-        """
+        """Main entry point for planning agent through acp."""
         logger.info(f"| 🚀 Starting PlanningAgent: {task}")
+        
+        # Create tracer and record as local variables (coroutine-safe)
+        tracer, record = await self._get_tracer_and_record()
         
         if files:
             logger.info(f"| 📂 Attached files: {files}")
@@ -375,39 +380,22 @@ class PlanningAgent(Agent):
         else:
             enhanced_task = task
         
+        # Get id from ctx
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        memory_ctx = MemoryContext(id=id)
+        
+        logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
+        
         # Get memory system name
         memory_name = self.memory_name
         
-        # Get memory instance to check for restored session
-        logger.info(f"| 🔍 Getting memory instance: {memory_name}")
-        memory_instance = await memory_manager.get(memory_name)
-        logger.info(f"| ✅ Got memory instance: {memory_name}")
-        restored_session_id = memory_instance.current_session_id
-        logger.info(f"| 🔍 Restored session ID: {restored_session_id}")
-        
-        if restored_session_id:
-            # Restore from checkpoint
-            logger.info(f"| 🔄 Restoring session from checkpoint: {restored_session_id}")
-            session_id = restored_session_id
-            session_info_obj = await memory_manager.get_session_info(memory_name, session_id=session_id)
-            description = session_info_obj.description if session_info_obj else None
-        else:
-            # Start new session
-            logger.info(f"| 🆕 Starting new session...")
-            session_info = await self._generate_session_info(enhanced_task)
-            session_id = session_info.session_id
-            description = session_info.description
-            logger.info(f"| 📝 Session ID: {session_id}, Description: {description}")
-            await memory_manager.start_session(
-                memory_name=memory_name,
-                session_id=session_id,
-                agent_name=self.name,
-                description=description
-            )
-            logger.info(f"| ✅ Session started successfully")
+        # Start session
+        await memory_manager.start_session(memory_name=memory_name, ctx=memory_ctx)
         
         # Add task start event
-        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=memory_name,
             step_number=0,
@@ -415,11 +403,12 @@ class PlanningAgent(Agent):
             data=dict(task=enhanced_task),
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
+        ctx.step_number = 0
+        messages = await self._get_messages(enhanced_task, ctx=ctx, record=record)
         
         # Main loop
         step_number = 0
@@ -427,19 +416,21 @@ class PlanningAgent(Agent):
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
+            ctx.step_number = step_number
+            
             # Execute one step
-            response = await self._think_and_tool(messages, task_id, session_id=session_id, step_number=step_number)
+            response = await self._think_and_tool(messages, task_id, ctx=ctx, record=record)
             step_number += 1
             
             # Update tracer and save to json
-            await self.tracer.add_record(observation=self.record.observation, 
-                                        tool=self.record.tool,
-                                        session_id=session_id,
+            await tracer.add_record(observation=record.observation, 
+                                        tool=record.tool,
+                                        session_id=id,
                                         task_id=task_id)
-            await self.tracer.save_to_json(self.tracer_save_path)
+            await tracer.save_to_json(self.tracer_save_path)
             
-            # Memory is automatically saved in add_event()
-            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
+            ctx.step_number = step_number
+            messages = await self._get_messages(enhanced_task, ctx=ctx, record=record)
             
             if response["done"]:
                 break
@@ -453,9 +444,6 @@ class PlanningAgent(Agent):
                 "reasoning": "Reached the maximum number of steps."
             }
         
-        # Get memory system name
-        memory_name = self.memory_name
-        
         # Add task end event
         await memory_manager.add_event(
             memory_name=memory_name,
@@ -464,14 +452,14 @@ class PlanningAgent(Agent):
             data=response,
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
-        # End session (automatically saves memory to JSON)
-        await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
+        # End session
+        await memory_manager.end_session(memory_name=memory_name, ctx=memory_ctx)
         
         # Save tracer to json
-        await self.tracer.save_to_json(self.tracer_save_path)
+        await tracer.save_to_json(self.tracer_save_path)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

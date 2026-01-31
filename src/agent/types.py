@@ -29,6 +29,9 @@ from src.utils import (
     get_file_info,
     generate_unique_id
 )
+from src.environment.types import EnvironmentContext
+from src.memory.types import MemoryContext
+from src.tool.types import ToolContext
 
 class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
@@ -248,7 +251,6 @@ class Agent(BaseModel):
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
-        prompt_modules: Optional[Dict[str, Any]] = None,
         memory_name: Optional[str] = None,
         max_tools: int = 10,
         max_steps: int = 20,
@@ -355,6 +357,9 @@ class Agent(BaseModel):
         
         id = ctx.id
         step_number = ctx.step_number
+        # Context
+        memory_ctx = MemoryContext(id=id)
+        tool_ctx = ToolContext(id=id)
 
         step_info_description = (
             f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
@@ -373,7 +378,7 @@ class Agent(BaseModel):
             state = await memory_manager.get_state(
                 name=self.memory_name,
                 n=self.review_steps,
-                session_id=id
+                ctx=memory_ctx
             )
             events = state["events"]
             summaries = state["summaries"]
@@ -426,7 +431,8 @@ class Agent(BaseModel):
 
         if self.use_todo:
             todo = "<todo>"
-            todo_contents = await self._get_todo_contents(id)
+            todo_tool = await tcp.get("todo")
+            todo_contents = todo_tool.get_todo_content(ctx=tool_ctx)
             todo += todo_contents
             todo += "</todo>"
         else:
@@ -445,16 +451,14 @@ class Agent(BaseModel):
             "agent_context": agent_context,
         }
 
-    async def _get_todo_contents(self, id: str) -> str:
-        """Get the todo contents for a specific id."""
-        todo_tool = await tcp.get("todo")
-        todo_contents = todo_tool.get_todo_content(id)
-        return todo_contents
-
     async def _get_environment_context(self,
                                        ctx: AgentContext,
                                        **kwargs) -> Dict[str, Any]:
         """Get the environment state."""
+        
+        id = ctx.id
+        environment_ctx = EnvironmentContext(id=id)
+        
         environment_context = "<environment_context>"
         # Only iterate over environments specified in config, not all registered environments
         for env_name in config.env_names:
@@ -466,7 +470,7 @@ class Agent(BaseModel):
                 </rules>
             """)
 
-            env_state = await ecp.get_state(env_name)
+            env_state = await ecp.get_state(env_name, ctx=environment_ctx)
             state_string = "<state>"
             state_string += env_state["state"]
             extra = env_state["extra"]
@@ -491,7 +495,7 @@ class Agent(BaseModel):
             "environment_context": environment_context,
         }
 
-    async def _get_tool_context(self) -> Dict[str, Any]:
+    async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
         tool_context = "<tool_context>"
 
@@ -508,16 +512,17 @@ class Agent(BaseModel):
 
     async def _get_messages(self, 
                             task: str, 
-                            session_id: Optional[str] = None, 
-                            step_number: Optional[int] = None) -> List[Message]:
+                            ctx: AgentContext,
+                            **kwargs) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
-        system_modules = self.prompt_modules.copy()
 
-        agent_message_modules = self.prompt_modules.copy()
-        agent_message_modules.update(await self._get_agent_context(task, session_id=session_id, step_number=step_number))
-        agent_message_modules.update(await self._get_environment_context())
-        agent_message_modules.update(await self._get_tool_context())
+        system_modules = dict(max_tools=self.max_tools,workdir=self.workdir)
+        agent_message_modules = dict(task=task)
+        
+        agent_message_modules.update(await self._get_agent_context(task, ctx=ctx))
+        agent_message_modules.update(await self._get_environment_context(ctx=ctx))
+        agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         
         messages = await prompt_manager.get_messages(
             prompt_name=self.prompt_name,
