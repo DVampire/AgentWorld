@@ -277,7 +277,6 @@ class ESGAgent(Agent):
         self, 
         task: str, 
         files: Optional[List[str]] = None,
-        ctx: AgentContext = None,
         **kwargs
     ) -> AgentResponse:
         """
@@ -307,6 +306,7 @@ class ESGAgent(Agent):
         memory_name = self.memory_name
         
         # Get id from ctx
+        ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
         id = ctx.id

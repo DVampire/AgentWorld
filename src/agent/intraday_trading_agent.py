@@ -624,13 +624,13 @@ class IntradayTradingAgent(Agent):
         self, 
         task: str, 
         files: Optional[List[str]] = None,
-        ctx: AgentContext = None,
         **kwargs
     ) -> AgentResponse:
         """Main entry point for intraday trading agent through acp."""
         logger.info(f"| 🚀 Starting IntradayTradingAgent: {task}")
         
         # Get id from ctx
+        ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
         id = ctx.id

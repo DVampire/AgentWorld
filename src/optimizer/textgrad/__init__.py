@@ -1,30 +1,6 @@
-import os
-import logging
-import json
-from datetime import datetime
-
-LOG_DIR = os.getenv("TEXTGRAD_LOG_DIR", "./logs/")
-DISABLE_LOGGING = os.getenv("TEXTGRAD_DISABLE_LOGGING", "").lower() in ["true", "1", "yes"]
+from src.logger import logger
 
 __version__ = "0.1.8"
-
-class CustomJsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        super(CustomJsonFormatter, self).format(record)
-        output = {k: str(v) for k, v in record.__dict__.items()}
-        return json.dumps(output)
-
-cf = CustomJsonFormatter()
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-if not DISABLE_LOGGING:
-    os.makedirs(LOG_DIR, exist_ok=True)
-    log_file = os.path.join(LOG_DIR, f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.jsonl")
-    sh = logging.FileHandler(log_file)
-    sh.setFormatter(cf)
-    logger.addHandler(sh)
 
 from .variable import Variable
 from .loss import TextLoss

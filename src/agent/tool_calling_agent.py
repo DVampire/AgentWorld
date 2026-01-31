@@ -284,7 +284,6 @@ class ToolCallingAgent(Agent):
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
-                  ctx: AgentContext = None,
                   **kwargs
                   ) -> AgentResponse:
         """
@@ -299,6 +298,13 @@ class ToolCallingAgent(Agent):
         """
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
+        ctx = kwargs.get("ctx", None)
+        # Get id from ctx
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        memory_ctx = MemoryContext(id=id) if id else None
+        
         # Create tracer and record as local variables (coroutine-safe)
         tracer, record = await self._get_tracer_and_record()
         
@@ -311,13 +317,8 @@ class ToolCallingAgent(Agent):
         
         # Get memory system name
         memory_name = self.memory_name
-        
-        # Get id from ctx
-        if ctx is None:
-            ctx = AgentContext()
-        id = ctx.id
+
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        memory_ctx = MemoryContext(id=id)
         
         logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
         

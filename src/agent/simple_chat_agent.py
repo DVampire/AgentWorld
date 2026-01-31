@@ -215,11 +215,12 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.error(f"Error getting user input: {e}")
             return None
 
-    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None, ctx: AgentContext = None, **kwargs) -> AgentResponse:
+    async def __call__(self, task: str, files: Optional[List[str]] = None, global_conversation_history: Optional[List[Dict]] = None, **kwargs) -> AgentResponse:
         """Main entry point for simple chat agent through acp."""
         logger.info(f"| 💬 SimpleChatAgent starting multi-turn conversation: {task[:1000]}...")
         
         # Get id from ctx
+        ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
         id = ctx.id

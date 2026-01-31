@@ -383,7 +383,6 @@ class OperatorBrowserAgent(Agent):
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
-                  ctx: AgentContext = None,
                   **kwargs
                   ) -> AgentResponse:
         """
@@ -407,6 +406,7 @@ class OperatorBrowserAgent(Agent):
             enhanced_task = task
         
         # Get id from ctx
+        ctx = kwargs.get("ctx", None)
         if ctx is None:
             ctx = AgentContext()
         id = ctx.id
