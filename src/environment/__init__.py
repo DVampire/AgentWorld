@@ -11,6 +11,7 @@ from .alpaca_environment import AlpacaEnvironment
 from .binance_environment import BinanceEnvironment
 from .hyperliquid_environment import OnlineHyperliquidEnvironment
 from .hyperliquid_environment import OfflineHyperliquidEnvironment
+from.quickbacktest_environment import QuickBacktestEnvironment
 from .server import ecp
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "BinanceEnvironment",
     "OnlineHyperliquidEnvironment",
     "OfflineHyperliquidEnvironment",
+    "QuickBacktestEnvironment",
     "ecp",
 ]
