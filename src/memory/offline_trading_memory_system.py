@@ -395,8 +395,8 @@ class OfflineTradingMemorySystem(Memory):
                         event_type,
                         data: Any,
                         agent_name: str,
-                        ctx: MemoryContext = None,
                         task_id: Optional[str] = None,
+                        ctx: MemoryContext = None,
                         **kwargs):
         """Add trading event to memory"""
         if ctx is None:

@@ -383,8 +383,8 @@ class OptimizerMemorySystem(Memory):
                         event_type,
                         data: Any,
                         agent_name: str,
-                        ctx: MemoryContext = None,
                         task_id: Optional[str] = None,
+                        ctx: MemoryContext = None,
                         **kwargs):
         """Add event to optimizer memory system.
         
@@ -393,8 +393,8 @@ class OptimizerMemorySystem(Memory):
             event_type: Event type (use EventType.OPTIMIZATION_STEP with "variable_changes" in data for full optimization records)
             data: Event data (dict containing optimization information)
             agent_name: Agent name
-            ctx: Memory context (required)
             task_id: Optional task ID
+            ctx: Memory context (required)
             **kwargs: Additional arguments (can include optimization-specific fields)
         """
         if ctx is None:

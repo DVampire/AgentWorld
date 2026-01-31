@@ -64,11 +64,10 @@ class ToolCallingAgent(Agent):
             review_steps=review_steps,
             require_grad=require_grad,
             **kwargs)
-        
-        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
     
     async def initialize(self):
         """Initialize the agent."""
+        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
         await super().initialize()
     
     async def _get_tracer_and_record(self) -> tuple[Tracer, Record]:

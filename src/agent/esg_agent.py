@@ -83,11 +83,10 @@ class ESGAgent(Agent):
             require_grad=require_grad,
             **kwargs
         )
-        
-        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
     
     async def initialize(self):
         """Initialize the ESG agent."""
+        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
         await super().initialize()
         logger.info(f"| 🌱 ESG Agent initialized: {self.name}")
     

@@ -63,8 +63,11 @@ class OnlineTradingAgent(Agent):
             review_steps=review_steps,
             require_grad=require_grad,
             **kwargs)
-        
+    
+    async def initialize(self):
+        """Initialize the agent."""
         self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
+        await super().initialize()
     
     async def _get_tracer_and_record(self) -> tuple[Tracer, Record]:
         """Get tracer and record for current call (coroutine-safe)."""
