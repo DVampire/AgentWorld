@@ -30,14 +30,18 @@ class DoneTool(Tool):
         super().__init__(require_grad=require_grad, **kwargs)
 
     async def __call__(self, 
-                       reasoning: str = None,
-                       result: str = None,
+                       reasoning: str,
+                       result: str,
                        **kwargs) -> ToolResponse:
         """
         Indicate that the task has been completed.
 
         Args:
-            reasoning (str): The reasoning of the task completion.
-            result (str): The result of the task completion.
+            reasoning (str): The reasoning of the task completion. Must be provided.
+            result (str): The result of the task completion. Must be provided.
         """
-        return ToolResponse(success=True, message=result or "Task completed", extra=ToolExtra(data={"reasoning": reasoning, "result": result}))
+        if reasoning is None or reasoning == "":
+            reasoning = "No reasoning provided"
+        if result is None or result == "":
+            result = "No result provided"
+        return ToolResponse(success=True, message=result, extra=ToolExtra(data={"reasoning": reasoning, "result": result}))
