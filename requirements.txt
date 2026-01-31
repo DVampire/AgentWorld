@@ -119,3 +119,4 @@ mathruler>=0.1.0
 dirtyjson>=1.0.8
 backtrader
 empyrical
+polars
