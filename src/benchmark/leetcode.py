@@ -101,43 +101,43 @@ class CodeSubmitter:
         self.page = None
         self.repo_path = None
         self.headless = headless
-
-    async def initialize(self):
-        logger.info("| 🚀 Initializing LeitCode Benchmark Submitter...")
         
-        self.repo_slug = self.project_url.rstrip('/').replace('https://github.com/', '').replace('http://github.com/', '')
-        self.leetcode_cookie = os.getenv("LEETCODE_COOKIE") or None
+        # 标记是否需要在下次评测前同步 Codespace
+        # 当 batch_push 以 sync_codespace=False 调用时，会设置为 True
+        self._needs_sync = False
         
-        # 1. 动态查找项目根目录 "AgentWorld"
+        # 预先设置 output_file，确保即使浏览器初始化失败也能保存结果
+        self._setup_output_file()
+    
+    def _setup_output_file(self):
+        """设置输出文件路径（不依赖浏览器初始化）"""
         current_file_path = os.path.abspath(__file__)
         project_root_name = "AgentWorld"
         
         if project_root_name in current_file_path:
-            # 截取路径直到 AgentWorld
-            # 例如: /Users/jfw/.../AgentWorld/src/bench.py -> /Users/jfw/.../AgentWorld
             root_path = current_file_path.split(project_root_name)[0] + project_root_name
-            
-            # 2. 拼接目标子路径
             self.output_dir = os.path.join(
                 root_path, 
                 "workdir", "tool_calling_agent", "benchmark", "leetcode"
             )
         else:
-            # 如果路径里没找到 AgentWorld，回退到当前目录
-            logger.warning(f"| ⚠️ Could not find '{project_root_name}' in path. Saving to local ./results")
             self.output_dir = os.path.join(os.getcwd(), "results")
-
-        # 3. 确保目录存在
+        
         try:
             os.makedirs(self.output_dir, exist_ok=True)
-            logger.info(f"| 📂 Output directory ready: {self.output_dir}")
         except Exception as e:
-            logger.error(f"| ❌ Failed to create directory: {e}")
-            self.output_dir = "." # 最后的保底
-
-        self.output_file = os.path.join(self.output_dir, "results.jsonl")
-        # ================= [修改结束] =================
+            logger.warning(f"| ⚠️ Failed to create output directory: {e}")
+            self.output_dir = "."
         
+        self.output_file = os.path.join(self.output_dir, "results.jsonl")
+
+    async def initialize(self):
+        logger.info("| 🚀 Initializing LeetCode Benchmark Submitter...")
+        
+        self.repo_slug = self.project_url.rstrip('/').replace('https://github.com/', '').replace('http://github.com/', '')
+        self.leetcode_cookie = os.getenv("LEETCODE_COOKIE") or None
+        
+        # output_file 已在 __init__ 中设置，这里只打印日志
         logger.info(f"| 📝 Results will be saved to: {self.output_file}")
         # 保持原始引用
         self.base_dir = os.path.join(config.workdir, "benchmark", "leetcode")
@@ -371,15 +371,52 @@ class CodeSubmitter:
         logger.info("| ⏳ Waiting 5 seconds for git pull to complete...")
         await asyncio.sleep(5)
 
+    async def _safe_close_all_editors(self, max_retries: int = 2) -> bool:
+        """
+        安全地关闭所有编辑器窗口，支持重试和错误处理。
+        在多协程环境下，键盘操作可能会失败，此方法确保不会抛出异常。
+        
+        Args:
+            max_retries: 最大重试次数
+            
+        Returns:
+            是否成功关闭
+        """
+        for attempt in range(max_retries):
+            try:
+                # 先按 Escape 关闭可能存在的弹窗/命令面板
+                await self.page.keyboard.press("Escape")
+                await asyncio.sleep(0.3)
+                
+                # 打开命令面板
+                await self.page.keyboard.press("Meta+Shift+P")
+                #await self.page.keyboard.press("Control+Shift+P")
+                await asyncio.sleep(0.5)
+                
+                # 输入关闭命令
+                await self.page.keyboard.type("Close All Editors")
+                await asyncio.sleep(0.3)
+                
+                # 执行
+                await self.page.keyboard.press("Enter")
+                await asyncio.sleep(0.5)
+                
+                return True
+                
+            except Exception as e:
+                logger.warning(f"| ⚠️ Close editors attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                    
+        logger.warning("| ⚠️ Failed to close all editors, continuing anyway...")
+        return False
+
     async def _open_editor_file(self, filename):
         """Open explorer and open code file"""
         logger.info(f"| 🔍 Opening work file: {filename}")
         
-        await self.page.keyboard.press("Control+Shift+P")
-
-# 2. 输入 "Close All Editors" 并回车
-        await self.page.keyboard.type("Close All Editors")
-        await self.page.keyboard.press("Enter")
+        # 先关闭所有已打开的编辑器
+        await self._safe_close_all_editors()
 
         # Switch back to explorer
         explorer_icon = self.page.locator('li[aria-label="Explorer"], li[aria-label="资源管理器"], .codicon-files').first
@@ -402,6 +439,155 @@ class CodeSubmitter:
         await self.page.keyboard.press("Enter")
         await asyncio.sleep(2)
 
+    # ==================== 批量提交方法 ====================
+    
+    async def batch_write_files(self, file_contents: List[Dict[str, str]]) -> List[str]:
+        """
+        批量写入代码文件到本地仓库
+        
+        Args:
+            file_contents: [{"filename": "1.two-sum.py", "code": "..."}, ...]
+        
+        Returns:
+            成功写入的文件名列表
+        """
+        written_files = []
+        for item in file_contents:
+            filename = item["filename"]
+            code = item["code"]
+            file_path = os.path.join(self.repo_path, filename)
+            
+            try:
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(code)
+                written_files.append(filename)
+                logger.info(f"| 📝 Written: {filename}")
+            except Exception as e:
+                logger.error(f"| ❌ Failed to write {filename}: {e}")
+        
+        return written_files
+    
+    async def batch_push(self, filenames: List[str], max_retries: int = 3, sync_codespace: bool = True) -> bool:
+        """
+        批量 git add, commit, push 多个文件，支持重试
+        
+        Args:
+            filenames: 要提交的文件名列表
+            max_retries: 最大重试次数（默认 3 次）
+            sync_codespace: 是否在 push 后同步 Codespace（默认 True）
+                           如果为 False，需要调用者稍后在持有 submit_lock 时调用 sync
+        
+        Returns:
+            是否成功 push
+        """
+        if not filenames:
+            return True
+            
+        logger.info(f"| 📦 Batch pushing {len(filenames)} files...")
+        
+        # 先完成 git add 和 commit（这部分不需要重试）
+        try:
+            # Configure git user
+            await self._run_git_command(['config', 'user.name', self.username], self.repo_path)
+            await self._run_git_command(['config', 'user.email', f'{self.username}@users.noreply.github.com'], self.repo_path)
+            
+            # Git add all files
+            for filename in filenames:
+                await self._run_git_command(['add', filename], self.repo_path)
+            
+            # Check if there are changes to commit
+            status_out = await self._run_git_command(['status', '--porcelain'], self.repo_path)
+            
+            if status_out.strip():
+                # Git commit with batch message
+                commit_msg = f'Batch add {len(filenames)} solutions: {", ".join(f[:20] for f in filenames[:3])}...'
+                await self._run_git_command(['commit', '-m', commit_msg], self.repo_path)
+            else:
+                logger.info("| 🔍 No changes to commit (files unchanged)")
+                return True
+                
+        except Exception as e:
+            logger.error(f"| ❌ Git add/commit failed: {e}")
+            return False
+        
+        # Git push 部分支持重试
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"| 🔄 Push attempt {attempt}/{max_retries}...")
+                await self._run_git_command(['push'], self.repo_path)
+                logger.info(f"| ✅ Successfully batch pushed {len(filenames)} files to GitHub")
+                
+                # Wait for GitHub to sync
+                await asyncio.sleep(3)
+                
+                # Pull in Codespace (only if sync_codespace=True and we have submit_lock)
+                # Note: _sync_codespace_repo() operates the browser, so it must be called
+                # when the caller holds submit_lock to avoid conflicts with browser operations
+                if sync_codespace:
+                    await self._sync_codespace_repo()
+                else:
+                    # Mark that sync is needed before next evaluation
+                    self._needs_sync = True
+                    logger.info("| 📌 Marked Codespace sync as pending (will sync before next evaluation)")
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"| ❌ Push attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                    wait_time = attempt * 5  # 递增等待时间：5s, 10s
+                    logger.info(f"| ⏳ Waiting {wait_time}s before retry...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"| ❌ All {max_retries} push attempts failed, giving up")
+                    return False
+        
+        return False
+    
+    async def eval_single_file(self, filename: str) -> Dict[str, Any]:
+        """
+        在 Codespace 中打开文件并提交到 LeetCode 评测（不执行 push）
+        
+        Args:
+            filename: 要评测的文件名
+        
+        Returns:
+            评测结果字典
+        """
+        logger.info(f"| 🔍 Evaluating: {filename}")
+        
+        # 0. Check if Codespace sync is needed (from previous batch_push with sync_codespace=False)
+        # This is safe here because the caller should hold submit_lock
+        if self._needs_sync:
+            logger.info("| 🔄 Performing pending Codespace sync before evaluation...")
+            await self._sync_codespace_repo()
+            self._needs_sync = False
+        
+        # 1. Open file in Codespace
+        await self._open_editor_file(filename)
+        await asyncio.sleep(2)
+        
+        # 2. Trigger LeetCode submission
+        logger.info("| 🔍 Triggering LeetCode submission...")
+        await self.page.keyboard.press("Meta+Shift+P")
+        #await self.page.keyboard.press("Control+Shift+P")
+        await asyncio.sleep(1)
+        await self.page.keyboard.type("LeetCode: Submit to LeetCode")
+        await asyncio.sleep(1)
+        await self.page.keyboard.press("Enter")
+        await asyncio.sleep(5)
+        
+        # 3. Wait for result
+        result = await self._wait_for_result()
+        
+        # 4. Close editors (使用安全方法，失败也不影响结果)
+        await self._safe_close_all_editors()
+        
+        return result
+    
+    # ==================== 原有的单个提交方法（保留兼容性） ====================
+    
     async def submit_code(self, code_content: str, filename: Optional[str] = None) -> Dict[str, Any]:
         """Submit code using git workflow: write -> commit -> push -> PULL in codespace -> open -> submit"""
 
@@ -464,12 +650,9 @@ class CodeSubmitter:
         
         # 7. Wait for result
         result = await self._wait_for_result()
-        # 1. 打开命令面板
-        await self.page.keyboard.press("Control+Shift+P")
-
-# 2. 输入 "Close All Editors" 并回车
-        await self.page.keyboard.type("Close All Editors")
-        await self.page.keyboard.press("Enter")
+        
+        # 8. Close all editors (使用安全方法)
+        await self._safe_close_all_editors()
 
         return result
 
@@ -559,14 +742,20 @@ class CodeSubmitter:
 @BENCHMARK.register_module(force=True)
 class LeetCodeBenchmark(Benchmark):
     """
-    LeetCode Benchmark with Resume Capability.
-    Automatically filters out tasks present in 'tmp/answer.jsonl'.
+    LeetCode Benchmark with Resume Capability and Batch Evaluation.
+    
+    批量评测模式：
+    - 每 BATCH_SIZE (默认5) 个任务为一组
+    - 批量写入文件并一次性 git push
+    - 然后依次在 Codespace 中评测
+    - 最后不满 BATCH_SIZE 的也算一组
     """
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
     name: str = Field(default="leetcode", description="The name of the benchmark")
     path: str = Field(default="datasets/leetcode", description="The path to the benchmark dataset")
     language: str = Field(default="python3", description="Programming language for LeetCode (e.g., python3, cpp, java)")
+    batch_size: int = Field(default=5, description="Number of tasks to batch before pushing to GitHub")
     
     system_prompt: Optional[str] = Field(default=SYSTEM_PROMPT, description="The system prompt for the benchmark")
     
@@ -577,6 +766,11 @@ class LeetCodeBenchmark(Benchmark):
     _data_records: List[Dict] = PrivateAttr(default_factory=list)
     _index: int = PrivateAttr(default=0)
     _tasks: List[Task] = PrivateAttr(default_factory=list)
+    
+    # 批量队列相关
+    _pending_queue: List[Task] = PrivateAttr(default_factory=list)  # 等待批量提交的任务队列
+    _batch_pushed: bool = PrivateAttr(default=False)  # 当前批次是否已经 push
+    _queue_lock: Any = PrivateAttr(default=None)  # 队列操作锁
 
     # Configuration for different languages
     LANGUAGE_CONFIG: ClassVar[Dict[str, Dict[str, str]]] = {
@@ -603,6 +797,7 @@ class LeetCodeBenchmark(Benchmark):
         super().__init__(**kwargs)
         self._submitter = CodeSubmitter(headless=False)
         self._submitter_started = False
+        self._queue_lock = asyncio.Lock()  # 初始化队列锁
 
     async def initialize(self):
         """Initialize the benchmark by loading dataset, filtering finished tasks, and starting browser."""
@@ -716,7 +911,9 @@ class LeetCodeBenchmark(Benchmark):
         templates = record.get("code_template", {})
         # Map our language to potential keys in the template dict
         lang_key = self.language.lower()
-        template = templates.get(lang_key)
+        lang_config = self.LANGUAGE_CONFIG.get(lang_key, {})
+        lang_tag = lang_config.get("lang_tag", lang_key)
+        template = templates.get(lang_tag)
         
         input_text = f"""
 TASK ID: {task_id}
@@ -725,7 +922,7 @@ Problem: {record.get("question") or record.get("prompt") or "Unknown"}
 Template:
 ```{lang_key}
 #
-# @lc app=leetcode id={task_id} lang={lang_key}
+# @lc app=leetcode id={task_id} lang={lang_tag}
 #
 # [{task_id}] {task_name}
 #
@@ -749,157 +946,288 @@ Template:
             }
         )
 
-    async def eval(self, task: Task) -> Optional[Task]:
+    def get_queue_size(self) -> int:
+        """获取当前队列中的任务数量"""
+        return len(self._pending_queue)
+    
+    async def save_error_result_directly(self, task: Task, prediction: str = "response_error") -> None:
         """
-        评测任务。使用 submit_lock 确保浏览器操作串行化，
-        多个并发任务会在这里排队等待提交。
+        直接保存错误结果，不入队列。用于推理失败的任务。
         
-        时间记录：
-        - inference_time: 推理耗时（由调用方设置）
-        - submit_time: 浏览器提交耗时（本方法内计算）
-        - spend_time: 总处理时间 = inference_time + submit_time
+        Args:
+            task: 失败的任务
+            prediction: 错误类型（如 response_error, inference_error）
         """
-        task_id = task.task_id
-        code_content = task.result
+        task.score = 0.0
+        task.extra["submit_time"] = 0.0
+        task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
+        self._tasks.append(task)
+        
+        error_result = Result(
+            task_id=task.task_id,
+            prompt=task.input,
+            prediction=prediction,
+            answer="None",
+            score=0.0,
+            metrics={"inference_time": task.extra.get("inference_time", 0.0), "submit_time": 0.0},
+            extra=None,
+            start_time=task.extra.get("inference_start_time", time.time()),
+            end_time=time.time(),
+            spend_time=task.extra.get("inference_time", 0.0)
+        )
+        await self._submitter.save_result(error_result)
+        logger.info(f"| 💾 [Task {task.task_id}] Error result saved directly (prediction: {prediction})")
 
-        # ================= [使用 submit_lock 串行化浏览器操作] =================
-        # 获取提交锁，确保同一时间只有一个任务在操作浏览器
+    async def queue_for_eval(self, task: Task) -> bool:
+        """
+        将任务加入评测队列。当队列达到 batch_size 时自动触发批量评测。
+        使用锁确保同一时间只有一个 task 入队列。
+        
+        Args:
+            task: 已完成推理的任务
+            
+        Returns:
+            是否触发了批量评测
+        """
+        async with self._queue_lock:
+            self._pending_queue.append(task)
+            queue_size = len(self._pending_queue)
+            
+            # 实时打印队列状态
+            print(f"\r📊 Queue: {queue_size}/{self.batch_size} tasks", end="", flush=True)
+            logger.info(f"| 📥 [Task {task.task_id}] Added to queue ({queue_size}/{self.batch_size})")
+            
+            # 当队列达到 batch_size 时，自动触发批量评测
+            if queue_size >= self.batch_size:
+                print()  # 换行
+                await self.flush_eval_queue()
+                return True
+            return False
+    
+    async def flush_eval_queue(self) -> List[Task]:
+        """
+        刷新评测队列：批量 push 代码并依次评测。
+        
+        Returns:
+            评测完成的任务列表
+        """
+        if not self._pending_queue:
+            return []
+        
         async with submit_lock:
-            # ✅ 在获取锁后立即记录提交开始时间
-            submit_start_time = time.time()
-            task.extra["submit_start_time"] = submit_start_time
+            logger.info(f"| 🔒 Acquired lock for batch evaluation ({len(self._pending_queue)} tasks)")
             
-            logger.info(f"| 🔒 [Task {task_id}] Acquired submit lock, starting evaluation...")
-            
-            # 2. 确保 submitter 已初始化（理论上在 benchmark.initialize 已经完成）
+            # 1. 确保 submitter 已初始化
             if not self._submitter_started:
-                logger.info("| 🔍 Starting CodeSubmitter browser (delayed init)...")
+                logger.info("| 🔍 Starting CodeSubmitter browser...")
                 try:
                     await self._submitter.initialize()
                     self._submitter_started = True
                 except Exception as e:
                     logger.error(f"| ❌ Failed to start submitter: {e}")
+                    # 标记所有任务为失败，并保存结果（output_file 在 __init__ 中已设置）
+                    for task in self._pending_queue:
+                        task.score = 0.0
+                        task.extra["submit_time"] = 0.0
+                        task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
+                        self._tasks.append(task)
+                        
+                        # 保存错误结果
+                        error_result = Result(
+                            task_id=task.task_id,
+                            prompt=task.input,
+                            prediction="browser_init_error",
+                            answer="None",
+                            score=0.0,
+                            metrics={"error": str(e), "inference_time": task.extra.get("inference_time", 0.0), "submit_time": 0.0},
+                            extra=None,
+                            start_time=task.extra.get("inference_start_time", time.time()),
+                            end_time=time.time(),
+                            spend_time=task.extra.get("inference_time", 0.0)
+                        )
+                        await self._submitter.save_result(error_result)
+                    
+                    result = self._pending_queue.copy()
+                    self._pending_queue.clear()
+                    return result
+            
+            # 2. 准备批量写入的文件
+            batch_tasks = self._pending_queue.copy()
+            self._pending_queue.clear()
+            
+            file_contents = []
+            valid_tasks = []  # 有代码的任务
+            
+            for task in batch_tasks:
+                code_content = task.result
+                if not code_content:
+                    # 无代码，直接标记失败
+                    logger.error(f"| ❌ No code provided for Task {task.task_id}")
                     task.score = 0.0
+                    task.extra["submit_time"] = 0.0
+                    task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
                     self._tasks.append(task)
-                    return task
-
-            # 3. 处理无代码情况
-            if not code_content:
-                logger.error(f"| ❌ No code provided for Task {task_id}.")
+                    
+                    # 保存错误结果
+                    error_result = Result(
+                        task_id=task.task_id,
+                        prompt=task.input,
+                        prediction="response_error",
+                        answer="None",
+                        score=0.0,
+                        metrics={"inference_time": task.extra.get("inference_time", 0.0), "submit_time": 0.0},
+                        extra=None,
+                        start_time=task.extra.get("inference_start_time", time.time()),
+                        end_time=time.time(),
+                        spend_time=task.extra.get("inference_time", 0.0)
+                    )
+                    await self._submitter.save_result(error_result)
+                else:
+                    file_name = f"{task.extra['file_name']}.{task.extra['file_ext']}"
+                    file_contents.append({"filename": file_name, "code": code_content, "task": task})
+                    valid_tasks.append(task)
+            
+            if not valid_tasks:
+                logger.info("| ⚠️ No valid tasks in batch, skipping push")
+                return batch_tasks
+            
+            # 3. 批量写入文件
+            logger.info(f"| 📦 Batch writing {len(file_contents)} files...")
+            filenames = [item["filename"] for item in file_contents]
+            await self._submitter.batch_write_files([{"filename": item["filename"], "code": item["code"]} for item in file_contents])
+            
+            # 4. 批量 push（最多重试 3 次）
+            logger.info(f"| 🚀 Batch pushing {len(filenames)} files to GitHub...")
+            push_success = await self._submitter.batch_push(filenames, max_retries=3)
+            
+            if not push_success:
+                # Push 失败，跳过这一批的评测，保存错误结果
+                logger.error(f"| ❌ Batch push failed after all retries, skipping evaluation for {len(valid_tasks)} tasks")
                 
-                submit_end_time = time.time()
-                submit_time = submit_end_time - submit_start_time
-                inference_time = task.extra.get("inference_time", 0.0)
-                spend_time = inference_time + submit_time
+                for item in file_contents:
+                    task = item["task"]
+                    task.score = 0.0
+                    task.extra["submit_time"] = 0.0
+                    task.extra["spend_time"] = task.extra.get("inference_time", 0.0)
+                    self._tasks.append(task)
+                    
+                    # 保存 push 失败的错误结果
+                    error_result = Result(
+                        task_id=task.task_id,
+                        prompt=task.input,
+                        prediction="push_failed",
+                        answer="None",
+                        score=0.0,
+                        metrics={"error": "Git push failed after 3 retries", "inference_time": task.extra.get("inference_time", 0.0), "submit_time": 0.0},
+                        extra=None,
+                        start_time=task.extra.get("inference_start_time", time.time()),
+                        end_time=time.time(),
+                        spend_time=task.extra.get("inference_time", 0.0)
+                    )
+                    await self._submitter.save_result(error_result)
+                    logger.info(f"| 💾 [Task {task.task_id}] Saved as push_failed")
                 
-                # 更新 task.extra 中的时间信息
-                task.extra["submit_time"] = submit_time
-                task.extra["spend_time"] = spend_time
-
-                task.score = 0.0
-                self._tasks.append(task)
+                logger.info(f"| ⏭️ Skipped {len(valid_tasks)} tasks due to push failure")
+                return batch_tasks
+            
+            # 5. 依次评测每个文件
+            logger.info(f"| 🔍 Starting sequential evaluation of {len(valid_tasks)} tasks...")
+            
+            for item in file_contents:
+                task = item["task"]
+                file_name = item["filename"]
+                task_id = task.task_id
                 
-                # 构造错误状态的 Result 对象
-                error_result = Result(
-                    task_id=task_id,
-                    prompt=task.input,
-                    prediction="response_error",
-                    answer="None",
-                    score=0.0,
-                    metrics={
-                        "inference_time": inference_time,
-                        "submit_time": submit_time
-                    },
-                    extra=None,
-                    start_time=task.extra.get("inference_start_time", submit_start_time),
-                    end_time=submit_end_time,
-                    spend_time=spend_time
-                )
+                submit_start_time = time.time()
+                task.extra["submit_start_time"] = submit_start_time
                 
-                if self._submitter:
+                try:
+                    logger.info(f"| 📤 [Task {task_id}] Evaluating {file_name}...")
+                    result_dict = await self._submitter.eval_single_file(file_name)
+                    
+                    # 计算时间
+                    submit_end_time = time.time()
+                    submit_time = submit_end_time - submit_start_time
+                    inference_time = task.extra.get("inference_time", 0.0)
+                    spend_time = inference_time + submit_time
+                    
+                    # 更新任务信息
+                    task.extra["submit_time"] = submit_time
+                    task.extra["spend_time"] = spend_time
+                    task.extra["result"] = result_dict
+                    task.score = self._parse_result_score(result_dict)
+                    self._tasks.append(task)
+                    
+                    # 添加时间到 metrics
+                    result_dict["inference_time"] = inference_time
+                    result_dict["submit_time"] = submit_time
+                    
+                    # 保存结果
+                    evaluation_result = Result(
+                        task_id=task_id,
+                        prompt=task.input,
+                        prediction=result_dict.get("status", "Unknown"),
+                        answer="None",
+                        score=task.score,
+                        metrics=result_dict,
+                        extra=task.extra,
+                        start_time=task.extra.get("inference_start_time", submit_start_time),
+                        end_time=submit_end_time,
+                        spend_time=spend_time
+                    )
+                    await self._submitter.save_result(evaluation_result)
+                    
+                    logger.info(f"| ✅ [Task {task_id}] Score: {task.score:.2f} (inference: {inference_time:.2f}s, submit: {submit_time:.2f}s)")
+                    
+                except Exception as e:
+                    logger.error(f"| ❌ [Task {task_id}] Evaluation error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    submit_end_time = time.time()
+                    submit_time = submit_end_time - submit_start_time
+                    inference_time = task.extra.get("inference_time", 0.0)
+                    
+                    error_result = Result(
+                        task_id=task_id,
+                        prompt=task.input,
+                        prediction="system_error",
+                        answer="None",
+                        score=0.0,
+                        metrics={"error": str(e), "inference_time": inference_time, "submit_time": submit_time},
+                        extra=None,
+                        start_time=task.extra.get("inference_start_time", submit_start_time),
+                        end_time=submit_end_time,
+                        spend_time=inference_time + submit_time
+                    )
                     await self._submitter.save_result(error_result)
                     
-                return task
+                    task.score = 0.0
+                    self._tasks.append(task)
+            
+            logger.info(f"| 🔓 Batch evaluation complete, releasing lock")
+            return batch_tasks
 
-            # 4. 正常评测流程
-            try:
-                file_name = f"{task.extra['file_name']}.{task.extra['file_ext']}"
-                
-                # 执行评测（浏览器操作）
-                result_dict = await self._submitter.submit_code(code_content, file_name)
-                
-                # ✅ 计算提交耗时
-                submit_end_time = time.time()
-                submit_time = submit_end_time - submit_start_time
-                inference_time = task.extra.get("inference_time", 0.0)
-                spend_time = inference_time + submit_time
-                
-                # 更新 task.extra 中的时间信息
-                task.extra["submit_time"] = submit_time
-                task.extra["spend_time"] = spend_time
-                task.extra["result"] = result_dict
-                
-                task.score = self._parse_result_score(result_dict)
-                self._tasks.append(task)
-                
-                status_str = result_dict.get("status", "Unknown")
-                
-                # 将时间信息也加入 metrics
-                result_dict["inference_time"] = inference_time
-                result_dict["submit_time"] = submit_time
-                
-                # 构造正常流程的 Result 对象
-                evaluation_result = Result(
-                    task_id=task_id,
-                    prompt=task.input,
-                    prediction=status_str,
-                    answer="None",
-                    score=task.score,
-                    metrics=result_dict,
-                    extra=task.extra,
-                    start_time=task.extra.get("inference_start_time", submit_start_time),
-                    end_time=submit_end_time,
-                    spend_time=spend_time
-                )
-                
-                # 保存结果
-                await self._submitter.save_result(evaluation_result)
-                
-                logger.info(f"| 🔓 [Task {task_id}] Evaluation complete (inference: {inference_time:.2f}s, submit: {submit_time:.2f}s)")
-                return task
-
-            except Exception as e:
-                logger.error(f"| ❌ Submission error: {e}")
-                import traceback
-                traceback.print_exc()
-                
-                submit_end_time = time.time()
-                submit_time = submit_end_time - submit_start_time
-                inference_time = task.extra.get("inference_time", 0.0)
-                spend_time = inference_time + submit_time
-                
-                error_result = Result(
-                    task_id=task_id,
-                    prompt=task.input,
-                    prediction="system_error",
-                    answer="None",
-                    score=0.0,
-                    metrics={
-                        "error": str(e),
-                        "inference_time": inference_time,
-                        "submit_time": submit_time
-                    },
-                    extra=None,
-                    start_time=task.extra.get("inference_start_time", submit_start_time),
-                    end_time=submit_end_time,
-                    spend_time=spend_time
-                )
-                await self._submitter.save_result(error_result)
-
-                task.score = 0.0
-                self._tasks.append(task)
-                return task
-        # ================= [锁作用域结束] =================
+    async def eval(self, task: Task) -> Optional[Task]:
+        """
+        评测任务 - 现在使用批量队列模式。
+        
+        将任务加入队列，当队列满时自动批量评测。
+        调用方需要在所有任务完成后调用 flush_eval_queue() 处理剩余任务。
+        
+        时间记录：
+        - inference_time: 推理耗时（由调用方设置）
+        - submit_time: 浏览器提交耗时
+        - spend_time: 总处理时间 = inference_time + submit_time
+        """
+        await self.queue_for_eval(task)
+        
+        # 检查任务是否已被评测（队列满时会自动触发评测）
+        if task in self._tasks:
+            return task
+        
+        # 任务还在队列中，返回未评测状态
+        return task
         
     async def stats(self) -> Optional[Stats]:
         total = len(self._data_records)

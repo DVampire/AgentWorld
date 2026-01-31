@@ -33,16 +33,24 @@ from src.message.types import HumanMessage, SystemMessage, ContentPartText, Cont
 from src.benchmark.leetcode import CodeSubmitter
 
 # ==========================================
-# Configuration Section
+# Configuration Section (可通过命令行参数覆盖)
 # ==========================================
-TARGET_MODEL = "openrouter/gemini-3-flash-preview"
+TARGET_MODEL = "openrouter/gemini-3-flash-preview"  # 默认模型，可通过 --model 覆盖
+TARGET_LANGUAGE = "python3"  # 默认语言，可通过 --language 覆盖
 MAX_CONCURRENT_INFERENCE = 1  # 最大并发推理数量
+BATCH_SIZE = 1  # 每批次评测的任务数量
+
 # 🚫 定义不使用图片解析的模型列表
 NON_VISION_MODELS = [
     "openrouter/deepseek-v3.2",
     "openrouter/qwen3-max",
-    "openrouter/gemini-3-flash-preview",
     # 你可以在这里添加任何你想强制纯文本输入的模型
+]
+
+# 支持的编程语言列表
+SUPPORTED_LANGUAGES = [
+    "python3", "python", "cpp", "c++", "java", "javascript", "typescript",
+    "c", "csharp", "c#", "go", "ruby", "swift", "rust", "scala", "kotlin", "php"
 ]
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -122,22 +130,18 @@ def parse_markdown_with_images(markdown_text: str) -> Union[str, list]:
     
     return content_parts
 
-async def process_single_task(
-    benchmark_name: str,
+async def inference_single_task(
     task: Task,
     save_dir: str,
     semaphore: asyncio.Semaphore
-) -> Optional[Task]:
+) -> Task:
     """
-    处理单个任务：推理 + 评测
-    推理使用 semaphore 限制并发数
-    评测由 benchmark 内部的 submit_lock 自动串行化
+    仅执行单个任务的推理阶段（不包括评测）。
+    推理使用 semaphore 限制并发数。
     
     时间记录：
     - inference_start_time: 推理开始时间（获取信号量后）
     - inference_time: 推理耗时
-    - submit_start_time: 提交开始时间（获取锁后，由 eval 内部设置）
-    - submit_time: 提交耗时
     """
     task_id = task.task_id
     
@@ -152,19 +156,17 @@ async def process_single_task(
             
             # --- 1. Prepare Prompt ---
             question_text = task.input
-            # 🔥 修改点：检查模型是否支持视觉/是否被禁用视觉
+            # 检查模型是否支持视觉/是否被禁用视觉
             if TARGET_MODEL in NON_VISION_MODELS:
                 logger.info(f"| 🙈 [Task {task_id}] Vision disabled for model {TARGET_MODEL}, using text only.")
-                question_content = question_text  # 直接使用纯文本，不解析图片
+                question_content = question_text
             else:
-                # 原有的图片解析逻辑
                 question_content = parse_markdown_with_images(question_text)
             
             system_prompt_text = task.system_prompt
             
             logger.info(f"| 📋 [Task {task_id}] Input length: {len(question_text)}")
             
-            # 只有当内容是列表（即包含图片对象）时才统计图片
             if isinstance(question_content, list):
                 image_count = sum(1 for part in question_content if isinstance(part, ContentPartImage))
                 logger.info(f"| 🖼️ [Task {task_id}] Found {image_count} image(s) in question")
@@ -173,7 +175,6 @@ async def process_single_task(
                 SystemMessage(content=system_prompt_text),
                 HumanMessage(content=question_content)
             ]
-            
             # --- 2. Model Inference (Structured Output) ---
             logger.info(f"| ⏳ [Task {task_id}] Model inferencing...")
             
@@ -219,38 +220,27 @@ async def process_single_task(
                         logger.error(f"| 🧨 [Task {task_id}] No raw model output found.")
 
                     task.reasoning = ""
-                    task.answer = ""
+                    task.result = ""
                     
             except Exception as e:
                 logger.error(f"| ❌ [Task {task_id}] Critical Inference Error: {e}")
                 task.reasoning = ""
-                task.answer = ""
+                task.result = ""
             
             # ✅ 记录推理结束时间和耗时
             inference_end_time = time.time()
             inference_time = inference_end_time - inference_start_time
             task.extra["inference_time"] = inference_time
             
-            logger.info(f"| ✅ [Task {task_id}] Inference complete in {inference_time:.2f}s, queuing for evaluation...")
+            logger.info(f"| ✅ [Task {task_id}] Inference complete in {inference_time:.2f}s")
                 
         except Exception as e:
             logger.error(f"| ❌ [Task {task_id}] Error in inference phase: {e}")
             import traceback
             traceback.print_exc()
             task.reasoning = ""
-            task.answer = ""
+            task.result = ""
             task.extra["inference_time"] = time.time() - inference_start_time
-    
-    # --- 3. 评测阶段 (锁在 benchmark.eval 内部自动处理) ---
-    # 这里不需要 semaphore，因为 eval 内部有 submit_lock
-    try:
-        logger.info(f"| 📤 [Task {task_id}] Submitting for evaluation (waiting for lock)...")
-        task = await benchmark_manager.eval(benchmark_name, task)
-        logger.info(f"| 🏁 [Task {task_id}] Evaluation complete, score: {task.score}")
-    except Exception as e:
-        logger.error(f"| ❌ [Task {task_id}] Error in evaluation phase: {e}")
-        import traceback
-        traceback.print_exc()
     
     return task
 
@@ -258,15 +248,22 @@ async def process_single_task(
 async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
     """
     Test the benchmark manager specifically for LeetCode using a REAL model.
-    Uses concurrent inference with serial submission.
+    Uses PIPELINE mode: inference and evaluation run in parallel.
     
-    并发模式说明：
-    - 多个任务同时进行模型推理（受 MAX_CONCURRENT_INFERENCE 限制）
-    - 提交到 LeetCode 评测时自动串行化（共享一个浏览器）
+    流水线模式说明：
+    - 推理完成 batch_size 个任务后，立即 push + 评测
+    - 同时继续推理下一批任务
+    - 推理失败的任务直接保存结果，不入队列
+    - 共享一个浏览器实例
     """
-    print(f"🧪 Testing benchmark manager with benchmark: {benchmark_name}")
-    print(f"🤖 Using Model: {TARGET_MODEL}")
+    print(f"\n{'='*60}")
+    print(f"🧪 LeetCode Benchmark Test (Pipeline Mode)")
+    print(f"{'='*60}")
+    print(f"🤖 Model: {TARGET_MODEL}")
+    print(f"💻 Language: {TARGET_LANGUAGE}")
     print(f"⚡ Max concurrent inference: {MAX_CONCURRENT_INFERENCE}")
+    print(f"📦 Batch size for evaluation: {BATCH_SIZE}")
+    print(f"{'='*60}\n")
     
     # Define save directory
     save_dir = os.path.join(config.workdir, "benchmark", benchmark_name)
@@ -293,44 +290,109 @@ async def test_leetcode_benchmark(benchmark_name: str = "leetcode"):
             break
         all_tasks.append(next_task)
     
-    print(f"📋 Collected {len(all_tasks)} tasks for processing")
+    total_tasks = len(all_tasks)
+    print(f"📋 Collected {total_tasks} tasks for processing\n")
     
     # ==========================================
-    # 创建信号量限制并发推理数量
+    # 获取 benchmark 实例
+    # ==========================================
+    benchmark = await benchmark_manager.get(benchmark_name)
+    
+    # ==========================================
+    # 流水线模式：推理完成直接入队，满5个自动评测
     # ==========================================
     inference_semaphore = asyncio.Semaphore(MAX_CONCURRENT_INFERENCE)
     
-    # ==========================================
-    # 并发执行所有任务
-    # ==========================================
-    print(f"🚀 Starting concurrent processing...")
+    # 统计变量（使用锁保护）
+    stats = {
+        "inference_done": 0,
+        "inference_errors": 0,
+        "queued": 0,
+        "direct_saved": 0,
+        "batches_evaluated": 0
+    }
+    stats_lock = asyncio.Lock()
+    
     start_time = time.time()
     
-    # 创建所有任务的协程
-    task_coroutines = [
-        process_single_task(benchmark_name, t, save_dir, inference_semaphore)
-        for t in all_tasks
-    ]
+    def print_status():
+        """实时打印状态"""
+        queue_size = benchmark.get_queue_size() if benchmark else 0
+        print(f"\r🔄 Inferred: {stats['inference_done']}/{total_tasks} | "
+              f"Queue: {queue_size}/{BATCH_SIZE} | "
+              f"Batches: {stats['batches_evaluated']} | "
+              f"Errors: {stats['direct_saved']}", end="", flush=True)
     
-    # 并发执行
-    results = await asyncio.gather(*task_coroutines, return_exceptions=True)
+    async def inference_and_queue_worker(task: Task):
+        """
+        推理工作器：完成推理后直接入队。
+        队列满 batch_size 时自动触发 push + 评测。
+        使用 benchmark 内部的队列锁确保同一时间只有一个 task 入队。
+        """
+        # 1. 执行推理
+        inferred_task = await inference_single_task(task, save_dir, inference_semaphore)
+        
+        # 2. 更新统计并入队
+        async with stats_lock:
+            stats["inference_done"] += 1
+            
+            if not inferred_task.result:
+                # 推理失败，直接保存结果，不入队列
+                stats["direct_saved"] += 1
+                if hasattr(benchmark, 'save_error_result_directly'):
+                    await benchmark.save_error_result_directly(inferred_task, prediction="response_error")
+                logger.info(f"| ⚠️ [Task {inferred_task.task_id}] No code, saved directly")
+            else:
+                # 推理成功，入队列（benchmark 内部有锁）
+                stats["queued"] += 1
+                
+        # 入队操作放在 stats_lock 外面，避免死锁
+        # benchmark.queue_for_eval 内部有自己的锁
+        if inferred_task.result:
+            triggered_eval = await benchmark.queue_for_eval(inferred_task)
+            if triggered_eval:
+                async with stats_lock:
+                    stats["batches_evaluated"] += 1
+        
+        print_status()
+        return inferred_task
     
-    # 统计结果
-    elapsed_time = time.time() - start_time
-    success_count = sum(1 for r in results if isinstance(r, Task))
-    error_count = sum(1 for r in results if isinstance(r, Exception))
+    # ==========================================
+    # 启动流水线：所有推理任务并发执行
+    # ==========================================
+    print(f"🚀 Starting pipeline: inference → queue → auto-evaluate when batch full\n")
     
-    print(f"\n" + "="*50)
-    print(f"🎉 All {len(all_tasks)} tasks processed!")
-    print(f"⏱️ Total time: {elapsed_time:.2f}s")
-    print(f"✅ Successful: {success_count}")
-    print(f"❌ Errors: {error_count}")
-    print("="*50)
+    # 创建并执行所有推理任务
+    inference_tasks = [inference_and_queue_worker(t) for t in all_tasks]
+    await asyncio.gather(*inference_tasks, return_exceptions=True)
     
-    # 打印任何异常
-    for i, r in enumerate(results):
-        if isinstance(r, Exception):
-            logger.error(f"| Task {i} failed with exception: {r}")
+    # 处理队列中剩余的任务（不满 batch_size 的最后一批）
+    remaining = benchmark.get_queue_size()
+    if remaining > 0:
+        print(f"\n\n📤 Flushing remaining {remaining} tasks...")
+        await benchmark.flush_eval_queue()
+        async with stats_lock:
+            stats["batches_evaluated"] += 1
+    
+    total_time = time.time() - start_time
+    
+    # ==========================================
+    # 最终统计
+    # ==========================================
+    print(f"\n\n{'='*60}")
+    print(f"🎉 All {total_tasks} tasks processed! (Pipeline Mode)")
+    print(f"{'='*60}")
+    print(f"🤖 Model: {TARGET_MODEL}")
+    print(f"💻 Language: {TARGET_LANGUAGE}")
+    print(f"{'='*60}")
+    print(f"⏱️ Total time: {total_time:.2f}s")
+    print(f"{'='*60}")
+    print(f"📊 Total tasks: {total_tasks}")
+    print(f"📊 Inference completed: {stats['inference_done']}")
+    print(f"📊 Queued for eval: {stats['queued']}")
+    print(f"📊 Batches evaluated: {stats['batches_evaluated']}")
+    print(f"📊 Direct saved (no code): {stats['direct_saved']}")
+    print(f"{'='*60}")
     
     summarize_benchmark_results(benchmark_name)
 
@@ -379,6 +441,8 @@ def summarize_benchmark_results(benchmark_name: str):
     # =========================
     print("\n" + "=" * 60)
     print(f"📊 Benchmark Summary: {benchmark_name}")
+    print(f"📊 Use model: {TARGET_MODEL}")
+    print(f"📊 Use language: {TARGET_LANGUAGE}")
     print("=" * 60)
     print(f"Total tasks: {total}")
     print(f"score == 1.0 (Accepted): {score_1_cnt}")
@@ -398,15 +462,26 @@ def summarize_benchmark_results(benchmark_name: str):
     print("=" * 60)
 
 async def main():
+    global TARGET_MODEL, TARGET_LANGUAGE, BATCH_SIZE
+    
     parser = argparse.ArgumentParser(description='Test Benchmark Loop')
     parser.add_argument("--config", default=os.path.join(root, "configs", "tool_calling_agent.py"), help="config file path")
     parser.add_argument("--benchmark", default="leetcode", help="benchmark name to test")
+    parser.add_argument("--model", default=TARGET_MODEL, help=f"Model to use for inference (default: {TARGET_MODEL})")
+    parser.add_argument("--language", default=TARGET_LANGUAGE, choices=SUPPORTED_LANGUAGES, 
+                        help=f"Programming language for LeetCode solutions (default: {TARGET_LANGUAGE})")
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE, help=f"Batch size for evaluation (default: {BATCH_SIZE})")
     parser.add_argument(
         '--cfg-options',
         nargs='+',
         action=DictAction,
         help='override settings')
     args = parser.parse_args()
+    
+    # 更新全局配置
+    TARGET_MODEL = args.model
+    TARGET_LANGUAGE = args.language
+    BATCH_SIZE = args.batch_size
     
     config.initialize(config_path=args.config, args=args)
     logger.initialize(config=config)
@@ -417,7 +492,15 @@ async def main():
     
     benchmark_name = args.benchmark
     logger.info(f"| 🛠️ Initializing benchmark manager for {benchmark_name}...")
+    
     await benchmark_manager.initialize(benchmark_names=[benchmark_name])
+    
+    # 设置 benchmark 的语言和批次大小
+    benchmark = await benchmark_manager.get(benchmark_name)
+    if benchmark:
+        benchmark.language = TARGET_LANGUAGE
+        benchmark.batch_size = BATCH_SIZE
+        logger.info(f"| 🔧 Configured benchmark: language={TARGET_LANGUAGE}, batch_size={BATCH_SIZE}")
     
     await test_leetcode_benchmark(benchmark_name)
     
