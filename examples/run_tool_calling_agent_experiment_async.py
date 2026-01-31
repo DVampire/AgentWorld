@@ -763,7 +763,7 @@ async def main():
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()
-    logger.shutdown()  # 确保所有日志都被写入文件
+    logger.shutdown()  # Ensure all logs are written to file
     logger.info("| 🚪 Experiment completed")
 
 
