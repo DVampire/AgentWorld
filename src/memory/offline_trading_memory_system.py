@@ -383,8 +383,12 @@ class OfflineTradingMemorySystem(Memory):
         """End trading session."""
         if ctx is None:
             return
+        id = ctx.id
         if self.save_path:
             await self.save_to_json(self.save_path)
+        
+        # Cleanup session memory
+        await self._cleanup_session_memory(id)
     
     async def add_event(self,
                         step_number: int,

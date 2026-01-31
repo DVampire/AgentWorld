@@ -356,10 +356,9 @@ class GeneralMemorySystem(Memory):
             
             return self._session_memory_cache[id], self._session_locks[id]
 
-    async def _cleanup_session_memory(self, ctx: MemoryContext):
+    async def _cleanup_session_memory(self, id: str):
         """Remove session memory from cache."""
         async with self._cache_lock:
-            id = ctx.id
             if id in self._session_memory_cache:
                 del self._session_memory_cache[id]
                 logger.info(f"| 🧹 Removed session memory from cache: {id}")
@@ -393,10 +392,12 @@ class GeneralMemorySystem(Memory):
         """End session. Automatically saves to JSON if save_path is set."""
         id = ctx.id
         
-        # Get session memory with proper locking
-        session_memory, session_lock = await self._get_or_create_session_memory(id)
-        async with session_lock:
-            await session_memory.end_session()
+        # Save to JSON if save_path is set
+        if self.save_path:
+            await self.save_to_json(self.save_path)
+        
+        # Cleanup session memory
+        await self._cleanup_session_memory(id)
     
     async def add_event(self,
                         step_number: int,
@@ -464,7 +465,7 @@ class GeneralMemorySystem(Memory):
         id = ctx.id
         if id in self._session_memory_cache:
             await self._session_memory_cache[id].clear()
-            await self._cleanup_session_memory(ctx)
+            await self._cleanup_session_memory(id)
             
     async def get_event(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[ChatEvent]:
         """Get events from memory system.
