@@ -21,6 +21,7 @@ from .screenshot_utils import ScreenshotService
 from .download_utils import (get_jsonparsed_data, 
                              generate_intervals)
 from .hub_utils import push_to_hub_folder
+from .args_utils import parse_tool_args
 
 
 __all__ = [
@@ -58,4 +59,5 @@ __all__ = [
     "generate_intervals",
     "push_to_hub_folder",
     "generate_unique_id",
+    "parse_tool_args",
 ]
