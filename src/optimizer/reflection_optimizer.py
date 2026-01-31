@@ -2,7 +2,7 @@ import json
 import os
 import uuid
 from datetime import datetime
-from typing import List, Optional, Any, Dict, Union
+from typing import List, Optional, Any, Dict, Union, TYPE_CHECKING
 from pydantic import ConfigDict, Field
 from pydantic import BaseModel
 
@@ -10,10 +10,11 @@ from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
 from src.message.types import SystemMessage, HumanMessage
-from src.memory.types import EventType, MemoryContext
-from src.utils import dedent, generate_unique_id
-from src.optimizer.types import OptimizerContext
-from src.agent.types import AgentContext
+from src.memory.types import EventType
+from src.utils import dedent
+
+if TYPE_CHECKING:
+    from src.optimizer.types import OptimizerContext
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -421,7 +422,7 @@ Historical Reflections from Previous Tasks:
         task: str,
         files: Optional[List[str]] = None,
         results_file_path: Optional[str] = None,
-        ctx: OptimizerContext = None,
+        ctx: "OptimizerContext" = None,
         **kwargs
     ):
         """
@@ -442,6 +443,9 @@ Historical Reflections from Previous Tasks:
         from src.environment import ecp
         from src.agent import acp
         from src.memory import memory_manager
+        from src.agent.types import AgentContext
+        from src.memory.types import MemoryContext
+        from src.optimizer.types import OptimizerContext
         
         id = ctx.id
         memory_ctx = MemoryContext(id=id)
