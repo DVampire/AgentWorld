@@ -324,7 +324,7 @@ class Todo(BaseModel):
 _TODO_TOOL_DESCRIPTION = """Todo tool for managing a todo.md file with task decomposition and step tracking.
 When using this tool, only provide parameters that are relevant to the specific operation you are performing. Do not include unnecessary parameters.
 
-Available operations:
+Available `action` parameters:
 1. add: Add a new step to the todo list at the end or after a specific step.
     - task: The description of the step.
     - priority: The priority of the step.

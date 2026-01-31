@@ -2,7 +2,6 @@
 from typing import Dict, Any
 from pydantic import Field
 from src.tool.types import Tool, ToolResponse, ToolExtra
-from typing import Optional
 from src.registry import TOOL
 
 _DONE_TOOL_DESCRIPTION = """Done tool for indicating that the task has been completed.
@@ -40,8 +39,13 @@ class DoneTool(Tool):
             reasoning (str): The reasoning of the task completion. Must be provided.
             result (str): The result of the task completion. Must be provided.
         """
+        # Convert to string in case LLM returns non-string types
         if reasoning is None or reasoning == "":
             reasoning = "No reasoning provided"
+        else:
+            reasoning = str(reasoning)
         if result is None or result == "":
             result = "No result provided"
+        else:
+            result = str(result)
         return ToolResponse(success=True, message=result, extra=ToolExtra(data={"reasoning": reasoning, "result": result}))
