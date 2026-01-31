@@ -126,6 +126,7 @@ class AnthropicMobileEnvironment(Environment):
                        scroll_amount: Optional[int] = None,
                        duration: Optional[int] = None,
                        key: Optional[str] = None,
+                       **kwargs
                        ) -> str:
         """
         Perform a step of mobile device operation.
@@ -306,7 +307,7 @@ class AnthropicMobileEnvironment(Environment):
                                                                                 pad_color=self.pad_color)
         return transformed_screenshot
         
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the mobile device."""
         try:
             mobile_device_state = await self.mobile_service.get_state()

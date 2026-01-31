@@ -632,7 +632,8 @@ class AlpacaEnvironment(Environment):
     async def step(self, 
                    symbol: str = "BTC/USD", 
                    side: str = "HOLD", # BUY, SELL, HOLD
-                   qty: float = 0.00, 
+                   qty: float = 0.00,
+                   **kwargs
                    ) -> Dict[str, Any]:
         """Step the trading environment.
         
@@ -689,7 +690,7 @@ class AlpacaEnvironment(Environment):
         else:
             logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the Alpaca trading environment."""
         try:
             # Get account info

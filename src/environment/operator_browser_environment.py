@@ -90,7 +90,7 @@ class OperatorBrowserEnvironment(Environment):
         name="click",
         description="Click at specified coordinates on the page",
     )
-    async def click(self, x: int, y: int, button: str = "left") -> Dict[str, Any]:
+    async def click(self, x: int, y: int, button: str = "left", **kwargs) -> Dict[str, Any]:
         """Click at specified coordinates on the page.
         
         Args:
@@ -146,7 +146,7 @@ class OperatorBrowserEnvironment(Environment):
         name="double_click",
         description="Double click at specified coordinates on the page",
     )
-    async def double_click(self, x: int, y: int, button: str = "left") -> Dict[str, Any]:
+    async def double_click(self, x: int, y: int, button: str = "left", **kwargs) -> Dict[str, Any]:
         """Double click at specified coordinates on the page.
         
         Args:
@@ -202,7 +202,7 @@ class OperatorBrowserEnvironment(Environment):
         name="scroll",
         description="Scroll at specified coordinates with given offsets",
     )
-    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> Dict[str, Any]:
+    async def scroll(self, x: int, y: int, scroll_x: int, scroll_y: int, **kwargs) -> Dict[str, Any]:
         """Scroll at specified coordinates with given offsets.
         
         Args:
@@ -259,7 +259,7 @@ class OperatorBrowserEnvironment(Environment):
         name="type",
         description="Type text at the current cursor position",
     )
-    async def type_text(self, text: str) -> Dict[str, Any]:
+    async def type_text(self, text: str, **kwargs) -> Dict[str, Any]:
         """Type text at the current cursor position.
         
         Args:
@@ -309,7 +309,7 @@ class OperatorBrowserEnvironment(Environment):
         name="wait",
         description="Wait for specified milliseconds",
     )
-    async def wait(self, ms: int) -> Dict[str, Any]:
+    async def wait(self, ms: int, **kwargs) -> Dict[str, Any]:
         """Wait for specified milliseconds.
         
         Args:
@@ -361,7 +361,7 @@ class OperatorBrowserEnvironment(Environment):
         name="move",
         description="Move mouse to specified coordinates",
     )
-    async def move(self, x: int, y: int) -> Dict[str, Any]:
+    async def move(self, x: int, y: int, **kwargs) -> Dict[str, Any]:
         """Move mouse to specified coordinates.
         
         Args:
@@ -414,7 +414,7 @@ class OperatorBrowserEnvironment(Environment):
         name="keypress",
         description="Press specified keys",
     )
-    async def keypress(self, keys: List[str]) -> Dict[str, Any]:
+    async def keypress(self, keys: List[str], **kwargs) -> Dict[str, Any]:
         """Press specified keys.
         
         Args:
@@ -464,7 +464,7 @@ class OperatorBrowserEnvironment(Environment):
         name="drag",
         description="Drag mouse along specified path",
     )
-    async def drag(self, path: List[List[int]]) -> Dict[str, Any]:
+    async def drag(self, path: List[List[int]], **kwargs) -> Dict[str, Any]:
         """Drag mouse along specified path.
         
         Args:
@@ -515,7 +515,7 @@ class OperatorBrowserEnvironment(Environment):
                 "extra": {"error": str(e), "path": path}
             }
         
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the browser environment.
         
         Returns:

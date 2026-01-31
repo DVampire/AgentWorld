@@ -107,7 +107,7 @@ class MobileEnvironment(Environment):
         name="tap",
         description="Tap at specified coordinates on the mobile device",
     )
-    async def tap(self, x: int, y: int) -> Dict[str, Any]:
+    async def tap(self, x: int, y: int, **kwargs) -> Dict[str, Any]:
         """
         Tap at specified coordinates on the mobile device.
         
@@ -176,7 +176,7 @@ class MobileEnvironment(Environment):
         name="swipe",
         description="Swipe at specified coordinates on the mobile device",
     )
-    async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300) -> Dict[str, Any]:
+    async def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 300, **kwargs) -> Dict[str, Any]:
         """
         Swipe gesture from start to end coordinates.
         
@@ -261,7 +261,7 @@ class MobileEnvironment(Environment):
         name="press",
         description="Long press at specified coordinates on the mobile device",
     )
-    async def press(self, x: int, y: int, duration: int = 1000) -> Dict[str, Any]:
+    async def press(self, x: int, y: int, duration: int = 1000, **kwargs) -> Dict[str, Any]:
         """
         Long press at specified coordinates.
         
@@ -329,7 +329,7 @@ class MobileEnvironment(Environment):
         name="type",
         description="Type text at the current cursor position on the mobile device",
     )
-    async def type_text(self, text: str) -> Dict[str, Any]:
+    async def type_text(self, text: str, **kwargs) -> Dict[str, Any]:
         """
         Type text on the mobile device.
         
@@ -383,7 +383,7 @@ class MobileEnvironment(Environment):
         name="key_event",
         description="Press a key on the mobile device",
     )
-    async def key_event(self, keycode: int) -> Dict[str, Any]:
+    async def key_event(self, keycode: int, **kwargs) -> Dict[str, Any]:
         """
         Press a key on the mobile device.
         
@@ -439,7 +439,7 @@ class MobileEnvironment(Environment):
         name="swipe_path",
         description="Swipe along a path of coordinates on the mobile device",
     )
-    async def swipe_path(self, path: List[List[int]], duration: int = 300) -> Dict[str, Any]:
+    async def swipe_path(self, path: List[List[int]], duration: int = 300, **kwargs) -> Dict[str, Any]:
         """
         Swipe along a path of coordinates.
         
@@ -510,7 +510,7 @@ class MobileEnvironment(Environment):
         name="scroll",
         description="Scroll on the mobile device in specified direction",
     )
-    async def scroll(self, direction: str, distance: int = 500) -> Dict[str, Any]:
+    async def scroll(self, direction: str, distance: int = 500, **kwargs) -> Dict[str, Any]:
         """
         Scroll on the mobile device in specified direction.
         
@@ -566,7 +566,7 @@ class MobileEnvironment(Environment):
         name="screenshot",
         description="Take a screenshot of the mobile device",
     )
-    async def taske_screenshot(self) -> Dict[str, Any]:
+    async def taske_screenshot(self, **kwargs) -> Dict[str, Any]:
         """Take a screenshot of the mobile device.
         
         Returns:
@@ -592,7 +592,7 @@ class MobileEnvironment(Environment):
         name="wait",
         description="Wait for a specified duration",
     )
-    async def wait(self, duration: int) -> Dict[str, Any]:
+    async def wait(self, duration: int, **kwargs) -> Dict[str, Any]:
         """
         Wait for a specified duration in seconds.
         
@@ -624,7 +624,7 @@ class MobileEnvironment(Environment):
                                                                               pad_color=self.pad_color)
         return transformed_screenshot
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the mobile device."""
         try:
             mobile_device_state = await self.mobile_service.get_state()

@@ -12,9 +12,10 @@ from src.utils import dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput
-from src.tool.types import ToolResponse
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput, AgentContext
+from src.tool.types import ToolResponse, ToolContext
 from src.memory import memory_manager, EventType
+from src.memory.types import MemoryContext
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.prompt import prompt_manager
@@ -38,12 +39,10 @@ class OnlineTradingAgent(Agent):
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
-        prompt_modules: Optional[Dict[str, Any]] = None,
-        memory_config: Optional[Dict[str, Any]] = None,
+        memory_name: Optional[str] = None,
         max_tools: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
-        log_max_length: int = 1000,
         require_grad: bool = False,
         **kwargs
     ):
@@ -58,30 +57,38 @@ class OnlineTradingAgent(Agent):
             metadata=metadata,
             model_name=model_name,
             prompt_name=prompt_name,
-            prompt_modules=prompt_modules,
-            memory_config=memory_config,
+            memory_name=memory_name,
             max_tools=max_tools,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
-        
+    
+    async def initialize(self):
+        """Initialize the agent."""
         self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
-        
-        self.tracer = Tracer()
-        self.record = Record()
+        await super().initialize()
+    
+    async def _get_tracer_and_record(self) -> tuple[Tracer, Record]:
+        """Get tracer and record for current call (coroutine-safe)."""
+        tracer = Tracer()
+        record = Record()
         
         if os.path.exists(self.tracer_save_path):
-            self.tracer.load_from_json(self.tracer_save_path)
-            # Get the last record from current session if any exist
-            last_record = self.tracer.get_last_record()
+            await tracer.load_from_json(self.tracer_save_path)
+            last_record = await tracer.get_last_record()
             if last_record:
-                self.record = last_record
+                record = last_record
+        
+        return tracer, record
         
         
-    async def _get_agent_context(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _get_agent_context(self, task: str, ctx: AgentContext = None, **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
+        
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
         
         task = f"<task>{task}</task>"
         
@@ -95,7 +102,7 @@ class OnlineTradingAgent(Agent):
             </step_info>
         """)
         
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=memory_ctx)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -148,7 +155,7 @@ class OnlineTradingAgent(Agent):
             "agent_context": agent_context,
         }
         
-    async def _get_environment_context(self) -> Dict[str, Any]:
+    async def _get_environment_context(self, record: Record = None) -> Dict[str, Any]:
         """Get the environment state."""
         environment_context = "<environment_context>"
         
@@ -181,7 +188,8 @@ class OnlineTradingAgent(Agent):
                 </{env_name}>
             """)
         
-        self.record.observation = record_observation
+        if record is not None:
+            record.observation = record_observation
         
         environment_context += "</environment_context>"
         return {
@@ -206,9 +214,9 @@ class OnlineTradingAgent(Agent):
             "tool_context": tool_context,
         }
         
-    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, ctx: AgentContext = None, record: Record = None, **kwargs) -> List[BaseMessage]:
         
-        system_modules = self.prompt_modules.copy()
+        system_modules = {}
         # Infer prompt name from agent's prompt_name
         if self.prompt_name:
             system_prompt_name = f"{self.prompt_name}_system_prompt"
@@ -223,9 +231,9 @@ class OnlineTradingAgent(Agent):
             reload=False
         )
         
-        agent_message_modules = self.prompt_modules.copy()
-        agent_message_modules.update(await self._get_agent_context(task, session_id=session_id, step_number=step_number))
-        agent_message_modules.update(await self._get_environment_context())
+        agent_message_modules = {}
+        agent_message_modules.update(await self._get_agent_context(task, ctx=ctx))
+        agent_message_modules.update(await self._get_environment_context(record=record))
         agent_message_modules.update(await self._get_tool_context())
         agent_message = await prompt_manager.get_agent_message(
             prompt_name=agent_message_prompt_name,
@@ -240,8 +248,13 @@ class OnlineTradingAgent(Agent):
         
         return messages
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, ctx: AgentContext = None, record: Record = None) -> Dict[str, Any]:
         """Think and action for one step."""
+        
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
+        tool_ctx = ToolContext(id=id) if id else None
         
         done = False
         result = None
@@ -277,7 +290,7 @@ class OnlineTradingAgent(Agent):
             record_tool["memory"] = memory
             record_tool["next_goal"] = next_goal
             
-            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
+            logger.info(f"| 💭 Thinking: {thinking[:1000]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Tools to execute: {len(tools)}")
             
@@ -295,14 +308,15 @@ class OnlineTradingAgent(Agent):
                 
                 input = {
                     "name": tool_name,
-                    "input": tool_args
+                    "input": tool_args,
+                    "ctx": tool_ctx
                 }
                 tool_response = await tcp(**input)
                 tool_result = tool_response.message
                 tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
                 logger.info(f"| ✅ Tool {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
                 
                 # Update tool with result
                 tool_dict = tool.model_dump()
@@ -331,7 +345,8 @@ class OnlineTradingAgent(Agent):
             }
             
             # Update record tool
-            self.record.tool = record_tool
+            if record is not None:
+                record.tool = record_tool
             
             await memory_manager.add_event(
                 memory_name=self.memory_name,
@@ -340,7 +355,7 @@ class OnlineTradingAgent(Agent):
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             
         except Exception as e:
@@ -355,19 +370,16 @@ class OnlineTradingAgent(Agent):
         
     async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None
+                  files: Optional[List[str]] = None,
+                  **kwargs
                   ) -> AgentResponse:
         """
         Main entry point for online trading agent through acp.
-        
-        Args:
-            task (str): The task to complete.
-            files (Optional[List[str]]): The files to attach to the task.
-            
-        Returns:
-            AgentResponse: The response of the agent.
         """
-        logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
+        logger.info(f"| 🚀 Starting OnlineTradingAgent: {task}")
+        
+        # Create tracer and record as local variables (coroutine-safe)
+        tracer, record = await self._get_tracer_and_record()
         
         if files:
             logger.info(f"| 📂 Attached files: {files}")
@@ -376,20 +388,20 @@ class OnlineTradingAgent(Agent):
         else:
             enhanced_task = task
         
-        session_info = await self._generate_session_info(enhanced_task)
-        session_id = session_info.session_id
-        description = session_info.description
+        # Get id from ctx
+        ctx = kwargs.get("ctx", None)
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        memory_ctx = MemoryContext(id=id)
+        
+        logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
         
         # Start session
-        await memory_manager.start_session(
-            memory_name=self.memory_name,
-            session_id=session_id,
-            agent_name=self.name,
-            description=description
-        )
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         # Add task start event
-        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=0, 
@@ -397,11 +409,12 @@ class OnlineTradingAgent(Agent):
             data=dict(task=enhanced_task),
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
+        ctx.step_number = 0
+        messages = await self._get_messages(enhanced_task, ctx=ctx, record=record)
         
         # Main loop
         step_number = 0
@@ -410,20 +423,21 @@ class OnlineTradingAgent(Agent):
         while step_number < self.max_steps:
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
+            ctx.step_number = step_number
+            
             # Execute one step
-            response = await self._think_and_action(messages, task_id, session_id=session_id, step_number=step_number)
+            response = await self._think_and_action(messages, task_id, ctx=ctx, record=record)
             step_number += 1
             
             # Update tracer and save to json
-            self.tracer.add_record(observation=self.record.observation, 
-                                   tool=self.record.tool,
-                                   session_id=session_id,
+            await tracer.add_record(observation=record.observation, 
+                                   tool=record.tool,
+                                   session_id=id,
                                    task_id=task_id)
-            self.tracer.save_to_json(self.tracer_save_path)
+            await tracer.save_to_json(self.tracer_save_path)
             
-            # Memory is automatically saved in add_event()
-            
-            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
+            ctx.step_number = step_number
+            messages = await self._get_messages(enhanced_task, ctx=ctx, record=record)
             
             if response["done"]:
                 break
@@ -445,14 +459,14 @@ class OnlineTradingAgent(Agent):
             data=response,
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
-        # End session (automatically saves memory to JSON)
-        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
+        # End session
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         # Save tracer to json
-        self.tracer.save_to_json(self.tracer_save_path)
+        await tracer.save_to_json(self.tracer_save_path)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

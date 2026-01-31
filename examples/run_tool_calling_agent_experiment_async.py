@@ -43,6 +43,9 @@ from src.environment import ecp
 from src.agent import acp
 from src.benchmark import benchmark_manager
 from src.optimizer import GrpoOptimizer, ReinforcePlusPlusOptimizer, ReflectionOptimizer
+from src.session.types import SessionContext
+from src.optimizer.types import OptimizerContext
+from src.agent.types import AgentContext
 
 
 def parse_args():
@@ -539,8 +542,9 @@ async def get_all_tasks(benchmark_name: str, split: str = "test", results_file: 
         return tasks
 
 
-async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, split: str, batchsize: int, model_name: str, result_saver: ExperimentResultSaver = None, optimize_trainable_variables: bool = True, optimize_solution: bool = True):
+async def process_single_task(optimizer_type: str, benchmark_name: str, task_data: Any, task_index: int, total_tasks: int, split: str, result_saver: ExperimentResultSaver = None, optimizer: Any = None):
     """Process a single task with the optimizer."""
+    
     task_id = task_data.task_id
     task_input = task_data.input
     if benchmark_name != "leetcode":
@@ -560,17 +564,18 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
     try:
         # Get the agent instance
         agent = await acp.get("tool_calling")
-        # Create optimizer
+        
+        # Create optimizer context for this task
+        session_ctx = SessionContext()
+        id = session_ctx.id
+        optimizer_ctx = OptimizerContext(id=id)
+        agent_ctx = AgentContext(id=id, step_number=0)
+        
+        # Run optimization
         if split=='train' or optimizer_type=='reflection':
-            # Bind benchmark_name to reward_fn so eval uses correct benchmark instance
-            import functools
-            bound_reward = functools.partial(reward_fn, benchmark_name=benchmark_name)
-            optimizer = create_optimizer(optimizer_type, model_name, bound_reward, batchsize, optimize_trainable_variables, optimize_solution)
-
-            # ！！！！！用于临时代替参考模型输出
             if optimizer_type == 'reinforce_pp':
                 logger.info(f"| 🚀 Running agent to get initial solution...")
-                reference_agent_response = await agent(task=full_task, files=[])
+                reference_agent_response = await agent(task=full_task, files=[], ctx=agent_ctx)
                 reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
                 reference_agent_reasoning = reference_agent_response_extra_data['reasoning']
                 reference_agent_result = reference_agent_response_extra_data['result']
@@ -583,17 +588,19 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
                                                                                  sft_solution=reference_solution,
                                                                                  benchmark_task_id=task_id,
                                                                                  files=[],
-                                                                                 results_file_path=result_saver.get_file_path() if result_saver else None)
+                                                                                 results_file_path=result_saver.get_file_path() if result_saver else None,
+                                                                                 ctx=optimizer_ctx)
             else:
                 initial_agent_reasoning, initial_agent_result, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                                  task=full_task,
                                                                                  ground_truth=task_gt,
                                                                                  benchmark_task_id=task_id,
                                                                                  files=[],
-                                                                                 results_file_path=result_saver.get_file_path() if result_saver else None)
+                                                                                 results_file_path=result_saver.get_file_path() if result_saver else None,
+                                                                                 ctx=optimizer_ctx)
         else:
             logger.info(f"| 🚀 Running agent to get initial solution...")
-            agent_response = await agent(task=full_task, files=[])
+            agent_response = await agent(task=full_task, files=[], ctx=agent_ctx)
             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
             agent_reasoning = agent_response_extra_data['final_reasoning']
             agent_result = agent_response_extra_data['final_result']
@@ -659,7 +666,6 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, s
 
     # Get all tasks first (filtered if results_file found)
     all_tasks = await get_all_tasks(benchmark_name, split=split, results_file=results_file)
-    # all_tasks = all_tasks[8:9]
     total_tasks = len(all_tasks)
 
     if total_tasks == 0:
@@ -672,6 +678,12 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, s
     result_saver = ExperimentResultSaver(optimizer_type, benchmark_name, concurrency, total_tasks, model_name, split, existing_file=results_file)
     logger.info(f"| 💾 Results will be saved to: {result_saver.get_file_path()}")
 
+    # Create optimizer once and share it across all tasks
+    import functools
+    bound_reward = functools.partial(reward_fn, benchmark_name=benchmark_name)
+    optimizer = create_optimizer(optimizer_type, model_name, bound_reward, batchsize, optimize_trainable_variables, optimize_solution)
+    logger.info(f"| 🔧 Optimizer created: {optimizer_type.upper()} (shared across all tasks)")
+
     # Create semaphore for concurrency control
     semaphore = asyncio.Semaphore(concurrency)
     completed_count = 0
@@ -681,7 +693,7 @@ async def run_optimizer_on_benchmark(optimizer_type: str, benchmark_name: str, s
         nonlocal completed_count
         async with semaphore:
             try:
-                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, split, batchsize, model_name, result_saver, optimize_trainable_variables, optimize_solution)
+                await process_single_task(optimizer_type, benchmark_name, task_data, task_index, total_tasks, split, result_saver, optimizer)
             finally:
                 completed_count += 1
                 # Progress reporting
@@ -751,7 +763,7 @@ async def main():
 
     logger.info("| 🧹 Cleaning up...")
     await benchmark_manager.cleanup()
-    logger.shutdown()  # 确保所有日志都被写入文件
+    logger.shutdown()  # Ensure all logs are written to file
     logger.info("| 🚪 Experiment completed")
 
 

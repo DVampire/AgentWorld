@@ -720,7 +720,7 @@ class FileSystemEnvironment(Environment):
                 "extra": {"error": str(e), "file_path": file_path, "permissions": permissions}
             }
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the state of the file system environment."""
         try:
             describe_result = await self.describe()

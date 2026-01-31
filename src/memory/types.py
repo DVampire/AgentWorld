@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 import json
 
-from src.utils import dedent
+from src.utils import dedent, generate_unique_id
 from src.dynamic import dynamic_manager
 
 class EventType(Enum):
@@ -16,7 +16,6 @@ class EventType(Enum):
     
     # Optimizer Event Types
     OPTIMIZATION_STEP = "optimization_step"
-
 
 class ChatEvent(BaseModel):
     id: str = Field(..., description="The unique identifier for the event.")
@@ -43,14 +42,6 @@ class ChatEvent(BaseModel):
     
     def __repr__(self):
         return self.__str__()
-
-class SessionInfo(BaseModel):
-    session_id: str = Field(..., description="The unique identifier for the session.")
-    start_time: Optional[datetime] = Field(None, description="The start time of the session.")
-    end_time: Optional[datetime] = Field(None, description="The end time of the session.")
-    agent_name: Optional[str] = Field(None, description="The name of the agent.")
-    task_id: Optional[str] = Field(None, description="The task ID.")
-    description: Optional[str] = Field(None, description="The description of the session.")
 
 class Importance(Enum):
     HIGH = "high"
@@ -92,9 +83,9 @@ class Summary(BaseModel):
     
     def __repr__(self):
         return self.__str__()
-
-
-# Memory Context Protocol (MCP) Types
+    
+class MemoryContext(BaseModel):
+    id: str = Field(default_factory=lambda: generate_unique_id(prefix="memory"), description="The unique identifier for the memory context.")
 
 class Memory(BaseModel):
     """Base class for all memory systems"""

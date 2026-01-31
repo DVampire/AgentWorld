@@ -19,7 +19,7 @@ from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
-from src.tool.types import Tool, ToolConfig, ToolResponse
+from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
@@ -1242,7 +1242,13 @@ class ToolContextManager(BaseModel):
             code=new_code  # Pass code directly since tool_cls is dynamically created
         )
     
-    async def __call__(self, name: str, input: Dict[str, Any], timeout: Optional[float] = None) -> ToolResponse:
+    async def __call__(self,
+                       name: str,
+                       input: Dict[str, Any], 
+                       timeout: Optional[float] = None,
+                       ctx: ToolContext = None,
+                       **kwargs
+                       ) -> ToolResponse:
         """Call a tool by name with optional timeout
         
         Args:
@@ -1253,6 +1259,10 @@ class ToolContextManager(BaseModel):
         Returns:
             ToolResponse: Tool result
         """
+        
+        if ctx is None:
+            ctx = ToolContext()
+        
         tool_info = await self.get_info(name)
         
         version = tool_info.version
@@ -1262,13 +1272,16 @@ class ToolContextManager(BaseModel):
         # Use provided timeout, or fall back to default_timeout
         effective_timeout = timeout if timeout is not None else self.default_timeout
         
+        # Other tool args
+        tool_kwargs = dict(ctx=ctx)
+        
         # If timeout is None (no timeout), call tool directly
         if effective_timeout is None:
-            return await tool_instance(**input)
+            return await tool_instance(**input, **tool_kwargs)
         
         # Otherwise, use asyncio.wait_for to enforce timeout
         try:
-            return await asyncio.wait_for(tool_instance(**input), timeout=effective_timeout)
+            return await asyncio.wait_for(tool_instance(**input, **tool_kwargs), timeout=effective_timeout)
         except asyncio.TimeoutError:
             error_msg = f"Tool '{name}' execution timed out after {effective_timeout} seconds"
             logger.error(f"| ⏱️ {error_msg}")

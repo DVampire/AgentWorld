@@ -40,4 +40,4 @@ class DoneTool(Tool):
             reasoning (str): The reasoning of the task completion.
             result (str): The result of the task completion.
         """
-        return ToolResponse(success=True, message=result, extra=ToolExtra(data={"reasoning": reasoning, "result": result}))
+        return ToolResponse(success=True, message=result or "Task completed", extra=ToolExtra(data={"reasoning": reasoning, "result": result}))

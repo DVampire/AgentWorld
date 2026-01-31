@@ -29,11 +29,9 @@ class DebateManagerAgent(Agent):
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
-        prompt_modules: Optional[Dict[str, Any]] = None,
         memory_name: Optional[str] = None,
         max_steps: int = 1,
         review_steps: int = 1,
-        log_max_length: int = 1000,
         max_rounds: int = 10,
         require_grad: bool = False,
         **kwargs
@@ -49,11 +47,9 @@ class DebateManagerAgent(Agent):
             metadata=metadata,
             model_name=model_name,
             prompt_name=prompt_name,
-            prompt_modules=prompt_modules,
             memory_name=memory_name,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
         

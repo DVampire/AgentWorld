@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from src.logger import logger
 from src.config import config
 from src.tool.context import ToolContextManager
-from src.tool.types import Tool, ToolConfig, ToolResponse
+from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
 from src.utils import assemble_project_path
 
 class TCPServer(BaseModel):
@@ -251,17 +251,29 @@ class TCPServer(BaseModel):
         self._registered_configs[updated_config.name] = updated_config
         return updated_config
     
-    async def __call__(self, name: str, input: Dict[str, Any]) -> ToolResponse:
-        """Call a tool by name
+    async def __call__(self, 
+                       name: str, 
+                       input: Dict[str, Any], 
+                       timeout: Optional[float] = None,
+                       ctx: ToolContext = None,
+                       **kwargs
+                       ) -> ToolResponse:
+        """Call a tool by name with optional timeout and context
         
         Args:
             name: Tool name
             input: Input for the tool
+            timeout: Timeout in seconds for this specific call (overrides default_timeout if provided)
+            ctx: Tool context
             
         Returns:
             ToolResponse: Tool result
         """
-        return await self.tool_context_manager(name, input)
+        return await self.tool_context_manager(name, 
+                                               input, 
+                                               timeout=timeout, 
+                                               ctx=ctx, 
+                                               **kwargs)
 
 
 # Global TCP server instance

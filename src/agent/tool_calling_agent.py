@@ -8,7 +8,7 @@ from datetime import datetime
 from pydantic import Field, ConfigDict
 import dirtyjson
 
-from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
+from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput, AgentContext
 from src.config import config
 from src.logger import logger
 from src.utils import dedent
@@ -18,6 +18,9 @@ from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.registry import AGENT
+from src.environment.types import EnvironmentContext
+from src.tool.types import ToolContext
+from src.memory.types import MemoryContext
 
 @AGENT.register_module(force=True)
 class ToolCallingAgent(Agent):
@@ -37,12 +40,10 @@ class ToolCallingAgent(Agent):
         metadata: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
         prompt_name: Optional[str] = None,
-        prompt_modules: Optional[Dict[str, Any]] = None,
         memory_name: Optional[str] = None,
         max_tools: int = 10,
         max_steps: int = 20,
         review_steps: int = 5,
-        log_max_length: int = 1000,
         require_grad: bool = False,
         **kwargs
     ):
@@ -57,35 +58,38 @@ class ToolCallingAgent(Agent):
             metadata=metadata,
             model_name=model_name,
             prompt_name=prompt_name,
-            prompt_modules=prompt_modules,
             memory_name=memory_name,
             max_tools=max_tools,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
-        
-        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
     
     async def initialize(self):
         """Initialize the agent."""
+        self.tracer_save_path = os.path.join(self.workdir, "tracer.json")
         await super().initialize()
-        
-        self.tracer = Tracer()
-        self.record = Record()
+    
+    async def _get_tracer_and_record(self) -> tuple[Tracer, Record]:
+        """Get tracer and record for current call (coroutine-safe)."""
+        tracer = Tracer()
+        record = Record()
         
         if os.path.exists(self.tracer_save_path):
-            await self.tracer.load_from_json(self.tracer_save_path)
-            # Get the last record from current session if any exist
-            last_record = await self.tracer.get_last_record()
+            await tracer.load_from_json(self.tracer_save_path)
+            last_record = await tracer.get_last_record()
             if last_record:
-                self.record = last_record
-    
-    async def _get_environment_context(self) -> Dict[str, Any]:
-        """Get the environment state."""
-        environment_context = "<environment_context>"
+                record = last_record
         
+        return tracer, record
+    
+    async def _get_environment_context(self, ctx: AgentContext, record: Record = None, **kwargs) -> Dict[str, Any]:
+        """Get the environment state."""
+        
+        id = ctx.id
+        environment_ctx = EnvironmentContext(id=id)
+        
+        environment_context = "<environment_context>"
         record_observation = {}
         
         # Only iterate over environments specified in config, not all registered environments
@@ -98,7 +102,7 @@ class ToolCallingAgent(Agent):
                 </rules>
             """)
             
-            env_state = await ecp.get_state(env_name)
+            env_state = await ecp.get_state(env_name, ctx=environment_ctx)
             state_string = "<state>"
             state_string += env_state["state"]
             extra = env_state["extra"]
@@ -116,15 +120,20 @@ class ToolCallingAgent(Agent):
                 </{env_name}>
             """)
         
-        self.record.observation = record_observation
+        if record is not None:
+            record.observation = record_observation
         
         environment_context += "</environment_context>"
         return {
             "environment_context": environment_context,
         }
         
-    async def _get_tool_context(self) -> Dict[str, Any]:
+    async def _get_tool_context(self, ctx: AgentContext, record: Record = None, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
+        
+        id = ctx.id
+        tool_ctx = ToolContext(id=id)
+        
         tool_context = "<tool_context>"
 
         tool_context += dedent(f"""
@@ -138,8 +147,13 @@ class ToolCallingAgent(Agent):
             "tool_context": tool_context,
         }
         
-    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None)->Dict[str, Any]:
+    async def _think_and_tool(self, messages: List[BaseMessage], task_id: str, record: Record = None, ctx: AgentContext = None, **kwargs)->Dict[str, Any]:
         """Think and tool calls for one step."""
+        
+        id = ctx.id
+        step_number = ctx.step_number
+        tool_ctx = ToolContext(id=id)
+        memory_ctx = MemoryContext(id=id)
         
         done = False
         result = None
@@ -176,7 +190,7 @@ class ToolCallingAgent(Agent):
             record_tool["memory"] = memory
             record_tool["next_goal"] = next_goal
             
-            logger.info(f"| 💭 Thinking: {thinking[:self.log_max_length]}...")
+            logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
             logger.info(f"| 🔧 Tools to execute: {tools}")
             
@@ -197,22 +211,19 @@ class ToolCallingAgent(Agent):
                 else:
                     tool_args = {}
                 
-                # Auto-inject call_id for todo tool using session_id
-                if tool_name == "todo" and session_id:
-                    tool_args["call_id"] = session_id
-                
                 logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
                 
                 input = {
                     "name": tool_name,
-                    "input": tool_args
+                    "input": tool_args,
+                    "ctx": tool_ctx
                 }
                 tool_response = await tcp(**input)
                 tool_result = tool_response.message
                 tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
                 
                 logger.info(f"| ✅ Tool {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)[:self.log_max_length]}...")
+                logger.info(f"| 📄 Results: {str(tool_result)}")
                 
                 # Update tool with result
                 tool_dict = tool.model_dump()
@@ -241,7 +252,8 @@ class ToolCallingAgent(Agent):
             }
             
             # Update record tool
-            self.record.tool = record_tool
+            if record is not None:
+                record.tool = record_tool
             
             # Get memory system name
             memory_name = self.memory_name
@@ -255,7 +267,7 @@ class ToolCallingAgent(Agent):
                     data=event_data,
                     agent_name=self.name,
                     task_id=task_id,
-                    session_id=session_id
+                    ctx=memory_ctx
                 )
             
         except Exception as e:
@@ -270,7 +282,8 @@ class ToolCallingAgent(Agent):
         
     async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None
+                  files: Optional[List[str]] = None,
+                  **kwargs
                   ) -> AgentResponse:
         """
         Main entry point for tool calling agent through acp.
@@ -284,6 +297,16 @@ class ToolCallingAgent(Agent):
         """
         logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
         
+        ctx = kwargs.get("ctx", None)
+        # Get id from ctx
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        memory_ctx = MemoryContext(id=id) if id else None
+        
+        # Create tracer and record as local variables (coroutine-safe)
+        tracer, record = await self._get_tracer_and_record()
+        
         if files:
             logger.info(f"| 📂 Attached files: {files}")
             files = await asyncio.gather(*[self._extract_file_content(file) for file in files])
@@ -293,40 +316,14 @@ class ToolCallingAgent(Agent):
         
         # Get memory system name
         memory_name = self.memory_name
-        
-        # Initialize session variables
-        session_id = None
+
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        
+        logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
         
         # Memory session management (only if use_memory is enabled)
         if self.use_memory and memory_name:
-            # Get memory instance to check for restored session
-            logger.info(f"| 🔍 Getting memory instance: {memory_name}")
-            memory_instance = await memory_manager.get(memory_name)
-            logger.info(f"| ✅ Got memory instance: {memory_name}")
-            restored_session_id = memory_instance.current_session_id
-            logger.info(f"| 🔍 Restored session ID: {restored_session_id}")
-            
-            if restored_session_id:
-                # Restore from checkpoint
-                logger.info(f"| 🔄 Restoring session from checkpoint: {restored_session_id}")
-                session_id = restored_session_id
-                session_info_obj = await memory_manager.get_session_info(memory_name, session_id=session_id)
-                description = session_info_obj.description if session_info_obj else None
-            else:
-                # Start new session
-                logger.info(f"| 🆕 Starting new session...")
-                session_info = await self._generate_session_info(enhanced_task)
-                session_id = session_info.session_id
-                description = session_info.description
-                logger.info(f"| 📝 Session ID: {session_id}, Description: {description}")
-                await memory_manager.start_session(
-                    memory_name=memory_name,
-                    session_id=session_id,
-                    agent_name=self.name,
-                    description=description
-                )
-                logger.info(f"| ✅ Session started successfully")
+            await memory_manager.start_session(memory_name=memory_name, ctx=memory_ctx)
             
             # Add task start event
             await memory_manager.add_event(
@@ -336,13 +333,13 @@ class ToolCallingAgent(Agent):
                 data=dict(task=enhanced_task),
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
         else:
             logger.info(f"| ⏭️ Memory disabled (use_memory={self.use_memory}), skipping session management")
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
+        messages = await self._get_messages(enhanced_task, ctx=ctx)
         
         # Main loop
         step_number = 0
@@ -351,18 +348,18 @@ class ToolCallingAgent(Agent):
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
             # Execute one step
-            response = await self._think_and_tool(messages, task_id, session_id=session_id, step_number=step_number)
+            response = await self._think_and_tool(messages, task_id, ctx=ctx, record=record)
             step_number += 1
             
             # Update tracer and save to json
-            await self.tracer.add_record(observation=self.record.observation, 
-                                        tool=self.record.tool,
-                                        session_id=session_id,
+            await tracer.add_record(observation=record.observation, 
+                                        tool=record.tool,
+                                        session_id=ctx.id if ctx else None,
                                         task_id=task_id)
-            await self.tracer.save_to_json(self.tracer_save_path)
+            await tracer.save_to_json(self.tracer_save_path)
             
             # Memory is automatically saved in add_event()
-            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
+            messages = await self._get_messages(enhanced_task, ctx=ctx)
             
             if response["done"]:
                 break
@@ -388,14 +385,14 @@ class ToolCallingAgent(Agent):
                 data=response,
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             
             # End session (automatically saves memory to JSON)
-            await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
+            await memory_manager.end_session(memory_name=memory_name, ctx=memory_ctx)
         
         # Save tracer to json
-        await self.tracer.save_to_json(self.tracer_save_path)
+        await tracer.save_to_json(self.tracer_save_path)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

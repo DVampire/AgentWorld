@@ -1,4 +1,8 @@
-from typing import List, Optional, Any, Dict, Union
+import json
+import os
+import uuid
+from datetime import datetime
+from typing import List, Optional, Any, Dict, Union, TYPE_CHECKING
 from pydantic import ConfigDict, Field
 from pydantic import BaseModel
 
@@ -6,10 +10,11 @@ from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
 from src.message.types import SystemMessage, HumanMessage
-from src.memory import EventType
+from src.memory.types import EventType
 from src.utils import dedent
-import json
-import os
+
+if TYPE_CHECKING:
+    from src.optimizer.types import OptimizerContext
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -417,6 +422,7 @@ Historical Reflections from Previous Tasks:
         task: str,
         files: Optional[List[str]] = None,
         results_file_path: Optional[str] = None,
+        ctx: "OptimizerContext" = None,
         **kwargs
     ):
         """
@@ -437,26 +443,27 @@ Historical Reflections from Previous Tasks:
         from src.environment import ecp
         from src.agent import acp
         from src.memory import memory_manager
+        from src.agent.types import AgentContext
+        from src.memory.types import MemoryContext
+        from src.optimizer.types import OptimizerContext
+        
+        id = ctx.id
+        memory_ctx = MemoryContext(id=id)
+        agent_ctx = AgentContext(id=id)
         
         # Use optimization_steps if provided, otherwise use self.max_steps
         optimization_steps = self.max_steps
         
         # Initialize optimizer memory session if available
         memory_name = self.memory_name
-        session_id = None
         task_id = None
         if memory_name:
             try:
-                import uuid
-                from datetime import datetime
                 agent_name = getattr(agent, 'name', 'unknown_agent')
-                session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
                 task_id = f"opt_task_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                 await memory_manager.start_session(
                     memory_name=memory_name,
-                    session_id=session_id,
-                    agent_name=agent_name,
-                    description=task
+                    ctx=memory_ctx
                 )
                 
                 # Add optimization task start event
@@ -472,29 +479,26 @@ Historical Reflections from Previous Tasks:
                     ),
                     agent_name=agent_name,
                     task_id=task_id,
-                    session_id=session_id
+                    ctx=memory_ctx
                 )
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to initialize optimizer memory: {e}")
                 memory_name = None
-                session_id = None
                 task_id = None
         
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
 
-        # 【TEST】记录初始参数状态
+        # [TEST] Record initial parameter state
         initial_params = {}
         try:
-            from src.prompt import prompt_manager
-            from src.tool import tcp
 
             if hasattr(agent, 'prompt_name'):
                 initial_prompt_vars = await prompt_manager.get_trainable_variables(prompt_name=agent.prompt_name)
                 for var_name, var_obj in initial_prompt_vars.items():
                     initial_params[f"prompt_{var_name}"] = var_obj.get_value()
 
-            # 记录tool参数
+            # Record tool parameters
             initial_tool_vars = await tcp.get_trainable_variables()
             for var_name, var_obj in initial_tool_vars.items():
                 initial_params[f"tool_{var_name}"] = var_obj.get_value()
@@ -503,7 +507,7 @@ Historical Reflections from Previous Tasks:
         except Exception as e:
             logger.warning(f"| 🧪 [TEST] Could not capture initial parameters: {e}")
 
-        agent_response = await agent(task=task, files=files)
+        agent_response = await agent(task=task, files=files, ctx=agent_ctx)
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
         current_agent_reasoning = agent_response_extra_data['reasoning']
@@ -622,10 +626,10 @@ Historical Reflections from Previous Tasks:
                             logger.info(f"| ✅ Updated {len(prompt_updates)} prompt sub-variables: {list(prompt_updates.keys())}")
                         
                         if variables_updated:
-                            # 【TEST】验证参数是否真正被更新（与初始参数对比）
+                            # [TEST] Verify if parameters were actually updated (compared to initial parameters)
                             logger.info(f"| 🧪 [TEST] Checking if parameters were updated from initial state...")
 
-                            # 提取并对比更新后的参数（与初始参数对比）
+                            # Extract and compare updated parameters (compared to initial parameters)
                             try:
                                 updated_params = {}
                                 from src.prompt import prompt_manager
@@ -636,12 +640,12 @@ Historical Reflections from Previous Tasks:
                                     for var_name, var_obj in updated_prompt_vars.items():
                                         updated_params[f"prompt_{var_name}"] = var_obj.get_value()
 
-                                # 记录tool参数
+                                # Record tool parameters
                                 updated_tool_vars = await tcp.get_trainable_variables()
                                 for var_name, var_obj in updated_tool_vars.items():
                                     updated_params[f"tool_{var_name}"] = var_obj.get_value()
 
-                                # 对比参数变化（与初始参数对比）
+                                # Compare parameter changes (compared to initial parameters)
                                 changed_from_initial = []
                                 for param_name in initial_params:
                                     if param_name in updated_params and initial_params[param_name] != updated_params[param_name]:
@@ -662,7 +666,7 @@ Historical Reflections from Previous Tasks:
 
                             # Re-run agent with updated variables
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
-                            agent_response = await agent(task=task, files=files)
+                            agent_response = await agent(task=task, files=files, ctx=agent_ctx)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
                             current_agent_reasoning = agent_response_extra_data['reasoning']
                             current_agent_result = agent_response_extra_data['result']
@@ -672,7 +676,7 @@ Historical Reflections from Previous Tasks:
                             logger.info(f"| ℹ️ Phase 1: No trainable variables were updated")
                         
                         # Record phase 1 to memory
-                        if memory_name and session_id and variables_updated:
+                        if memory_name and variables_updated:
                             try:
                                 event_data = {
                                     "phase": "trainable_variables",
@@ -702,7 +706,7 @@ Historical Reflections from Previous Tasks:
                                     data=event_data,
                                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                                     task_id=task_id,
-                                    session_id=session_id
+                                    ctx=memory_ctx
                                 )
                             except Exception as e:
                                 logger.warning(f"| ⚠️ Failed to record phase 1 to memory: {e}")
@@ -755,7 +759,7 @@ Historical Reflections from Previous Tasks:
                         logger.info(f"| ✅ Phase 2 completed - solution optimized")
                         
                         # Record phase 2 to memory
-                        if memory_name and session_id:
+                        if memory_name:
                             try:
                                 event_data = {
                                     "phase": "solution",
@@ -772,7 +776,7 @@ Historical Reflections from Previous Tasks:
                                     data=event_data,
                                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                                     task_id=task_id,
-                                    session_id=session_id
+                                    ctx=memory_ctx
                                 )
                             except Exception as e:
                                 logger.warning(f"| ⚠️ Failed to record phase 2 to memory: {e}")
@@ -804,7 +808,7 @@ Historical Reflections from Previous Tasks:
                 continue
         
         # End optimization memory session if available
-        if memory_name and session_id:
+        if memory_name:
             try:
                 # Add optimization task end event
                 await memory_manager.add_event(
@@ -819,11 +823,11 @@ Historical Reflections from Previous Tasks:
                     ),
                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                     task_id=task_id,
-                    session_id=session_id
+                    ctx=memory_ctx
                 )
                 
-                await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
-                logger.info(f"| 📝 Ended optimization memory session: {session_id}")
+                await memory_manager.end_session(memory_name=memory_name, ctx=memory_ctx)
+                logger.info(f"| 📝 Ended optimization memory session: {id}")
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to end optimization memory session: {e}")
         

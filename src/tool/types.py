@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
-import os
-import re
 from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from src.dynamic import dynamic_manager
+from src.utils import generate_unique_id
 
 class ToolExtra(BaseModel):
     """Extra data for a tool response"""
@@ -36,6 +34,10 @@ class Tool(BaseModel):
     async def __call__(self, **kwargs) -> ToolResponse:
         """Call the tool with the given arguments."""
         raise NotImplementedError("All tools must implement __call__")
+
+class ToolContext(BaseModel):
+    """Context for a tool call."""
+    id: str = Field(default_factory=lambda: generate_unique_id(prefix="tool"), description="The id of the tool call")
 
 class ToolConfig(BaseModel):
     """Tool configuration"""

@@ -672,6 +672,7 @@ class BinanceEnvironment(Environment):
                    action: str = "HOLD",  # LONG, SHORT, HOLD
                    qty: float = 0.00,
                    leverage: Optional[int] = 10,
+                   **kwargs
                    ) -> Dict[str, Any]:
         """Step the trading environment for perpetual futures trading.
         
@@ -752,7 +753,7 @@ class BinanceEnvironment(Environment):
         else:
             logger.info(f"| ✅ Already at minute boundary (current: {now.strftime('%Y-%m-%d %H:%M:%S')})")
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the Binance trading environment."""
         try:
             # Get account info (futures account info is included)

@@ -77,7 +77,8 @@ class FaissEnvironment(Environment):
     async def add_documents(
         self,
         texts: List[str],
-        metadatas: Optional[List[Dict[str, Any]]] = None
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Add documents to the FAISS vector store.
         
@@ -121,7 +122,8 @@ class FaissEnvironment(Environment):
         k: int = 4,
         filter: Optional[Dict[str, Any]] = None,
         fetch_k: int = 20,
-        score_threshold: Optional[float] = None
+        score_threshold: Optional[float] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Search for similar documents in the FAISS vector store.
         
@@ -176,7 +178,7 @@ class FaissEnvironment(Environment):
         name="delete_documents",
         description="Delete documents from the FAISS vector store",
     )
-    async def delete_documents(self, ids: List[str]) -> Dict[str, Any]:
+    async def delete_documents(self, ids: List[str], **kwargs) -> Dict[str, Any]:
         """Delete documents from the FAISS vector store.
         
         Args:
@@ -207,7 +209,7 @@ class FaissEnvironment(Environment):
         name="get_index_info",
         description="Get information about the FAISS index"
     )
-    async def get_index_info(self) -> Dict[str, Any]:
+    async def get_index_info(self, **kwargs) -> Dict[str, Any]:
         """Get information about the FAISS index.
         
         Returns:
@@ -244,7 +246,7 @@ class FaissEnvironment(Environment):
         name="save_index",
         description="Save the FAISS index to disk"
     )
-    async def save_index(self) -> Dict[str, Any]:
+    async def save_index(self, **kwargs) -> Dict[str, Any]:
         """Save the FAISS index to disk.
         
         Returns:
@@ -264,7 +266,7 @@ class FaissEnvironment(Environment):
                 "extra": {"error": str(e), "base_dir": str(self.base_dir)}
             }
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the FAISS environment.
         
         Returns:

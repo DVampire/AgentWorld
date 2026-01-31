@@ -13,9 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.config import config
 from src.utils import assemble_project_path
 from src.logger import logger
-from src.memory.types import MemoryConfig, Memory
+from src.memory.types import MemoryConfig, Memory, MemoryContext
 from src.memory.context import MemoryContextManager
-
 
 class MemoryManager(BaseModel):
     """Memory Manager for managing memory system registration and lifecycle"""
@@ -134,25 +133,31 @@ class MemoryManager(BaseModel):
             
     async def start_session(self, 
                             memory_name: str, 
-                            session_id: str,
                             agent_name: Optional[str] = None,
                             task_id: Optional[str] = None, 
                             description: Optional[str] = None,
+                            ctx: MemoryContext = None,
                             **kwargs) -> str:
         """Start a memory session.
         
         Args:
             memory_name: Name of the memory system
-            session_id: Session ID
             agent_name: Optional agent name
             task_id: Optional task ID
             description: Optional description
-            **kwargs: Additional arguments to pass to memory system's start_session
+            ctx: Memory context
             
         Returns:
             Session ID
         """
-        return await self.memory_context_manager.start_session(memory_name, session_id, agent_name, task_id, description, **kwargs)
+        return await self.memory_context_manager.start_session(
+            memory_name,
+            agent_name,
+            task_id,
+            description,
+            ctx=ctx,
+            **kwargs
+        )
     
     async def add_event(self, 
                         memory_name: str,
@@ -160,7 +165,7 @@ class MemoryManager(BaseModel):
                         event_type: Any, data: Any,
                         agent_name: str, 
                         task_id: Optional[str] = None, 
-                        session_id: Optional[str] = None, 
+                        ctx: MemoryContext = None,
                         **kwargs):
         """Add an event to memory.
         
@@ -171,53 +176,77 @@ class MemoryManager(BaseModel):
             data: Event data
             agent_name: Agent name
             task_id: Optional task ID
-            session_id: Optional session ID
+            ctx: Memory context
             **kwargs: Additional arguments
         """
-        return await self.memory_context_manager.add_event(memory_name, step_number, event_type, data, agent_name, task_id, session_id, **kwargs)
+        return await self.memory_context_manager.add_event(
+            memory_name,
+            step_number,
+            event_type,
+            data,
+            agent_name,
+            task_id,
+            ctx=ctx,
+        **kwargs)
     
-    async def end_session(self, memory_name: str, session_id: Optional[str] = None):
+    async def end_session(self, 
+                          memory_name: str, 
+                          ctx: MemoryContext = None,
+                          **kwargs):
         """End a memory session.
         
         Args:
             memory_name: Name of the memory system
-            session_id: Optional session ID
+            ctx: Memory context
         """
-        return await self.memory_context_manager.end_session(memory_name, session_id)
+        return await self.memory_context_manager.end_session(
+            memory_name, 
+            ctx=ctx,
+        **kwargs)
     
-    async def get_session_info(self, memory_name: str, session_id: Optional[str] = None):
+    async def get_session_info(self, 
+                               memory_name: str, 
+                               ctx: MemoryContext = None,
+                               **kwargs):
         """Get session info.
         
         Args:
             memory_name: Name of the memory system
-            session_id: Optional session ID
+            ctx: Memory context
             
         Returns:
             SessionInfo or None
         """
-        return await self.memory_context_manager.get_session_info(memory_name, session_id)
+        return await self.memory_context_manager.get_session_info(memory_name, ctx=ctx, **kwargs)
     
-    async def clear_session(self, memory_name: str, session_id: Optional[str] = None):
+    async def clear_session(self, 
+                            memory_name: str, 
+                            ctx: MemoryContext = None,
+                            **kwargs):
         """Clear a memory session.
         
         Args:
             memory_name: Name of the memory system
-            session_id: Optional session ID
+            ctx: Memory context
         """
-        return await self.memory_context_manager.clear_session(memory_name, session_id)
+        return await self.memory_context_manager.clear_session(memory_name, ctx=ctx, **kwargs)
     
-    async def get_state(self, name: str, n: Optional[int] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_state(self, 
+                        name: str, 
+                        n: Optional[int] = None, 
+                        ctx: MemoryContext = None,
+                        **kwargs
+                        ) -> Dict[str, Any]:
         """Get memory state (events, summaries, insights) for a memory system.
         
         Args:
             name: Memory system name
             n: Number of items to retrieve. If None, returns all items.
-            session_id: Optional session ID. If None, uses current session.
-            
+            ctx: Memory context
         Returns:
             Dictionary containing 'events', 'summaries', and 'insights'
         """
-        return await self.memory_context_manager.get_state(name, n, session_id)
+        return await self.memory_context_manager.get_state(name, n, ctx, **kwargs)
     
     async def get_variables(self, memory_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from memory systems, where each memory's code is used as the variable value.

@@ -175,7 +175,7 @@ class RetrieverTool(Tool):
             ToolResponse: The retrieval results including context and optional metadata.
         """
         try:
-            logger.info(f"| 🔍 Starting RetrieverTool with query: {query[:100]}...")
+            logger.info(f"| 🔍 Starting RetrieverTool with query: {query}")
 
             # Create file path for markdown report
             md_filename = f"retrieval_{uuid.uuid4().hex[:8]}.md"

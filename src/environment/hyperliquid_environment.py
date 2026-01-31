@@ -867,6 +867,7 @@ class OnlineHyperliquidEnvironment(Environment):
                    leverage: Optional[int] = 10,
                    stop_loss_price: Optional[float] = None,
                    take_profit_price: Optional[float] = None,
+                   **kwargs
                    ) -> Dict[str, Any]:
         """Step the trading environment for perpetual futures trading.
         
@@ -1040,7 +1041,7 @@ class OnlineHyperliquidEnvironment(Environment):
         except (ValueError, TypeError):
             return f"{float(default):.2f}"
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the Hyperliquid trading environment."""
         try:
             # Get account info
@@ -1926,6 +1927,7 @@ class OfflineHyperliquidEnvironment(Environment):
         leverage: Optional[int] = 10,
         stop_loss_price: Optional[float] = None,
         take_profit_price: Optional[float] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Step the trading environment for perpetual futures trading (backtest version).
         
@@ -2029,7 +2031,7 @@ class OfflineHyperliquidEnvironment(Environment):
                 "extra": {"error": str(e)}
             }
             
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get environment state (fully simulates HyperliquidEnvironment format)."""
         
         try:

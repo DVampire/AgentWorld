@@ -10,6 +10,8 @@ from jinja2 import Environment, Template, meta
 from collections import defaultdict
 from functools import partial
 
+from src.utils import generate_unique_id
+
 class Variable(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     
@@ -380,6 +382,9 @@ class Variable(BaseModel):
         
         return trainable_vars
 
+class OptimizerContext(BaseModel):
+    id: str = Field(default_factory=lambda: generate_unique_id(prefix="optimizer"), description="The id of the optimizer context.")
+
 class Optimizer(BaseModel):
     """Base optimizer that provides shared functionality such as variable extraction and cache management."""
     
@@ -423,6 +428,7 @@ class Optimizer(BaseModel):
         self,
         task: str,
         files: Optional[List[str]] = None,
+        ctx: OptimizerContext = None,
         **kwargs
     ):
         """
@@ -431,6 +437,7 @@ class Optimizer(BaseModel):
         Args:
             task: Task description.
             files: Optional list of attachment paths.
+            ctx: Optimizer context.
         """
         raise NotImplementedError(f"``optimize`` function for {type(self).__name__} is not implemented!")
     

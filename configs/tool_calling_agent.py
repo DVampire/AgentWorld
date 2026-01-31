@@ -8,6 +8,7 @@ with read_base():
     from .tools.mdify import mdify_tool
     from .tools.plotter import plotter_tool
     from .tools.bash import bash_tool
+    from .tools.todo import todo_tool
     from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
@@ -45,11 +46,15 @@ tool_names = [
 
 #-----------------BASH TOOL CONFIG-----------------
 bash_tool.update(
-    require_grad=True,
+    require_grad=False,
 )
 #-----------------MDIFY TOOL CONFIG-----------------
 mdify_tool.update(
     base_dir="tool/mdify",
+)
+todo_tool.update(
+    base_dir="tool/todo",
+    require_grad=False,
 )
 #-----------------BROWSER TOOL CONFIG-----------------
 # browser_tool.update(

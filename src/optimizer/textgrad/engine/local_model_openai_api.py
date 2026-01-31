@@ -1,9 +1,8 @@
 import os
-import logging
 from openai import OpenAI
-from .openai import ChatOpenAI
 
-logger = logging.getLogger(__name__)
+from src.logger import logger
+from src.optimizer.textgrad.engine.openai import ChatOpenAI
 
 
 class ChatExternalClient(ChatOpenAI):

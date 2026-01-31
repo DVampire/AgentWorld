@@ -11,8 +11,9 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import json
 import os
+import asyncio
 
-from src.memory.types import ChatEvent, EventType, Importance, SessionInfo, Memory
+from src.memory.types import ChatEvent, EventType, Importance, Memory, MemoryContext
 from src.model import model_manager
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.logger import logger
@@ -339,58 +340,55 @@ class OfflineTradingMemorySystem(Memory):
         self.max_summaries = max_summaries
         self.max_insights = max_insights
     
-        self.session_memory: Dict[str, OfflineTradingCombinedMemory] = {}
-        self.session_info: Dict[str, SessionInfo] = {}
-        self.current_session_id: Optional[str] = None
-        
-    async def _check_session_id(self, session_id: Optional[str] = None):
-        if session_id is None:
-            session_id = self.current_session_id
-        return session_id
+        # Per-session cache and locks for concurrent safety
+        self._session_memory_cache: Dict[str, OfflineTradingCombinedMemory] = {}
+        self._session_locks: Dict[str, asyncio.Lock] = {}
+        self._cache_lock = asyncio.Lock()
 
-    async def start_session(self, 
-                            session_id: str, 
-                            agent_name: Optional[str] = None, 
-                            task_id: Optional[str] = None, 
-                            description: Optional[str] = None) -> str:
-        """Start new trading session. Automatically loads from JSON if file exists."""
-        # Auto-load from JSON if file exists and save_path is set
+    async def _get_or_create_session_memory(self, id: str) -> tuple[OfflineTradingCombinedMemory, asyncio.Lock]:
+        """Get or create a session memory instance with proper locking."""
+        async with self._cache_lock:
+            if id not in self._session_locks:
+                self._session_locks[id] = asyncio.Lock()
+            if id not in self._session_memory_cache:
+                self._session_memory_cache[id] = OfflineTradingCombinedMemory(
+                    model_name=self.model_name,
+                    max_summaries=self.max_summaries,
+                    max_insights=self.max_insights
+                )
+                logger.info(f"| 📝 Created new offline trading memory cache for id: {id}")
+            return self._session_memory_cache[id], self._session_locks[id]
+
+    async def _cleanup_session_memory(self, id: str):
+        """Remove session memory from cache."""
+        async with self._cache_lock:
+            if id in self._session_memory_cache:
+                del self._session_memory_cache[id]
+            if id in self._session_locks:
+                del self._session_locks[id]
+
+    async def start_session(self, ctx: MemoryContext = None, **kwargs) -> str:
+        """Start new trading session."""
         if self.save_path and os.path.exists(self.save_path):
             await self.load_from_json(self.save_path)
         
-        session_info = SessionInfo(
-            session_id=session_id,
-            agent_name=agent_name,
-            task_id=task_id,
-            description=description
-        )
-        self.session_info[session_id] = session_info
-        self.current_session_id = session_id
-        
-        # Initialize OfflineTradingCombinedMemory for this session if it doesn't exist
-        if session_id not in self.session_memory:
-            self.session_memory[session_id] = OfflineTradingCombinedMemory(
-                model_name=self.model_name, 
-                max_summaries=self.max_summaries,
-                max_insights=self.max_insights
-            )
-        
-        logger.info(f"| Started trading memory session: {session_id}")
-        return session_id
+        if ctx is None:
+            ctx = MemoryContext()
+        id = ctx.id
+        await self._get_or_create_session_memory(id)
+        logger.info(f"| Started trading memory session: {id}")
+        return id
     
-    async def end_session(self, session_id: Optional[str] = None):
-        """End trading session. Automatically saves to JSON if save_path is set."""
-        session_id = await self._check_session_id(session_id)
-            
-        if session_id and session_id in self.session_info:
-            self.session_info[session_id].end_time = datetime.now()
-            
-            if session_id == self.current_session_id:
-                self.current_session_id = None
-            
-            # Auto-save to JSON if save_path is set
-            if self.save_path:
-                await self.save_to_json(self.save_path)
+    async def end_session(self, ctx: MemoryContext = None, **kwargs):
+        """End trading session."""
+        if ctx is None:
+            return
+        id = ctx.id
+        if self.save_path:
+            await self.save_to_json(self.save_path)
+        
+        # Cleanup session memory
+        await self._cleanup_session_memory(id)
     
     async def add_event(self,
                         step_number: int,
@@ -398,23 +396,13 @@ class OfflineTradingMemorySystem(Memory):
                         data: Any,
                         agent_name: str,
                         task_id: Optional[str] = None,
-                        session_id: Optional[str] = None,
+                        ctx: MemoryContext = None,
                         **kwargs):
-        """Add trading event to memory
-        
-        Args:
-            step_number: Step number
-            event_type: Event type
-            data: Event data
-            agent_name: Agent name
-            task_id: Optional task ID
-            session_id: Optional session ID. If None, uses current session.
-            **kwargs: Additional arguments
-        """
-        session_id = await self._check_session_id(session_id)
-        if session_id is None:
-            logger.warning("| No session ID available for add_event")
+        """Add trading event to memory"""
+        if ctx is None:
+            logger.warning("| No context available for add_event")
             return
+        id = ctx.id
         
         # Ensure event_type is EventType enum
         if not isinstance(event_type, EventType):
@@ -438,157 +426,89 @@ class OfflineTradingMemorySystem(Memory):
             data=data,
             agent_name=agent_name,
             task_id=task_id,
-            session_id=session_id
+            session_id=id
         )
     
-        if session_id in self.session_memory:
-            await self.session_memory[session_id].add_event(event)
-            
-            # Auto-save to JSON if save_path is set
-            if self.save_path:
-                await self.save_to_json(self.save_path)
+        session_memory, session_lock = await self._get_or_create_session_memory(id)
+        async with session_lock:
+            await session_memory.add_event(event)
+        
+        if self.save_path:
+            await self.save_to_json(self.save_path)
     
-    async def get_session_info(self, session_id: Optional[str] = None) -> Optional[SessionInfo]:
-        session_id = await self._check_session_id(session_id)
-        return self.session_info.get(session_id)
-    
-    async def clear_session(self, session_id: Optional[str] = None):
+    async def clear_session(self, ctx: MemoryContext = None, **kwargs):
         """Clear specific trading session"""
-        session_id = await self._check_session_id(session_id)
-            
-        if session_id in self.session_info:
-            del self.session_info[session_id]
-            
-            if session_id in self.session_memory:
-                self.session_memory[session_id].clear()
-                del self.session_memory[session_id]
-            
-            if session_id == self.current_session_id:
-                self.current_session_id = None
+        if ctx is None:
+            return
+        id = ctx.id
+        async with self._cache_lock:
+            if id in self._session_memory_cache:
+                self._session_memory_cache[id].clear()
+        await self._cleanup_session_memory(id)
                 
     async def clear(self):
         """Clear all trading sessions"""
-        for session_id in list(self.session_info.keys()):
-            await self.clear_session(session_id)
+        async with self._cache_lock:
+            for id in list(self._session_memory_cache.keys()):
+                self._session_memory_cache[id].clear()
+            self._session_memory_cache.clear()
+            self._session_locks.clear()
             
-    async def get_event(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[ChatEvent]:
-        """Get events from memory system.
-        
-        Args:
-            n: Number of events to retrieve. If None, returns all events.
-            session_id: Optional session ID. If None, uses current session.
-            
-        Returns:
-            List of events
-        """
-        session_id = await self._check_session_id(session_id)
-        if session_id and session_id in self.session_memory:
-            return await self.session_memory[session_id].get_event(n=n)
+    async def get_event(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[ChatEvent]:
+        """Get events from memory system."""
+        if ctx is None:
+            return []
+        id = ctx.id
+        async with self._cache_lock:
+            if id in self._session_memory_cache:
+                return await self._session_memory_cache[id].get_event(n=n)
         return []
     
-    async def get_summary(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[OfflineTradingSummary]:
-        """Get summaries from memory system.
-        
-        Args:
-            n: Number of summaries to retrieve. If None, returns all summaries.
-            session_id: Optional session ID. If None, uses current session.
-            
-        Returns:
-            List of summaries
-        """
-        session_id = await self._check_session_id(session_id)
-        if session_id and session_id in self.session_memory:
-            return await self.session_memory[session_id].get_summary(n=n)
+    async def get_summary(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[OfflineTradingSummary]:
+        """Get summaries from memory system."""
+        if ctx is None:
+            return []
+        id = ctx.id
+        async with self._cache_lock:
+            if id in self._session_memory_cache:
+                return await self._session_memory_cache[id].get_summary(n=n)
         return []
     
-    async def get_insight(self, n: Optional[int] = None, session_id: Optional[str] = None) -> List[OfflineTradingInsight]:
-        """Get insights from memory system.
-        
-        Args:
-            n: Number of insights to retrieve. If None, returns all insights.
-            session_id: Optional session ID. If None, uses current session.
-            
-        Returns:
-            List of insights
-        """
-        session_id = await self._check_session_id(session_id)
-        if session_id and session_id in self.session_memory:
-            return await self.session_memory[session_id].get_insight(n=n)
+    async def get_insight(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[OfflineTradingInsight]:
+        """Get insights from memory system."""
+        if ctx is None:
+            return []
+        id = ctx.id
+        async with self._cache_lock:
+            if id in self._session_memory_cache:
+                return await self._session_memory_cache[id].get_insight(n=n)
         return []
     
     async def save_to_json(self, file_path: str) -> str:
-        """Save memory system state to JSON file.
-        
-        Structure:
-        {
-            "metadata": {
-                "memory_system_type": str,
-                "current_session_id": str,
-                "session_ids": [str, ...]
-            },
-            "sessions": {
-                "session_id": {
-                    "session_info": {...},
-                    "session_memory": {
-                        "events": [...],
-                        "summaries": [...],
-                        "insights": [...]
-                    }
-                },
-                ...
-            }
-        }
-        
-        Args:
-            file_path: File path to save to
-            
-        Returns:
-            Path to the saved file
-        """
+        """Save memory system state to JSON file."""
         async with file_lock(file_path):
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            # Prepare metadata
             metadata = {
                 "memory_system_type": "offline_trading_memory_system",
-                "current_session_id": self.current_session_id,
-                "session_ids": list(self.session_info.keys())
+                "session_ids": list(self._session_memory_cache.keys())
             }
             
-            # Prepare sessions data
             sessions = {}
-            for session_id in self.session_info.keys():
-                session_data = {
-                    "session_info": None,
-                    "session_memory": {
-                        "events": [],
-                        "summaries": [],
-                        "insights": []
+            async with self._cache_lock:
+                for id in self._session_memory_cache.keys():
+                    session_memory = self._session_memory_cache[id]
+                    session_data = {
+                        "session_memory": {
+                            "events": [event.model_dump(mode="json") for event in session_memory.events],
+                            "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
+                            "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
+                        }
                     }
-                }
-                
-                # Save session info
-                if session_id in self.session_info:
-                    session_data["session_info"] = self.session_info[session_id].model_dump(mode="json")
-                
-                # Save session memory
-                if session_id in self.session_memory:
-                    session_memory = self.session_memory[session_id]
-                    session_data["session_memory"] = {
-                        "events": [event.model_dump(mode="json") for event in session_memory.events],
-                        "summaries": [summary.model_dump(mode="json") for summary in session_memory.summaries],
-                        "insights": [insight.model_dump(mode="json") for insight in session_memory.insights],
-                    }
-                
-                sessions[session_id] = session_data
+                    sessions[id] = session_data
             
-            # Prepare save data
-            save_data = {
-                "metadata": metadata,
-                "sessions": sessions
-            }
+            save_data = {"metadata": metadata, "sessions": sessions}
             
-            # Save to file
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(save_data, f, indent=4, ensure_ascii=False)
             
@@ -596,34 +516,7 @@ class OfflineTradingMemorySystem(Memory):
             return str(file_path)
     
     async def load_from_json(self, file_path: str) -> bool:
-        """Load memory system state from JSON file.
-        
-        Expected format:
-        {
-            "metadata": {
-                "memory_system_type": str,
-                "current_session_id": str,
-                "session_ids": [str, ...]
-            },
-            "sessions": {
-                "session_id": {
-                    "session_info": {...},
-                    "session_memory": {
-                        "events": [...],
-                        "summaries": [...],
-                        "insights": [...]
-                    }
-                },
-                ...
-            }
-        }
-        
-        Args:
-            file_path: File path to load from
-            
-        Returns:
-            True if loaded successfully, False otherwise
-        """
+        """Load memory system state from JSON file."""
         async with file_lock(file_path):
             if not os.path.exists(file_path):
                 logger.warning(f"| ⚠️  Memory file not found: {file_path}")
@@ -633,76 +526,53 @@ class OfflineTradingMemorySystem(Memory):
                 with open(file_path, "r", encoding="utf-8") as f:
                     load_data = json.load(f)
                 
-                # Validate format
                 if "metadata" not in load_data or "sessions" not in load_data:
-                    raise ValueError(
-                        f"Invalid memory format. Expected {{'metadata': {{...}}, 'sessions': {{...}}}}, "
-                        f"got keys: {list(load_data.keys())}"
-                    )
+                    raise ValueError(f"Invalid memory format")
                 
-                # Restore metadata
-                metadata = load_data.get("metadata", {})
-                self.current_session_id = metadata.get("current_session_id")
-                
-                # Restore sessions
                 sessions_data = load_data.get("sessions", {})
                 
-                for session_id, session_data in sessions_data.items():
-                    # Restore session info
-                    session_info_data = session_data.get("session_info")
-                    if session_info_data:
-                        # Parse datetime strings
-                        if session_info_data.get("start_time"):
-                            session_info_data["start_time"] = datetime.fromisoformat(session_info_data["start_time"])
-                        if session_info_data.get("end_time"):
-                            session_info_data["end_time"] = datetime.fromisoformat(session_info_data["end_time"])
+                async with self._cache_lock:
+                    for id, session_data in sessions_data.items():
+                        if id not in self._session_memory_cache:
+                            self._session_memory_cache[id] = OfflineTradingCombinedMemory(
+                                model_name=self.model_name, 
+                                max_summaries=self.max_summaries,
+                                max_insights=self.max_insights
+                            )
+                            self._session_locks[id] = asyncio.Lock()
                         
-                        self.session_info[session_id] = SessionInfo(**session_info_data)
-                    
-                    # Ensure session memory exists
-                    if session_id not in self.session_memory:
-                        await self.start_session(
-                            session_id=session_id,
-                            agent_name=self.session_info.get(session_id).agent_name if session_id in self.session_info else None,
-                            task_id=self.session_info.get(session_id).task_id if session_id in self.session_info else None,
-                            description=self.session_info.get(session_id).description if session_id in self.session_info else None,
-                        )
-                    
-                    session_memory = self.session_memory[session_id]
-                    session_memory_data = session_data.get("session_memory", {})
-                    
-                    # Restore events
-                    if "events" in session_memory_data:
-                        events = []
-                        for event_data in session_memory_data["events"]:
-                            if event_data.get("timestamp"):
-                                event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
-                            if event_data.get("event_type"):
-                                event_data["event_type"] = EventType(event_data["event_type"])
-                            events.append(ChatEvent(**event_data))
-                        session_memory.events = events
-                    
-                    # Restore summaries
-                    if "summaries" in session_memory_data:
-                        summaries = []
-                        for summary_data in session_memory_data["summaries"]:
-                            if summary_data.get("timestamp"):
-                                summary_data["timestamp"] = datetime.fromisoformat(summary_data["timestamp"])
-                            if summary_data.get("importance"):
-                                summary_data["importance"] = Importance(summary_data["importance"])
-                            summaries.append(OfflineTradingSummary(**summary_data))
-                        session_memory.summaries = summaries
-                    
-                    # Restore insights
-                    if "insights" in session_memory_data:
-                        insights = []
-                        for insight_data in session_memory_data["insights"]:
-                            if insight_data.get("timestamp"):
-                                insight_data["timestamp"] = datetime.fromisoformat(insight_data["timestamp"])
-                            if insight_data.get("importance"):
-                                insight_data["importance"] = Importance(insight_data["importance"])
-                            insights.append(OfflineTradingInsight(**insight_data))
-                        session_memory.insights = insights
+                        session_memory = self._session_memory_cache[id]
+                        session_memory_data = session_data.get("session_memory", {})
+                        
+                        if "events" in session_memory_data:
+                            events = []
+                            for event_data in session_memory_data["events"]:
+                                if event_data.get("timestamp"):
+                                    event_data["timestamp"] = datetime.fromisoformat(event_data["timestamp"])
+                                if event_data.get("event_type"):
+                                    event_data["event_type"] = EventType(event_data["event_type"])
+                                events.append(ChatEvent(**event_data))
+                            session_memory.events = events
+                        
+                        if "summaries" in session_memory_data:
+                            summaries = []
+                            for summary_data in session_memory_data["summaries"]:
+                                if summary_data.get("timestamp"):
+                                    summary_data["timestamp"] = datetime.fromisoformat(summary_data["timestamp"])
+                                if summary_data.get("importance"):
+                                    summary_data["importance"] = Importance(summary_data["importance"])
+                                summaries.append(OfflineTradingSummary(**summary_data))
+                            session_memory.summaries = summaries
+                        
+                        if "insights" in session_memory_data:
+                            insights = []
+                            for insight_data in session_memory_data["insights"]:
+                                if insight_data.get("timestamp"):
+                                    insight_data["timestamp"] = datetime.fromisoformat(insight_data["timestamp"])
+                                if insight_data.get("importance"):
+                                    insight_data["importance"] = Importance(insight_data["importance"])
+                                insights.append(OfflineTradingInsight(**insight_data))
+                            session_memory.insights = insights
                 
                 logger.info(f"| 📂 Memory loaded from {file_path}")
                 return True

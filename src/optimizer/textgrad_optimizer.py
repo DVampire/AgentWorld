@@ -279,7 +279,7 @@ class TextGradOptimizer(Optimizer):
         finally:
             # Close the optimization log file.
             logger.info(f"\n{'='*70}")
-            logger.info(f"结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             logger.info(f"{'='*70}")
             logger.info(f"| 📝 Optimization log saved and closed")
     

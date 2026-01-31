@@ -140,7 +140,7 @@ class DatabaseEnvironment(Environment):
     
     @ecp.action(name="execute_sql",
                 description="Execute a SQL query.")
-    async def execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def execute_sql(self, query: str, parameters: Optional[Dict[str, Any]] = None, **kwargs) -> Dict[str, Any]:
         """Execute a SQL query.
         
         Args:
@@ -182,7 +182,8 @@ class DatabaseEnvironment(Environment):
                            table_name: str,
                            columns: List[Dict[str, Any]],
                            primary_key: Optional[str] = None,
-                           foreign_keys: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+                           foreign_keys: Optional[List[Dict[str, Any]]] = None,
+                           **kwargs) -> Dict[str, Any]:
         """Create a table.
         
         Args:
@@ -222,7 +223,8 @@ class DatabaseEnvironment(Environment):
                 description="Insert data into a table.")
     async def insert_data(self, 
                           table_name: str,
-                          data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Dict[str, Any]:
+                          data: Union[Dict[str, Any], List[Dict[str, Any]]],
+                          **kwargs) -> Dict[str, Any]:
         """Insert data into a table.
         
         Args:
@@ -259,7 +261,8 @@ class DatabaseEnvironment(Environment):
                           where_clause: Optional[str] = None,
                           where_params: Optional[Dict[str, Any]] = None,
                           order_by: Optional[str] = None,
-                          limit: Optional[int] = None) -> Dict[str, Any]:
+                          limit: Optional[int] = None,
+                          **kwargs) -> Dict[str, Any]:
         """Select data from a table.
         
         Args:
@@ -313,7 +316,8 @@ class DatabaseEnvironment(Environment):
                           table_name: str,
                           data: Dict[str, Any],
                           where_clause: str,
-                          where_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                          where_params: Optional[Dict[str, Any]] = None,
+                          **kwargs) -> Dict[str, Any]:
         """Update data in a table.
         
         Args:
@@ -354,7 +358,8 @@ class DatabaseEnvironment(Environment):
     async def delete_data(self, 
                           table_name: str,
                           where_clause: str,
-                          where_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                          where_params: Optional[Dict[str, Any]] = None,
+                          **kwargs) -> Dict[str, Any]:
         """Delete data from a table.
         
         Args:
@@ -390,7 +395,7 @@ class DatabaseEnvironment(Environment):
     
     @ecp.action(name="get_tables",
                 description="Get information about all tables.")
-    async def get_tables(self) -> Dict[str, Any]:
+    async def get_tables(self, **kwargs) -> Dict[str, Any]:
         """Get information about all tables.
         
         Returns:
@@ -425,7 +430,7 @@ class DatabaseEnvironment(Environment):
                 "extra": {"error": str(e)}
             }
     
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the database environment."""
         try:
             db_info = await self.database_service.get_database_info()

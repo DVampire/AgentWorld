@@ -6,14 +6,15 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, AgentResponse, AgentExtra, AgentResponse
+from src.agent.types import Agent, AgentResponse, AgentExtra, AgentContext
 from src.logger import logger
 from src.utils import get_file_info, dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.memory import memory_manager, SessionInfo, EventType
-from src.tool.types import ToolResponse
+from src.memory import memory_manager, EventType
+from src.memory.types import MemoryContext
+from src.tool.types import ToolResponse, ToolContext
 from src.prompt import prompt_manager
 from src.model import model_manager
 from src.registry import AGENT
@@ -36,7 +37,6 @@ class AnthropicMobileAgent(Agent):
         memory_config: Optional[Dict[str, Any]] = None,
         max_steps: int = 30,
         review_steps: int = 5,
-        log_max_length: int = 500,
         require_grad: bool = False,
         **kwargs
     ):
@@ -49,7 +49,6 @@ class AnthropicMobileAgent(Agent):
             memory_config: Memory configuration
             max_steps: Maximum number of steps
             review_steps: Number of steps to review in history
-            log_max_length: Maximum log length
         """
         # Set default prompt name for mobile
         if not prompt_name:
@@ -62,7 +61,6 @@ class AnthropicMobileAgent(Agent):
             memory_config=memory_config,
             max_steps=max_steps,
             review_steps=review_steps,
-            log_max_length=log_max_length,
             require_grad=require_grad,
             **kwargs)
         
@@ -118,41 +116,9 @@ class AnthropicMobileAgent(Agent):
         """)
         return enhanced_task
     
-    async def _generate_session_info(self, task: str) -> SessionInfo:
-        """Use the llm to generate a session id."""
-        system_prompt = f"You are a helpful assistant that generates a session info for agent {self.name}."
-        user_prompt = dedent(f"""
-            <intro>
-            1. The session ID should be a unique identifier for the session that concisely describes the task in snake_case.
-            2. The session description should provide a concise description of the task.
-            </intro>
-            <task>
-            {task}
-            </task>"""
-        )
-        
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_prompt)
-        ]
-        
-        model_response = await model_manager(
-            model=self.model_name,
-            messages=messages,
-            response_format=SessionInfo
-        )
-        result = model_response.extra.parsed_model
-        
-        timestamp = datetime.now().isoformat()
-        
-        session_id = f"{self.name}_{timestamp}"
-        description = result.description
-        
-        return SessionInfo(session_id=session_id, description=description)
-    
-    async def _get_agent_history(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+    async def _get_agent_history(self, ctx: MemoryContext = None) -> Dict[str, Any]:
         """Get the agent history."""
-        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, session_id=session_id)
+        state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=ctx)
         
         events = state["events"]
         summaries = state["summaries"]
@@ -188,11 +154,11 @@ class AnthropicMobileAgent(Agent):
             "agent_history": agent_history,
         }
     
-    async def _get_todo_contents(self, call_id: Optional[str] = None) -> str:
-        """Get the todo contents for a specific call_id."""
+    async def _get_todo_contents(self, id: Optional[str] = None) -> str:
+        """Get the todo contents for a specific id."""
         todo_tool = await tcp.get("todo")
-        if call_id:
-            todo_contents = todo_tool.get_todo_content(call_id)
+        if id:
+            todo_contents = todo_tool.get_todo_content(id)
         else:
             todo_contents = "[Current todo.md is empty, fill it with your plan when applicable]"
         return todo_contents   
@@ -238,7 +204,11 @@ class AnthropicMobileAgent(Agent):
             "environment_state": environment_state,
         }
         
-    async def _get_messages(self, task: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, ctx: AgentContext = None, **kwargs) -> List[BaseMessage]:
+        
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
         
         system_input_variables = {}
         environment_rules = ""
@@ -250,7 +220,7 @@ class AnthropicMobileAgent(Agent):
         system_message = await self.prompt_manager.get_system_message(system_input_variables)
         
         agent_input_variables = {}
-        agent_history = await self._get_agent_history(session_id=session_id)
+        agent_history = await self._get_agent_history(ctx=memory_ctx)
         agent_state = await self._get_agent_state(task, step_number=step_number)
         environment_state = await self._get_environment_state()
         
@@ -268,8 +238,13 @@ class AnthropicMobileAgent(Agent):
         return messages
     
         
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, session_id: Optional[str] = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, ctx: AgentContext = None) -> Dict[str, Any]:
         """Think and action for one step."""
+        
+        id = ctx.id if ctx else None
+        step_number = ctx.step_number if ctx else None
+        memory_ctx = MemoryContext(id=id) if id else None
+        tool_ctx = ToolContext(id=id) if id else None
         
         done = False
         result = None
@@ -314,15 +289,16 @@ class AnthropicMobileAgent(Agent):
             # Execute the first action
             action_results = []
             
-            # Auto-inject call_id for todo tool using session_id
-            if tool_name == "todo" and session_id:
-                tool_args["call_id"] = session_id
+            # Auto-inject id for todo tool using ctx.id
+            if tool_name == "todo" and id:
+                tool_args["id"] = id
             
             logger.info(f"| 📝 Action Name: {tool_name}, Args: {tool_args}")
             
             input = {
                 "name": tool_name,
-                "input": tool_args
+                "input": tool_args,
+                "ctx": tool_ctx
             }
             tool_response = await tcp(**input)
             tool_result = tool_response.message
@@ -351,7 +327,7 @@ class AnthropicMobileAgent(Agent):
                 data=event_data,
                 agent_name=self.name,
                 task_id=task_id,
-                session_id=session_id
+                ctx=memory_ctx
             )
             
             if done:
@@ -362,7 +338,7 @@ class AnthropicMobileAgent(Agent):
                     data=dict(result=result),
                     agent_name=self.name,
                     task_id=task_id,
-                    session_id=session_id
+                    ctx=memory_ctx
                 )
             
         except Exception as e:
@@ -377,7 +353,8 @@ class AnthropicMobileAgent(Agent):
     
     async def __call__(self, 
                   task: str, 
-                  files: Optional[List[str]] = None
+                  files: Optional[List[str]] = None,
+                  **kwargs
                   ) -> AgentResponse:
         """
         Main entry point for anthropic mobile agent through acp.
@@ -385,6 +362,7 @@ class AnthropicMobileAgent(Agent):
         Args:
             task (str): The task to complete.
             files (Optional[List[str]]): The files to attach to the task.
+            ctx (AgentContext): The agent context.
             
         Returns:
             AgentResponse: The response of the agent.
@@ -398,20 +376,20 @@ class AnthropicMobileAgent(Agent):
         else:
             enhanced_task = task
         
-        session_info = await self._generate_session_info(enhanced_task)
-        session_id = session_info.session_id
-        description = session_info.description
+        # Get id from ctx
+        ctx = kwargs.get("ctx", None)
+        if ctx is None:
+            ctx = AgentContext()
+        id = ctx.id
+        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        memory_ctx = MemoryContext(id=id)
+        
+        logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
         
         # Start session
-        await memory_manager.start_session(
-            memory_name=self.memory_name,
-            session_id=session_id,
-            agent_name=self.name,
-            description=description
-        )
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         # Add task start event
-        task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=0, 
@@ -419,13 +397,14 @@ class AnthropicMobileAgent(Agent):
             data=dict(task=enhanced_task),
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # Initialize messages
-        messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=0)
+        ctx.step_number = 0
+        messages = await self._get_messages(enhanced_task, ctx=ctx)
 
-         # Main loop
+        # Main loop
         step_number = 0
         response = None
         
@@ -433,10 +412,12 @@ class AnthropicMobileAgent(Agent):
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
             # Execute one step
-            response = await self._think_and_action(messages, task_id, session_id=session_id, step_number=step_number)
+            response = await self._think_and_action(messages, task_id, ctx=ctx)
             step_number += 1
             
-            messages = await self._get_messages(enhanced_task, session_id=session_id, step_number=step_number)
+            # Update ctx step_number
+            ctx.step_number = step_number
+            messages = await self._get_messages(enhanced_task, ctx=ctx)
             
             if response["done"]:
                 break
@@ -458,11 +439,11 @@ class AnthropicMobileAgent(Agent):
             data=response,
             agent_name=self.name,
             task_id=task_id,
-            session_id=session_id
+            ctx=memory_ctx
         )
         
         # End session
-        await memory_manager.end_session(memory_name=self.memory_name, session_id=session_id)
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
         
         logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
         

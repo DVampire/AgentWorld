@@ -115,7 +115,8 @@ class GitHubEnvironment(Environment):
         name: str,
         description: Optional[str] = None,
         private: bool = False,
-        auto_init: bool = False
+        auto_init: bool = False,
+        **kwargs
     ) -> Dict[str, Any]:
         """Create a new GitHub repository.
         
@@ -179,7 +180,7 @@ class GitHubEnvironment(Environment):
 
     @ecp.action(name="get_repository",
                 description="Get your repository information")
-    async def get_repository(self, repo: str) -> Dict[str, Any]:
+    async def get_repository(self, repo: str, **kwargs) -> Dict[str, Any]:
         """Get repository information for your own repository.
         
         Args:
@@ -234,7 +235,7 @@ class GitHubEnvironment(Environment):
 
     @ecp.action(name="fork_repository",
                 description="Fork a public repository to your account")
-    async def fork_repository(self, owner: str, repo: str) -> Dict[str, Any]:
+    async def fork_repository(self, owner: str, repo: str, **kwargs) -> Dict[str, Any]:
         """Fork a public repository to your account.
         
         Args:
@@ -272,7 +273,7 @@ class GitHubEnvironment(Environment):
 
     @ecp.action(name="delete_repository",
                 description="Delete your own repository")
-    async def delete_repository(self, repo: str) -> Dict[str, Any]:
+    async def delete_repository(self, repo: str, **kwargs) -> Dict[str, Any]:
         """Delete your own repository.
         
         Args:
@@ -315,7 +316,8 @@ class GitHubEnvironment(Environment):
     async def git_init(
         self,
         local_path: str,
-        remote_url: Optional[str] = None
+        remote_url: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Initialize a local directory as Git repository.
         
@@ -360,7 +362,8 @@ class GitHubEnvironment(Environment):
         owner: str,
         repo: str,
         local_path: str,
-        branch: Optional[str] = None
+        branch: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Clone a repository to local directory.
         
@@ -490,7 +493,8 @@ class GitHubEnvironment(Environment):
         self,
         local_path: str,
         message: str,
-        add_all: bool = True
+        add_all: bool = True,
+        **kwargs
     ) -> Dict[str, Any]:
         """Commit changes to local repository.
         
@@ -540,7 +544,8 @@ class GitHubEnvironment(Environment):
         self,
         local_path: str,
         remote: str = "origin",
-        branch: Optional[str] = None
+        branch: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Push changes to remote repository.
         
@@ -590,7 +595,8 @@ class GitHubEnvironment(Environment):
         self,
         local_path: str,
         remote: str = "origin",
-        branch: Optional[str] = None
+        branch: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         """Pull changes from remote repository.
         
@@ -639,7 +645,8 @@ class GitHubEnvironment(Environment):
     async def git_fetch(
         self,
         local_path: str,
-        remote: str = "origin"
+        remote: str = "origin",
+        **kwargs
     ) -> Dict[str, Any]:
         """Fetch changes from remote repository.
         
@@ -687,7 +694,8 @@ class GitHubEnvironment(Environment):
         self,
         local_path: str,
         branch_name: str,
-        checkout: bool = True
+        checkout: bool = True,
+        **kwargs
     ) -> Dict[str, Any]:
         """Create a new branch.
         
@@ -736,7 +744,8 @@ class GitHubEnvironment(Environment):
     async def git_checkout_branch(
         self,
         local_path: str,
-        branch_name: str
+        branch_name: str,
+        **kwargs
     ) -> Dict[str, Any]:
         """Checkout an existing branch.
         
@@ -779,7 +788,7 @@ class GitHubEnvironment(Environment):
 
     @ecp.action(name="git_list_branches",
                 description="List all branches")
-    async def git_list_branches(self, local_path: str) -> Dict[str, Any]:
+    async def git_list_branches(self, local_path: str, **kwargs) -> Dict[str, Any]:
         """List all branches.
         
         Args:
@@ -820,7 +829,8 @@ class GitHubEnvironment(Environment):
         self,
         local_path: str,
         branch_name: str,
-        force: bool = False
+        force: bool = False,
+        **kwargs
     ) -> Dict[str, Any]:
         """Delete a branch.
         
@@ -866,7 +876,7 @@ class GitHubEnvironment(Environment):
 
     @ecp.action(name="git_status",
                 description="Get Git repository status")
-    async def git_status(self, local_path: str) -> Dict[str, Any]:
+    async def git_status(self, local_path: str, **kwargs) -> Dict[str, Any]:
         """Get Git repository status.
         
         Args:
@@ -942,7 +952,7 @@ class GitHubEnvironment(Environment):
                 "error": str(e),
             }
 
-    async def get_state(self) -> Dict[str, Any]:
+    async def get_state(self, **kwargs) -> Dict[str, Any]:
         """Get the current state of the GitHub environment."""
         try:
             git_status = await self.git_status(self.base_dir)

@@ -1,5 +1,10 @@
 import os
-from typing import List, Optional, Any, Dict, Union, Callable
+import math
+import tiktoken
+import json
+import uuid
+from datetime import datetime
+from typing import List, Optional, Any, Dict, Union, Callable, TYPE_CHECKING
 from pydantic import ConfigDict, Field
 from pydantic import BaseModel
 
@@ -7,11 +12,11 @@ from src.logger import logger
 from src.optimizer.types import Optimizer, Variable
 from src.model import model_manager
 from src.message.types import SystemMessage, HumanMessage
-from src.memory import EventType
 from src.utils import dedent
-import math
-import tiktoken
-import json
+
+if TYPE_CHECKING:
+    from src.optimizer.types import OptimizerContext
+
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -535,17 +540,19 @@ Historical Reflections from Previous Tasks:
             ground_truth: str,
             files: Optional[List[str]] = None,
             results_file_path: Optional[str] = None,
+            ctx: "OptimizerContext" = None,
             **kwargs
     ):
         """
-        Optimize the agent prompt using the Reflection approach.
+        Optimize the agent prompt using the GRPO approach.
 
         Args:
             agent: Agent instance.
             task: Task description to optimize for.
+            ground_truth: Ground truth for evaluation.
             files: Optional list of attachments.
-            reward_fn: Optional custom reward function that takes a single candidate text and returns a reward score.
-                      If None, uses the default heuristic evaluation.
+            results_file_path: Optional path to results file for historical reflections.
+            ctx: Optimizer context.
         """
 
         # Lazy import to avoid circular dependency
@@ -554,26 +561,28 @@ Historical Reflections from Previous Tasks:
         from src.environment import ecp
         from src.agent import acp
         from src.memory import memory_manager
+        from src.agent.types import AgentContext
+        from src.memory.types import MemoryContext, EventType
+        from src.optimizer.types import OptimizerContext
+
+        # Get id from ctx
+        id = ctx.id
+        memory_ctx = MemoryContext(id=id)
+        agent_ctx = AgentContext(id=id)
 
         # Use optimization_steps if provided, otherwise use self.max_steps
         optimization_steps = self.max_steps
 
         # Initialize optimizer memory session if available
         memory_name = self.memory_name
-        session_id = None
         task_id = None
         if memory_name:
             try:
-                import uuid
-                from datetime import datetime
                 agent_name = getattr(agent, 'name', 'unknown_agent')
-                session_id = f"opt_session_{uuid.uuid4().hex[:8]}"
                 task_id = f"opt_task_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                 await memory_manager.start_session(
                     memory_name=memory_name,
-                    session_id=session_id,
-                    agent_name=agent_name,
-                    description=task
+                    ctx=memory_ctx
                 )
 
                 # Add optimization task start event
@@ -589,17 +598,16 @@ Historical Reflections from Previous Tasks:
                     ),
                     agent_name=agent_name,
                     task_id=task_id,
-                    session_id=session_id
+                    ctx=memory_ctx
                 )
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to initialize optimizer memory: {e}")
                 memory_name = None
-                session_id = None
                 task_id = None
 
         # Run agent once to get initial solution
         logger.info(f"| 🚀 Running agent to get initial solution...")
-        agent_response = await agent(task=task, files=files)
+        agent_response = await agent(task=task, files=files, ctx=agent_ctx)
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
         current_agent_reasoning = agent_response_extra_data['reasoning']
@@ -632,7 +640,7 @@ Historical Reflections from Previous Tasks:
                 candidate_results: List[str] = []
                 candidate_solutions: List[str] = []
                 for cand_idx in range(self.num_candidates):
-                    candidate_response = await agent(task=task, files=files)
+                    candidate_response = await agent(task=task, files=files, ctx=agent_ctx)
                     candidate_response_extra_data = candidate_response.extra.data if candidate_response.extra and candidate_response.extra.data else None
                     candidate_result = candidate_response_extra_data['result']
                     candidate_reasoning = candidate_response_extra_data['reasoning']
@@ -765,7 +773,7 @@ Historical Reflections from Previous Tasks:
                         if variables_updated:
                             # Re-run agent with updated variables
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
-                            agent_response = await agent(task=task, files=files)
+                            agent_response = await agent(task=task, files=files, ctx=agent_ctx)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
                             current_result = agent_response_extra_data['result']
                             current_reasoning = agent_response_extra_data['reasoning']
@@ -775,7 +783,7 @@ Historical Reflections from Previous Tasks:
                             logger.info(f"| ℹ️ Phase 1: No trainable variables were updated")
 
                         # Record phase 1 to memory
-                        if memory_name and session_id and variables_updated:
+                        if memory_name and variables_updated:
                             try:
                                 event_data = {
                                     "phase": "trainable_variables",
@@ -809,7 +817,7 @@ Historical Reflections from Previous Tasks:
                                     data=event_data,
                                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                                     task_id=task_id,
-                                    session_id=session_id
+                                    ctx=memory_ctx
                                 )
                             except Exception as e:
                                 logger.warning(f"| ⚠️ Failed to record phase 1 to memory: {e}")
@@ -867,7 +875,7 @@ Historical Reflections from Previous Tasks:
                         logger.info(f"| ✅ Phase 2 completed - solution optimized")
 
                         # Record phase 2 to memory
-                        if memory_name and session_id:
+                        if memory_name:
                             try:
                                 event_data = {
                                     "phase": "solution",
@@ -884,7 +892,7 @@ Historical Reflections from Previous Tasks:
                                     data=event_data,
                                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                                     task_id=task_id,
-                                    session_id=session_id
+                                    ctx=memory_ctx
                                 )
                             except Exception as e:
                                 logger.warning(f"| ⚠️ Failed to record phase 2 to memory: {e}")
@@ -916,7 +924,7 @@ Historical Reflections from Previous Tasks:
                 continue
 
         # End optimization memory session if available
-        if memory_name and session_id:
+        if memory_name:
             try:
                 # Add optimization task end event
                 await memory_manager.add_event(
@@ -931,11 +939,11 @@ Historical Reflections from Previous Tasks:
                     ),
                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                     task_id=task_id,
-                    session_id=session_id
+                    ctx=memory_ctx
                 )
 
-                await memory_manager.end_session(memory_name=memory_name, session_id=session_id)
-                logger.info(f"| 📝 Ended optimization memory session: {session_id}")
+                await memory_manager.end_session(memory_name=memory_name, ctx=memory_ctx)
+                logger.info(f"| 📝 Ended optimization memory session: {id}")
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to end optimization memory session: {e}")
 
