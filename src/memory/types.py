@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 import json
 
-from src.utils import dedent, generate_unique_id
+from src.utils import dedent
 from src.dynamic import dynamic_manager
 
 class EventType(Enum):
@@ -83,9 +83,6 @@ class Summary(BaseModel):
     
     def __repr__(self):
         return self.__str__()
-    
-class MemoryContext(BaseModel):
-    id: str = Field(default_factory=lambda: generate_unique_id(prefix="memory"), description="The unique identifier for the memory context.")
 
 class Memory(BaseModel):
     """Base class for all memory systems"""

@@ -23,7 +23,6 @@ from src.environment import ecp
 from src.agent import acp
 from src.transformation import transformation
 from src.session.types import SessionContext
-from src.agent.types import AgentContext
 from src.utils import generate_unique_id
 
 def parse_args():
@@ -96,12 +95,7 @@ async def main():
     logger.info(f"| 📂 Files: {files}")
     
     # Session context
-    session_ctx = SessionContext()
-    # Agent context
-    agent_ctx = AgentContext(
-        id=session_ctx.id,
-        step_number=0
-    )
+    ctx = SessionContext()
     
     input = {
         "name": "tool_calling",
@@ -109,7 +103,7 @@ async def main():
             "task": task,
             "files": files
         },
-        "ctx": agent_ctx
+        "ctx": ctx
     }
     await acp(**input)
     

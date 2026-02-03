@@ -17,7 +17,8 @@ from src.logger import logger
 from src.model import model_manager
 from src.utils import dedent, generate_unique_id
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
-from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, Memory, MemoryContext
+from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, Memory
+from src.session import SessionContext
 from src.utils import file_lock
 from src.registry import MEMORY_SYSTEM
 
@@ -369,7 +370,7 @@ class GeneralMemorySystem(Memory):
                             agent_name: Optional[str] = None, 
                             task_id: Optional[str] = None, 
                             description: Optional[str] = None,
-                            ctx: MemoryContext = None, 
+                            ctx: SessionContext = None, 
                             **kwargs
                             ) -> str:
         """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
@@ -380,7 +381,7 @@ class GeneralMemorySystem(Memory):
             logger.info(f"| ✅ Memory loaded from JSON")
             
         if ctx is None:
-            ctx = MemoryContext()
+            ctx = SessionContext()
         id = ctx.id
         
         # Initialize CombinedMemory for this session (with proper locking)
@@ -388,7 +389,7 @@ class GeneralMemorySystem(Memory):
         
         return id
     
-    async def end_session(self, ctx: MemoryContext = None, **kwargs):
+    async def end_session(self, ctx: SessionContext = None, **kwargs):
         """End session. Automatically saves to JSON if save_path is set."""
         id = ctx.id
         
@@ -405,7 +406,7 @@ class GeneralMemorySystem(Memory):
                         data: Any,
                         agent_name: str,
                         task_id: Optional[str] = None,
-                        ctx: MemoryContext = None,
+                        ctx: SessionContext = None,
                         **kwargs):
         """Add event to memory system.
         
@@ -453,21 +454,21 @@ class GeneralMemorySystem(Memory):
         if self.save_path:
             await self.save_to_json(self.save_path)
     
-    async def get(self, ctx: MemoryContext = None) -> CombinedMemory:
+    async def get(self, ctx: SessionContext = None) -> CombinedMemory:
         """Get session info"""
         id = ctx.id
         if id in self._session_memory_cache:
             return self._session_memory_cache[id]
         return None
     
-    async def clear_session(self, ctx: MemoryContext = None):
+    async def clear_session(self, ctx: SessionContext = None):
         """Clear specific session"""
         id = ctx.id
         if id in self._session_memory_cache:
             await self._session_memory_cache[id].clear()
             await self._cleanup_session_memory(id)
             
-    async def get_event(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[ChatEvent]:
+    async def get_event(self, n: Optional[int] = None, ctx: SessionContext = None, **kwargs) -> List[ChatEvent]:
         """Get events from memory system.
         
         Args:
@@ -482,7 +483,7 @@ class GeneralMemorySystem(Memory):
             return await self._session_memory_cache[id].get_event(n=n)
         return []
     
-    async def get_summary(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[Summary]:
+    async def get_summary(self, n: Optional[int] = None, ctx: SessionContext = None, **kwargs) -> List[Summary]:
         """Get summaries from memory system.
         
         Args:
@@ -497,7 +498,7 @@ class GeneralMemorySystem(Memory):
             return await self._session_memory_cache[id].get_summary(n=n)
         return []
     
-    async def get_insight(self, n: Optional[int] = None, ctx: MemoryContext = None, **kwargs) -> List[Insight]:
+    async def get_insight(self, n: Optional[int] = None, ctx: SessionContext = None, **kwargs) -> List[Insight]:
         """Get insights from memory system.
         
         Args:

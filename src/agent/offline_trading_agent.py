@@ -12,14 +12,14 @@ from src.utils import dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
-from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput, AgentContext
-from src.tool.types import ToolResponse, ToolContext
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, ThinkOutput
+from src.tool.types import ToolResponse
 from src.memory import memory_manager, EventType
-from src.memory.types import MemoryContext
 from src.tracer import Tracer, Record
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
+from src.session import SessionContext
 
 @AGENT.register_module(force=True)
 class OfflineTradingAgent(Agent):
@@ -87,12 +87,12 @@ class OfflineTradingAgent(Agent):
         return tracer, record
         
         
-    async def _get_agent_context(self, task: str, ctx: AgentContext = None, **kwargs) -> Dict[str, Any]:
+    async def _get_agent_context(self, task: str, ctx: SessionContext = None, **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
         
         id = ctx.id if ctx else None
         step_number = ctx.step_number if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
+        memory_ctx = SessionContext(id=id) if id else None
         
         task = f"<task>{task}</task>"
         
@@ -218,7 +218,7 @@ class OfflineTradingAgent(Agent):
             "tool_context": tool_context,
         }
         
-    async def _get_messages(self, task: str, ctx: AgentContext = None, record: Record = None, **kwargs) -> List[BaseMessage]:
+    async def _get_messages(self, task: str, ctx: SessionContext = None, record: Record = None, **kwargs) -> List[BaseMessage]:
         
         system_modules = {}
         # Infer prompt name from agent's prompt_name
@@ -252,13 +252,13 @@ class OfflineTradingAgent(Agent):
         
         return messages
     
-    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, ctx: AgentContext = None, record: Record = None) -> Dict[str, Any]:
+    async def _think_and_action(self, messages: List[BaseMessage], task_id: str, ctx: SessionContext = None, record: Record = None) -> Dict[str, Any]:
         """Think and action for one step."""
         
         id = ctx.id if ctx else None
         step_number = ctx.step_number if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        tool_ctx = ToolContext(id=id) if id else None
+        memory_ctx = SessionContext(id=id) if id else None
+        tool_ctx = SessionContext(id=id) if id else None
         
         done = False
         result = None
@@ -395,10 +395,10 @@ class OfflineTradingAgent(Agent):
         # Get id from ctx
         ctx = kwargs.get("ctx", None)
         if ctx is None:
-            ctx = AgentContext()
+            ctx = SessionContext()
         id = ctx.id
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        memory_ctx = MemoryContext(id=id)
+        memory_ctx = SessionContext(id=id)
         
         logger.info(f"| 📝 Context ID: {id}, Task ID: {task_id}")
         
@@ -436,8 +436,8 @@ class OfflineTradingAgent(Agent):
             # Update tracer and save to json
             await tracer.add_record(observation=record.observation, 
                                    tool=record.tool,
-                                   session_id=id,
-                                   task_id=task_id)
+                                   task_id=task_id,
+                                   ctx=ctx)
             await tracer.save_to_json(self.tracer_save_path)
             
             ctx.step_number = step_number

@@ -13,7 +13,8 @@ import json
 import os
 import asyncio
 
-from src.memory.types import ChatEvent, EventType, Importance, Memory, MemoryContext
+from src.memory.types import ChatEvent, EventType, Importance, Memory
+from src.session import SessionContext
 from src.model import model_manager
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
 from src.logger import logger
@@ -367,19 +368,19 @@ class OnlineTradingMemorySystem(Memory):
             if id in self._session_locks:
                 del self._session_locks[id]
 
-    async def start_session(self, ctx: MemoryContext = None, **kwargs) -> str:
+    async def start_session(self, ctx: SessionContext = None, **kwargs) -> str:
         """Start new trading session."""
         if self.save_path and os.path.exists(self.save_path):
             await self.load_from_json(self.save_path)
         
         if ctx is None:
-            ctx = MemoryContext()
+            ctx = SessionContext()
         id = ctx.id
         await self._get_or_create_session_memory(id)
         logger.info(f"| Started trading memory session: {id}")
         return id
     
-    async def end_session(self, ctx: MemoryContext = None, **kwargs):
+    async def end_session(self, ctx: SessionContext = None, **kwargs):
         """End trading session."""
         if ctx is None:
             return
@@ -396,7 +397,7 @@ class OnlineTradingMemorySystem(Memory):
                         data: Any,
                         agent_name: str,
                         task_id: Optional[str] = None,
-                        ctx: MemoryContext = None,
+                        ctx: SessionContext = None,
                         **kwargs):
         """Add trading event to memory"""
         if ctx is None:
@@ -436,7 +437,7 @@ class OnlineTradingMemorySystem(Memory):
         if self.save_path:
             await self.save_to_json(self.save_path)
     
-    async def clear_session(self, ctx: MemoryContext = None, **kwargs):
+    async def clear_session(self, ctx: SessionContext = None, **kwargs):
         """Clear specific trading session"""
         if ctx is None:
             return
@@ -454,7 +455,7 @@ class OnlineTradingMemorySystem(Memory):
             self._session_memory_cache.clear()
             self._session_locks.clear()
             
-    async def get_event(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[ChatEvent]:
+    async def get_event(self, ctx: SessionContext = None, n: Optional[int] = None, **kwargs) -> List[ChatEvent]:
         """Get events from memory system."""
         if ctx is None:
             return []
@@ -464,7 +465,7 @@ class OnlineTradingMemorySystem(Memory):
                 return await self._session_memory_cache[id].get_event(n=n)
         return []
     
-    async def get_summary(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[OnlineTradingSummary]:
+    async def get_summary(self, ctx: SessionContext = None, n: Optional[int] = None, **kwargs) -> List[OnlineTradingSummary]:
         """Get summaries from memory system."""
         if ctx is None:
             return []
@@ -474,7 +475,7 @@ class OnlineTradingMemorySystem(Memory):
                 return await self._session_memory_cache[id].get_summary(n=n)
         return []
     
-    async def get_insight(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[OnlineTradingInsight]:
+    async def get_insight(self, ctx: SessionContext = None, n: Optional[int] = None, **kwargs) -> List[OnlineTradingInsight]:
         """Get insights from memory system."""
         if ctx is None:
             return []

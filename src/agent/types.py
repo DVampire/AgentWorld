@@ -27,11 +27,8 @@ from src.tool.server import tcp
 from src.utils import (
     dedent,
     get_file_info,
-    generate_unique_id
 )
-from src.environment.types import EnvironmentContext
-from src.memory.types import MemoryContext
-from src.tool.types import ToolContext
+from src.session import SessionContext
 
 class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
@@ -227,11 +224,6 @@ class ThinkOutput(BaseModel):
     def __repr__(self) -> str:
         return self.__str__()
 
-class AgentContext(BaseModel):
-    """Agent context."""
-    id: str = Field(default_factory=lambda: generate_unique_id("agent"), description="The unique identifier for the agent context.")
-    step_number: int = Field(default=0, description="The step number of the agent context.")
-
 class Agent(BaseModel):
     """Base class for all agents, mirroring the design of `Tool`."""
 
@@ -350,16 +342,13 @@ class Agent(BaseModel):
 
     async def _get_agent_context(self, 
                                  task: str,
-                                 ctx: AgentContext,
+                                 step_number: int = 0,
+                                 ctx: SessionContext = None,
                                  **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
         task = f"<task>{task}</task>"
         
-        id = ctx.id
-        step_number = ctx.step_number
-        # Context
-        memory_ctx = MemoryContext(id=id)
-        tool_ctx = ToolContext(id=id)
+        id = ctx.id if ctx else None
 
         step_info_description = (
             f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
@@ -378,7 +367,7 @@ class Agent(BaseModel):
             state = await memory_manager.get_state(
                 name=self.memory_name,
                 n=self.review_steps,
-                ctx=memory_ctx
+                ctx=ctx
             )
             events = state["events"]
             summaries = state["summaries"]
@@ -432,7 +421,7 @@ class Agent(BaseModel):
         if self.use_todo:
             todo = "<todo>"
             todo_tool = await tcp.get("todo")
-            todo_contents = todo_tool.get_todo_content(ctx=tool_ctx)
+            todo_contents = todo_tool.get_todo_content(ctx=ctx)
             todo += todo_contents
             todo += "</todo>"
         else:
@@ -452,12 +441,11 @@ class Agent(BaseModel):
         }
 
     async def _get_environment_context(self,
-                                       ctx: AgentContext,
+                                       ctx: SessionContext,
                                        **kwargs) -> Dict[str, Any]:
         """Get the environment state."""
         
         id = ctx.id
-        environment_ctx = EnvironmentContext(id=id)
         
         environment_context = "<environment_context>"
         # Only iterate over environments specified in config, not all registered environments
@@ -470,7 +458,7 @@ class Agent(BaseModel):
                 </rules>
             """)
 
-            env_state = await ecp.get_state(env_name, ctx=environment_ctx)
+            env_state = await ecp.get_state(env_name, ctx=ctx)
             state_string = "<state>"
             state_string += env_state["state"]
             extra = env_state["extra"]
@@ -495,7 +483,7 @@ class Agent(BaseModel):
             "environment_context": environment_context,
         }
 
-    async def _get_tool_context(self, ctx: AgentContext, **kwargs) -> Dict[str, Any]:
+    async def _get_tool_context(self, ctx: SessionContext, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
         tool_context = "<tool_context>"
 
@@ -512,7 +500,7 @@ class Agent(BaseModel):
 
     async def _get_messages(self, 
                             task: str, 
-                            ctx: AgentContext,
+                            ctx: SessionContext,
                             **kwargs) -> List[Message]:
         """Build system+agent messages using prompt templates and context."""
 
@@ -535,7 +523,7 @@ class Agent(BaseModel):
     async def __call__(self, 
                        task: str, 
                        files: Optional[List[str]] = None,
-                       ctx: Optional[AgentContext] = None,
+                       ctx: Optional[SessionContext] = None,
                        **kwargs: Any,
                        ) -> AgentResponse:
         """Run the agent. This method should be implemented by the child classes."""

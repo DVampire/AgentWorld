@@ -44,8 +44,6 @@ from src.agent import acp
 from src.benchmark import benchmark_manager
 from src.optimizer import GrpoOptimizer, ReinforcePlusPlusOptimizer, ReflectionOptimizer
 from src.session.types import SessionContext
-from src.optimizer.types import OptimizerContext
-from src.agent.types import AgentContext
 
 
 def parse_args():
@@ -566,16 +564,13 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
         agent = await acp.get("tool_calling")
         
         # Create optimizer context for this task
-        session_ctx = SessionContext()
-        id = session_ctx.id
-        optimizer_ctx = OptimizerContext(id=id)
-        agent_ctx = AgentContext(id=id, step_number=0)
+        ctx = SessionContext()
         
         # Run optimization
         if split=='train' or optimizer_type=='reflection':
             if optimizer_type == 'reinforce_pp':
                 logger.info(f"| 🚀 Running agent to get initial solution...")
-                reference_agent_response = await agent(task=full_task, files=[], ctx=agent_ctx)
+                reference_agent_response = await agent(task=full_task, files=[], ctx=ctx)
                 reference_agent_response_extra_data = reference_agent_response.extra.data if reference_agent_response.extra and reference_agent_response.extra.data else None
                 reference_agent_reasoning = reference_agent_response_extra_data['reasoning']
                 reference_agent_result = reference_agent_response_extra_data['result']
@@ -589,7 +584,7 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
                                                                                  benchmark_task_id=task_id,
                                                                                  files=[],
                                                                                  results_file_path=result_saver.get_file_path() if result_saver else None,
-                                                                                 ctx=optimizer_ctx)
+                                                                                 ctx=ctx)
             else:
                 initial_agent_reasoning, initial_agent_result, reflecion_text, improved_solution, agent_reasoning, agent_result = await optimizer.optimize(agent=agent,
                                                                                  task=full_task,
@@ -597,10 +592,10 @@ async def process_single_task(optimizer_type: str, benchmark_name: str, task_dat
                                                                                  benchmark_task_id=task_id,
                                                                                  files=[],
                                                                                  results_file_path=result_saver.get_file_path() if result_saver else None,
-                                                                                 ctx=optimizer_ctx)
+                                                                                 ctx=ctx)
         else:
             logger.info(f"| 🚀 Running agent to get initial solution...")
-            agent_response = await agent(task=full_task, files=[], ctx=agent_ctx)
+            agent_response = await agent(task=full_task, files=[], ctx=ctx)
             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
             agent_reasoning = agent_response_extra_data['final_reasoning']
             agent_result = agent_response_extra_data['final_result']

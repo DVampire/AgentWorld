@@ -12,18 +12,18 @@ from langchain_core.prompts import ChatPromptTemplate
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
-from src.agent.types import Agent, AgentResponse, AgentExtra, AgentContext
+from src.agent.types import Agent, AgentResponse, AgentExtra
 from src.logger import logger
 from src.utils import dedent
 from src.agent.server import acp
 from src.tool.server import tcp
 from src.environment.server import ecp
 from src.memory import memory_manager, EventType
-from src.memory.types import MemoryContext
-from src.tool.types import ToolResponse, ToolContext
+from src.tool.types import ToolResponse
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
+from src.session import SessionContext
 
 class DayAnalysisOutput(BaseModel):
     """Output schema for day analysis."""
@@ -68,14 +68,11 @@ class IntradayDayAnalysisAgent(Agent):
         
     async def start(self, 
                     task: str, 
-                    ctx: AgentContext,
+                    ctx: SessionContext,
                     task_id: str):
         """Start the day analysis agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        
         # Start session
-        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number, 
@@ -83,16 +80,14 @@ class IntradayDayAnalysisAgent(Agent):
             data=dict(task=task),
             agent_name=self.name,
             task_id=task_id,
-            ctx=memory_ctx
+            ctx=ctx
         )
     
-    async def end(self, ctx: AgentContext):
+    async def end(self, ctx: SessionContext):
         """End the day analysis agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
         
-    async def _get_agent_history(self, ctx: MemoryContext = None) -> Dict[str, Any]:
+    async def _get_agent_history(self, ctx: SessionContext = None) -> Dict[str, Any]:
         """Get the agent history."""
         state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=ctx)
         
@@ -135,11 +130,8 @@ class IntradayDayAnalysisAgent(Agent):
             "environment_state": environment_state,
         }
     
-    async def _get_messages(self, data: Dict[str, Any], ctx: AgentContext = None, **kwargs) -> List[BaseMessage]:
+    async def _get_messages(self, data: Dict[str, Any], ctx: SessionContext = None, **kwargs) -> List[BaseMessage]:
         """Get messages for the day analysis agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        
         system_modules = {}
         # Infer prompt name from agent's prompt_name
         if self.prompt_name:
@@ -156,7 +148,7 @@ class IntradayDayAnalysisAgent(Agent):
         )
         
         agent_message_modules = {}
-        agent_history = await self._get_agent_history(ctx=memory_ctx)
+        agent_history = await self._get_agent_history(ctx=ctx)
         environment_state = await self._get_environment_state(data)
         agent_message_modules.update(agent_history)
         agent_message_modules.update(environment_state)
@@ -174,13 +166,10 @@ class IntradayDayAnalysisAgent(Agent):
         
         return messages
         
-    async def __call__(self, data: Dict[str, Any], task_id: str, ctx: AgentContext = None) -> Any:
+    async def __call__(self, data: Dict[str, Any], task_id: str, ctx: SessionContext = None) -> Any:
         """
         Main entry point for intraday day analysis agent.
         """
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        
         ctx.step_number = self.step_number
         messages = await self._get_messages(data, ctx=ctx)
         
@@ -217,7 +206,7 @@ class IntradayDayAnalysisAgent(Agent):
             data=event_data,
             agent_name=self.name,
             task_id=task_id,
-            ctx=memory_ctx
+            ctx=ctx
         )
         
         return response
@@ -316,14 +305,11 @@ class IntradayMinuteTradingAgent(Agent):
         self.MinuteTradingOutput = self.minute_trading_output_builder.build()    
     async def start(self, 
                     task: str, 
-                    ctx: AgentContext,
+                    ctx: SessionContext,
                     task_id: str):
         """Start the minute trading agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        
         # Start session
-        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
         await memory_manager.add_event(
             memory_name=self.memory_name,
             step_number=self.step_number, 
@@ -331,16 +317,14 @@ class IntradayMinuteTradingAgent(Agent):
             data=dict(task=task),
             agent_name=self.name,
             task_id=task_id,
-            ctx=memory_ctx
+            ctx=ctx
         )
     
-    async def end(self, ctx: AgentContext):
+    async def end(self, ctx: SessionContext):
         """End the minute trading agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
     
-    async def _get_agent_history(self, ctx: MemoryContext = None) -> Dict[str, Any]:
+    async def _get_agent_history(self, ctx: SessionContext = None) -> Dict[str, Any]:
         """Get the agent history."""
         state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=ctx)
         
@@ -401,11 +385,8 @@ class IntradayMinuteTradingAgent(Agent):
             "environment_state": environment_state,
         }
     
-    async def _get_messages(self, data: Dict[str, Any], daily_trend_forecast: str, ctx: AgentContext = None, **kwargs) -> List[BaseMessage]:
+    async def _get_messages(self, data: Dict[str, Any], daily_trend_forecast: str, ctx: SessionContext = None, **kwargs) -> List[BaseMessage]:
         """Get messages for the minute trading agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        
         system_modules = {}
         # Infer prompt name from agent's prompt_name
         if self.prompt_name:
@@ -441,12 +422,8 @@ class IntradayMinuteTradingAgent(Agent):
         
         return messages
     
-    async def __call__(self, data: Dict[str, Any], task_id: str, daily_trend_forecast: str, ctx: AgentContext = None, step_number: Optional[int] = None) -> Tuple[bool, Any]:
+    async def __call__(self, data: Dict[str, Any], task_id: str, daily_trend_forecast: str, ctx: SessionContext = None, step_number: Optional[int] = None) -> Tuple[bool, Any]:
         """Main entry point for intraday minute trading agent."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        tool_ctx = ToolContext(id=id) if id else None
-        
         current_step = step_number if step_number is not None else self.step_number
         ctx.step_number = current_step
         messages = await self._get_messages(data, daily_trend_forecast, ctx=ctx)
@@ -489,7 +466,7 @@ class IntradayMinuteTradingAgent(Agent):
             input = {
                 "name": tool_name,
                 "input": tool_args,
-                "ctx": tool_ctx
+                "ctx": ctx
             }
             tool_response = await tcp(**input)
             tool_result = tool_response.message
@@ -527,7 +504,7 @@ class IntradayMinuteTradingAgent(Agent):
             data=event_data,
             agent_name=self.name,
             task_id=task_id,
-            ctx=memory_ctx
+            ctx=ctx
         )
         
         return done, result
@@ -592,7 +569,7 @@ class IntradayTradingAgent(Agent):
         
         logger.info("| 🤖 Intraday Trading Agent initialized with two-stage system")
     
-    async def _think_and_action(self, data: Dict[str, Any], task_id: str, ctx: AgentContext = None, step_number: Optional[int] = None) -> Dict[str, Any]:
+    async def _think_and_action(self, data: Dict[str, Any], task_id: str, ctx: SessionContext = None, step_number: Optional[int] = None) -> Dict[str, Any]:
         """Think and action."""
         
         has_news = data['has_news']
@@ -632,7 +609,7 @@ class IntradayTradingAgent(Agent):
         # Get id from ctx
         ctx = kwargs.get("ctx", None)
         if ctx is None:
-            ctx = AgentContext()
+            ctx = SessionContext()
         id = ctx.id
         task_id = "task_" + datetime.now().strftime("%Y%m%d-%H%M%S")
         

@@ -15,7 +15,7 @@ from src.message.types import SystemMessage, HumanMessage
 from src.utils import dedent
 
 if TYPE_CHECKING:
-    from src.optimizer.types import OptimizerContext
+    from src.session import SessionContext
 
 
 class Response(BaseModel):
@@ -540,7 +540,7 @@ Historical Reflections from Previous Tasks:
             ground_truth: str,
             files: Optional[List[str]] = None,
             results_file_path: Optional[str] = None,
-            ctx: "OptimizerContext" = None,
+            ctx: "SessionContext" = None,
             **kwargs
     ):
         """
@@ -552,7 +552,7 @@ Historical Reflections from Previous Tasks:
             ground_truth: Ground truth for evaluation.
             files: Optional list of attachments.
             results_file_path: Optional path to results file for historical reflections.
-            ctx: Optimizer context.
+            ctx: Session context.
         """
 
         # Lazy import to avoid circular dependency
@@ -561,14 +561,14 @@ Historical Reflections from Previous Tasks:
         from src.environment import ecp
         from src.agent import acp
         from src.memory import memory_manager
-        from src.agent.types import AgentContext
-        from src.memory.types import MemoryContext, EventType
-        from src.optimizer.types import OptimizerContext
+        from src.session import SessionContext
+        from src.memory.types import EventType
 
-        # Get id from ctx
+        if ctx is None:
+            ctx = SessionContext()
         id = ctx.id
-        memory_ctx = MemoryContext(id=id)
-        agent_ctx = AgentContext(id=id)
+        memory_ctx = SessionContext(id=id)
+        agent_ctx = SessionContext(id=id)
 
         # Use optimization_steps if provided, otherwise use self.max_steps
         optimization_steps = self.max_steps

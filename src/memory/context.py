@@ -18,7 +18,8 @@ from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
-from src.memory.types import MemoryConfig, Memory, MemoryContext
+from src.memory.types import MemoryConfig, Memory
+from src.session import SessionContext
 from src.dynamic import dynamic_manager
 from src.registry import MEMORY_SYSTEM
 
@@ -1149,7 +1150,7 @@ class MemoryContextManager(BaseModel):
                             agent_name: Optional[str] = None, 
                             task_id: Optional[str] = None, 
                             description: Optional[str] = None,
-                            ctx: MemoryContext = None,
+                            ctx: SessionContext = None,
                             **kwargs) -> str:
         """Start a memory session (delegates to memory system instance).
         
@@ -1175,7 +1176,7 @@ class MemoryContextManager(BaseModel):
                         data: Any,
                         agent_name: str, 
                         task_id: Optional[str] = None, 
-                        ctx: MemoryContext = None,
+                        ctx: SessionContext = None,
                         **kwargs):
         """Add an event to memory (delegates to memory system instance).
         
@@ -1194,7 +1195,7 @@ class MemoryContextManager(BaseModel):
         return await instance.add_event(step_number, event_type, data, agent_name, task_id, ctx=ctx, **kwargs)
     
     async def end_session(self, memory_name: str, 
-                          ctx: MemoryContext = None,
+                          ctx: SessionContext = None,
                           **kwargs):
         """End a memory session (delegates to memory system instance).
         
@@ -1208,7 +1209,7 @@ class MemoryContextManager(BaseModel):
         return await instance.end_session(ctx=ctx, **kwargs)
     
     async def get_session_info(self, memory_name: str, 
-                               ctx: MemoryContext = None,
+                               ctx: SessionContext = None,
                                **kwargs):
         """Get session info (delegates to memory system instance).
         
@@ -1226,7 +1227,7 @@ class MemoryContextManager(BaseModel):
     
     async def clear_session(self, 
                             memory_name: str, 
-                            ctx: MemoryContext = None,
+                            ctx: SessionContext = None,
                             **kwargs):
         """Clear a memory session (delegates to memory system instance).
         
@@ -1242,7 +1243,7 @@ class MemoryContextManager(BaseModel):
     async def get_state(self, 
                         memory_name: str, 
                         n: Optional[int] = None, 
-                        ctx: MemoryContext = None,
+                        ctx: SessionContext = None,
                         **kwargs) -> Dict[str, Any]:
         """Get memory state (events, summaries, insights) for a memory system.
         

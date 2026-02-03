@@ -14,7 +14,8 @@ from src.logger import logger
 from src.model import model_manager
 from src.utils import dedent, file_lock
 from src.message.types import HumanMessage, AssistantMessage, Message, SystemMessage
-from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, Memory, MemoryContext
+from src.memory.types import ChatEvent, Summary, Insight, EventType, Importance, Memory
+from src.session import SessionContext
 from src.registry import MEMORY_SYSTEM
 
 class CombinedMemoryOutput(BaseModel):
@@ -354,7 +355,7 @@ class OptimizerMemorySystem(Memory):
             if id in self._session_locks:
                 del self._session_locks[id]
 
-    async def start_session(self, ctx: MemoryContext = None, **kwargs) -> str:
+    async def start_session(self, ctx: SessionContext = None, **kwargs) -> str:
         """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
         if self.save_path and os.path.exists(self.save_path):
             logger.info(f"| 📂 Loading optimizer memory from JSON: {self.save_path}")
@@ -362,12 +363,12 @@ class OptimizerMemorySystem(Memory):
             logger.info(f"| ✅ Optimizer memory loaded from JSON")
         
         if ctx is None:
-            ctx = MemoryContext()
+            ctx = SessionContext()
         id = ctx.id
         await self._get_or_create_session_memory(id)
         return id
     
-    async def end_session(self, ctx: MemoryContext = None, **kwargs):
+    async def end_session(self, ctx: SessionContext = None, **kwargs):
         """End session. Automatically saves to JSON if save_path is set."""
         if ctx is None:
             return
@@ -384,7 +385,7 @@ class OptimizerMemorySystem(Memory):
                         data: Any,
                         agent_name: str,
                         task_id: Optional[str] = None,
-                        ctx: MemoryContext = None,
+                        ctx: SessionContext = None,
                         **kwargs):
         """Add event to optimizer memory system.
         
@@ -497,7 +498,7 @@ class OptimizerMemorySystem(Memory):
         if self.save_path:
             await self.save_to_json(self.save_path)
     
-    async def clear_session(self, ctx: MemoryContext = None, **kwargs):
+    async def clear_session(self, ctx: SessionContext = None, **kwargs):
         """Clear specific session"""
         if ctx is None:
             return
@@ -515,7 +516,7 @@ class OptimizerMemorySystem(Memory):
             self._session_memory_cache.clear()
             self._session_locks.clear()
             
-    async def get_event(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[ChatEvent]:
+    async def get_event(self, ctx: SessionContext = None, n: Optional[int] = None, **kwargs) -> List[ChatEvent]:
         """Get events from memory system."""
         if ctx is None:
             return []
@@ -525,7 +526,7 @@ class OptimizerMemorySystem(Memory):
                 return await self._session_memory_cache[id].get_event(n=n)
         return []
     
-    async def get_summary(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[Summary]:
+    async def get_summary(self, ctx: SessionContext = None, n: Optional[int] = None, **kwargs) -> List[Summary]:
         """Get summaries from memory system."""
         if ctx is None:
             return []
@@ -535,7 +536,7 @@ class OptimizerMemorySystem(Memory):
                 return await self._session_memory_cache[id].get_summary(n=n)
         return []
     
-    async def get_insight(self, ctx: MemoryContext = None, n: Optional[int] = None, **kwargs) -> List[Insight]:
+    async def get_insight(self, ctx: SessionContext = None, n: Optional[int] = None, **kwargs) -> List[Insight]:
         """Get insights from memory system."""
         if ctx is None:
             return []

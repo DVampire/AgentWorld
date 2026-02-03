@@ -6,11 +6,11 @@ import asyncio
 from pydantic import BaseModel, Field, ConfigDict
 import json
 
-from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra, AgentContext
+from src.agent.types import Agent, InputArgs, AgentResponse, AgentExtra
 from src.logger import logger
 from src.agent.server import acp
 from src.memory import memory_manager, EventType
-from src.memory.types import MemoryContext
+from src.session import SessionContext
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.registry import AGENT
@@ -59,7 +59,7 @@ class SimpleChatAgent(Agent):
         self.tools = []
         self.model = self.model  # Use the base model without tool binding
     
-    async def _get_agent_history(self, ctx: MemoryContext = None) -> str:
+    async def _get_agent_history(self, ctx: SessionContext = None) -> str:
         """Get the agent conversation history."""
         state = await memory_manager.get_state(memory_name=self.memory_name, n=self.review_steps, ctx=ctx)
         
@@ -74,11 +74,8 @@ class SimpleChatAgent(Agent):
         
         return conversation_history
     
-    async def _get_messages(self, message: str, ctx: AgentContext = None, **kwargs) -> List[BaseMessage]:
+    async def _get_messages(self, message: str, ctx: SessionContext = None, **kwargs) -> List[BaseMessage]:
         """Generate messages for the conversation."""
-        id = ctx.id if ctx else None
-        memory_ctx = MemoryContext(id=id) if id else None
-        
         system_modules = {}
         # Infer prompt name from agent's prompt_name
         if self.prompt_name:
@@ -99,7 +96,7 @@ class SimpleChatAgent(Agent):
         if hasattr(self, '_current_global_history') and self._current_global_history:
             conversation_history = self._format_global_history(self._current_global_history)
         else:
-            conversation_history = await self._get_agent_history(ctx=memory_ctx)
+            conversation_history = await self._get_agent_history(ctx=ctx)
         
         agent_message_modules = {}
         agent_message_modules.update({
@@ -222,12 +219,11 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
         # Get id from ctx
         ctx = kwargs.get("ctx", None)
         if ctx is None:
-            ctx = AgentContext()
+            ctx = SessionContext()
         id = ctx.id
-        memory_ctx = MemoryContext(id=id)
         
         # Start session
-        await memory_manager.start_session(memory_name=self.memory_name, ctx=memory_ctx)
+        await memory_manager.start_session(memory_name=self.memory_name, ctx=ctx)
         
         # Initialize conversation
         task_id = "chat_" + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -243,7 +239,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             logger.info(f"| 🔄 Conversation round {conversation_round}/{max_rounds}")
             
             # Get conversation history for decision making
-            conversation_history = await self._get_agent_history(ctx=memory_ctx)
+            conversation_history = await self._get_agent_history(ctx=ctx)
             
             # Let LLM decide whether to continue the conversation
             should_continue, reasoning = await self._should_continue_conversation(current_message, conversation_history)
@@ -261,7 +257,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                 data=dict(message=current_message),
                 agent_name=self.name,
                 task_id=task_id,
-                ctx=memory_ctx
+                ctx=ctx
             )
             step_number += 1
             
@@ -281,7 +277,7 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
                 data=dict(response=response_text),
                 agent_name=self.name,
                 task_id=task_id,
-                ctx=memory_ctx
+                ctx=ctx
             )
             step_number += 1
             
@@ -321,11 +317,11 @@ Keep it engaging but not too complex. Make it sound like you're genuinely curiou
             data=dict(result=f"Conversation completed after {conversation_round} rounds"),
             agent_name=self.name,
             task_id=task_id,
-            ctx=memory_ctx
+            ctx=ctx
         )
         
         # End session
-        await memory_manager.end_session(memory_name=self.memory_name, ctx=memory_ctx)
+        await memory_manager.end_session(memory_name=self.memory_name, ctx=ctx)
         
         logger.info(f"| ✅ Multi-turn conversation completed after {conversation_round} rounds")
         

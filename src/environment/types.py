@@ -11,11 +11,7 @@ from typing import Any, Dict, Optional, Union, Type, Callable
 from pydantic import BaseModel, Field, ConfigDict
 
 from src.dynamic import dynamic_manager
-from src.utils import generate_unique_id
 
-
-class EnvironmentContext(BaseModel):
-    id: str = Field(default_factory=lambda: generate_unique_id(prefix="environment"), description="The unique identifier for the environment context")
 
 class Environment(BaseModel):
     """Base abstract class for ECP environments"""

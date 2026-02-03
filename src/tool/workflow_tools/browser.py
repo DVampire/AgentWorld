@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv(verbose=True)
 
 from src.utils import assemble_project_path, generate_unique_id
-from src.tool.types import Tool, ToolResponse, ToolExtra, ToolContext
+from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.tool.workflow_tools.reporter import Report
 from src.logger import logger
 from src.registry import TOOL
