@@ -13,7 +13,8 @@ if TYPE_CHECKING:
 from src.logger import logger
 from src.config import config
 from src.tool.context import ToolContextManager
-from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
+from src.tool.types import Tool, ToolConfig, ToolResponse
+from src.session import SessionContext
 from src.utils import assemble_project_path
 
 class TCPServer(BaseModel):
@@ -255,7 +256,7 @@ class TCPServer(BaseModel):
                        name: str, 
                        input: Dict[str, Any], 
                        timeout: Optional[float] = None,
-                       ctx: ToolContext = None,
+                       ctx: SessionContext = None,
                        **kwargs
                        ) -> ToolResponse:
         """Call a tool by name with optional timeout and context

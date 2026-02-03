@@ -14,7 +14,7 @@ from src.memory.types import EventType
 from src.utils import dedent
 
 if TYPE_CHECKING:
-    from src.optimizer.types import OptimizerContext
+    from src.session import SessionContext
 
 class Response(BaseModel):
     reasoning: str = Field(description="The reasoning process")
@@ -190,7 +190,7 @@ class ReflectionOptimizer(Optimizer):
         return variables_text
         
     
-    async def _get_memory_context(self, ctx: "OptimizerContext") -> str:
+    async def _get_memory_context(self, ctx: "SessionContext") -> str:
         """
         Get summaries and insights from optimizer memory.
         
@@ -201,7 +201,7 @@ class ReflectionOptimizer(Optimizer):
             str: Formatted memory context with summaries and insights.
         """
         from src.memory import memory_manager
-        from src.memory.types import MemoryContext
+        from src.session import SessionContext
         
         memory_context = ""
         
@@ -209,14 +209,11 @@ class ReflectionOptimizer(Optimizer):
             return memory_context
         
         try:
-            id = ctx.id if ctx else None
-            memory_ctx = MemoryContext(id=id)
-            
             # Get state from memory (includes summaries and insights)
             state = await memory_manager.get_state(
                 name=self.memory_name,
                 n=10,  # Get recent summaries/insights
-                ctx=memory_ctx
+                ctx=ctx
             )
             
             summaries = state.get("summaries", [])
@@ -246,7 +243,7 @@ class ReflectionOptimizer(Optimizer):
         
         return memory_context
 
-    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str, previous_evaluation: Optional[EvaluationResult] = None, ctx: "OptimizerContext" = None) -> str:
+    async def _generate_reflection(self, task: str, variables: Dict[str, Any], execution_result: str, previous_evaluation: Optional[EvaluationResult] = None, ctx: "SessionContext" = None) -> str:
         """
         Generate the reflection analysis for all variables.
 
@@ -255,7 +252,7 @@ class ReflectionOptimizer(Optimizer):
             variables (Dict[str, Any]): Dictionary of variables.
             execution_result (str): Agent execution result.
             previous_evaluation (Optional[EvaluationResult]): Previous evaluation result to inform the reflection.
-            ctx (OptimizerContext): Optimizer context for accessing memory.
+            ctx (SessionContext): Session context for accessing memory.
         Returns:
             str: Reflection analysis identifying which variables to optimize and how.
         """
@@ -309,7 +306,7 @@ Previous Evaluation Result:
             logger.error(f"| ❌ Error generating reflection: {e}")
             raise
     
-    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str, historical_reflections: Optional[List[str]] = None, ctx: "OptimizerContext" = None) -> Dict[str, Any]:
+    async def _improve_variables(self, task: str, variables: Dict[str, Variable], reflection_analysis: str, historical_reflections: Optional[List[str]] = None, ctx: "SessionContext" = None) -> Dict[str, Any]:
         """
         Improve variables based on reflection analysis. May improve multiple variables simultaneously.
         Uses different optimization logic based on variable types.
@@ -319,7 +316,7 @@ Previous Evaluation Result:
             variables: List of Variable objects to potentially improve.
             reflection_analysis (str): Reflection analysis output.
             variable_mapping: Mapping from variable name to Variable object.
-            ctx (OptimizerContext): Optimizer context for accessing memory.
+            ctx (SessionContext): Session context for accessing memory.
 
         Returns:
             Dictionary of improved variables in flattened structure
@@ -408,7 +405,7 @@ Historical Reflections from Previous Tasks:
             raise
 
     async def _improve_solution(self, task: str, variables: Dict[str, Variable],
-                                 reflection_analysis: str, ctx: "OptimizerContext" = None) -> Response:
+                                 reflection_analysis: str, ctx: "SessionContext" = None) -> Response:
 
         # Lazy import to avoid circular dependency
         from src.prompt import prompt_manager
@@ -492,7 +489,7 @@ Historical Reflections from Previous Tasks:
         task: str,
         files: Optional[List[str]] = None,
         results_file_path: Optional[str] = None,
-        ctx: "OptimizerContext" = None,
+        ctx: "SessionContext" = None,
         **kwargs
     ):
         """
@@ -513,13 +510,10 @@ Historical Reflections from Previous Tasks:
         from src.environment import ecp
         from src.agent import acp
         from src.memory import memory_manager
-        from src.agent.types import AgentContext
-        from src.memory.types import MemoryContext
-        from src.optimizer.types import OptimizerContext
-        
-        id = ctx.id
-        memory_ctx = MemoryContext(id=id)
-        agent_ctx = AgentContext(id=id)
+        from src.session import SessionContext
+
+        if ctx is None:
+            ctx = SessionContext()
         
         # Use optimization_steps if provided, otherwise use self.max_steps
         optimization_steps = self.max_steps
@@ -533,7 +527,7 @@ Historical Reflections from Previous Tasks:
                 task_id = f"opt_task_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
                 await memory_manager.start_session(
                     memory_name=memory_name,
-                    ctx=memory_ctx
+                    ctx=ctx
                 )
                 
                 # Add optimization task start event
@@ -549,7 +543,7 @@ Historical Reflections from Previous Tasks:
                     ),
                     agent_name=agent_name,
                     task_id=task_id,
-                    ctx=memory_ctx
+                    ctx=ctx
                 )
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to initialize optimizer memory: {e}")
@@ -577,7 +571,7 @@ Historical Reflections from Previous Tasks:
         except Exception as e:
             logger.warning(f"| 🧪 [TEST] Could not capture initial parameters: {e}")
 
-        agent_response = await agent(task=task, files=files, ctx=agent_ctx)
+        agent_response = await agent(task=task, files=files, ctx=ctx)
         agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
         current_agent_result = agent_response_extra_data['result']
         current_agent_reasoning = agent_response_extra_data['reasoning']
@@ -738,7 +732,7 @@ Historical Reflections from Previous Tasks:
 
                             # Re-run agent with updated variables
                             logger.info(f"| 🔄 Re-running agent with updated trainable variables...")
-                            agent_response = await agent(task=task, files=files, ctx=agent_ctx)
+                            agent_response = await agent(task=task, files=files, ctx=ctx)
                             agent_response_extra_data = agent_response.extra.data if agent_response.extra and agent_response.extra.data else None
                             current_agent_reasoning = agent_response_extra_data['reasoning']
                             current_agent_result = agent_response_extra_data['result']
@@ -778,7 +772,7 @@ Historical Reflections from Previous Tasks:
                                     data=event_data,
                                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                                     task_id=task_id,
-                                    ctx=memory_ctx
+                                    ctx=ctx
                                 )
                             except Exception as e:
                                 logger.warning(f"| ⚠️ Failed to record phase 1 to memory: {e}")
@@ -850,7 +844,7 @@ Historical Reflections from Previous Tasks:
                                     data=event_data,
                                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                                     task_id=task_id,
-                                    ctx=memory_ctx
+                                    ctx=ctx
                                 )
                             except Exception as e:
                                 logger.warning(f"| ⚠️ Failed to record phase 2 to memory: {e}")
@@ -897,11 +891,11 @@ Historical Reflections from Previous Tasks:
                     ),
                     agent_name=getattr(agent, 'name', 'unknown_agent'),
                     task_id=task_id,
-                    ctx=memory_ctx
+                    ctx=ctx
                 )
                 
-                await memory_manager.end_session(memory_name=memory_name, ctx=memory_ctx)
-                logger.info(f"| 📝 Ended optimization memory session: {id}")
+                await memory_manager.end_session(memory_name=memory_name, ctx=ctx)
+                logger.info(f"| 📝 Ended optimization memory session: {ctx.id}")
             except Exception as e:
                 logger.warning(f"| ⚠️ Failed to end optimization memory session: {e}")
         

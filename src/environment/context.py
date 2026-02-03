@@ -17,7 +17,8 @@ from src.config import config
 from src.version import version_manager
 from src.utils import assemble_project_path, gather_with_concurrency
 from src.utils.file_utils import file_lock
-from src.environment.types import Environment, EnvironmentConfig, ActionConfig, EnvironmentContext
+from src.environment.types import Environment, EnvironmentConfig, ActionConfig
+from src.session import SessionContext
 from src.environment.faiss.service import FaissService
 from src.environment.faiss.types import FaissAddRequest
 from src.dynamic import dynamic_manager
@@ -612,7 +613,7 @@ class EnvironmentContextManager(BaseModel):
         """
         return self._environment_configs.get(env_name)
         
-    async def get_state(self, env_name: str, ctx: EnvironmentContext = None, **kwargs) -> Optional[Dict[str, Any]]:
+    async def get_state(self, env_name: str, ctx: SessionContext = None, **kwargs) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
         
         Args:
@@ -623,7 +624,7 @@ class EnvironmentContextManager(BaseModel):
         """
         
         if ctx is None:
-            ctx = EnvironmentContext()
+            ctx = SessionContext()
             
         env_args = {
             "ctx": ctx,
@@ -1404,7 +1405,7 @@ class EnvironmentContextManager(BaseModel):
                        name: str, 
                        action: str, 
                        input: Dict[str, Any], 
-                       ctx: EnvironmentContext = None,
+                       ctx: SessionContext = None,
                        **kwargs) -> Any:
         """Call an environment action
         
@@ -1417,7 +1418,7 @@ class EnvironmentContextManager(BaseModel):
             Action result
         """
         if ctx is None:
-            ctx = EnvironmentContext()
+            ctx = SessionContext()
         
         if name in self._environment_configs:
             env_config = self._environment_configs[name]

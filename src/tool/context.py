@@ -19,7 +19,8 @@ from src.utils import (assemble_project_path,
                        gather_with_concurrency,
                        file_lock
                        )
-from src.tool.types import Tool, ToolConfig, ToolResponse, ToolContext
+from src.tool.types import Tool, ToolConfig, ToolResponse
+from src.session import SessionContext
 from src.version import version_manager
 from src.dynamic import dynamic_manager
 from src.registry import TOOL
@@ -1249,7 +1250,7 @@ class ToolContextManager(BaseModel):
                        name: str,
                        input: Dict[str, Any], 
                        timeout: Optional[float] = None,
-                       ctx: ToolContext = None,
+                       ctx: SessionContext = None,
                        **kwargs
                        ) -> ToolResponse:
         """Call a tool by name with optional timeout
@@ -1264,7 +1265,7 @@ class ToolContextManager(BaseModel):
         """
         
         if ctx is None:
-            ctx = ToolContext()
+            ctx = SessionContext()
         
         tool_info = await self.get_info(name)
         

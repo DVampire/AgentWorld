@@ -13,7 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.logger import logger
 from src.config import config
 from src.environment.context import EnvironmentContextManager
-from src.environment.types import Environment, EnvironmentConfig, EnvironmentContext
+from src.environment.types import Environment, EnvironmentConfig
+from src.session import SessionContext
 from src.utils import assemble_project_path
 
 class ECPServer(BaseModel):
@@ -141,7 +142,7 @@ class ECPServer(BaseModel):
         """
         return await self.environment_context_manager.get_info(env_name)
     
-    async def get_state(self, env_name: str, ctx: EnvironmentContext = None, **kwargs) -> Optional[Dict[str, Any]]:
+    async def get_state(self, env_name: str, ctx: SessionContext = None, **kwargs) -> Optional[Dict[str, Any]]:
         """Get the state of an environment
         
         Args:
@@ -294,7 +295,7 @@ class ECPServer(BaseModel):
                        name: str, 
                        action: str, 
                        input: Dict[str, Any], 
-                       ctx: EnvironmentContext = None,
+                       ctx: SessionContext = None,
                        **kwargs) -> Any:
         """Call an environment action
         
@@ -302,7 +303,7 @@ class ECPServer(BaseModel):
             name (str): Name of the environment
             action (str): Name of the action
             input (Dict[str, Any]): Input for the action
-            ctx (EnvironmentContext): Environment context
+            ctx (SessionContext): Session context
             
         Returns:
             Any: Action result
