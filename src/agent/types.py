@@ -342,13 +342,13 @@ class Agent(BaseModel):
 
     async def _get_agent_context(self, 
                                  task: str,
-                                 step_number: int,
-                                 ctx: SessionContext,
+                                 step_number: int = 0,
+                                 ctx: SessionContext = None,
                                  **kwargs) -> Dict[str, Any]:
         """Get the agent context."""
         task = f"<task>{task}</task>"
         
-        id = ctx.id
+        id = ctx.id if ctx else None
 
         step_info_description = (
             f"Step {step_number + 1} of {self.max_steps} max possible steps\n"
