@@ -78,13 +78,12 @@ class OnlineTradingCombinedMemory:
         self.insights: List[OnlineTradingInsight] = []
     
     async def add_event(self, event: Union[ChatEvent, List[ChatEvent]]):
-        """Process trading events and extract summaries and insights"""
-        # Add events to chat history
+        """Append events to chat history. Processing runs in background via OnlineTradingMemorySystem."""
         if isinstance(event, ChatEvent):
             events = [event]
         else:
             events = event
-            
+
         for event in events:
             self.events.append(event)
             if event.event_type == EventType.TOOL_STEP or event.event_type == EventType.TASK_END:
@@ -93,8 +92,9 @@ class OnlineTradingCombinedMemory:
                     self.candidate_chat_history.append(AssistantMessage(content=content))
                 else:
                     self.candidate_chat_history.append(HumanMessage(content=content))
-        
-        # Check if we should process trading memory
+
+    async def check_and_process_memory(self) -> None:
+        """Check if we should process trading memory and generate summaries/insights. Called from background task with lock held."""
         should_process = await self._check_should_process_memory()
         if should_process:
             await self._process_trading_memory()
@@ -345,6 +345,7 @@ class OnlineTradingMemorySystem(Memory):
         self._session_memory_cache: Dict[str, OnlineTradingCombinedMemory] = {}
         self._session_locks: Dict[str, asyncio.Lock] = {}
         self._cache_lock = asyncio.Lock()
+        self._pending_process_tasks: Dict[str, asyncio.Task] = {}
 
     async def _get_or_create_session_memory(self, id: str) -> tuple[OnlineTradingCombinedMemory, asyncio.Lock]:
         """Get or create a session memory instance with proper locking."""
@@ -368,6 +369,21 @@ class OnlineTradingMemorySystem(Memory):
             if id in self._session_locks:
                 del self._session_locks[id]
 
+    async def _process_memory_background(self, id: str) -> None:
+        """Background task: check and process trading memory without blocking main coroutine."""
+        try:
+            session_memory, session_lock = await self._get_or_create_session_memory(id)
+            async with session_lock:
+                await session_memory.check_and_process_memory()
+            if self.save_path:
+                await self.save_to_json(self.save_path)
+        except Exception as e:
+            logger.warning(f"| ⚠️ Background online trading memory processing failed: {e}")
+        finally:
+            current_task = asyncio.current_task()
+            if self._pending_process_tasks.get(id) is current_task:
+                self._pending_process_tasks.pop(id, None)
+
     async def start_session(self, ctx: SessionContext = None, **kwargs) -> str:
         """Start new trading session."""
         if self.save_path and os.path.exists(self.save_path):
@@ -381,14 +397,22 @@ class OnlineTradingMemorySystem(Memory):
         return id
     
     async def end_session(self, ctx: SessionContext = None, **kwargs):
-        """End trading session."""
+        """End trading session. Waits for pending memory processing, then saves and cleans up."""
         if ctx is None:
             return
         id = ctx.id
+
+        if id in self._pending_process_tasks:
+            try:
+                await asyncio.wait_for(self._pending_process_tasks[id], timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"| ⚠️ Timeout waiting for online trading memory processing on session {id}")
+            except Exception as e:
+                logger.warning(f"| ⚠️ Error waiting for online trading memory processing: {e}")
+
         if self.save_path:
             await self.save_to_json(self.save_path)
-        
-        # Cleanup session memory
+
         await self._cleanup_session_memory(id)
     
     async def add_event(self,
@@ -433,7 +457,10 @@ class OnlineTradingMemorySystem(Memory):
         session_memory, session_lock = await self._get_or_create_session_memory(id)
         async with session_lock:
             await session_memory.add_event(event)
-        
+
+        task = asyncio.create_task(self._process_memory_background(id))
+        self._pending_process_tasks[id] = task
+
         if self.save_path:
             await self.save_to_json(self.save_path)
     

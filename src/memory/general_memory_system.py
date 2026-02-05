@@ -50,25 +50,24 @@ class CombinedMemory:
         self.insights: List[Insight] = []
     
     async def add_event(self, event: Union[ChatEvent, List[ChatEvent]]):
-        """Process conversation events and extract both summaries and insights"""
-        # Add events to chat history
+        """Append events to chat history. Processing (check + extract summaries/insights) runs in background via GeneralMemorySystem."""
+        # Add events to chat history (fast, non-blocking)
         if isinstance(event, ChatEvent):
             events = [event]
         else:
             events = event
-            
+
         for event in events:
             self.events.append(event)
             if event.event_type == EventType.TOOL_STEP or event.event_type == EventType.TASK_END:
                 content = str(event)
                 if event.agent_name:
-                    # AI output
                     self.candidate_chat_history.append(AssistantMessage(content=content))
                 else:
-                    # User input
                     self.candidate_chat_history.append(HumanMessage(content=content))
-        
-        # Let LLM decide if we need to process and generate summaries/insights
+
+    async def check_and_process_memory(self) -> None:
+        """Check if we should process memory and generate summaries/insights. Called from background task with lock held."""
         should_process = await self._check_should_process_memory()
         if should_process:
             await self._process_memory()
@@ -109,7 +108,7 @@ class CombinedMemory:
 
     async def _check_should_process_memory(self) -> bool:
         """Check if we should process memory based on conversation content"""
-        if len(self.candidate_chat_history) <= 3:  # If there are fewer than 3 events, do not process the memory.
+        if len(self.candidate_chat_history) <= 5:  # If there are fewer than 5 events, do not process the memory.
             return False
             
         new_lines = await self._get_new_lines_text()
@@ -329,6 +328,8 @@ class GeneralMemorySystem(Memory):
         self._session_locks: Dict[str, asyncio.Lock] = {}
         # Lock for managing the cache dictionaries themselves
         self._cache_lock = asyncio.Lock()
+        # Pending background memory processing tasks: session_id -> asyncio.Task
+        self._pending_process_tasks: Dict[str, asyncio.Task] = {}
 
     async def _get_or_create_session_memory(self, id: str) -> tuple[CombinedMemory, asyncio.Lock]:
         """Get or create a CombinedMemory instance for the given id with proper locking.
@@ -366,6 +367,22 @@ class GeneralMemorySystem(Memory):
             if id in self._session_locks:
                 del self._session_locks[id]
 
+    async def _process_memory_background(self, id: str) -> None:
+        """Background task: check and process memory without blocking main coroutine."""
+        try:
+            session_memory, session_lock = await self._get_or_create_session_memory(id)
+            async with session_lock:
+                await session_memory.check_and_process_memory()
+            if self.save_path:
+                await self.save_to_json(self.save_path)
+        except Exception as e:
+            logger.warning(f"| ⚠️ Background memory processing failed: {e}")
+        finally:
+            # Only remove if this task is still the current one (may have been overwritten by newer add_event)
+            current_task = asyncio.current_task()
+            if self._pending_process_tasks.get(id) is current_task:
+                self._pending_process_tasks.pop(id, None)
+
     async def start_session(self,
                             agent_name: Optional[str] = None, 
                             task_id: Optional[str] = None, 
@@ -390,13 +407,22 @@ class GeneralMemorySystem(Memory):
         return id
     
     async def end_session(self, ctx: SessionContext = None, **kwargs):
-        """End session. Automatically saves to JSON if save_path is set."""
+        """End session. Waits for pending memory processing, then saves and cleans up."""
         id = ctx.id
-        
+
+        # Wait for pending background memory processing to complete
+        if id in self._pending_process_tasks:
+            try:
+                await asyncio.wait_for(self._pending_process_tasks[id], timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"| ⚠️ Timeout waiting for memory processing on session {id}")
+            except Exception as e:
+                logger.warning(f"| ⚠️ Error waiting for memory processing: {e}")
+
         # Save to JSON if save_path is set
         if self.save_path:
             await self.save_to_json(self.save_path)
-        
+
         # Cleanup session memory
         await self._cleanup_session_memory(id)
     
@@ -445,12 +471,16 @@ class GeneralMemorySystem(Memory):
             session_id = id
         )
     
-        # Get session memory with proper locking
+        # Get session memory with proper locking - only append event (fast)
         session_memory, session_lock = await self._get_or_create_session_memory(id)
         async with session_lock:
             await session_memory.add_event(event)
-        
-        # Auto-save to JSON if save_path is set
+
+        # Fire-and-forget: process memory (check + extract summaries/insights) in background
+        task = asyncio.create_task(self._process_memory_background(id))
+        self._pending_process_tasks[id] = task
+
+        # Auto-save events to JSON immediately (summaries/insights may be updated by background task later)
         if self.save_path:
             await self.save_to_json(self.save_path)
     

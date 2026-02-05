@@ -46,25 +46,23 @@ class CombinedMemory:
         self.insights: List[Insight] = []
     
     async def add_event(self, event: Union[ChatEvent, List[ChatEvent]]):
-        """Process conversation events and extract both summaries and insights"""
-        # Add events to chat history
+        """Append events to chat history. Processing runs in background via OptimizerMemorySystem."""
         if isinstance(event, ChatEvent):
             events = [event]
         else:
             events = event
-            
+
         for event in events:
             self.events.append(event)
             if event.event_type == EventType.OPTIMIZATION_STEP or event.event_type == EventType.TOOL_STEP or event.event_type == EventType.TASK_END:
                 content = str(event)
                 if event.agent_name:
-                    # AI output
                     self.candidate_chat_history.append(AssistantMessage(content=content))
                 else:
-                    # User input
                     self.candidate_chat_history.append(HumanMessage(content=content))
-        
-        # Let LLM decide if we need to process and generate summaries/insights
+
+    async def check_and_process_memory(self) -> None:
+        """Check if we should process memory and generate summaries/insights. Called from background task with lock held."""
         should_process = await self._check_should_process_memory()
         if should_process:
             await self._process_memory()
@@ -331,6 +329,7 @@ class OptimizerMemorySystem(Memory):
         self._session_memory_cache: Dict[str, CombinedMemory] = {}
         self._session_locks: Dict[str, asyncio.Lock] = {}
         self._cache_lock = asyncio.Lock()
+        self._pending_process_tasks: Dict[str, asyncio.Task] = {}
 
     async def _get_or_create_session_memory(self, id: str) -> tuple[CombinedMemory, asyncio.Lock]:
         """Get or create a CombinedMemory instance for the given id with proper locking."""
@@ -355,6 +354,21 @@ class OptimizerMemorySystem(Memory):
             if id in self._session_locks:
                 del self._session_locks[id]
 
+    async def _process_memory_background(self, id: str) -> None:
+        """Background task: check and process memory without blocking main coroutine."""
+        try:
+            session_memory, session_lock = await self._get_or_create_session_memory(id)
+            async with session_lock:
+                await session_memory.check_and_process_memory()
+            if self.save_path:
+                await self.save_to_json(self.save_path)
+        except Exception as e:
+            logger.warning(f"| ⚠️ Background optimizer memory processing failed: {e}")
+        finally:
+            current_task = asyncio.current_task()
+            if self._pending_process_tasks.get(id) is current_task:
+                self._pending_process_tasks.pop(id, None)
+
     async def start_session(self, ctx: SessionContext = None, **kwargs) -> str:
         """Start new session with MemorySystem. Automatically loads from JSON if file exists."""
         if self.save_path and os.path.exists(self.save_path):
@@ -369,14 +383,22 @@ class OptimizerMemorySystem(Memory):
         return id
     
     async def end_session(self, ctx: SessionContext = None, **kwargs):
-        """End session. Automatically saves to JSON if save_path is set."""
+        """End session. Waits for pending memory processing, then saves and cleans up."""
         if ctx is None:
             return
         id = ctx.id
+
+        if id in self._pending_process_tasks:
+            try:
+                await asyncio.wait_for(self._pending_process_tasks[id], timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"| ⚠️ Timeout waiting for optimizer memory processing on session {id}")
+            except Exception as e:
+                logger.warning(f"| ⚠️ Error waiting for optimizer memory processing: {e}")
+
         if self.save_path:
             await self.save_to_json(self.save_path)
-        
-        # Cleanup session memory
+
         await self._cleanup_session_memory(id)
     
     async def add_event(self,
@@ -494,7 +516,10 @@ class OptimizerMemorySystem(Memory):
         session_memory, session_lock = await self._get_or_create_session_memory(id)
         async with session_lock:
             await session_memory.add_event(event)
-        
+
+        task = asyncio.create_task(self._process_memory_background(id))
+        self._pending_process_tasks[id] = task
+
         if self.save_path:
             await self.save_to_json(self.save_path)
     
