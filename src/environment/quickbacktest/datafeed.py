@@ -20,8 +20,8 @@ class CryptoDataFeed(PandasDirectData):
         ("close", 4),
         ("volume", 5),
         ("amount", 6),
-        ("factor1",7), # 上轨
-        ("signal",8), # 信号
+        ("signal",7), # 信号
+        ("factor1",8), # 上轨
         ("factor2",9), # 下轨
         ("vwap",10), # vwap
         ("dtformat","%Y-%m-%d %H:%M:%S"),
