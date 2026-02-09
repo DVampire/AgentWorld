@@ -1,0 +1,17 @@
+[
+    {
+        "instrument": "Sustainability-Linked Bond",
+        "issuer": "ABC Corp",
+        "kpi": "Scope 1+2 reduction 30% by 2030",
+        "coupon_step_up": 0.25,
+        "spo_provider": "Sustainalytics",
+        "spo_opinion": "Positive"
+    },
+    {
+        "instrument": "Green Bond",
+        "issuer": "XYZ Ltd",
+        "use_of_proceeds": ["Renewable Energy", "Green Buildings"],
+        "spo_provider": "Moody's",
+        "spo_opinion": "Positive"
+    }
+]
