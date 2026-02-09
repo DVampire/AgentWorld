@@ -1,0 +1,986 @@
+task_id,question,
+1,"Which of these investment approaches would be most suitable for an investor who wants to ensure that their personal, social and moral views direct the investment decisions?
+A. Ethical investing.
+B. Thematic investing.
+C. Impact investing.
+D. Responsible investing.",A
+2,"Justin runs an equity fund for a large insurance company whi ch has signed on to the UN Global Compact Principles and th e Principles for Responsible In vestment. His investment strategy will need to: 
+i. avoid companies which do not adhere to Task Force on Climate -related Financial Disclosures guidelines 
+ii. screen the portfolio on environmental issues 
+iii. incorporate ESG issues into the investment process 
+iv. invest in companies which adhere to human rights principles
+A. iii.
+B. i and ii.
+C. ii and iii.
+D. iii and iv.",D
+3,"Which UK body is responsible for issuing the Stewardship Code?
+A. The Financial Conduct Authority (FCA).
+B. The Financial Policy Committee (FPC).
+C. The Financial Ombudsman Service (FOS).
+D. The Financial Reporting Council (FRC).",D
+4,"A Sovereign Wealth Fund selecting an investment manager with an ESG strategy is likely to focus more on the manager's approach to:
+A. ESG engagement and stewardship.
+B. Integrating MSCI data while ESG scoring the portfolio.
+C. Liquidity of the portfolio and short-term performance.
+D. Quantitative analysis of portfolio attribution vs. the benchmark.",A
+5,"Which of these least reflects how qualitative ESG data is used in company analysis?
+A. To adjust a valuation.
+B. To add an opinion to an investment thesis.
+C. To modify a financial model.
+D. To determine the value at risk for the company.",D
+6,"Adjusting the Discounted Cash Flow when integrating ESG into traditional financial analysis is:
+A. Not valid at country level.
+B. Valid at the level of company, sector or country.
+C. Valid only at the level of company.
+D. Not valid at sector level.",B
+7,"Which action would be undertaken first by an investor wantin g to follow an engagement strategy with a company in a cost effective way?
+A. Defining the scope of engagement and prioritising engagemen t activities.
+B. Developing a clear process which articulates realistic goal s.
+C. Adapting the engagement process to the local context.
+D. Framing the engagement topic into a broader strategy discus sion.",A
+8,"Which comment best reflects the inclusion of 'bad actor' companies which have poo r ESG scores in ESG mutual funds?
+A. Bad actors are never included.
+B. Bad actors are rarely included.
+C. Bad actors are often included.
+D. Bad actors will always be included.",C
+9,"A private wealth manager tests using a data provider for its ESG screen to filter out tobacco and finds that the screen eliminates virtually all consumer companies. As consumers are a large percentage of the benchmark index, the ma nager would prefer not to eliminate the whole sector. What is the most precise method the fund could use?
+A. GICS 15 Screening.
+B. MSCI data.
+C. Share of company revenues as agreed with the client.
+D. Standard industry classification.",C
+10,"What is an indirect environmental impact of a paper company cutting trees and transporting them to its production plant?
+A. Carbon emissions from the haulage lorries.
+B. Anatural regulator of carbon dioxide is destroyed,
+C. Deforestation.
+D. Local species are disturbed.",A
+11,"Which of the following approaches is most likely to result in an analyst aggregating numeric variables into an ESG score?
+A. Company specific research.
+B. Fundamental analysis.
+C. Stock picking.
+D. Quantitative modelling.",D
+12,"What impact will a positive ESG rating have on a company's cost of capital?
+A. A lower cost of capital.
+B. No change to the cost of capital.
+C. A higher cost of capital.
+D. A more volatile cost of capital.",A
+13,"Which of the following sectors have the greatest risk of in creased insurance costs due to physical climate change?
+A. Construction and materials.
+B. Food and beverage.
+C. Media and technology.
+D. Travel and leisure.",D
+14,"ABC Investment Management owns a 2% stake in a large telecom company, which is in the media due to a surge in employee suicides attributed to pressures in the workplace. Mary, a senior analyst at ABC Investment Management, would like to engage with the company on the issue and sees that a quarterly earnings conference call is coming up. What should Mary do before the quarterly conference call?
+A. Arrange a pre-meeting call with the company's investor relations representative.
+B. Contact the Investor Forum.
+C. Establish clear objectives.
+D. Request a meeting with the chairman of the Board.",C
+15,"Which of the following is not generally expected for companies which score well on ESG metrics relative to companies scoring less well?
+A. They are better able to anticipate environmental change ris ks and opportunities.
+B. They enjoy valuation premiums due to changing investor concerns and preferences.
+C. They are more disposed to longer term strategic thinking and planning.
+D. They are more likely to grow rapidly and offer higher short  term returns.",D
+16,"What is the result of an analyst failing to correctly model the risks and opportunities associated with ESG?
+A. Systematic underestimation of high ESG performers and overe stimation of ESG under performers.
+B. Systematic overestimation of both high ESG performers and E SG under performers.
+C. Systematic underestimation of both high ESG performers and ESG under performers.
+D. Systematic overestimation of high ESG performers and undere stimation of ESG under performers.",A
+17,"*Several questions are associated with the following case study. The material given in the case study will not change.*
+CBT's Annual General Meeting (AGM) is two months away. Patrick Weeze is a portfolio manager who owns a significant number of stocks of CBT in his portfolio. His fund is a concentrated portfolio with high idiosyncratic risk and, as a result, he believes that a detailed analysis of the governance of each of his stocks is paramount to its long-term performance. He reviews the relevant documentation regarding CBT's AGM and notes the following:
+_	_ CBT provides information on the total amount of CEO remuneration, but no detail on the Key Performance Indicators (KPIs) that influence variable compensation. The CEO's total compensation last year was GBP 1.2 million, 30% of which was fixed salary.
+_	_ CBT currently has 10 individuals sitting on its board, 3 of whom are independent. The Chairman is the former CEO who stepped down last year.
+_	_ One of the resolutions to be voted at the AGM was put forward by a minority shareholder.The investor asks the company to produce a report on how climate change may affect the company's strategy and financial stability in the long-term.
+
+Patrick is discussing CBT's financial model with his financial analyst. He asks the analyst to consider how the model may take into account the KPIs for the CEO's variable remuneration which are not disclosed. He is presented with 4 options.
+Which one is he most likely to select to implement?
+A. Increase the company's estimated costs for next year by an additional GBP 1.2 millionto account for the lack of transparency regarding the KPIs.
+B. Reduce the company's current total costs by GBP 360,000, as there are no concernsregarding the fixed salary portion of the compensation.
+C. Increase the cost of capital from 4.6% to 4.8% to reflect the increased risk stemmedfrom uncertainty around alignment of interest.
+D. Decrease the cost of capital from 4.6% to 4.4% to reflect the reduced level of certaintyaround alignment of interest.",C
+18,"*Several questions are associated with the following case study. The material given in the case study will not change.*
+CBT's Annual General Meeting (AGM) is two months away. Patrick Weeze is a portfolio manager who owns a significant number of stocks in CBT in his portfolio. His fund is a concentrated portfolio with high idiosyncratic risk and, as a result, he believes that a detailed analysis of the governance of each of his stocks is paramount to its long-term performance. He reviews the relevant documentation regarding CBT's AGM and notes the following:
+_	_ CBT provides information on the total amount of CEO remuneration, but no detail on theKey Performance Indicators (KPIs) that influence variable compensation. The CEO's totalcompensation last year was GBP 1.2 million, 30% of which was fixed salary.
+_	_ CBT currently has 10 individuals sitting on its board, 3 of whom are independent. The Chairman is the former CEO who stepped down last year.
+_	_ One of the resolutions to be voted at the AGM was put forward by a minority shareholder.The investor asks the company to produce a report on how climate change may affect the company's strategy and financial stability in the long-term.
+
+Patrick believes that the Chair cannot be considered as an independent member of the board. He schedules an engagement meeting with the Chair to discuss the matter.
+What could be the most favourable outcome from a governance perspective?
+A. The Chair steps down and the CEO assumes the chairmanship, and one of the independent directors becomes the lead independent director. 
+B. The Chair steps down and remains on the board, and one of the existing independent directors is elected Chair.
+C. An additional independent director is added to the board to increase the level of independence.
+D. The Chair steps down from the Board and the Chair role, and a newly-elected independent director is appointed Chair.",D
+19,"*Several questions are associated with the following case study. The material given in the case study will not change.*
+CBT's Annual General Meeting (AGM) is two months away. Patrick Weeze is a portfolio manager who owns a significant number of stocks in CBT in his portfolio. His fund is a concentrated portfolio with high idiosyncratic risk and, as a result, he believes that a detailed analysis of the governance of each of his stocks is paramount to its long-term performance. He reviews the relevant documentation regarding CBT's AGM and notes the following:
+_	_ CBT provides information on the total amount of CEO remuneration, but no detail on theKey Performance Indicators (KPIs) that influence variable compensation. The CEO's totalcompensation last year was GBP 1.2 million, 30% of which was fixed salary.
+_	_ CBT currently has 10 individuals sitting on its board, 3 of whom are independent. The Chairman is the former CEO who stepped down last year.
+_	_ One of the resolutions to be voted at the AGM was put forward by a minority shareholder.The investor asks the company to produce a report on how climate change may affect the company's strategy and financial stability in the long-term.
+
+When Patrick attempts to set up a call with CBT's Investor Relations to discuss governance matters, they push back suggesting that these have no relevance to the company.
+
+Which argument can Patrick use to best highlight the importance of appropriate governance to enterprises?
+A. A meta study by Friede, Busch and Bassen has shown that the majority of studies showed a positive correlation between governance and corporate financial performance.
+B. The CFA Institute's 2017 ESG survey showed that governance has the strongest correlation with company margin growth.
+C. Enron's case provides evidence that governance is simple and failures usually link to one single factor.
+D. Bernile, Bhagwat and Yonker's 2017 study concludes that board diversity adds to governance complexity, thus destroying company value.",A
+20,"*Several questions are associated with the following case study. The material given in the case study will not change.*
+CBT's Annual General Meeting (AGM) is two months away. Patrick Weeze is a portfolio manager who owns a significant number of stocks in CBT in his portfolio. His fund is a concentrated portfolio with high idiosyncratic risk and, as a result, he believes that a detailed analysis of the governance of each of his stocks is paramount to its long-term performance. He reviews the relevant documentation regarding CBT's AGM and notes the following:
+_	_ CBT provides information on the total amount of CEO remuneration, but no detail on theKey Performance Indicators (KPIs) that influence variable compensation. The CEO's totalcompensation last year was GBP 1.2 million, 30% of which was fixed salary.
+_	_ CBT currently has 10 individuals sitting on its board, 3 of whom are independent. The Chairman is the former CEO who stepped down last year.
+_	_ One of the resolutions to be voted at the AGM was put forward by a minority shareholder.The investor asks the company to produce a report on how climate change may affect the company's strategy and financial stability in the long-term.
+What is Patrick least likely to take into consideration when making a decision regarding his vote on the shareholder resolution?
+A. The extent to which the company and its business model is exposed to climate change risks.
+B. Whether, and to what extent, the company already provides information on the topic of climate change risk.
+C. The company's response on whether it supports the resolution and why.
+D. Whether this resolution falls under the category of governance.",D
+21,"What do corporate governance structures in France and the U S have in common?
+A. Chief Executive and Chairman of the Board are typically one  person.
+B. National corporate governance codes.
+C. Statutory auditors in addition to independent auditors.
+D. Two-tier boards.",A
+22,"Vincent and Michelle discuss the relative merits of a carbo n tax scheme and an emissions trading scheme (ETS). While they disagree on which is preferab le overall, they at least agree that:
+A. an ETS and a carbon tax are both market-based instruments.
+B. an ETS generates less revenue for the government than a car bon tax.
+C. an ETS cannot be structured to keep the price of emissions falling too low, while a carbon tax may keep prices artificially high.
+D. an ETS incentivises industries to strictly limit emissions to a certain level, while a tax does not.",C
+23,"Sienna reviews a large retailer faced with a sex equality l aw suit with a potential '4 billion in pay out claims. How should she adjust her financial model?
+A. Adjust the employee expense line to reflect '4 billion in p ay out over 10 years.
+B. Do nothing as the company has a good case and may not have to pay.
+C. Lower the discount rate to reflect the risk of pay outs.
+D. Raise the cost of capital to reflect the risk of pay outs.",D
+24,"Which of these represents the internalisation of an externa lity?
+A. Dumping landfill.
+B. Forced Labour.
+C. Excessive executive pay.
+D. Carbon taxes.",B
+25,"Bill is a philanthropist who is approached by four charitab le organisations that each claim to have a solution that reduces mortality by 15% in their speci fic area of focus if they receive $300 million. Bill's aim is to reduce mortality rates a s much as possible. Which one of the following charities should he choose?
+A. A charity focussing on drought.
+B. A charity focussing on malaria.
+C. A charity focussing on pollution.
+D. A charity focussing on violence.",C
+26,"How can climate-related scenario analysis be used as an effective tool in portfolio management? 
+i. By pricing climate risk. 
+ii. By assessing the portfolio's alignment with the Paris Agreement temperature target. 
+iii. By bottom-up analysis of in dividual companies in the port folio. 
+iv. By producing standardised data for performance measurement . 
+
+A . i
+B. i and ii
+C. i, ii and iii
+D. i, ii, iii and iv",C
+27,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Daniel Stinner was asked by the head of Research at Lopse Ratings to propose amethodology to rate sovereigns. Lopse Ratings is a well regarded rating agency, but ithas been falling behind its peers because, whilst it has integrated ESG within corporateissuers, it has not yet integrated ESG within sovereign issuers.
+
+After a few months of research in the industry and within Lopse, Daniel proposed thefollowing to the Head of Research:
+
+E, S and G weights to a final ESG score reflect the extent that the individual factor is adriver from a credit perspective.
+
+Scores range from factors that individually are adequately managed or contributing to thesovereign's financial capacity (5) to those which may impose a significant strain onfinancial streams (1). They do not make value judgments on whether a sovereignengages in 'good' or 'bad' ESG practices. Instead, they draw out how E, S and G factorsare influencing the credit rating decision.
+
+Political risk, rule of law and corruption have been key drivers of rating actions in the past,indicating that governance was already playing a role in the rating model. It should bemade explicit that these are governance-related matters, and thus considered as the 'G'within ESG. No other governance issue was deemed material across all types ofsovereigns. Data could be gathered from the World Bank's Governance Indicators(WBGI) and Transparency International.
+
+Social factors also have an important influence on sovereign ratings. Certain factors arerelated to government's accountability, while others impact the longer-term productivity,and thus growth (plus indirectly, taxing capability) of the country. These factors areconsidered as the 'S' within ESG. Environmental risks, the 'E' within ESG, were identifiedas more idiosyncratic to each country based on their location and dependency.
+
+The weighted average of the factors within each of the E, S and G pillars provide the score for that pillar, and the weighted average of the pillars provide the final ESG score for the sovereign issuer. 
+
+Daniel provided examples of the rating system applied to two different sovereigns, as detailed below.
+
+| Pilar         | Factor                       | Country A Score | Country A Trend | Country B Score | Country B Trend |
+| ------------- | ---------------------------- | --------------- | --------------- | --------------- | --------------- |
+| Social        | Human Rights & Public Safety | 5               | _               | 2               | _               |
+| Social        | Demographics                 | 2               | _               | 4               | _               |
+| Social        | Education & Employment       | 5               | _               | 3               | _               |
+| Environmental | Emissions & Energy           | 3               | _               | 3               | _               |
+| Environmental | Water                        | 4               | _               | 3               | _               |
+| Environmental | Biodiversity                 | 3               | _               | 2               | _               |
+| Environmental | Climate Resilience           | 1               | _               | 4               | _               |
+| Governance    | Political Stability          | 4               | _               | 3               | _               |
+| Governance    | Rule of Law & Corruption     | 4               | _               | 2               | _               |
+
+In order to provide his boss with greater context of the ESG rating for each of the countries, Daniel briefly describes a few characteristics of each.
+
+Which of the below are most likely part of  the *description for each company?*
+|      | Country A                                                    | Country B                                                    |
+| ---- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 1    | A developed country which is a relatively small island with an aging population | An emerging economy with increasing labour force and rising deforestation |
+| 2    | A dictatorship with significant investments in basic needs but not environmental matters | A developed country with poor governance contributing to deteriorating living wage |
+| 3    | A developing country with significant expenditure in public service jobs and military | A BRIC country in line with the Paris Agreement but lagging on social matters |
+| 4    | A tiger economy, undergoing rapid economic growth accompanied by an increase in the standard of living | A parliamentary democracy with decentralized government and inefficient social and environmental policies |
+
+A. 1
+B. 2
+C. 3
+D. 4",A
+28,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Daniel Stinner was asked by the head of Research at Lopse Ratings to propose amethodology to rate sovereigns. Lopse Ratings is a well regarded rating agency, but ithas been falling behind its peers because, whilst it has integrated ESG within corporateissuers, it has not yet integrated ESG within sovereign issuers.
+
+After a few months of research in the industry and within Lopse, Daniel proposed thefollowing to the Head of Research:
+
+E, S and G weights to a final ESG score reflect the extent that the individual factor is adriver from a credit perspective.
+
+Scores range from factors that individually are adequately managed or contributing to thesovereign's financial capacity (5) to those which may impose a significant strain onfinancial streams (1). They do not make value judgments on whether a sovereignengages in 'good' or 'bad' ESG practices. Instead, they draw out how E, S and G factorsare influencing the credit rating decision.
+
+Political risk, rule of law and corruption have been key drivers of rating actions in the past,indicating that governance was already playing a role in the rating model. It should bemade explicit that these are governance-related matters, and thus considered as the 'G'within ESG. No other governance issue was deemed material across all types ofsovereigns. Data could be gathered from the World Bank's Governance Indicators(WBGI) and Transparency International.
+
+Social factors also have an important influence on sovereign ratings. Certain factors arerelated to government's accountability, while others impact the longer-term productivity,and thus growth (plus indirectly, taxing capability) of the country. These factors areconsidered as the 'S' within ESG. Environmental risks, the 'E' within ESG, were identifiedas more idiosyncratic to each country based on their location and dependency.
+
+The weighted average of the factors within each of the E, S and G pillars provide the score for that pillar, and the weighted average of the pillars provide the final ESG score for the sovereign issuer. 
+
+Daniel provided examples of the rating system applied to two different sovereigns, as detailed below.
+
+| Pilar         | Factor                       | Country A Score | Country A Trend | Country B Score | Country B Trend |
+| ------------- | ---------------------------- | --------------- | --------------- | --------------- | --------------- |
+| Social        | Human Rights & Public Safety | 5               | _               | 2               | _               |
+| Social        | Demographics                 | 2               | _               | 4               | _               |
+| Social        | Education & Employment       | 5               | _               | 3               | _               |
+| Environmental | Emissions & Energy           | 3               | _               | 3               | _               |
+| Environmental | Water                        | 4               | _               | 3               | _               |
+| Environmental | Biodiversity                 | 3               | _               | 2               | _               |
+| Environmental | Climate Resilience           | 1               | _               | 4               | _               |
+| Governance    | Political Stability          | 4               | _               | 3               | _               |
+| Governance    | Rule of Law & Corruption     | 4               | _               | 2               | _               |
+
+What might be a reasonable distribution of weight among each of the E, S and G pillars?
+
+A. E = 33.3%, S= 33.3%, G= 33.3%
+B. E = 33.3%, S= 44.4%, G= 22.2%
+C. E = 40%, S= 40%, G= 20%
+D. E = 20%, S= 30%, G= 50%",D
+29,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Daniel Stinner was asked by the head of Research at Lopse Ratings to propose amethodology to rate sovereigns. Lopse Ratings is a well regarded rating agency, but ithas been falling behind its peers because, whilst it has integrated ESG within corporateissuers, it has not yet integrated ESG within sovereign issuers.
+
+After a few months of research in the industry and within Lopse, Daniel proposed thefollowing to the Head of Research:
+
+E, S and G weights to a final ESG score reflect the extent that the individual factor is adriver from a credit perspective.
+
+Scores range from factors that individually are adequately managed or contributing to thesovereign's financial capacity (5) to those which may impose a significant strain onfinancial streams (1). They do not make value judgments on whether a sovereignengages in 'good' or 'bad' ESG practices. Instead, they draw out how E, S and G factorsare influencing the credit rating decision.
+
+Political risk, rule of law and corruption have been key drivers of rating actions in the past,indicating that governance was already playing a role in the rating model. It should bemade explicit that these are governance-related matters, and thus considered as the 'G'within ESG. No other governance issue was deemed material across all types ofsovereigns. Data could be gathered from the World Bank's Governance Indicators(WBGI) and Transparency International.
+
+Social factors also have an important influence on sovereign ratings. Certain factors arerelated to government's accountability, while others impact the longer-term productivity,and thus growth (plus indirectly, taxing capability) of the country. These factors areconsidered as the 'S' within ESG. Environmental risks, the 'E' within ESG, were identifiedas more idiosyncratic to each country based on their location and dependency.
+
+The weighted average of the factors within each of the E, S and G pillars provide the score for that pillar, and the weighted average of the pillars provide the final ESG score for the sovereign issuer. 
+
+Daniel provided examples of the rating system applied to two different sovereigns, as detailed below.
+
+| Pilar         | Factor                       | Country A Score | Country A Trend | Country B Score | Country B Trend |
+| ------------- | ---------------------------- | --------------- | --------------- | --------------- | --------------- |
+| Social        | Human Rights & Public Safety | 5               | _               | 2               | _               |
+| Social        | Demographics                 | 2               | _               | 4               | _               |
+| Social        | Education & Employment       | 5               | _               | 3               | _               |
+| Environmental | Emissions & Energy           | 3               | _               | 3               | _               |
+| Environmental | Water                        | 4               | _               | 3               | _               |
+| Environmental | Biodiversity                 | 3               | _               | 2               | _               |
+| Environmental | Climate Resilience           | 1               | _               | 4               | _               |
+| Governance    | Political Stability          | 4               | _               | 3               | _               |
+| Governance    | Rule of Law & Corruption     | 4               | _               | 2               | _               |
+
+What might explain a downward trend in Country B's water score?
+
+A. Rising sea levels close to industrial zones.
+B. Increased drought in agricultural areas.
+C. Reduced access of low-income populations to water and sanitation.
+D. Increased river discharge due to longer rainy season.",B
+30,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Daniel Stinner was asked by the head of Research at Lopse Ratings to propose amethodology to rate sovereigns. Lopse Ratings is a well regarded rating agency, but ithas been falling behind its peers because, whilst it has integrated ESG within corporateissuers, it has not yet integrated ESG within sovereign issuers.
+
+After a few months of research in the industry and within Lopse, Daniel proposed thefollowing to the Head of Research:
+
+E, S and G weights to a final ESG score reflect the extent that the individual factor is adriver from a credit perspective.
+
+Scores range from factors that individually are adequately managed or contributing to thesovereign's financial capacity (5) to those which may impose a significant strain onfinancial streams (1). They do not make value judgments on whether a sovereignengages in 'good' or 'bad' ESG practices. Instead, they draw out how E, S and G factorsare influencing the credit rating decision.
+
+Political risk, rule of law and corruption have been key drivers of rating actions in the past,indicating that governance was already playing a role in the rating model. It should bemade explicit that these are governance-related matters, and thus considered as the 'G'within ESG. No other governance issue was deemed material across all types ofsovereigns. Data could be gathered from the World Bank's Governance Indicators(WBGI) and Transparency International.
+
+Social factors also have an important influence on sovereign ratings. Certain factors arerelated to government's accountability, while others impact the longer-term productivity,and thus growth (plus indirectly, taxing capability) of the country. These factors areconsidered as the 'S' within ESG. Environmental risks, the 'E' within ESG, were identifiedas more idiosyncratic to each country based on their location and dependency.
+
+The weighted average of the factors within each of the E, S and G pillars provide the score for that pillar, and the weighted average of the pillars provide the final ESG score for the sovereign issuer. 
+
+Daniel provided examples of the rating system applied to two different sovereigns, as detailed below.
+
+| Pilar         | Factor                       | Country A Score | Country A Trend | Country B Score | Country B Trend |
+| ------------- | ---------------------------- | --------------- | --------------- | --------------- | --------------- |
+| Social        | Human Rights & Public Safety | 5               | _               | 2               | _               |
+| Social        | Demographics                 | 2               | _               | 4               | _               |
+| Social        | Education & Employment       | 5               | _               | 3               | _               |
+| Environmental | Emissions & Energy           | 3               | _               | 3               | _               |
+| Environmental | Water                        | 4               | _               | 3               | _               |
+| Environmental | Biodiversity                 | 3               | _               | 2               | _               |
+| Environmental | Climate Resilience           | 1               | _               | 4               | _               |
+| Governance    | Political Stability          | 4               | _               | 3               | _               |
+| Governance    | Rule of Law & Corruption     | 4               | _               | 2               | _               |
+
+How might Country A improve its score for Climate Resilience in the short to medium-term?
+
+A. Improve adaptation methods.
+B. Improve mitigation methods.
+C. Reduce the number of stranded assets.
+D. Align itself with the Paris Agreement.",A
+31,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Daniel Stinner was asked by the head of Research at Lopse Ratings to propose amethodology to rate sovereigns. Lopse Ratings is a well regarded rating agency, but ithas been falling behind its peers because, whilst it has integrated ESG within corporateissuers, it has not yet integrated ESG within sovereign issuers.
+
+After a few months of research in the industry and within Lopse, Daniel proposed thefollowing to the Head of Research:
+
+E, S and G weights to a final ESG score reflect the extent that the individual factor is adriver from a credit perspective.
+
+Scores range from factors that individually are adequately managed or contributing to thesovereign's financial capacity (5) to those which may impose a significant strain onfinancial streams (1). They do not make value judgments on whether a sovereignengages in 'good' or 'bad' ESG practices. Instead, they draw out how E, S and G factorsare influencing the credit rating decision.
+
+Political risk, rule of law and corruption have been key drivers of rating actions in the past,indicating that governance was already playing a role in the rating model. It should bemade explicit that these are governance-related matters, and thus considered as the 'G'within ESG. No other governance issue was deemed material across all types ofsovereigns. Data could be gathered from the World Bank's Governance Indicators(WBGI) and Transparency International.
+
+Social factors also have an important influence on sovereign ratings. Certain factors arerelated to government's accountability, while others impact the longer-term productivity,and thus growth (plus indirectly, taxing capability) of the country. These factors areconsidered as the 'S' within ESG. Environmental risks, the 'E' within ESG, were identifiedas more idiosyncratic to each country based on their location and dependency.
+
+The weighted average of the factors within each of the E, S and G pillars provide the score for that pillar, and the weighted average of the pillars provide the final ESG score for the sovereign issuer. 
+
+Daniel provided examples of the rating system applied to two different sovereigns, as detailed below.
+
+| Pilar         | Factor                       | Country A Score | Country A Trend | Country B Score | Country B Trend |
+| ------------- | ---------------------------- | --------------- | --------------- | --------------- | --------------- |
+| Social        | Human Rights & Public Safety | 5               | _               | 2               | _               |
+| Social        | Demographics                 | 2               | _               | 4               | _               |
+| Social        | Education & Employment       | 5               | _               | 3               | _               |
+| Environmental | Emissions & Energy           | 3               | _               | 3               | _               |
+| Environmental | Water                        | 4               | _               | 3               | _               |
+| Environmental | Biodiversity                 | 3               | _               | 2               | _               |
+| Environmental | Climate Resilience           | 1               | _               | 4               | _               |
+| Governance    | Political Stability          | 4               | _               | 3               | _               |
+| Governance    | Rule of Law & Corruption     | 4               | _               | 2               | _               |
+
+What might explain the different trends Country A and Country B are experiencing with regards to demographics?
+
+A. In developed markets, such as Country A, the ratio between active and inactive part of the workforce drops.
+B. In developed markets, such as Country B, the ratio between active and inactive part of the workforce rises.
+C. In developing markets, such as Country B, the ratio between active and inactive part of the workforce drops.
+D. In developing markets, such as Country A, the ratio between active and inactive part of the workforce drops.",A
+32,"A company which produces bottled water and pledges to use 50% recycled plastics is using:
+A. A circular economy approach.
+B. A natural capital approach.
+C. A supply chain disruption approach.
+D. A use, make, dispose economy approach.",A
+33,"Which comment on the data included in ESG integration databases is most accurate?
+A. ESG data must be audited to be valid.
+B. Input data across similar asset classes is consistent.
+C. Data outputs will correlate with data from other ESG databa ses.
+D. Incomplete ESG data used can be material.",D
+34,"Alex is a corporate bond analyst at TBD Investment Manageme nt and is responsible for a '4 billion portfolio of utility bonds with a range of credit ratings and ESG scores. He has been directed to engage with all the utility companies, whose b onds TBD holds, on their plans to reduce carbon emissions. Using the PRI's guide for ESG en gagement, Alex should start wit h the
+A. Largest holdings with high ESG scores.
+B. Largest holdings with low ESG scores.
+C. Smallest holdings with low credit ratings.
+D. Smallest holdings with high ESG scores.",B
+35,"Several questions are associated with the following case study. The material given in the case study will not change.
+
+Lemon is a Japanese telecommunications company which recently acquired a local company that manufactures smart phones, TTN, in an effort to integrate vertically and provide clients with a better offer. A significant part of Lemon's clientele acquisition strategy is a focus on older individuals, and it wants to provide them with phones that better address their needs.
+
+TTN, unlike most of its peers, owns the manufacturing plants which supply parts for its phones. 80% of TTN's manufacturing personnel are contractors, while the industry average is 40%. Two years ago, TTN was subject to a non-governmental organisation (NGO) campaign requesting that it offered contractors working conditions and pay similar to that of employees. TTN agreed to most of the NGO's requests.
+
+Which social mega trend is most likely to affect Lemon's revenues?
+
+A. TTN is most likely to benefit from increased demand from offshoring as globalisation increases.
+B. Costs will decrease as manufacturing jobs are cut due to increased automation.
+C. The alignment of TTN's business model to provide a number of new revenue generating services to support an older clientele that lives longer.
+D. Increase in social media will naturally lead to increased advertisement sale by TTN.",C
+36,"Several questions are associated with the following case study. The material given in the case study will not change.
+
+Lemon is a Japanese telecommunications company which recently acquired a local company that manufactures smart phones, TTN, in an effort to integrate vertically and provide clients with a better offer. A significant part of Lemon's clientele acquisition strategy is a focus on older individuals, and it wants to provide them with phones that better address their needs.
+
+TTN, unlike most of its peers, owns the manufacturing plants which supply parts for its phones. 80% of TTN's manufacturing personnel are contractors, while the industry average is 40%. Two years ago, TTN was subject to a non-governmental organisation (NGO) campaign requesting that it offered contractors working conditions and pay similar to that of employees. TTN agreed to most of the NGO's requests.
+
+How is Lemon's labour rights risk impacted by characteristics that are company-specific?
+
+A. Its risk is lower than industry average because a lower percentage of its work force is direct employees.
+B. Its risk is fully mitigated by addressing the NGO's concerns.
+C. Lemon's labour rights risk is reduced by the fact that older individuals have less concerns about company's social corporate responsibility than the younger generation.
+D. By not outsourcing its manufacturing, Lemon retains greater control of its supply chain and thus labour-related risks.",D
+37,"Several questions are associated with the following case study. The material given in the case study will not change.
+
+Lemon is a Japanese telecommunications company which recently acquired a local company that manufactures smart phones, TTN, in an effort to integrate vertically and provide clients with a better offer. A significant part of Lemon's clientele acquisition strategy is a focus on older individuals, and it wants to provide them with phones that better address their needs.
+
+TTN, unlike most of its peers, owns the manufacturing plants which supply parts for its phones. 80% of TTN's manufacturing personnel are contractors, while the industry average is 40%. Two years ago, TTN was subject to a non-governmental organisation (NGO) campaign requesting that it offered contractors working conditions and pay similar to that of employees. TTN agreed to most of the NGO's requests.
+
+How might a portfolio manager interpret the financial implications of TTN agreeing to offercontractors the same working conditions as employees?
+
+A. The change may increase cost in the short and long-term but may reduce risk of pricevolatility due to reduced labour disruption.
+B. Potential financial implications cannot be estimated without the company disclosingthe change to contractors' salary.
+C. Costs and risks remain the same as only employees' salary and working conditionsimpact the company.
+D. The cost of capital is increased as a result of providing greater rights to contractors.",A
+38,"Several questions are associated with the following case study. The material given in the case study will not change.
+
+Lemon is a Japanese telecommunications company which recently acquired a local company that manufactures smart phones, TTN, in an effort to integrate vertically and provide clients with a better offer. A significant part of Lemon's clientele acquisition strategy is a focus on older individuals, and it wants to provide them with phones that better address their needs.
+
+TTN, unlike most of its peers, owns the manufacturing plants which supply parts for its phones. 80% of TTN's manufacturing personnel are contractors, while the industry average is 40%. Two years ago, TTN was subject to a non-governmental organisation (NGO) campaign requesting that it offered contractors working conditions and pay similar to that of employees. TTN agreed to most of the NGO's requests.
+
+Which of the following actions would be a breach of the Standards?
+
+A. Taking a pro-union stance while negating the right of employees to negotiate individually.
+B. Providing equal remuneration for equal work.
+C. Abolishing child labour even though that would generate jobs.
+D. Publishing a policy against discrimination in employment or occupation.",A
+39,"Exclusionary screening is historically most common in which of these regions?
+A. Europe.
+B. United States. 
+C. Asia .
+D. Canada.",A
+40,"The Bangladesh Investor Initiative is intended to address w hich social factor?
+A. Forced labour.
+B. Freedom of association.
+C. Health and safety.
+D. Living wage.",C
+41,"What positive effect can the globalisation of economies hav e on business models?
+A. Dependence on one or two efficient countries to supply an i ndustry globally.
+B. Increased cross-border movement of goods and services.
+C. Increased efficiency and lower costs.
+D. Offshoring to developing countries can cause an industry to  disappear in a developed country.",C
+42,"Which form of risk will not be lowered by the integration o f ESG into a firm's investment process?
+A. Market risk.
+B. Firm level reputational risk.
+C. Investment risk.
+D. Investment level reputational risk.",A
+43,"Why do most corporate governance codes require audits?
+A. To guarantee there is no fraud in a company's financial sta tements.
+B. To provide a detailed list of accounting anomalies to share holders.
+C. To provide an independent review of financials prepared by management.
+D. To verify the financials of all subsidiaries of a company.",C
+44,"What name is given to a company's failure to manage risk wh ich is manageable?
+A. Management decomposition.
+B. Management exposure.
+C. Management risk.
+D. Management gap.",D
+45,"Which of these ESG service providers does not produce company ESG ratings?
+A. Real Impact Tracker.
+B. Inrate.
+C. Thomson Reuters.
+D. MSCI.",A
+46,"What corporate governance practice should be included in th e process for directors of a company to be made accountable to shareholders?
+A. Automatic rollover of the fi nancial auditor's services each  year.
+B. Independent directors made accountable to executive directo rs.
+C. Review of the accounts by the Board at the Annual General Meeting (AGM).
+D. Setting executive remuneration in line with industry standa rds.",C
+47,"Which of these ESG issues included in a materiality map would be best described as a Social issue?
+A. Resource management.
+B. Business ethics and culture.
+C. Executive remuneration.
+D. Health and safety.",D
+48,"Scores from an ESG factor scorecard will always be:
+A. Adjusted by practitioners before use.
+B. Determined by the investment analyst.
+C. Scaled between zero and ten.
+D. Quantitative rather than qualitative.",D
+49,"An ongoing situation for a company which has negative ESG implications is called a:
+A. Chronic case.
+B. Controversy case.
+C. Current case.
+D. Catastrophic case.",B
+50,"Given that an analyst is able to judge the materiality of a n ESG factor, which of the following is true?
+A. It will then be possible to assess the level of impact of t he ESG factor.
+B. Other analysts with the same  data will make the same materi ality judgement.
+C. The interaction of the ESG factor with financial performanc e will still be uncertain.
+D. Cultural factors are unlikely to play a part in their judge ment of materiality.",C
+51,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Justin Deyzak is conducting a review of the food industry and came across twocompanies which were interesting investment opportunities. As he is aware thatagricultural companies can be highly exposed to climate risk, he investigates CompanyA's and Company B's business models in order to assess those risks. Below is thesummary of his findings.
+
+Company A
+Company A's main products are premium cookies and cakes, which it sells retail in nichemarkets across the Middle East. It has a franchise model in which it maintains the designand recipe of its product in-house, while outsourcing raw material and production topartners. Suppliers for the key raw material, flour, are based in Yemen and Libya, whichhave been plagued with water scarcity in the past few years.
+
+Company B
+Company B is based in Mexico and produces chocolate paste. To ensure the standard ofquality required by its clients, the company owns all of the farms that supply the cocoa.The company has been growing through acquiring farmland. It identifies locations wherewater sources and soil are of high quality but poor farming techniques have led toinefficiencies. It purchases the land and then works with the farmers to help themtransition to more sustainable and productive farming methods.
+
+Which of the following below best describes how Justin should assess the physical risk of the companies under review?
+
+A. Company A has a significant physical risk due to its agricultural raw product being harvested in the areas with water scarcity.
+B. Company B has no physical risk because the soil is of high quality.
+C. Company B has high physical risk because farming techniques may result in physical harm to workers.
+D. Company A and B have similar physical risks as a result of being classified as part of the food industry.",A
+52,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Justin Deyzak is conducting a review of the food industry and came across twocompanies which were interesting investment opportunities. As he is aware thatagricultural companies can be highly exposed to climate risk, he investigates CompanyA's and Company B's business models in order to assess those risks. Below is thesummary of his findings.
+
+Company A
+Company A's main products are premium cookies and cakes, which it sells retail in nichemarkets across the Middle East. It has a franchise model in which it maintains the designand recipe of its product in-house, while outsourcing raw material and production topartners. Suppliers for the key raw material, flour, are based in Yemen and Libya, whichhave been plagued with water scarcity in the past few years.
+
+Company B
+Company B is based in Mexico and produces chocolate paste. To ensure the standard ofquality required by its clients, the company owns all of the farms that supply the cocoa.The company has been growing through acquiring farmland. It identifies locations wherewater sources and soil are of high quality but poor farming techniques have led toinefficiencies. It purchases the land and then works with the farmers to help themtransition to more sustainable and productive farming methods.
+
+Which of the following statements is true regarding transition risk?
+
+A. Company A has lower transition risk because it is a B2C (business-to-consumer) company which outsources its agricultural production.
+B. Company B has higher transition risk because it is a B2B (business-to-business) company that needs to educate farmers about other farming methods.
+C. Transition risk related to changing consumer expectations regarding agricultural methods should be considered for both B2B (business-to-business) and B2C (business-to-consumer) companies.
+D. Justin does not need to review regulation on deforestation in the three countries as these would not impact transition risk.",C
+53,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Justin Deyzak is conducting a review of the food industry and came across twocompanies which were interesting investment opportunities. As he is aware thatagricultural companies can be highly exposed to climate risk, he investigates CompanyA's and Company B's business models in order to assess those risks. Below is thesummary of his findings.
+
+Company A
+Company A's main products are premium cookies and cakes, which it sells retail in nichemarkets across the Middle East. It has a franchise model in which it maintains the designand recipe of its product in-house, while outsourcing raw material and production topartners. Suppliers for the key raw material, flour, are based in Yemen and Libya, whichhave been plagued with water scarcity in the past few years.
+
+Company B
+Company B is based in Mexico and produces chocolate paste. To ensure the standard ofquality required by its clients, the company owns all of the farms that supply the cocoa.The company has been growing through acquiring farmland. It identifies locations wherewater sources and soil are of high quality but poor farming techniques have led toinefficiencies. It purchases the land and then works with the farmers to help themtransition to more sustainable and productive farming methods.
+
+Justin would like to estimate the carbon footprint of each of the companies. Which of the below should he ignore?
+
+A. Emissions by the agricultural production of the outsourced flour producers in Company A.
+B. Emissions by the trucks which deliver purchased chocolate paste to clients of Company B.
+C. Emissions by employers of Company A when they fly to Yemen to conduct a supplier audit.
+D. Emissions saved by the CEO of Company B flying on a commercial plane rather than on a private jet.",D
+54,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Justin Deyzak is conducting a review of the food industry and came across twocompanies which were interesting investment opportunities. As he is aware thatagricultural companies can be highly exposed to climate risk, he investigates CompanyA's and Company B's business models in order to assess those risks. Below is thesummary of his findings.
+
+Company A
+Company A's main products are premium cookies and cakes, which it sells retail in nichemarkets across the Middle East. It has a franchise model in which it maintains the designand recipe of its product in-house, while outsourcing raw material and production topartners. Suppliers for the key raw material, flour, are based in Yemen and Libya, whichhave been plagued with water scarcity in the past few years.
+
+Company B
+Company B is based in Mexico and produces chocolate paste. To ensure the standard ofquality required by its clients, the company owns all of the farms that supply the cocoa.The company has been growing through acquiring farmland. It identifies locations wherewater sources and soil are of high quality but poor farming techniques have led toinefficiencies. It purchases the land and then works with the farmers to help themtransition to more sustainable and productive farming methods.
+
+In what way is Justin least likely to conduct scenario testing to refine his assessment ofthe companies' climate risk?
+
+A. Justin could impose a shadow carbon tax in his financial model to quantify anypotential impact on the companies' margins.
+B. Justin could conduct a scenario analysis and obtain information on how a 4 degreeCelsius change would impact agricultural output in the countries to which Company Aand Company B are exposed to and include that in the financial model.
+C. Justin could quantify the short-term impact of extreme weather events on investorsentiment regarding these industries and agricultural products.
+D. Justin could incorporate the impact of climate change and risk purely on the socioeconomicconditions of workers in the affected regions.",D
+55,"Natasha completes a review of a large UK based oil company and assigns it an improving ESG score because she is impressed by the steps it is taking to meet the Paris Agreement. Nevertheless, she is concerned about the industry's long-term outlook and potential for stranded assets and increased cost of capital. What action should Natasha reflect in her valuation of the comp any?
+A. Adjust her discounted cash flow (DCF) model to reflect a higher cost of capital.
+B. Adjust her discounted cash flow (DCF) model in later years to reflect write offs for stranded assets.
+C. None, the oil price is the only real variable that matters.
+D. Adjust her discounted cash flow (DCF) model to reflect a hi gher cost of capital and write offs for stranded assets in later years.",D
+56,"A credit portfolio manager is considering buying a Turkish phone company which he believes has strong credit quality as reflected in single-A credit ratings assigned by two credit rating agencies. Simultaneously, the emerging markets t eam is closely monitoring election results in Turkey which has led to bond market volatility. Why would the portfolio manager d ecide not to buy the phone company bonds?
+A. High Governance Score for Turkey.
+B. Low Governance Score for the management of the phone compan y.
+C. Low Governance score for Turkey.
+D. High Governance Score for the management of the phone compa ny.",C
+57,"What are the advantages of using mapping techniques when comparing two portfolios for ESG risk?
+A. Both portfolios can be shown on the same map.
+B. Increased ESG disclosure is making mapping more uniform.
+C. The materiality aspect of mapping is standardised.
+D. Specific elements of E, S, and G can be compared across sec tors.",D
+58,"An analyst valuing a company against its peers should make which of the following adjustments to the price-to-earnings ratio (P/E) to integrate s trong ESG characteristics?
+A. Add a premium versus its peers.
+B. Add a discount versus its peers.
+C. Make no adjustment versus its peers.
+D. Add either a discount or premium.",A
+59,"What are the three parts of the Triple Bottom Line?
+A. Ecological, Social and Governance.
+B. Social, Environmental and Financial.
+C. Ecological, Governance and Financial.
+D. Social, Financial and Governance.",B
+60,"Which of the following best describes how the externalities of one highly polluting company can affect a broadly diversified investment portfolio?
+A. The returns of a polluting company will always be lower and  will reduce the overall portfolio returns.
+B. The profitability of other portfolio investments can be low ered by externalities of the polluting company.
+C. The returns of a polluting company will always be higher an d will increase the overall portfolio returns.
+D. The profitability of a polluting company can be lowered but its externalities will increase the overall portfolio returns.",A
+61,"Jane is an equity analyst at AVX Asset Management and cover s a large public oil company which she needs to assign an environmental score to. Th e company says it is addressing carbon emissions, but refuses to disclose exactly what measures it is taking. Alogical next step for Jane would be to
+A. Look at the company's financial statements and try to draw conclusions.
+B. Recommend that AVX sell the company's shares.
+C. Suggest that AVX join the Investor Forum and use collective  action to encourage the company to improve its disclosure.
+D. Take the company's word for it and assign a high environmen tal score.",C
+62,"The physical impacts of climate change are most likely to be identified as a key ESG driver for which form of institutional investor?
+A. An actively managed mutual fund.
+B. A life insurance company.
+C. A pension fund.
+D. A property and general insurance company.",D
+63,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Food service operators are seeing one of the most important and growing trends in thepast decade ' the 'gourmetisation' of fast food into a new category of food service calledfast casual. One of the strongest restaurant concepts, fast casual restaurants do not offera full table service; however, they do advertise higher quality food in comparison to fastfood restaurants. As a result, fast casual restaurants are perceived as an intermediateoption between fast food and casual dining, and usually priced accordingly. Fast casual isnow the fastest growing category in the food service industry.
+
+The industry relies heavily on human capital for food preparation and customer services.These jobs are usually low paid and require long hours. A large percentage of foodpreparation and customer services jobs are filled by immigrants and young adults,respectively.
+
+Below is information from two German companies in the fast casual restaurant subsector,which may or may not be material.
+
+| Company                                                      | A      | B     |
+| ------------------------------------------------------------ | ------ | ----- |
+| Number of individuals in the Board of Directors              | 10     | 14    |
+| Number of independent directors                              | 9      | 6     |
+| Correlation between CEO's variable remuneration and company's | 0.78   | 0.43  |
+| Revenue (EUR millions)                                       | 20.736 | 5.923 |
+| Number of stores                                             | 38     | 10    |
+| Percentage of food procurement:                              |        |       |
+| ___ Sourced locally                                          | 34%    | 79%   |
+| ___ Sourced internationally                                  | 66%    | 21%   |
+| Average number of customers per day per store                | 400    | 200   |
+| Average margin per customer                                  | 3%     | 7%    |
+| Number of employees                                          | 12,347 | 4,213 |
+| ___ percentage in food preparation                           | 50%    | 40%   |
+| ___ percentage in customer service                           | 40%    | 45%   |
+| ___ percentage in other                                      | 10%    | 15%   |
+| Employee turnover                                            | 72%    | 41%   |
+| Employee injury rate (per 100,000 workers)                   | 45     | 30    |
+| Food waste (tonnes per year)                                 | 15.6   | 10.8  |
+| Number of supply chain audits per year                       | 10     | 6     |
+| Single use plastic (tonnes per year)                         | 0.6    | 0.5   |
+
+For which of the two companies would an analyst most probably prioritise further analysisto ensure interests between shareholders and company executives are well aligned?
+
+A. Company A because the risks associated with the CEO's pay are correlated withcompany profits.
+B. Company A because of the high number of independent directors who do notrepresent shareholders' interests.
+C. Company B because a Board with more than 12 members is at risk of being inefficientin decision-making.
+D. Company B because low correlation between CEO's variable compensation andcompany profits may indicate misalignment of interests.",D
+64,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Food service operators are seeing one of the most important and growing trends in thepast decade ' the 'gourmetisation' of fast food into a new category of food service calledfast casual. One of the strongest restaurant concepts, fast casual restaurants do not offera full table service; however, they do advertise higher quality food in comparison to fastfood restaurants. As a result, fast casual restaurants are perceived as an intermediateoption between fast food and casual dining, and usually priced accordingly. Fast casual isnow the fastest growing category in the food service industry.
+
+The industry relies heavily on human capital for food preparation and customer services.These jobs are usually low paid and require long hours. A large percentage of foodpreparation and customer services jobs are filled by immigrants and young adults,respectively.
+
+Below is information from two German companies in the fast casual restaurant subsector,which may or may not be material.
+
+| Company                                                      | A      | B     |
+| ------------------------------------------------------------ | ------ | ----- |
+| Number of individuals in the Board of Directors              | 10     | 14    |
+| Number of independent directors                              | 9      | 6     |
+| Correlation between CEO's variable remuneration and company's | 0.78   | 0.43  |
+| Revenue (EUR millions)                                       | 20.736 | 5.923 |
+| Number of stores                                             | 38     | 10    |
+| Percentage of food procurement:                              |        |       |
+| ___ Sourced locally                                          | 34%    | 79%   |
+| ___ Sourced internationally                                  | 66%    | 21%   |
+| Average number of customers per day per store                | 400    | 200   |
+| Average margin per customer                                  | 3%     | 7%    |
+| Number of employees                                          | 12,347 | 4,213 |
+| ___ percentage in food preparation                           | 50%    | 40%   |
+| ___ percentage in customer service                           | 40%    | 45%   |
+| ___ percentage in other                                      | 10%    | 15%   |
+| Employee turnover                                            | 72%    | 41%   |
+| Employee injury rate (per 100,000 workers)                   | 45     | 30    |
+| Food waste (tonnes per year)                                 | 15.6   | 10.8  |
+| Number of supply chain audits per year                       | 10     | 6     |
+| Single use plastic (tonnes per year)                         | 0.6    | 0.5   |
+
+What conclusions might be made with regards to Company A's working conditions in comparison to Company B's?
+
+A. Company A has more employees and thus its risk associated with working conditions is higher.
+B. Company A has better working conditions as it conducts more supply chain audits per year.
+C. Company B probably has better working conditions based on its lower employee turnover and injury rate.
+D. Company A and B have comparable working conditions as a similar percentage of their employees are exposed to food preparation hazards.",C
+65,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Food service operators are seeing one of the most important and growing trends in thepast decade ' the 'gourmetisation' of fast food into a new category of food service calledfast casual. One of the strongest restaurant concepts, fast casual restaurants do not offera full table service; however, they do advertise higher quality food in comparison to fastfood restaurants. As a result, fast casual restaurants are perceived as an intermediateoption between fast food and casual dining, and usually priced accordingly. Fast casual isnow the fastest growing category in the food service industry.
+
+The industry relies heavily on human capital for food preparation and customer services.These jobs are usually low paid and require long hours. A large percentage of foodpreparation and customer services jobs are filled by immigrants and young adults,respectively.
+
+Below is information from two German companies in the fast casual restaurant subsector,which may or may not be material.
+
+| Company                                                      | A      | B     |
+| ------------------------------------------------------------ | ------ | ----- |
+| Number of individuals in the Board of Directors              | 10     | 14    |
+| Number of independent directors                              | 9      | 6     |
+| Correlation between CEO's variable remuneration and company's | 0.78   | 0.43  |
+| Revenue (EUR millions)                                       | 20.736 | 5.923 |
+| Number of stores                                             | 38     | 10    |
+| Percentage of food procurement:                              |        |       |
+| ___ Sourced locally                                          | 34%    | 79%   |
+| ___ Sourced internationally                                  | 66%    | 21%   |
+| Average number of customers per day per store                | 400    | 200   |
+| Average margin per customer                                  | 3%     | 7%    |
+| Number of employees                                          | 12,347 | 4,213 |
+| ___ percentage in food preparation                           | 50%    | 40%   |
+| ___ percentage in customer service                           | 40%    | 45%   |
+| ___ percentage in other                                      | 10%    | 15%   |
+| Employee turnover                                            | 72%    | 41%   |
+| Employee injury rate (per 100,000 workers)                   | 45     | 30    |
+| Food waste (tonnes per year)                                 | 15.6   | 10.8  |
+| Number of supply chain audits per year                       | 10     | 6     |
+| Single use plastic (tonnes per year)                         | 0.6    | 0.5   |
+
+Regulators are discussing a ban on single-use plastic. How might this impact Company Aand Company B financially?
+
+A. Company A's cost of capital would increase more than Company B's because of itshigher use of single-use plastic.
+B. Company A's costs would increase by .6 multiplied by the difference between the priceof the single-use plastic and its alternative.
+C. Company B's costs would reduce by .5 multiplied by the average cost of the singleuseplastic used in its stores.
+D. Company B's costs would increase by .5 multiplied by the average cost of thealternative to single-use plastic.",B
+66,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Food service operators are seeing one of the most important and growing trends in thepast decade ' the 'gourmetisation' of fast food into a new category of food service calledfast casual. One of the strongest restaurant concepts, fast casual restaurants do not offera full table service; however, they do advertise higher quality food in comparison to fastfood restaurants. As a result, fast casual restaurants are perceived as an intermediateoption between fast food and casual dining, and usually priced accordingly. Fast casual isnow the fastest growing category in the food service industry.
+
+The industry relies heavily on human capital for food preparation and customer services.These jobs are usually low paid and require long hours. A large percentage of foodpreparation and customer services jobs are filled by immigrants and young adults,respectively.
+
+Below is information from two German companies in the fast casual restaurant subsector,which may or may not be material.
+
+| Company                                                      | A      | B     |
+| ------------------------------------------------------------ | ------ | ----- |
+| Number of individuals in the Board of Directors              | 10     | 14    |
+| Number of independent directors                              | 9      | 6     |
+| Correlation between CEO's variable remuneration and company's | 0.78   | 0.43  |
+| Revenue (EUR millions)                                       | 20.736 | 5.923 |
+| Number of stores                                             | 38     | 10    |
+| Percentage of food procurement:                              |        |       |
+| ___ Sourced locally                                          | 34%    | 79%   |
+| ___ Sourced internationally                                  | 66%    | 21%   |
+| Average number of customers per day per store                | 400    | 200   |
+| Average margin per customer                                  | 3%     | 7%    |
+| Number of employees                                          | 12,347 | 4,213 |
+| ___ percentage in food preparation                           | 50%    | 40%   |
+| ___ percentage in customer service                           | 40%    | 45%   |
+| ___ percentage in other                                      | 10%    | 15%   |
+| Employee turnover                                            | 72%    | 41%   |
+| Employee injury rate (per 100,000 workers)                   | 45     | 30    |
+| Food waste (tonnes per year)                                 | 15.6   | 10.8  |
+| Number of supply chain audits per year                       | 10     | 6     |
+| Single use plastic (tonnes per year)                         | 0.6    | 0.5   |
+
+Based on known information, which company is expected to have less of a challenge in managing its food supply chain risk?
+
+A. Company A because it has more audits in absolute terms and a higher percentage of internationally sourced produce.
+B. Company B because it has more audits per unit of revenue and a higher percentage of locally sourced produce.
+C. Company B because it has smaller revenue and thus lower reputational risk.
+D. Company A and B have similar challenges because of the number of audits per unit of profit are alike.",B
+67,"Several questions are associated with the following case study. The material given in thecase study will not change.
+
+Food service operators are seeing one of the most important and growing trends in thepast decade ' the 'gourmetisation' of fast food into a new category of food service calledfast casual. One of the strongest restaurant concepts, fast casual restaurants do not offera full table service; however, they do advertise higher quality food in comparison to fastfood restaurants. As a result, fast casual restaurants are perceived as an intermediateoption between fast food and casual dining, and usually priced accordingly. Fast casual isnow the fastest growing category in the food service industry.
+
+The industry relies heavily on human capital for food preparation and customer services.These jobs are usually low paid and require long hours. A large percentage of foodpreparation and customer services jobs are filled by immigrants and young adults,respectively.
+
+Below is information from two German companies in the fast casual restaurant subsector,which may or may not be material.
+
+| Company                                                      | A      | B     |
+| ------------------------------------------------------------ | ------ | ----- |
+| Number of individuals in the Board of Directors              | 10     | 14    |
+| Number of independent directors                              | 9      | 6     |
+| Correlation between CEO's variable remuneration and company's | 0.78   | 0.43  |
+| Revenue (EUR millions)                                       | 20.736 | 5.923 |
+| Number of stores                                             | 38     | 10    |
+| Percentage of food procurement:                              |        |       |
+| ___ Sourced locally                                          | 34%    | 79%   |
+| ___ Sourced internationally                                  | 66%    | 21%   |
+| Average number of customers per day per store                | 400    | 200   |
+| Average margin per customer                                  | 3%     | 7%    |
+| Number of employees                                          | 12,347 | 4,213 |
+| ___ percentage in food preparation                           | 50%    | 40%   |
+| ___ percentage in customer service                           | 40%    | 45%   |
+| ___ percentage in other                                      | 10%    | 15%   |
+| Employee turnover                                            | 72%    | 41%   |
+| Employee injury rate (per 100,000 workers)                   | 45     | 30    |
+| Food waste (tonnes per year)                                 | 15.6   | 10.8  |
+| Number of supply chain audits per year                       | 10     | 6     |
+| Single use plastic (tonnes per year)                         | 0.6    | 0.5   |
+
+New restaurant regulation will limit the amount of food that can go to waste (as a percentage of food purchased). Which company is the regulation likely to impact the most?
+
+A. Company A because it wastes 4.8 tonnes of food more than Company B per year.
+B. Company B because it produces more food waste in proportion to revenue.
+C. Company A and B will be impacted in a similar way as they produce a similar proportion of food waste in proportion to margin.
+D. The answer cannot be reached with the information provided.",D
+68,"Which best describes stewardship of asset s over which someone acts as the guardian?
+A. The process of intervention to avoid deterioration of the long-term value of the assets.
+B. The reconciliation of the assets with recor ds produced by t hird party holders of the assets.
+C. The putting in place of a physical measure to Physically pr otect the assets from theft.
+D. The investor actively participating at the annual general meeting.",A
+69,"Which of the following challenges can auditors face in prev enting fraud in company accounts? 
+i. Auditors may be misled by management. 
+ii. Auditors rely to a great degree on the accuracy of a company's internal accounting system. 
+iii. Audits are based on samples and not all figur es are review ed. 
+iv. Only segments of a company’s business that are deemed mater ial are reviewed.
+A. ii and iii.
+B. iii and iv.
+C. i, ii and iii.
+D. i, ii, iii and iv.",D
+70,"The correlation between positive ESG factors and financial performance is most commonly observed to be:
+A. Negative.
+B. Close to zero.
+C. Positive.
+D. Highly variable.",C
+71,"Under the fiduciary duty of pension funds in the USA, the E mployment Retirement Income Security Act (ERISA) expects that pension funds:
+A. Engage with companies and vote at general meetings.
+B. Engage with companies but do not vote at general meetings.
+C. Are passive investors in companies and vote only on materia l issues.
+D. Are passive investors and do not vote at general meetings.",A
+72,"Which of the following is not an escalation measure that can be used across all asset classes?
+A. Formally adding the company to an exclusion list.
+B. Proxy voting at a general meeting.
+C. Making a public statement in advance of a general meeting.
+D. Seeking governance improvements through legal methods.",B
+73,"Sharon is the Chief Investment Officer of BCM, a boutique a sset manager that primarily invests in UK equities. BCM has a small stake in RTC media comp any which has not been efficient in removing terror ist related content circulated on its social networking website. Since BCM's resources are limited, Sharon decides to join the Investor Forum, which will allow her to:
+A. Avoid direct interaction with RTC.
+B. Benefit from the Investor Forum's advisory services.
+C. Draw investor attention to RTC's terrorist related content.
+D. Initiate a joint resolution to gain control of RTC.",C
+74,"A large US tobacco company has resisted engagement attempts by an investor forum to influence it to encourage people to quit smoking. The investor forum has now put an item on the upcoming AGM agenda proposing a new set of board me mbers. The current board has reviewed its position and decides it:
+A. May seek a ruling from the Securities and Exchange Commissi on (SEC) to have the item removed from the agenda.
+B. Must leave the item on the agenda.
+C. Should make the agenda public before the meeting.
+D. Should resign before the AGM.",A
+75,"The CFA Institute and CFA UK define ESG integration as the:
+A. Explicit systematic inclusion of ESG factors in investment analysis and investment decisions.
+B. Exclusion of securities from  client portfolios, which fall below specified minimum standards.
+C. Prioritisation of ESG factors ahead of all other client con siderations during the investment process.
+D. Requirement to refer to ESG fa ctors at all stages of the in vestment process.",A
+76,"Which approach to ESG investing would require the most intensive use of resources by an investment manager?
+A. Negative screening.
+B. Active ownership.
+C. Best-in-class.
+D. Thematic investing.",B
+77,"An ESG portfolio in government bonds is most likely to drive allocation towards:
+A. High yielding, high volatility bonds.
+B. High yielding, low volatility bonds.
+C. Low yielding, high volatility bonds.
+D. Low yielding, l ow volatility bonds.",D
+78,"Caroline runs a portfolio, which screens out securities wit h low ESG scores from the benchmark index. She then reweights the portfolio with the rema ining securities according to their market capitalisations. To address tracking error, she runs a portfolio optimisation programme. Has the tracking error issue been resolved?
+A. No, she should apply a strong ESG tilt to the portfolio.
+B. Yes, but the portfolio is now overweight securities that co rrelate with omitted securities.
+C. Yes, the removal of a small portion of securities from the benchmark will not impact relative performance in the long run.
+D. Yes, this strategy generally outperforms its benchmark when  the excluded securities underperform.",B
+79,"Chang Ying runs an equity portfolio using ESG integration t echniques which looks at E, S, and G independently. To reduce the downside tail risk of the po rtfolio whilst preserving the largest investable universe possible she could avoid:
+A. All companies with low E scores.
+B. All companies with low G scores.
+C. Companies with exposure to coal fired generation activities .
+D. Companies whose G score reflects insufficient financial ove rsight.",D
+80,"Green bond funds would best be described as which form of investing?
+A. Exclusionary investing.
+B. Active ownership investing.
+C. Best-in-class investing.
+D. Thematic investing.",D
+81,"Which of the following ESG index providers specifically con siders governance?
+A. Bloomberg.
+B. FTSE Russell.
+C. MSCI.
+D. Thomson Reuters.",D
+82,"Which of these factors will be greater for an investor who is passively exposed to an ESG index than for an investor with actively managed investments?
+A. Investment costs and expenses.
+B. Complexity of investment strategies.
+C. Volume of operational decisions required.
+D. Risk of incorrectly included index constituents.",D
+83,"What should be the first stage of a portfolio management process, which employs ESG integration?
+A. Agree the meaning of all ESG terms discussed with clients.
+B. Determine any external ESG research requirements.
+C. Develop an investment policy statement.
+D. Undertake any internal ESG research required.",C
+84,"Which of the following indice s would provide a benchmark fo r an ESG real estate investor?
+A. FTSE4Good.
+B. MSCI ESG. 
+C. GRESB .
+D. S&P ESG.",C
+85,"Which of the following types of fund managers are most likely to provide active stewardship for investors?
+A. Index tracking equity fund managers.
+B. Broad bond index tracking fund managers.
+C. Long duration corporate bond fund managers.
+D. Fundamental active equity fund managers.",D
+86,"Which form of portfolio has the most active stewardship by an investment firm?
+A. Diversified equity.
+B. Fundamental equity.
+C. Sovereign bond.
+D. Index tracking.",B
+87,"Which of the following would be specified in an ESG investm ent mandate?
+A. Stock selections.
+B. Reported returns.
+C. Investment beliefs.
+D. Excluded companies.",C
+88,"Which of the following is cor rect regarding voting by ESG fund managers?
+A. Voting represents a stewardship activity.
+B. Voting effectiveness is reported back to investors.
+C. Proxy voting is not common in developed markets.
+D. Fund manager voting records must be kept confidential.",A
+89,"Which of the following ESG factors is most likely to improve company performance?
+A. Transparent taxation.
+B. Robust risk management.
+C. Enhanced diversity.
+D. Flat organisational structure.",A
+90,"Impact investment offerings of small to medium size are gen erally most appropriate for:
+A. High net worth individuals.
+B. Large institutional asset managers.
+C. Pension funds.
+D. Retail investment funds.",A
+91,"Central bank support of Trade Finance and Corporate Banking standards is intended to have what effect?
+A. Encourage banks and insurers to divest from companies with high carbon emissions.
+B. Enhance the approaches taken by banks and insurers to manag ing financial risks from climate change.
+C. Keep inflation within target range.
+D. Support quantitative easing.",B
+92,"Reporting attribution of retur ns resulting from ESG integration is likely to be most accurate when:
+A. A variety of ESG evaluation techniques are used.
+B. An asset manager reports stewardship activities in a detail ed manner.
+C. ESG is fully integrated into the investment process.
+D. The effect of removing one sector from a portfolio is measu red.",D
+93,"Mario runs an ESG scored port folio, which has an E score lo wer than its benchmark. What can he can expect the client to focus more on, when reviewing the performance of the fund?
+A. Distractor companies in the benchmark with low E scores.
+B. Distractor companies in the portfolio with low E scores.
+C. Outperforming companies in the benchmark with high E scores .
+D. Outperforming companies in the portfolio with high E scores .",B
+94,"What is the best way a company's Board can prevent excessiv e executive remuneration and keep executives accountable to shareholders?
+A. Align executive pay to industry standards.
+B. Avoid remuneration which vests over a several year period.
+C. Link pay to company Key Performance Indicators.
+D. Vote for regular executive pay increases.",C
+95,"How are agency, alignment and executive pay interrelated in corporate governance?
+A. Corporate governance requires management to be agents when aligning executive pay.
+B. Corporate governance requires agents to determine whether e xecutive pay is aligned with the market.
+C. Management remuneration package should be aligned to the function or role of management as agents responsible to their Board.
+D. Management remuneration package should be aligned to the function or role of management as agents responsible to their shareholders.",D
+96,"The transition to a low carbon economy is expected to open up significant investment requirements. What would likely have the most financial risk for investors?
+A. Early stage technology for hydro based transportation.
+B. Energy efficient automobile factories.
+C. Power infrastructure with proven renewable energy technolog y.
+D. Upgrades to buildings to bring them to suitable standards.",A
+97,"Which of these is not a common use for ESG data sets?
+A. To input into future scenario models.
+B. To guide practice at regulator level.
+C. To inform government decision making.
+D. To prepare company financial reports.",D
+98,"What are the three ESG engagement dynamics highlighted by the PRI as creating value?
+A. Political dynamics, Financial dynamics and Learning dynamics.
+B. Learning dynamics, Communicative dynamics and Response dynamics.
+C. Communicative dynamics, Learning dynamics and Political dynamics.
+D. Response dynamics, Political dynamics and Financial dynamics.",C
+99,"Which of the following factors will be higher for alternati ve investments than for other financial investments?
+A. Correlated returns.
+B. Liquidity premium.
+C. Reporting obligations.
+D. Direct investment effect.",D
+100,"Which comment about a typical quantitative approach to ESG analysis is correct?
+A. Factors such as value and growth are integrated alongside ESG factors.
+B. The data set focuses on an individual company assessment.
+C. The research stage will only include internal proprietary data.
+D. The dataset tends to be smaller than that used by a fundame ntal adviser.",A
+101,"A majority of the research papers on the topic find that companies with long standing good practice in terms of sustainability tend to
+A. Outperform their peers in both accounting performance and stock markets returns .
+B. Underperform their peers in account ing performance and stock markets returns .
+C. Outperform their peers in accounting performance but underperform in stock market returns .
+D. Underperform their peers in accounting performance and outperforms in stock markets returns .",A
+102,"Which of the following ESG factor adjustments should increase an analyst's valuation of a company relative to its peers?
+A. Higher staff satisfaction.
+B. Higher future impairments.
+C. Higher safety breaches.
+D. Higher carbon tax costs.",A
+103,"A private wealth manager uses a data provider to screen out companies involved with tobacco and finds that the process eliminates nearly all consumer companies. As consumer companies are a large percentage of the benchmark index, the manager would prefer not to eliminate the whole sector. What method would be the most precise to reduce the number of companies which are screened out ?
+A. Global Industry Classification Standard focused on tobacco companies.
+B. ESG  rating agency data regarding the financial materiality of tobacco.
+C. Percentage of company revenue related to tobacco as agreed with the client.
+D. Standard  industry classification for tobacco companies.",C
+104,"Which of the following is an example of climate change mitigation?
+A. Building a flood defence .
+B. Developing drought resistant crop.
+C. Retrofitting a building.
+D. Desalinating water.",C
+105,"Which of these statements best describes responsible investing ?
+A. Targeted investment returns with certain investments being negatively screened .
+B. ESG factors taken into account to mitigate risk with a focus on financial return.
+C. Investments made in a way that captures returns while achieving an intentional effect .
+D. ESG factors taking into account to mitigate risk with a focus on capturing ESG opportunities .",B
+106,"How have companies not benefitted from changes in family structures?
+A. Diversified workforces are more effective.
+B. Coverage during maternity leave adds to expenses.
+C. Women now able to remain in full time work after child birth.
+D. Women often enter the workforce at lower pay rates than men.",B
+107,"How should ESG portfolio management remuneration alignment be designed into the mandate?
+A. Time frames should reflect performance experienced by clients.
+B. Remuneration should be based on short term portfolio returns.
+C. Remuneration should be aligned to periods of GDP growth.
+D. Time frames should be agreed with clients on a rolling basis.",A
+108,"Which of the following will result in more effective engagement by investors?
+A. Use of a proxy voting platform.
+B. Direct dialogue with companies.
+C. Large highly diversified portfolios.
+D. Non specialist stewardship team.",B
+109,"Which of the following statements is least true?
+A. Environmental costs include higher litigation and insurance costs.
+B. Active ownership models give less weight to Intergenerational issues than traditional models.
+C. All assets within a portfolio may fall in value due to physical environmental damage .
+D. Companies with higher pollution levels relative to their peers, generally report higher short term profits.",A
+110,"Norms based screening is most popular in which region?
+A. Canada.
+B. Europe.
+C. Japan.
+D. USA.",B
+111,"What positive effect can the globalisat ion of economies have on business models?
+A. Dependence on one or two efficient countries to supply an industry globally
+B. Increased cross -border movement of goods and services
+C. Increased efficiency and lower costs
+D. Offshoring to developing countries can cause an industry to disappear in a developed country",C
