@@ -8,5 +8,5 @@ INTERVAL_MS = {
 KLINE_COLS = [
     "open_time", "open", "high", "low", "close", "volume",
     "close_time", "quote_volume", "num_trades",
-    "taker_buy_base_vol", "taker_buy_quote_vol"
+    "taker_buy_base_vol", "taker_buy_quote_vol","ignore"
 ]

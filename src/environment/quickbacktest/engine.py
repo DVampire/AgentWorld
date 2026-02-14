@@ -112,21 +112,21 @@ class BackTesting:
 
         self.datas = data
 
-        logger.info("开始加载数据...")
+        logger.info("Loading data into backtest engine...")
 
         for code, df in track(
             data.groupby("code"),
-            desc="数据加载到回测引擎..."
+            desc="Loading data into backtest engine..."
         ):
             df = df.drop(columns=["code"])
             df = check_dataframe_cols(df, datafeed_cls)
-            assert "factor1" in df.columns, "factor1 列缺失"
-            assert "factor2" in df.columns, "factor2 列缺失"
-            assert "signal" in df.columns, "signal 列缺失"
-            assert "vwap" in df.columns, "vwap 列缺失"
+            assert "factor1" in df.columns, "Missing factor1 column"
+            assert "factor2" in df.columns, "Missing factor2 column"
+            assert "signal" in df.columns, "Missing signal column"
+            assert "vwap" in df.columns, "Missing vwap column"
 
             if df["close"].dropna().empty:
-                logger.warning(f"{code} close 全为 NaN，跳过...")
+                logger.warning(f"{code} close is all NaN, skipping...")
                 continue
 
             datafeed = datafeed_cls(
@@ -134,7 +134,7 @@ class BackTesting:
             )
             self.cerebro.adddata(datafeed, name=code)
 
-        logger.success("数据加载完毕！")
+        logger.success("Data loading completed!")
 
     def add_strategy(self, strategy: bt.Strategy, *args, **kwargs) -> None:
         self.cerebro.addstrategy(strategy, *args, **kwargs)

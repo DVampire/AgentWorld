@@ -13,7 +13,7 @@ from collections import defaultdict
 __all__ = ["run_strategy", "COMMISSION"]
 # 设置初始金额及手续费
 COMMISSION: Dict = dict(
-    cash=1e8, commission=0.00015,slippage_perc=0.0001,leverage=1.0
+    cash=1e8, commission=5e-4,slippage_perc=0.0,leverage=1.0
 )
 
 # 设置策略参数
@@ -54,6 +54,7 @@ def backtest_strategy(
     strategy: bt.Strategy,
     strategy_kwargs: Dict = {},
     commission_kwargs: Dict = {},
+    number_of_factors: int = 2,
 ):
     commission_kwargs: Dict = update_params(COMMISSION, commission_kwargs)
     strategy_kwargs: Dict = update_params(STRATEGY_PARAMS, strategy_kwargs)
@@ -68,7 +69,11 @@ def backtest_strategy(
         df: pd.DataFrame = data.query("code in @code").copy()
         strategy_kwargs["hold_num"] = len(code)
 
-    df: pd.DataFrame = df.dropna(subset=["close","factor1","factor2","signal","vwap"])
+    
+    signal_factors = [f"factor{i+1}" for i in range(number_of_factors)]
+    required_columns = ["close","signal","vwap"] + signal_factors
+
+    df: pd.DataFrame = df.dropna(subset=required_columns)
     bt_engine = BackTesting(**commission_kwargs)
     bt_engine.load_data(
         df,

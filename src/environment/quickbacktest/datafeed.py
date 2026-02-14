@@ -20,9 +20,9 @@ class CryptoDataFeed(PandasDirectData):
         ("close", 4),
         ("volume", 5),
         ("amount", 6),
-        ("signal",7), # 信号
-        ("factor1",8), # 上轨
-        ("factor2",9), # 下轨
+        ("signal",7),
+        ("factor1",8),
+        ("factor2",9),
         ("vwap",10), # vwap
         ("dtformat","%Y-%m-%d %H:%M:%S"),
         ("timeframe",bt.TimeFrame.Minutes),
@@ -36,8 +36,8 @@ class CryptoDataFeed(PandasDirectData):
         "close",
         "volume",
         "amount",
+        "signal",
         "factor1",
         "factor2",
-        "signal",
         "vwap",        
     )

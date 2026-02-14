@@ -6,6 +6,11 @@ load_dotenv(verbose=True)
 root = str(Path(__file__).resolve().parents[1])
 sys.path.append(root)
 from src.environment.quickbacktest.backtest import backtest_strategy,STRATEGY_PARAMS,COMMISSION
+from src.environment.quickbacktest.base_types import BaseStrategy,BaseSignal
+import pandas as pd
+from typing import Literal, Tuple, Union, List, Dict, Any
+import numpy as np
+import backtrader as bt
 from src.environment.quickbacktest.utils import (
     get_strategy_sharpe_ratio,
     get_strategy_cumulative_return,
@@ -14,11 +19,6 @@ from src.environment.quickbacktest.utils import (
     get_strategy_win_rate,
     plot_cumulative_return
 )
-from src.environment.quickbacktest.base_types import BaseStrategy,BaseSignal
-import pandas as pd
-from typing import Literal, Tuple, Union, List, Dict, Any
-import numpy as np
-import backtrader as bt
 
 
 
@@ -555,19 +555,26 @@ if __name__ == "__main__":
 
     combo_data = FundingNoiseArea(data).fit()
     combo_data.set_index("trade_time", inplace=True)
-    result = backtest_strategy(
-        data=combo_data,
-        code="BTCUSDT",
-        strategy=NoiseRangePerpsStrategy,
-        strategy_kwargs={"verbose":False,}
-    )
 
-    print("Sharpe Ratio:", get_strategy_sharpe_ratio(result))
+    
+    factors = ["signal"] + [col for col in combo_data.columns if col.startswith("factor")]
+    factors_value: pd.DataFrame = combo_data[factors].copy()
 
-    print("Cumulative Return:", get_strategy_cumulative_return(result).iloc[-  1],"%")
-    print("Max Drawdown:", get_strategy_maxdrawdown(result),"%")
-    print("Win Rate:", get_strategy_win_rate(result).iloc[0]['win_rate']*100,"%")
-    print("Total Commission:", get_strategy_total_commission(result)/COMMISSION["cash"]*100,"%")
-    ax = plot_cumulative_return(result, title="Buy and Hold Strategy")
-    import matplotlib.pyplot as plt
-    plt.savefig("buy_and_hold_cumulative_return.png")
+
+    print(factors_value.describe().drop("count",axis=0).to_dict())
+    # result = backtest_strategy(
+    #     data=combo_data,
+    #     code="BTCUSDT",
+    #     strategy=NoiseRangePerpsStrategy,
+    #     strategy_kwargs={"verbose":False,}
+    # )
+
+    # print("Sharpe Ratio:", get_strategy_sharpe_ratio(result))
+
+    # print("Cumulative Return:", get_strategy_cumulative_return(result).iloc[-  1],"%")
+    # print("Max Drawdown:", get_strategy_maxdrawdown(result),"%")
+    # print("Win Rate:", get_strategy_win_rate(result).iloc[0]['win_rate']*100,"%")
+    # print("Total Commission:", get_strategy_total_commission(result)/COMMISSION["cash"]*100,"%")
+    # ax = plot_cumulative_return(result, title="Buy and Hold Strategy")
+    # import matplotlib.pyplot as plt
+    # plt.savefig("buy_and_hold_cumulative_return.png")

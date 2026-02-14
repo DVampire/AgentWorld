@@ -14,24 +14,77 @@ class AgentSignal(BaseSignal):
     This class prepares trading inputs for the strategy.
     It does NOT execute trades.
     Avoid look-head bias when generating signals and factors.
+    When coding, always use tz-aware DatetimeIndex.
 
-    Write docstrings for the class at here. Follow the format below (to describe the meaning of each singnal and factor):
+    Keep the class name same as module name for dynamic loading.
+
+    Example: module name: MySignal  -> class name: MySignal
+
+    Write docstrings for the class at here. Follow the format below (to describe the meaning of each singnal and factor)
+    Do not include anything else here except the dictionary style docstring, follow strick json format.
+
+    Any format information about signal and factor generation must be in folling methods, like get_signal, get_factors, concat_signal,etc.
+
+    Leave range number all be -1 when generating the docstring.
+
+    Update and Add module will trigger getSignalQuantile tool to update the range automatically and return the updated range information as output.
+
+    You can also use getdocstring tool to get the docstring after updating the range.
+
+    Do not update range by yourself.
+
+    
+
 
                     {
                         "signal":{
                                     "name":string
-                                    "explain": string
+                                    "explanation": string
+                                    "range": {
+                                            "mean": float,
+                                            "std": float,
+                                            "min": float,
+                                            "25%": float,
+                                            "50%": float,
+                                            "75%": float ,
+                                            "max": float,
+                                            "hit_rate": float
+                                        }
                         },
                         "factor1":{
                                     "name":string,
-                                    "explain":string
+                                    "explanation":string
+                                    "range": {
+                                        "mean": float,
+                                        "std": float,
+                                        "min": float,
+                                        "25%": float,
+                                        "50%": float,
+                                        "75%": float ,
+                                        "max": float,
+                                        "hit_rate": float
+                                    }
+
                         },
                         "factor2":{
                                     "name":string,
-                                    "explain":string
-                        },
+                                    "explanation":string
+                                    "range": {
+                                        "mean": float,
+                                        "std": float,
+                                        "min": float,
+                                        "25%": float,
+                                        "50%": float,
+                                        "75%": float ,
+                                        "max": float,
+                                        "hit_rate": float
+                                    }
+                            },
+
+                        "why_these_factors": string
                     }
 
+                    
     Outputs consumed by Strategy
     ----------------------------
     - signal   : primary decision input (price / score / indicator) - can be understood as a factor with high IC value with returns

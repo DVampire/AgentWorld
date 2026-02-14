@@ -8,7 +8,9 @@ from langchain_core.messages import BaseMessage
 from pydantic import Field, ConfigDict
 import dirtyjson
 
+from pathlib import Path
 from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
+from src.message.types import HumanMessage, Message, SystemMessage,ContentPartText,ContentPartImage,ImageURL
 from src.config import config
 from src.logger import logger
 from src.utils import dedent
@@ -17,8 +19,10 @@ from src.environment.server import ecp
 from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
 from src.model import model_manager
+from src.prompt import prompt_manager
 from src.registry import AGENT
 from src.session import SessionContext
+from src.utils import make_file_url
 
 
 @AGENT.register_module(force=True)
@@ -269,13 +273,48 @@ class TradingStrategyAgent(Agent):
         }
         return response_dict
         
+
+
+    async def _get_messages(self, 
+                            task: str, 
+                            ctx: SessionContext,
+                            **kwargs) -> List[Message]:
+        """Build system+agent messages using prompt templates and context."""
+
+
+        system_modules = dict(max_tools=self.max_tools,workdir=self.workdir)
+        agent_message_modules = dict(task=task)
+        
+        agent_message_modules.update(await self._get_agent_context(task, ctx=ctx))
+        agent_message_modules.update(await self._get_environment_context(ctx=ctx))
+        agent_message_modules.update(await self._get_tool_context(ctx=ctx))
+        
+        messages = await prompt_manager.get_messages(
+            prompt_name=self.prompt_name,
+            system_modules=system_modules,
+            agent_modules=agent_message_modules,
+        )
+
+        workdir_path = Path(self.workdir)
+        diagram_path = workdir_path / "environment" / "quickbacktest" / "cumulative_return.png"
+        if diagram_path.exists():
+            diagram_message = HumanMessage(content=[
+            ContentPartText(text="The latest cumulative return diagram is as follows:"),
+            ContentPartImage(image_url=ImageURL(url=make_file_url(file_path=str(diagram_path)))),])
+            messages.append(diagram_message)
+            logger.info(f"| 🖼️ Attached cumulative return diagram from {diagram_path}")
+        return messages
+
+
+
+
     async def __call__(self, 
                   task: str, 
                   files: Optional[List[str]] = None,
                   **kwargs
                   ) -> AgentResponse:
         """
-        Main entry point for tool calling agent through acp.
+        Main entry point for trading strategy agent through acp.
         
         Args:
             task (str): The task to complete.
@@ -284,7 +323,7 @@ class TradingStrategyAgent(Agent):
         Returns:
             AgentResponse: The response of the agent.
         """
-        logger.info(f"| 🚀 Starting ToolCallingAgent: {task}")
+        logger.info(f"| 🚀 Starting TradingStrategyAgent: {task}")
         
         ctx = kwargs.get("ctx", None)
         # Get id from ctx
@@ -381,7 +420,7 @@ class TradingStrategyAgent(Agent):
         # Save tracer to json
         await tracer.save_to_json(self.tracer_save_path)
         
-        logger.info(f"| ✅ Agent completed after {step_number}/{self.max_steps} steps")
+        logger.info(f"| ✅ TradingStrategyAgent completed after {step_number}/{self.max_steps} steps")
         
         return AgentResponse(
             success=response["done"],

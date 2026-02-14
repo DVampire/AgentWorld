@@ -23,7 +23,6 @@ from src.environment import ecp
 from src.agent import acp
 from src.transformation import transformation
 from src.session.types import SessionContext
-from src.agent.types import AgentContext
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -93,24 +92,25 @@ async def main():
     # task = """If Eliud Kipchoge could maintain his record-making marathon pace indefinitely, how many thousand hours would it take him to run the distance between the Earth and the Moon its closest approach? Please use the minimum perigee value on the Wikipedia page for the Moon when carrying out your calculation. Round your result to the nearest 1000 hours and do not use any comma separators if necessary."""
     # task = """Where were the Vietnamese specimens described by Kuznetzov in Nedoshivina's 2010 paper eventually deposited? Just give me the city name without abbreviations."""
     # task = "Write a mini game about a cat that can fly and fight enemies, and then push it to github."
-    task = "Construct a CTA strategy and signal with backtest result return >20%"
+
+
+    # HYPOTHESIS = "Price displacement over 60D interacted with volume intensity ratio; targets potential exhaustion and reversa"
+    # task = rf"Implement signal and corresponding strategy using the hypothesis {HYPOTHESIS} and other technical indicators.Try to achieve high win rate. Keep the result one when finished. Clear workdir regularly to delete unnecessary files."
+
+
+    task = r"generate a practical trading strategy"
     files = []
     
     # Session context
-    session_ctx = SessionContext()
-    # Agent context
-    agent_ctx = AgentContext(
-        id=session_ctx.id,
-        step_number=0
-    )
-    
+    ctx = SessionContext()
+     
     input = {
         "name": "trading_strategy",
         "input": {
             "task": task,
             "files": files
         },
-        "ctx": agent_ctx
+        "ctx": ctx
     }
     await acp(**input)
     

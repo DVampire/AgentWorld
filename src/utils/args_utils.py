@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 import dirtyjson
 
-from src.logger import logger
+# from src.logger import logger
 
 
 def parse_tool_args(args_str: str) -> Dict[str, Any]:
@@ -27,13 +27,13 @@ def parse_tool_args(args_str: str) -> Dict[str, Any]:
     try:
         return dirtyjson.loads(args_str)
     except (dirtyjson.Error, ValueError, TypeError) as e:
-        logger.debug(f"| dirtyjson parse failed: {e}")
+        pass
     
     # Strategy 2: Try standard json
     try:
         return json.loads(args_str)
     except json.JSONDecodeError as e:
-        logger.debug(f"| json parse failed: {e}")
+        pass
     
     # Strategy 3: Fix unescaped backslashes and try again
     # Replace single backslashes (not followed by valid escape chars) with double backslashes
@@ -43,7 +43,7 @@ def parse_tool_args(args_str: str) -> Dict[str, Any]:
         fixed_str = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', args_str)
         return json.loads(fixed_str)
     except (json.JSONDecodeError, re.error) as e:
-        logger.debug(f"| Fixed backslash parse failed: {e}")
+        pass
     
     # Strategy 4: Try to extract key-value pairs using regex as last resort
     try:
@@ -58,11 +58,9 @@ def parse_tool_args(args_str: str) -> Dict[str, Any]:
             elif num_val:
                 result[key] = int(num_val) if '.' not in num_val else float(num_val)
         if result:
-            logger.warning(f"| ⚠️ Used regex fallback to parse args: {list(result.keys())}")
             return result
     except Exception as e:
-        logger.debug(f"| Regex extraction failed: {e}")
+        pass
     
     # All strategies failed
-    logger.error(f"| ❌ All parsing strategies failed for args: {args_str}...")
     return {}

@@ -11,22 +11,26 @@ class AgentStrategy(BaseStrategy):
 
     This class defines **how trading actions are executed**.
     The execution backend is **Backtrader**.
+    When coding, always use tz-aware DatetimeIndex.
 
     Describe the strategy logic in the docstring of this class
     following the format 
 
-    Strategy Logic Overview
-      — handle_signal: explain entry and reversal logic
-      — handle_stop_loss: explain risk exit logic
-      — handle_take_profit: explain profit-taking logic
+    Example: module name: MyStrategy  -> class name: MyStrategy
 
+    Strategy Logic Overview
+      - handle_signal: explain entry and reversal logic
+      - handle_stop_loss: explain risk exit logic
+      - handle_take_profit: explain profit-taking logic
+
+    Keep the class name same as module name for dynamic loading.
 
 
     All trading operations described here are ultimately translated
     into Backtrader orders (Market orders by default).
 
     Insights:
-    - Reduce frenquent trading by introducing time
+    - Reduce frequent trading by introducing time
 
     Example:
     def _run(self, symbol: str) -> None:
