@@ -1,12 +1,23 @@
-# AgentWorld（中文）
+# Autogenesis（中文）
 
 [English](README.md) | 中文
 
-AgentWorld 是一个 **自进化（self-evolving）智能体框架**。它提供模块化的运行时与组件体系，用于构建能够通过结构化反馈闭环不断 **迭代改进** 的智能体（例如反思式优化、基于奖励信号的优化等），同时保持系统在工程上可组合、可观测、可演化。
+Autogenesis 是一个面向 LLM 智能体系统的**自进化协议**与工程化运行时。
+
+现有不少 agent 协议（例如 A2A、MCP）对跨实体的 **生命周期/上下文管理**、**版本追踪**、以及**演化过程中的安全更新接口**规定不足，容易导致系统走向“大一统”的单体组合与脆弱的胶水代码。Autogenesis 的核心思路是将 **“演化什么（what evolves）”** 与 **“如何演化（how evolution occurs）”** 解耦：
+
+- **RSPL（Resource Substrate Protocol Layer）**：把 *prompt、agent、tool、environment、memory* 建模为协议注册资源，提供显式的**状态**、**生命周期**与**版本化接口**。
+- **SEPL（Self Evolution Protocol Layer）**：定义闭环的 operator 接口，用于提出（propose）、评估（assess）、提交（commit）改进，并具备可审计的 lineage 与**回滚（rollback）**能力。
+
+基于 Autogenesis，系统也提供了 **Autogenesis-Agent** 风格的思考-行动（tool-calling）智能体，能够在执行过程中动态实例化/检索/精炼资源并持续改进。
+
+## 架构图
+
+![Autogenesis 架构](docs/architecture.png)
 
 ## 自进化闭环概览
 
-从机制上看，AgentWorld 支持反复迭代的闭环：
+从机制上看，Autogenesis 支持反复迭代的闭环：
 
 - **行动（Act）**：智能体基于 LLM + 可用工具/环境产生行动与输出。
 - **观测（Observe）**：记录结果、轨迹、关键中间信息，以及来自环境的反馈信号。
@@ -32,7 +43,7 @@ AgentWorld 是一个 **自进化（self-evolving）智能体框架**。它提供
 ## 目录结构
 
 ```
-AgentWorld/
+Autogenesis/
   configs/                 # 组件组合配置（agent/tool/env/memory/model）
   src/
     agent/                 # agents
@@ -47,6 +58,10 @@ AgentWorld/
   libs/                    # 内置/引入的库
   workdir/                 # 运行产物（日志/轨迹/结果等）
 ```
+
+## 实验结果
+
+实验设置与结果汇总见 `docs/empirical_studies.md`（英文）。
 
 ## （可选）运行 Tool-Calling Agent
 
