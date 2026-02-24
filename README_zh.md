@@ -48,3 +48,23 @@ AgentWorld/
   workdir/                 # 运行产物（日志/轨迹/结果等）
 ```
 
+## （可选）运行 Tool-Calling Agent
+
+前置条件：
+- 先在你的环境里安装好依赖
+- 将 `.env.template` 复制为 `.env`，并配置一个模型提供方的 key（例如 `OPENROUTER_API_KEY=...`）
+
+示例：
+
+```bash
+python examples/run_tool_calling_agent.py --config configs/tool_calling_agent.py
+```
+
+覆盖模型/输出目录：
+
+```bash
+python examples/run_tool_calling_agent.py \
+  --config configs/tool_calling_agent.py \
+  --cfg-options model_name=openrouter/gpt-4o workdir=workdir/demo tag=demo
+```
+
