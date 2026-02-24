@@ -64,7 +64,8 @@ class TCPServer(BaseModel):
                        tool: Union[Tool, Type[Tool]],
                        config: Optional[Dict[str, Any]] = None,
                        override: bool = False,
-                       version: Optional[str] = None) -> ToolConfig:
+                       version: Optional[str] = None,
+                       code: Optional[str] = None) -> ToolConfig:
         """Register a tool class or instance asynchronously.
         
         Args:
@@ -72,6 +73,7 @@ class TCPServer(BaseModel):
             config: Configuration dict for tool initialization (required when tool is a class)
             override: Whether to override existing registration
             version: Optional version string
+            code: Optional explicit source code for the tool class
             
         Returns:
             ToolConfig: Tool configuration
@@ -80,7 +82,8 @@ class TCPServer(BaseModel):
             tool, 
             tool_config_dict=config, 
             override=override,
-            version=version
+            version=version,
+            code=code
         )
         self._registered_configs[tool_config.name] = tool_config
         return tool_config

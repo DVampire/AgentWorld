@@ -423,7 +423,8 @@ class ToolContextManager(BaseModel):
                        tool_cls: Type[Tool],
                        tool_config_dict: Optional[Dict[str, Any]] = None,
                        override: bool = False,
-                       version: Optional[str] = None) -> ToolConfig:
+                       version: Optional[str] = None,
+                       code: Optional[str] = None) -> ToolConfig:
         """Register a tool class or instance.
         
         This will:
@@ -431,6 +432,7 @@ class ToolContextManager(BaseModel):
         - Create a `ToolConfig`
         - Store it as the current config and append to version history
         - Register the version in `version_manager` and FAISS index
+        - Persist the tool source code (if available / provided)
         """
         
         try:
@@ -458,10 +460,10 @@ class ToolContextManager(BaseModel):
             else:
                 tool_version = version
                 
-            # Get tool code
-            tool_code = dynamic_manager.get_source_code(tool_cls)
+            # Get tool code (prefer explicit code if provided)
+            tool_code = code if code is not None else dynamic_manager.get_source_code(tool_cls)
             if not tool_code:
-                logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted")
+                logger.warning(f"| ⚠️ Tool {tool_name} is dynamic but source code cannot be extracted (and no code was provided)")
             
             # Get tool parameters
             tool_parameters = dynamic_manager.get_parameters(tool_cls)
