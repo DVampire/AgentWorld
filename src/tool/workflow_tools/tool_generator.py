@@ -508,7 +508,8 @@ class ToolGeneratorTool(Tool):
         tool_config = await tcp.register(
             tool_class,
             config={},
-            override=True
+            override=True,
+            code=tool_code
         )
         
         return tool_config

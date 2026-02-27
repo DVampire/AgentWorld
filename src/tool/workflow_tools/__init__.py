@@ -17,5 +17,5 @@ __all__ = [
     "DeepAnalyzerTool",
     "ReporterTool",
     "ToolGeneratorTool",
-    "TodoTool"
+    "TodoTool",
 ]
