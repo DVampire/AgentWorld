@@ -12,6 +12,7 @@ from .binance_environment import BinanceEnvironment
 from .hyperliquid_environment import OnlineHyperliquidEnvironment
 from .hyperliquid_environment import OfflineHyperliquidEnvironment
 from.quickbacktest_environment import QuickBacktestEnvironment
+from .signal_research_environment import SignalResearchEnvironment
 from .server import ecp
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "OnlineHyperliquidEnvironment",
     "OfflineHyperliquidEnvironment",
     "QuickBacktestEnvironment",
+    "SignalResearchEnvironment",
     "ecp",
 ]

@@ -56,15 +56,15 @@ class AgentStrategy(BaseStrategy):
 
     Data are predefined by BaseStrategy and include in __init___:
     call super().__init__() first to initialize BaseStrategy if you override __init__ # DO NOT INCLUDE ARGS
-        self.signal: Dict = {d._name: d.signal for d in self.datas}
-        self.factor1: Dict = {d._name: d.factor1 for d in self.datas}
-        self.factor2: Dict = {d._name: d.factor2 for d in self.datas}
+        self.signal_1: Dict = {d._name: d.signal_1 for d in self.datas}
+        self.signal_2: Dict = {d._name: d.signal_2 for d in self.datas}
+        self.signal_3: Dict = {d._name: d.signal_3 for d in self.datas}
 
     Data can be accessed using:
-    self.signal[symbol][0], self.factor1[symbol][0], etc.
+    self.signal_1[symbol][0], self.signal_2[symbol][0], self.signal_3[symbol][0]
 
     BaseStrategy only guarantees:
-      self.signal / self.factor1 / self.factor2
+      self.signal_1 / self.signal_2 / self.signal_3
 
     Therefore, this strategy MUST NOT access:
       self.high / self.low / self.close / self.open ..
@@ -125,8 +125,7 @@ class AgentStrategy(BaseStrategy):
          - Often used for take-profit or protective exits
 
        Backtrader execution:
-         - Uses self.close(data=data)
-         - please followed by self.log(f"{symbol} your reason", verbose=self.p.verbose) to log the action
+         - Uses self._close_position(data, reason: str)
 
        Position change:
          - +size → 0

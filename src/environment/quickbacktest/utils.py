@@ -110,7 +110,7 @@ def plot_cumulative_return(
     ep.cum_returns(returns, 1).plot(ax=ax, label="strategy", color="red")
 
     if minute_benchmark is not None:
-        bench = minute_benchmark.resample("T").last().dropna()
+        bench = minute_benchmark.resample("D").last().dropna()
         (bench / bench.iloc[0]).plot(color="darkgray", label="benchmark", ax=ax)
 
     plt.title(title)
@@ -135,7 +135,7 @@ def get_strategy_win_rate(
     ta_data = ta_analyzer.get_analysis()
     records = []
     
-    closed = ta_data.get('total', {}).get('closed', 1)
+    closed = ta_data.get('total', {}).get('closed', 0)
     win = ta_data.get('won', {}).get('total', 0)
     loss = ta_data.get('lost', {}).get('total', 0)
 

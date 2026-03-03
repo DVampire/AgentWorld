@@ -120,12 +120,12 @@ class BackTesting:
         ):
             df = df.drop(columns=["code"])
             df = check_dataframe_cols(df, datafeed_cls)
-            assert "factor1" in df.columns, "Missing factor1 column"
-            assert "factor2" in df.columns, "Missing factor2 column"
-            assert "signal" in df.columns, "Missing signal column"
+            assert "signal_1" in df.columns, "Missing signal_1 column"
+            assert "signal_2" in df.columns, "Missing signal_2 column"
+            assert "signal_3" in df.columns, "Missing signal_3 column"
             assert "vwap" in df.columns, "Missing vwap column"
 
-            if df["close"].dropna().empty:
+            if df[["close", "signal_1", "signal_2","signal_3"]].dropna().empty:
                 logger.warning(f"{code} close is all NaN, skipping...")
                 continue
 

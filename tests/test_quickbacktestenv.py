@@ -9,13 +9,13 @@ sys.path.append(root)
 from src.environment import QuickBacktestEnvironment
 import asyncio
 
-env = QuickBacktestEnvironment(base_dir="workdir/trading_strategy_agent/environment/quickbacktest")
+env = QuickBacktestEnvironment(base_dir="workdir/trading_strategy_agent/environment/quick_backtest")
 
 async def setup_environment():
     await env.initialize()
 
-    result = await env.getSignalQuantile(signal_name="AgentSignal")
     signal_list = await env.listModules(module_type="signals")
+    result = await env.backtest(strategy_name="VolAdaptiveMR_v12", signal_name="AgentSignal", rolling_window=1440)
 
     return signal_list,result
 

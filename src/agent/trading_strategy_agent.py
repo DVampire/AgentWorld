@@ -294,15 +294,19 @@ class TradingStrategyAgent(Agent):
             system_modules=system_modules,
             agent_modules=agent_message_modules,
         )
-
+        content = []
         workdir_path = Path(self.workdir)
-        diagram_path = workdir_path / "environment" / "quickbacktest" / "cumulative_return.png"
-        if diagram_path.exists():
-            diagram_message = HumanMessage(content=[
-            ContentPartText(text="The latest cumulative return diagram is as follows:"),
-            ContentPartImage(image_url=ImageURL(url=make_file_url(file_path=str(diagram_path)))),])
-            messages.append(diagram_message)
-            logger.info(f"| 🖼️ Attached cumulative return diagram from {diagram_path}")
+        diagram_path_backtest = [workdir_path / "environment" / "quick_backtest" / "images" / a for a in os.listdir(workdir_path / "environment" / "quick_backtest" / "images") if a.endswith(".png")]
+        diagram_path_signal_research = [workdir_path / "environment" / "signal_research" / "images" / a for a in os.listdir(workdir_path / "environment" / "signal_research" / "images") if a.endswith(".png")]
+        diagram_path = diagram_path_signal_research+diagram_path_backtest
+        for diagram in diagram_path:
+            content.append(ContentPartText(text=f"The latest {diagram.name} diagram is as follows:"))
+            content.append(ContentPartImage(image_url=ImageURL(url=make_file_url(file_path=str(diagram)))))
+
+
+        diagram_message = HumanMessage(content=content)
+        messages.append(diagram_message)
+        logger.info(f"| 🖼️ Attached analysis graphs from {len(diagram_path)} files")
         return messages
 
 

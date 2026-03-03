@@ -54,7 +54,7 @@ def backtest_strategy(
     strategy: bt.Strategy,
     strategy_kwargs: Dict = {},
     commission_kwargs: Dict = {},
-    number_of_factors: int = 2,
+    number_of_signals: int = 3,
 ):
     commission_kwargs: Dict = update_params(COMMISSION, commission_kwargs)
     strategy_kwargs: Dict = update_params(STRATEGY_PARAMS, strategy_kwargs)
@@ -70,8 +70,8 @@ def backtest_strategy(
         strategy_kwargs["hold_num"] = len(code)
 
     
-    signal_factors = [f"factor{i+1}" for i in range(number_of_factors)]
-    required_columns = ["close","signal","vwap"] + signal_factors
+    signals = [f"signal_{i+1}" for i in range(number_of_signals)]
+    required_columns = ["close","vwap"] + signals
 
     df: pd.DataFrame = df.dropna(subset=required_columns)
     bt_engine = BackTesting(**commission_kwargs)
@@ -86,9 +86,16 @@ def backtest_strategy(
     )
     bt_engine.cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name='trades')
     bt_engine.cerebro.addanalyzer(TotalCommission, _name="total_commission")
+    tmp_result = bt_engine.cerebro.run()
 
-    result = bt_engine.cerebro.run()[0]
 
+    try:
+        if not tmp_result:
+            raise RuntimeError("Zero trade were made")
+        result = tmp_result[0]
+    except Exception as e:
+        raise RuntimeError(f"Zero trade were made")
+    
     return result
 
 

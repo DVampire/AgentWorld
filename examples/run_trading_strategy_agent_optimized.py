@@ -24,9 +24,6 @@ from src.agent import acp
 from src.transformation import transformation
 from src.session.types import SessionContext
 from src.optimizer import ReflectionOptimizer
-import shutil
-import os
-import pandas as pd
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -77,7 +74,7 @@ async def main():
     await ecp.initialize(config.env_names)
     logger.info(f"| ✅ Environments initialized: {ecp.list()}")
 
-    env_names = ["signal_research","quickbacktest"]  # 使用信号研究环境的名称
+    env_names = ["signal_research"]  # 使用信号研究环境的名称
     await transformation.transform(type="e2t", env_names=env_names)
     
     # Initialize agents
@@ -101,105 +98,35 @@ async def main():
     # HYPOTHESIS = "Price displacement over 60D interacted with volume intensity ratio; targets potential exhaustion and reversa"
     # task = rf"Implement signal and corresponding strategy using the hypothesis {HYPOTHESIS} and other technical indicators.Try to achieve high win rate. Keep the result one when finished. Clear workdir regularly to delete unnecessary files."
 
-    task = r"""Design or a qualified signal and strategy to beat benchmark 
-    in out-sample test with positive return, and robust again bear, bull and sideways. 
-    Current commison fee is 0.04% per order. Use 2024- mid 2025 for insample test.
-    Clean images regularly.
-    Do version control"""
-
-    evolved_round = 3
-    ctx  = SessionContext()
-
-    memory = []
+    agent = await acp.get("trading_strategy")
+    task = r"Evaluate the traditional momentum signal"
     files = []
-
-    for i in range(1,evolved_round+1):
-        input = {
-        "name": "trading_strategy",
-        "input": {
-            "task": task,
-            "files": files
-        },
-        "ctx": ctx
-        }
-        result = await acp(**input)
-
-        signal_iteration_dir = Path(config.workdir) / "environment"/ "SignalIterations.md"
-        strategy_iteration_dir = Path(config.workdir) / "environment"/ "StrategyIterations.md"
-        backtest_log_dir = Path(config.workdir) / "environment"/ "backtest_log.md"
-        signal_list_dir = Path(config.workdir) / "environment"/ "signals.csv"
-
-        logger.info(f"Round {i} agent response: {result.message}")
-
-        df_signal = pd.read_csv(signal_list_dir) if signal_list_dir.exists() else pd.DataFrame()
-        if not df_signal.empty:
-            df_signal = df_signal.sort_values(by="hit_rate", ascending=False)
-            df_signal = df_signal.drop_duplicates(subset=["signal"], keep="first")
-        
-        signal_in_md = df_signal.to_markdown(index=False) if not df_signal.empty else "No signal generated"
-        df_signal.sort_index().to_csv(signal_list_dir, index=False) if not df_signal.empty else None
-
-        optimzation_task = f"""
-        <input>
-        <agent_memory> {str(memory)} </agent_memory>
-        <task> {task} </task>
-        <previous_response> {result.message} </previous_response>
-        <SignalIterationFile> {str(signal_iteration_dir.read_text()) if signal_iteration_dir.exists() else ""} </SignalIterationFile>
-        <StrategyIterationFile> {str(strategy_iteration_dir.read_text()) if strategy_iteration_dir.exists() else ""} </StrategyIterationFile>
-        <SIGNAL_LIST> {signal_in_md if not df_signal.empty else "No signal generated"} </SIGNAL_LIST>
-        <backtest_log> {str(backtest_log_dir.read_text()) if backtest_log_dir.exists() else ""} </backtest_log> (Just for evaluation, can not modify its format)
-        </input>
-        """
-
-        system_modules = dict(workdir=config.workdir)
-        agent_message_modules = dict(task = optimzation_task)
-        messages = await prompt_manager.get_messages(
-                prompt_name="trading_optimizer_reflection",
-                system_modules=system_modules,
-                agent_modules= agent_message_modules
-            )
+    # Session context
+    ctx = SessionContext()
+     
+    # input = {
+    #     "name": "trading_strategy",
+    #     "input": {
+    #         "task": task,
+    #         "files": files
+    #     },
+    #     "ctx": ctx
+    # }
+    # await acp(**input)
 
 
-        signal_img_folder = Path(config.workdir) / "environment" / "signal_research" / "images"
-        strategy_img_folder = Path(config.workdir) / "environment" / "quick_backtest" / "images"
-
-        response = await model_manager(model="openrouter/claude-sonnet-4.5",messages=messages)
-
-        shutil.rmtree(signal_img_folder, ignore_errors=True)
-        shutil.rmtree(strategy_img_folder, ignore_errors=True)
-        os.makedirs(signal_img_folder, exist_ok=True)
-        os.makedirs(strategy_img_folder, exist_ok=True)
-        os.remove(signal_iteration_dir) if signal_iteration_dir.exists() else None
-        os.remove(strategy_iteration_dir) if strategy_iteration_dir.exists() else None
-        os.remove(backtest_log_dir) if backtest_log_dir.exists() else None
-
-        
-
-        memory.append({
-            "round": i,
-            "task": task,
-            "response": response.message,
-        })
-
-        task = response.message
-        logger.info(f"Round {i} optimization result: {task}")
-
-    else:
-        input = {
-        "name": "trading_strategy",
-        "input": {
-            "task": task,
-            "files": files
-        },
-        "ctx": ctx
-        }
-        result = await acp(**input)
-
-    logger.info(f"Final agent response: {result.message}")
-
-    evaluation_memory = pd.DataFrame(memory)
-    evaluation_memory.to_csv(Path(config.workdir) / "trading_strategy_agent_evaluation.csv", index=False)
-
+    optimizer = ReflectionOptimizer(
+        workdir=config.workdir,
+        prompt_name="reflection_optimizer",
+        model_name="openrouter/gemini-3-flash-preview",
+        memory_name="optimizer_memory_system",
+        optimize_trainable_variables=True,
+        optimize_solution=True
+    )
+    await optimizer.optimize(agent=agent, 
+                             task=task, 
+                             files=files,
+                             ctx = ctx)
     
 if __name__ == "__main__":
     asyncio.run(main())
