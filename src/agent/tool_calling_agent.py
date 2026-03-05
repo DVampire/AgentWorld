@@ -12,6 +12,7 @@ from src.config import config
 from src.logger import logger
 from src.utils import dedent, parse_tool_args
 from src.tool.server import tcp
+from src.skill.server import scp
 from src.environment.server import ecp
 from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
@@ -151,12 +152,12 @@ class ToolCallingAgent(Agent):
         result = None
         reasoning = None
         
-        record_tool = {
+        record_data = {
             "thinking": None,
             "evaluation_previous_goal": None,
             "memory": None,
             "next_goal": None,
-            "tool": [],
+            "actions": [],
         }
         
         try:
@@ -171,75 +172,91 @@ class ToolCallingAgent(Agent):
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            tools = think_output.tool
+            actions = think_output.actions
             
-            # Update record tool
-            record_tool["thinking"] = thinking
-            record_tool["evaluation_previous_goal"] = evaluation_previous_goal
-            record_tool["memory"] = memory
-            record_tool["next_goal"] = next_goal
+            record_data["thinking"] = thinking
+            record_data["evaluation_previous_goal"] = evaluation_previous_goal
+            record_data["memory"] = memory
+            record_data["next_goal"] = next_goal
             
             logger.info(f"| 💭 Thinking: {thinking}")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Tools to execute: {tools}")
+            logger.info(f"| 🔧 Actions to execute: {actions}")
             
-            # Execute tools sequentially
-            tool_results = []
+            # Execute actions sequentially, routing by type
+            action_results = []
             
-            for i, tool in enumerate(tools):
-                logger.info(f"| 📝 Tool {i+1}/{len(tools)}: {tool.name}")
-                
-                # Execute the tool
-                tool_name = tool.name
-                tool_args_str = tool.args
-                if tool_args_str:
-                    tool_args = parse_tool_args(tool_args_str)
+            for i, action in enumerate(actions):
+                action_type = action.type
+                action_name = action.name
+                action_args_str = action.args
+                action_args = parse_tool_args(action_args_str) if action_args_str else {}
+
+                logger.info(f"| 📝 Action {i+1}/{len(actions)}: [{action_type}] {action_name}")
+                logger.info(f"| 📝 Args: {action_args}")
+
+                if action_type == "skill":
+                    # Route to SCP
+                    response = await scp(
+                        name=action_name,
+                        input=action_args,
+                        ctx=ctx,
+                    )
+                    action_result = response.message
+                    action_extra = response.extra if hasattr(response, 'extra') else None
+
+                    logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
+                    logger.info(f"| 📄 Result: {str(action_result)[:500]}")
+
+                    action_dict = action.model_dump()
+                    action_dict["output"] = action_result
+                    action_results.append(action_dict)
+
+                    record_extra = {}
+                    record_extra.update(action_dict)
+                    if action_extra is not None:
+                        record_extra['extra'] = action_extra.model_dump()
+                    record_data["actions"].append(record_extra)
+
                 else:
-                    tool_args = {}
-                
-                logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
-                
-                input = {
-                    "name": tool_name,
-                    "input": tool_args,
-                    "ctx": ctx
-                }
-                tool_response = await tcp(**input)
-                tool_result = tool_response.message
-                tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
-                
-                logger.info(f"| ✅ Tool {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)}")
-                
-                # Update tool with result
-                tool_dict = tool.model_dump()
-                tool_dict["output"] = tool_result
-                tool_results.append(tool_dict)
-                
-                # Update record tool
-                tool_extra_dict = {}
-                tool_extra_dict.update(tool_dict)
-                if tool_extra is not None:
-                    tool_extra_dict['extra'] = tool_extra.model_dump()
-                record_tool["tool"].append(tool_extra_dict)
-                    
-                if tool_name == "done":
-                    done = True
-                    result = tool_result
-                    reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
-                    break
+                    # Route to TCP (default: type == "tool")
+                    tool_response = await tcp(
+                        name=action_name,
+                        input=action_args,
+                        ctx=ctx,
+                    )
+                    action_result = tool_response.message
+                    action_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
+
+                    logger.info(f"| ✅ Tool '{action_name}' completed")
+                    logger.info(f"| 📄 Result: {str(action_result)}")
+
+                    action_dict = action.model_dump()
+                    action_dict["output"] = action_result
+                    action_results.append(action_dict)
+
+                    record_extra = {}
+                    record_extra.update(action_dict)
+                    if action_extra is not None:
+                        record_extra['extra'] = action_extra.model_dump()
+                    record_data["actions"].append(record_extra)
+
+                    if action_name == "done":
+                        done = True
+                        result = action_result
+                        reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
+                        break
             
             event_data = {
                 "thinking": thinking,
                 "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
                 "next_goal": next_goal,
-                "tool": tool_results
+                "actions": action_results
             }
             
-            # Update record tool
             if record is not None:
-                record.tool = record_tool
+                record.tool = record_data
             
             # Get memory system name
             memory_name = self.memory_name

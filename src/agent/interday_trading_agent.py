@@ -78,46 +78,41 @@ class InterdayTradingAgent(Agent):
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            tools = think_output.tool
+            actions = think_output.actions
             
             logger.info(f"| 💭 Thinking: {thinking}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Tools to execute: {len(tools)}")
+            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
             
-            # Execute tools sequentially
-            tool_results = []
+            action_results = []
             
-            for i, tool in enumerate(tools):
-                logger.info(f"| 📝 Tool {i+1}/{len(tools)}: {tool.name}")
+            for i, action in enumerate(actions):
+                action_name = action.name
+                action_args = action.args if action.args else {}
                 
-                # Execute the tool
-                tool_name = tool.name
-                tool_args = tool.args if tool.args else {}
-                
-                logger.info(f"| 📝 Tool Name: {tool_name}, Args: {tool_args}")
+                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action_name}")
+                logger.info(f"| 📝 Args: {action_args}")
                 
                 input = {
-                    "name": tool_name,
-                    "input": tool_args,
+                    "name": action_name,
+                    "input": action_args,
                     "ctx": ctx
                 }
-                tool_response = await tcp(**input)
-                tool_result = tool_response.message
-                tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
+                action_response = await tcp(**input)
+                action_result = action_response.message
+                action_extra = action_response.extra if hasattr(action_response, 'extra') else None
                 
-                logger.info(f"| ✅ Tool {i+1} completed successfully")
-                logger.info(f"| 📄 Results: {str(tool_result)}...")
+                logger.info(f"| ✅ Action {i+1} completed successfully")
+                logger.info(f"| 📄 Results: {str(action_result)}...")
                 
-                # Update tool with result
-                tool_dict = tool.model_dump()
-                tool_dict["output"] = tool_result
-                tool_results.append(tool_dict)
+                action_dict = action.model_dump()
+                action_dict["output"] = action_result
+                action_results.append(action_dict)
                     
-                # Check if trading environment is done
-                if tool_name == "step" and "Environment status: done" in str(tool_result):
+                if action_name == "step" and "Environment status: done" in str(action_result):
                     done = True
-                    result = tool_result
-                    reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                    result = action_result
+                    reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
                     break
             
             event_data = {
@@ -125,7 +120,7 @@ class InterdayTradingAgent(Agent):
                 "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
                 "next_goal": next_goal,
-                "tool": tool_results
+                "actions": action_results
             }
             await memory_manager.add_event(
                 memory_name=self.memory_name,
@@ -166,7 +161,7 @@ class InterdayTradingAgent(Agent):
                 agent_history += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
                 agent_history += f"Memory: {event.data.get('memory', '')}\n"
                 agent_history += f"Next Goal: {event.data.get('next_goal', '')}\n"
-                agent_history += f"Tool Results: {event.data.get('tool', '')}\n"
+                agent_history += f"Action Results: {event.data.get('actions', event.data.get('tool', ''))}\n"
             agent_history += "\n"
             agent_history += f"</step_{event.step_number}>\n"
         

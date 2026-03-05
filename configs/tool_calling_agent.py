@@ -43,6 +43,9 @@ tool_names = [
     # "browser",
     # "plotter",
 ]
+skill_names = [
+    "hello-world",
+]
 
 #-----------------BASH TOOL CONFIG-----------------
 bash_tool.update(

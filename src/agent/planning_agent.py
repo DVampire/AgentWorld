@@ -171,12 +171,12 @@ class PlanningAgent(Agent):
         result = None
         reasoning = None
         
-        record_tool = {
+        record_data = {
             "thinking": None,
             "evaluation_previous_goal": None,
             "memory": None,
             "next_goal": None,
-            "tool": [],
+            "actions": [],
         }
         
         try:
@@ -191,131 +191,114 @@ class PlanningAgent(Agent):
             evaluation_previous_goal = think_output.evaluation_previous_goal
             memory = think_output.memory
             next_goal = think_output.next_goal
-            tools = think_output.tool
+            actions = think_output.actions
             
-            # Update record tool
-            record_tool["thinking"] = thinking
-            record_tool["evaluation_previous_goal"] = evaluation_previous_goal
-            record_tool["memory"] = memory
-            record_tool["next_goal"] = next_goal
+            record_data["thinking"] = thinking
+            record_data["evaluation_previous_goal"] = evaluation_previous_goal
+            record_data["memory"] = memory
+            record_data["next_goal"] = next_goal
             
             logger.info(f"| 💭 Thinking: {thinking[:1000]}...")
             logger.info(f"| 🎯 Next Goal: {next_goal}")
-            logger.info(f"| 🔧 Tools/Agents to execute: {len(tools)}")
+            logger.info(f"| 🔧 Actions to execute: {len(actions)}")
             
-            # Execute tools/agents sequentially
-            tool_results = []
+            action_results = []
             
-            for i, tool in enumerate(tools):
-                logger.info(f"| 📝 Tool/Agent {i+1}/{len(tools)}: {tool.name}")
+            for i, action in enumerate(actions):
+                action_name = action.name
+                action_args = action.args if action.args else {}
                 
-                # Execute the tool or agent
-                tool_name = tool.name
-                tool_args = tool.args if tool.args else {}
+                logger.info(f"| 📝 Action {i+1}/{len(actions)}: {action_name}")
+                logger.info(f"| 📝 Args: {action_args}")
                 
-                logger.info(f"| 📝 Tool/Agent Name: {tool_name}, Args: {tool_args}")
-                
-                # Check if this is an agent call (agents are available as tools through A2T transformation)
-                # Or we can check if it's in the agent list
                 try:
-                    # Try to get agent info to see if this is an agent
-                    agent_info = await acp.get_info(tool_name)
+                    agent_info = await acp.get_info(action_name)
                     if agent_info:
-                        # This is an agent call through ACP
-                        logger.info(f"| 🤖 Calling agent: {tool_name}")
-                        agent_task = tool_args.get("task", "")
-                        agent_files = tool_args.get("files", None)
+                        logger.info(f"| 🤖 Calling agent: {action_name}")
+                        agent_task = action_args.get("task", "")
+                        agent_files = action_args.get("files", None)
                         
                         agent_result = await acp(
-                            name=tool_name,
+                            name=action_name,
                             input={
                                 "task": agent_task,
                                 "files": agent_files
                             }
                         )
                         
-                        # Convert AgentResponse to tool-like result
                         if hasattr(agent_result, 'success'):
-                            tool_result = agent_result.message if agent_result.success else f"Agent call failed: {agent_result.message}"
+                            action_result = agent_result.message if agent_result.success else f"Agent call failed: {agent_result.message}"
                         else:
-                            tool_result = str(agent_result)
+                            action_result = str(agent_result)
                         
                         logger.info(f"| ✅ Agent {i+1} completed successfully")
-                        logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
+                        logger.info(f"| 📄 Results: {str(action_result)[:1000]}...")
                         
-                        # Update tool with result
-                        tool_dict = tool.model_dump()
-                        tool_dict["output"] = tool_result
-                        tool_dict["agent_call"] = True
-                        tool_results.append(tool_dict)
+                        action_dict = action.model_dump()
+                        action_dict["output"] = action_result
+                        action_dict["agent_call"] = True
+                        action_results.append(action_dict)
                         
-                        # Update record tool
-                        tool_extra_dict = {}
-                        tool_extra_dict.update(tool_dict)
-                        tool_extra_dict["agent_call"] = True
-                        record_tool["tool"].append(tool_extra_dict)
+                        record_extra = {}
+                        record_extra.update(action_dict)
+                        record_extra["agent_call"] = True
+                        record_data["actions"].append(record_extra)
                     else:
-                        # This is a regular tool call
                         input = {
-                            "name": tool_name,
-                            "input": tool_args,
+                            "name": action_name,
+                            "input": action_args,
                             "ctx": ctx
                         }
-                        tool_response = await tcp(**input)
-                        tool_result = tool_response.message
-                        tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
+                        action_response = await tcp(**input)
+                        action_result = action_response.message
+                        action_extra = action_response.extra if hasattr(action_response, 'extra') else None
                         
-                        logger.info(f"| ✅ Tool {i+1} completed successfully")
-                        logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
+                        logger.info(f"| ✅ Action {i+1} completed successfully")
+                        logger.info(f"| 📄 Results: {str(action_result)[:1000]}...")
                         
-                        # Update tool with result
-                        tool_dict = tool.model_dump()
-                        tool_dict["output"] = tool_result
-                        tool_results.append(tool_dict)
+                        action_dict = action.model_dump()
+                        action_dict["output"] = action_result
+                        action_results.append(action_dict)
                         
-                        # Update record tool
-                        tool_extra_dict = {}
-                        tool_extra_dict.update(tool_dict)
-                        if tool_extra is not None:
-                            tool_extra_dict['extra'] = tool_extra.model_dump()
-                        record_tool["tool"].append(tool_extra_dict)
+                        record_extra = {}
+                        record_extra.update(action_dict)
+                        if action_extra is not None:
+                            record_extra['extra'] = action_extra.model_dump()
+                        record_data["actions"].append(record_extra)
                         
-                        if tool_name == "done":
+                        if action_name == "done":
                             done = True
-                            result = tool_result
-                            reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                            result = action_result
+                            reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
                             break
                 except Exception as e:
-                    # If agent lookup fails, treat as regular tool
-                    logger.info(f"| 🔧 Treating {tool_name} as regular tool (agent lookup failed: {e})")
+                    logger.info(f"| 🔧 Treating {action_name} as regular tool (agent lookup failed: {e})")
                     input = {
-                        "name": tool_name,
-                        "input": tool_args,
+                        "name": action_name,
+                        "input": action_args,
                         "ctx": ctx
                     }
-                    tool_response = await tcp(**input)
-                    tool_result = tool_response.message
-                    tool_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
+                    action_response = await tcp(**input)
+                    action_result = action_response.message
+                    action_extra = action_response.extra if hasattr(action_response, 'extra') else None
                     
-                    logger.info(f"| ✅ Tool {i+1} completed successfully")
-                    logger.info(f"| 📄 Results: {str(tool_result)[:1000]}...")
+                    logger.info(f"| ✅ Action {i+1} completed successfully")
+                    logger.info(f"| 📄 Results: {str(action_result)[:1000]}...")
                     
-                    # Update tool with result
-                    tool_dict = tool.model_dump()
-                    tool_dict["output"] = tool_result
-                    tool_results.append(tool_dict)
+                    action_dict = action.model_dump()
+                    action_dict["output"] = action_result
+                    action_results.append(action_dict)
                     
-                    # Update record tool
-                    tool_extra_dict = {}
-                    tool_extra_dict.update(tool_dict)
-                    if tool_extra is not None:
-                        tool_extra_dict['extra'] = tool_extra.model_dump()
-                    record_tool["tool"].append(tool_extra_dict)
+                    record_extra = {}
+                    record_extra.update(action_dict)
+                    if action_extra is not None:
+                        record_extra['extra'] = action_extra.model_dump()
+                    record_data["actions"].append(record_extra)
                     
-                    if tool_name == "done":
+                    if action_name == "done":
                         done = True
-                        result = tool_result
-                        reasoning = tool_extra.data.get('reasoning', None) if tool_extra and tool_extra.data else None
+                        result = action_result
+                        reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
                         break
             
             event_data = {
@@ -323,12 +306,11 @@ class PlanningAgent(Agent):
                 "evaluation_previous_goal": evaluation_previous_goal,
                 "memory": memory,
                 "next_goal": next_goal,
-                "tool": tool_results
+                "actions": action_results
             }
             
-            # Update record tool
             if record is not None:
-                record.tool = record_tool
+                record.tool = record_data
             
             # Get memory system name
             memory_name = self.memory_name

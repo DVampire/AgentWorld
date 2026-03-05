@@ -163,10 +163,10 @@ You must ALWAYS respond with a valid JSON in this exact format, DO NOT add any o
   "evaluation_previous_goal": "One-sentence analysis of your last trading action. Clearly state success, failure, or uncertain.",
   "memory": "1-3 sentences of specific memory of this step and overall trading progress. You should put here everything that will help you track progress in future steps.",
   "next_goal": "Based on current market analysis and risk assessment, state your next trading objective in one sentence. Focus on the rationale (trend, risk level, signal strength) rather than the action.",
-  "action": [{"name": "action_name", "args": {action-specific parameters}}, // ... more actions in sequence], the action should be in the <available_actions>.
+  "actions": [{"type": "tool", "name": "action_name", "args": {action-specific parameters}}, // ... more actions in sequence], the action should be in the <available_actions>.
 }
 
-Action list should NEVER be empty.
+Actions list should NEVER be empty.
 </output>
 """
 

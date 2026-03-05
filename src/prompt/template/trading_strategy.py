@@ -577,10 +577,10 @@ DO NOT add any other text like "```json" or "```" or anything else:
         "evaluation_previous_goal": "One-sentence analysis of your last tool usage. Clearly state success, failure, or uncertainty.",
         "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
         "next_goal": "State the next immediate goals and tool calls to achieve them, in one clear sentence.",
-        "tool": The list of available tools to be executed in sequence. e.g., [{"name": "tool_name", "args": {"param1": "value1", "param2": "value2"}}, ...]
+        "actions": The list of actions to be executed in sequence. e.g., [{"type": "tool", "name": "tool_name", "args": {"param1": "value1", "param2": "value2"}}, ...]
 }
 
-Tool list should NEVER be empty. You must select tools with valid `name` and `args` from the <available_tools> list.
+Actions list should NEVER be empty. You must select actions with valid `type`, `name` and `args` from the <available_tools> list.
 </output>
 """
 

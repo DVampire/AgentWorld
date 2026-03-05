@@ -246,9 +246,9 @@ You will be provided with few shot examples of good or bad patterns. Use them as
 - **REQUIRED**: Before calling `done`, call `reformulator` tool to reformulate your answer
 - Example for QA task completion:
 ```json
-"tool": [
-  {"name": "reformulator", "args": {"task": "...", "data": [...]}},
-  {"name": "done", "args": {"result": "..."}}
+"actions": [
+  {"type": "tool", "name": "reformulator", "args": {"task": "...", "data": [...]}},
+  {"type": "tool", "name": "done", "args": {"result": "..."}}
 ]
 ```
 - The `reformulator` tool takes the task and conversation history (`data`) to produce a final, well-formatted answer
@@ -266,9 +266,9 @@ You will be provided with few shot examples of good or bad patterns. Use them as
 - **REQUIRED**: Use the SAME `report_id` for all `report` calls (both "add" and "complete") throughout the task
 - Example for Report task:
 ```json
-"tool": [
-  {"name": "retriever", "args": {"query": "...", "mode": "hybrid", "top_k": 10}},
-  {"name": "report", "args": {"action": "add", "report_id": "esg_analysis_2023", "file_path": "/path/to/retrieval_abc123.md", "content": "## Findings\\n\\n[Your analysis here]..."}}
+"actions": [
+  {"type": "tool", "name": "retriever", "args": {"query": "...", "mode": "hybrid", "top_k": 10}},
+  {"type": "tool", "name": "report", "args": {"action": "add", "report_id": "esg_analysis_2023", "file_path": "/path/to/retrieval_abc123.md", "content": "## Findings\\n\\n[Your analysis here]..."}}
 ]
 ```
 - Note: Extract the `file_path` from the previous tool's response message (e.g., if retriever returns "Report saved to: /path/to/file.md", use that exact path in report's `file_path` parameter)
@@ -331,8 +331,8 @@ You must ALWAYS respond with valid JSON in this exact format:
   "evaluation_previous_goal": "Assessment of last step. For QA tasks: evaluate if you have enough information to answer. For Report tasks: evaluate data quality and documentation status.",
   "memory": "Key information collected and progress toward the goal. For QA tasks: remember key facts needed for the answer. For Report tasks: remember ESG metrics, sources, and trends.",
   "next_goal": "The next step. For QA tasks: describe what information to gather or when you're ready to provide the final answer. For Report tasks: describe what data to retrieve or what analysis to perform.",
-  "tool": [
-    {"name": "tool_name", "args": {tool-specific parameters}}
+  "actions": [
+    {"type": "tool", "name": "tool_name", "args": {tool-specific parameters}}
   ]
 }
 </output>

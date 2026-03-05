@@ -210,13 +210,13 @@ DO NOT add any other text like "```json" or "```" or anything else:
   "evaluation_previous_goal": "One-sentence analysis of your last tool/agent usage. Clearly state success, failure, or uncertainty.",
   "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
   "next_goal": "State the next immediate goals and tool/agent calls to achieve them, in one clear sentence.",
-  "tool": [
-    {"name": "tool_name_or_agent_name", "args": {tool-specific or agent-specific parameters}}
-    // ... more tools/agents in sequence
+  "actions": [
+    {"type": "tool", "name": "tool_name_or_agent_name", "args": {tool-specific or agent-specific parameters}}
+    // ... more actions in sequence
   ]
 }
 
-Tool list should NEVER be empty.
+Actions list should NEVER be empty.
 </output>
 """
 

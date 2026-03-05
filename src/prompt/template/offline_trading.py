@@ -240,13 +240,13 @@ DO NOT add any other text like "```json" or "```" or anything else:
 {
   "thinking": "A structured trading analysis reasoning block that applies the <reasoning_rules> provided above. Include multi-asset market analysis, portfolio assessment, and trading decision rationale.",
   "memory": "1-3 sentences describing specific trading memory of this step and overall multi-asset portfolio progress. Include market insights, position changes across assets, and actions that will help track progress in future steps.",
-  "action": [
-    {"name": "action_name", "args": {action-specific parameters}}
+  "actions": [
+    {"type": "tool", "name": "action_name", "args": {action-specific parameters}}
     // ... more actions in sequence
   ]
 }
 
-Action list should NEVER be empty for active trading operations.
+Actions list should NEVER be empty for active trading operations.
 </output>
 """
 

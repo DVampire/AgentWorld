@@ -19,6 +19,7 @@ from src.version import version_manager
 from src.prompt import prompt_manager
 from src.memory import memory_manager
 from src.tool import tcp
+from src.skill import scp
 from src.environment import ecp
 from src.agent import acp
 from src.transformation import transformation
@@ -69,6 +70,12 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| ✅ Tools initialized: {await tcp.list()}")
     
+    # Initialize skills
+    logger.info("| 🎯 Initializing skills...")
+    skill_names = getattr(config, 'skill_names', None)
+    await scp.initialize(skill_names=skill_names)
+    logger.info(f"| ✅ Skills initialized: {await scp.list()}")
+
     # Initialize environments
     logger.info("| 🎮 Initializing environments...")
     await ecp.initialize(config.env_names)

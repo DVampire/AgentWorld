@@ -31,6 +31,7 @@ INPUT = """
 - <agent_context>: Describes your current internal state and identity, including your current task, relevant history, memory, and ongoing plans toward achieving your goals. This context represents what you currently know and intend to do.
 - <environment_context>: Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.
 - <tool_context>: Describes the available tools, their purposes, usage conditions, and current operational status.
+- <skill_context>: Describes the available skills with their instructions, workflows, and resources. Skills provide domain-specific knowledge and step-by-step guidance.
 - <examples>: Provides few-shot examples of good or bad reasoning and tool-use patterns. Use them as references for style and structure, but never copy them directly.
 </input>
 """
@@ -133,6 +134,17 @@ You will be provided with the available tools in <tool_context>.
 </tool_context_rules>
 """
 
+SKILL_CONTEXT_RULES = """
+<skill_context_rules>
+Skills provide domain-specific knowledge, step-by-step workflows, and utility scripts.
+- <skill_context> only contains a brief summary (name, description, file paths) for each loaded skill.
+- When a task matches a skill's description, read the skill's SKILL.md file to get the full instructions and workflow before proceeding.
+- Skill scripts can be executed via tools (e.g., bash or python_interpreter) using the absolute paths provided.
+- Reference files (examples.md, reference.md, etc.) can be read on demand for additional detail.
+- If no skills are loaded, ignore <skill_context>.
+</skill_context_rules>
+"""
+
 EXAMPLE_RULES = """
 <example_rules>
 You will be provided with few shot examples of good or bad patterns. Use them as reference but never copy them directly.
@@ -170,14 +182,17 @@ You must ALWAYS respond with a valid JSON in this exact format.
 DO NOT add any other text like "```json" or "```" or anything else:
 
 {
-        "thinking": "A structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
-        "evaluation_previous_goal": "One-sentence analysis of your last tool usage. Clearly state success, failure, or uncertainty.",
-        "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
-        "next_goal": "State the next immediate goals and tool calls to achieve them, in one clear sentence.",
-        "tool": The list of available tools to be executed in sequence. e.g., [{"name": "tool_name", "args": {"param1": "value1", "param2": "value2"}}, ...]
+    "thinking": "A structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
+    "evaluation_previous_goal": "One-sentence analysis of your last actions. Clearly state success, failure, or uncertainty.",
+    "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
+    "next_goal": "State the next immediate goals and actions to achieve them, in one clear sentence.",
+    "actions": The list of actions to execute in sequence. Each action has a "type" ("tool" or "skill"), a "name", and "args" (JSON string). e.g., [{"type": "tool", "name": "done", "args": "{\"result\": \"D\"}"}, {"type": "skill", "name": "hello-world", "args": "{\"name\": \"Alice\"}"}]
 }
 
-Tool list should NEVER be empty. You must select tools with valid `name` and `args` from the <available_tools> list.
+Actions list should NEVER be empty. Each action must have a valid "type", "name", and "args".
+- For tool actions: use "type": "tool" and select a tool from <available_tools>.
+- For skill actions: use "type": "skill" and select a skill from <skill_context>. The skill's SKILL.md will be read and interpreted by the system.
+- Actions are executed sequentially in the order listed.
 </output>
 """
 
@@ -189,6 +204,7 @@ SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_context_rules }}
 {{ environment_context_rules }}
 {{ tool_context_rules }}
+{{ skill_context_rules }}
 {{ example_rules }}
 {{ reasoning_rules }}
 {{ output }}
@@ -199,6 +215,7 @@ AGENT_MESSAGE_PROMPT_TEMPLATE = """
 {{ agent_context }}
 {{ environment_context }}
 {{ tool_context }}
+{{ skill_context }}
 {{ examples }}
 """
 
@@ -265,6 +282,14 @@ SYSTEM_PROMPT = {
             "template": None,
             "variables": TOOL_CONTEXT_RULES
         },
+        "skill_context_rules": {
+            "name": "skill_context_rules",
+            "type": "system_prompt",
+            "description": "Provides guidelines for using loaded skills, their workflows, and utility scripts.",
+            "require_grad": False,
+            "template": None,
+            "variables": SKILL_CONTEXT_RULES
+        },
         "example_rules": {
             "name": "example_rules",
             "type": "system_prompt",
@@ -319,6 +344,14 @@ AGENT_MESSAGE_PROMPT = {
             "name": "tool_context",
             "type": "agent_message_prompt",
             "description": "Describes the available tools, their purposes, usage conditions, and current operational status.",
+            "require_grad": False,
+            "template": None,
+            "variables": None
+        },
+        "skill_context": {
+            "name": "skill_context",
+            "type": "agent_message_prompt",
+            "description": "Describes the available skills with their instructions, workflows, and resources.",
             "require_grad": False,
             "template": None,
             "variables": None

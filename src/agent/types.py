@@ -24,6 +24,7 @@ from src.message.types import HumanMessage, Message, SystemMessage
 from src.model import model_manager
 from src.prompt import prompt_manager
 from src.tool.server import tcp
+from src.skill.server import scp
 from src.utils import (
     dedent,
     get_file_info,
@@ -167,49 +168,56 @@ class AgentConfig(BaseModel):
         return self.__str__()
 
 
-def format_tools(tools: List[BaseModel]) -> str:
-    """Format tools as a Markdown table using pandas."""
+def format_actions(actions: List[BaseModel]) -> str:
+    """Format actions (tool/skill calls) as a Markdown table using pandas."""
     rows = []
-    for tool in tools:
-        if isinstance(tool.args, dict):
-            args_str = ", ".join(f"{k}={v}" for k, v in tool.args.items())
+    for action in actions:
+        if isinstance(action.args, dict):
+            args_str = ", ".join(f"{k}={v}" for k, v in action.args.items())
         else:
-            args_str = str(tool.args)
+            args_str = str(action.args)
 
         rows.append({
-            "Tool": tool.name,
+            "Type": action.type if hasattr(action, "type") else "tool",
+            "Name": action.name,
             "Args": args_str,
-            "Output": tool.output if tool.output is not None else None
+            "Output": action.output if hasattr(action, "output") and action.output is not None else None,
         })
-    
+
     df = pd.DataFrame(rows)
-    
+
     if df["Output"].isna().all():
         df = df.drop(columns=["Output"])
     else:
         df["Output"] = df["Output"].fillna("None")
-    
+
     return df.to_markdown(index=True)
 
 
-class ToolInputArgs(BaseModel):
-    name: str = Field(description="The name of the tool.")
-    args: str = Field(description='The arguments of the tool as a JSON string. Must be a valid JSON object string, not empty. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
+class ActionInputArgs(BaseModel):
+    type: str = Field(default="tool", description='The type of this action: "tool" or "skill".')
+    name: str = Field(description="The name of the tool or skill.")
+    args: str = Field(description='The arguments as a JSON string. Must be a valid JSON object string. e.g., "{\"result\": \"D\", \"reasoning\": \"Step 1: ...\"}"')
 
-# -------- Dynamically generate ThinkOutput --------
+
 class ThinkOutput(BaseModel):
     thinking: str = Field(
         description="A structured <think>-style reasoning block."
     )
     evaluation_previous_goal: str = Field(
-        description="One-sentence analysis of your last tool call."
+        description="One-sentence analysis of your last action."
     )
     memory: str = Field(description="1-3 sentences of specific memory.")
     next_goal: str = Field(
-        description="State the next immediate goals and tool calls."
+        description="State the next immediate goals and actions."
     )
-    tool: List[ToolInputArgs] = Field(
-        description='The list of tool calls. args must be a JSON string, not an object. e.g., [{"name": "done", "args": "{\"result\": \"D\", \"reasoning\": \"The answer is D because...\"}"}]'
+    actions: List[ActionInputArgs] = Field(
+        description=(
+            'The list of actions (tool or skill calls) to execute in sequence. '
+            'Each action has a "type" ("tool" or "skill"), a "name", and "args" (JSON string). '
+            'e.g., [{"type": "tool", "name": "done", "args": "{\"result\": \"D\"}"}, '
+            '{"type": "skill", "name": "hello-world", "args": "{\"name\": \"Alice\"}"}]'
+        )
     )
 
     def __str__(self) -> str:
@@ -218,7 +226,7 @@ class ThinkOutput(BaseModel):
             f"Evaluation of Previous Goal: {self.evaluation_previous_goal}\n"
             f"Memory: {self.memory}\n"
             f"Next Goal: {self.next_goal}\n"
-            f"Tool:\n{format_tools(self.tool)}\n"
+            f"Actions:\n{format_actions(self.actions)}\n"
         )
 
     def __repr__(self) -> str:
@@ -385,7 +393,7 @@ class Agent(BaseModel):
                     memory += f"Evaluation of Previous Step: {event.data.get('evaluation_previous_goal', '')}\n"
                     memory += f"Memory: {event.data.get('memory', '')}\n"
                     memory += f"Next Goal: {event.data.get('next_goal', '')}\n"
-                    memory += f"Tool Results: {event.data.get('tool', '')}\n"
+                    memory += f"Action Results: {event.data.get('actions', event.data.get('tool', ''))}\n"
                 memory += "\n"
                 memory += f"</step_{event.step_number}>\n"
             memory += "</agent_history>"
@@ -498,6 +506,17 @@ class Agent(BaseModel):
             "tool_context": tool_context,
         }
 
+    async def _get_skill_context(self, ctx: SessionContext, **kwargs) -> Dict[str, Any]:
+        """Get the skill context from loaded skills via SCP."""
+        skill_content = await scp.get_context()
+        if not skill_content:
+            skill_context = "<skill_context>[No skills loaded.]</skill_context>\n"
+        else:
+            skill_context = f"<skill_context>\n{skill_content}\n</skill_context>"
+        return {
+            "skill_context": skill_context,
+        }
+
     async def _get_messages(self, 
                             task: str, 
                             ctx: SessionContext,
@@ -511,6 +530,7 @@ class Agent(BaseModel):
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx))
         agent_message_modules.update(await self._get_environment_context(ctx=ctx))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
+        agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         
         messages = await prompt_manager.get_messages(
             prompt_name=self.prompt_name,
@@ -553,6 +573,7 @@ __all__ = [
     "ACPRequest",
     "ACPResponse",
     "AgentConfig",
+    "ActionInputArgs",
     "Agent",
     "AgentResponse",
     "ThinkOutput",
