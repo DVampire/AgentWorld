@@ -1,7 +1,8 @@
 """SCP Server — Skill Context Protocol.
 
 Server implementation that mirrors the TCP (Tool Context Protocol) pattern,
-providing a unified interface for skill discovery, loading, and context injection.
+providing a unified interface for skill discovery, loading, registration,
+update, and execution.
 """
 
 import os
@@ -63,6 +64,111 @@ class SCPServer(BaseModel):
             await self.skill_context_manager.cleanup()
 
     # ------------------------------------------------------------------
+    # Register / Update / Unregister / Copy / Restore
+    # ------------------------------------------------------------------
+
+    async def register(
+        self,
+        skill_dir: str,
+        override: bool = False,
+        version: Optional[str] = None,
+    ) -> SkillConfig:
+        """Register a skill from a directory containing SKILL.md.
+
+        Args:
+            skill_dir: Path to the skill directory.
+            override: If True, overwrite an existing skill with the same name.
+            version: Explicit version string.
+
+        Returns:
+            The registered SkillConfig.
+        """
+        return await self.skill_context_manager.register(
+            skill_dir=skill_dir,
+            override=override,
+            version=version,
+        )
+
+    async def update(
+        self,
+        name: str,
+        skill_dir: Optional[str] = None,
+        new_version: Optional[str] = None,
+        description: Optional[str] = None,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SkillConfig:
+        """Update an existing skill and create a new version.
+
+        Args:
+            name: Skill name.
+            skill_dir: If provided, re-parse this directory.
+            new_version: Explicit new version string.
+            description: Override description.
+            content: Override SKILL.md body content.
+            metadata: Override metadata dict.
+
+        Returns:
+            Updated SkillConfig.
+        """
+        return await self.skill_context_manager.update(
+            name=name,
+            skill_dir=skill_dir,
+            new_version=new_version,
+            description=description,
+            content=content,
+            metadata=metadata,
+        )
+
+    async def unregister(self, name: str) -> bool:
+        """Remove a skill.
+
+        Args:
+            name: Skill name.
+
+        Returns:
+            True if removed, False if not found.
+        """
+        return await self.skill_context_manager.unregister(name)
+
+    async def copy(
+        self,
+        name: str,
+        new_name: Optional[str] = None,
+        new_version: Optional[str] = None,
+        new_skill_dir: Optional[str] = None,
+    ) -> SkillConfig:
+        """Copy an existing skill, optionally under a new name.
+
+        Args:
+            name: Source skill name.
+            new_name: Name for the copy.
+            new_version: Version for the copy.
+            new_skill_dir: If provided, physically copies the skill directory.
+
+        Returns:
+            New SkillConfig.
+        """
+        return await self.skill_context_manager.copy(
+            name=name,
+            new_name=new_name,
+            new_version=new_version,
+            new_skill_dir=new_skill_dir,
+        )
+
+    async def restore(self, name: str, version: str) -> Optional[SkillConfig]:
+        """Restore a specific version of a skill from history.
+
+        Args:
+            name: Skill name.
+            version: Version string to restore.
+
+        Returns:
+            Restored SkillConfig, or None if not found.
+        """
+        return await self.skill_context_manager.restore(name, version)
+
+    # ------------------------------------------------------------------
     # Query API
     # ------------------------------------------------------------------
 
@@ -83,10 +189,7 @@ class SCPServer(BaseModel):
     # ------------------------------------------------------------------
 
     async def get_context(self, skill_names: Optional[List[str]] = None) -> str:
-        """Build the skill context string for prompt injection.
-
-        This is the primary method used by the agent to obtain skill instructions.
-        """
+        """Build the skill context string for prompt injection."""
         return await self.skill_context_manager.get_context(skill_names=skill_names)
 
     async def get_contract(self) -> str:
@@ -107,12 +210,9 @@ class SCPServer(BaseModel):
     ) -> SkillResponse:
         """Execute a skill by name.
 
-        Reads the skill's SKILL.md, asks an LLM to interpret its instructions
-        with the given input, and returns the result.
-
         Args:
             name: Skill name.
-            input: User-provided arguments for the skill.
+            input: User-provided arguments.
             model_name: LLM model override.
             ctx: Session context.
         """
@@ -125,5 +225,5 @@ class SCPServer(BaseModel):
         )
 
 
-# Global SCP server instance (mirrors the global `tcp` pattern)
+# Global SCP server instance
 scp = SCPServer()
