@@ -9,6 +9,7 @@ from .default_tools import (WebFetcherTool,
 from .workflow_tools import (BrowserTool,
                             DeepResearcherTool,
                             DeepAnalyzerTool,
+                            SkillGeneratorTool,
                             TodoTool)
 from .mcp_tools import MCPImportTool
 from .esg_tools import (RetrieverTool,
@@ -35,6 +36,7 @@ __all__ = [
     "BrowserTool",
     "DeepResearcherTool",
     "DeepAnalyzerTool",
+    "SkillGeneratorTool",
     "MCPImportTool",
     "RetrieverTool",
     "PlotterTool",

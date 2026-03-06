@@ -9,6 +9,7 @@ from .deep_researcher import DeepResearcherTool
 from .deep_analyzer import DeepAnalyzerTool
 from .reporter import ReporterTool
 from .tool_generator import ToolGeneratorTool
+from .skill_generator import SkillGeneratorTool
 from .todo import TodoTool
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "DeepAnalyzerTool",
     "ReporterTool",
     "ToolGeneratorTool",
+    "SkillGeneratorTool",
     "TodoTool",
 ]
