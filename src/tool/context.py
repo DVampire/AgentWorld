@@ -1271,6 +1271,11 @@ class ToolContextManager(BaseModel):
         
         tool_info = await self.get_info(name)
         
+        if tool_info is None:
+            error_msg = f"Tool '{name}' is not registered. Available tools: {list(self._tool_configs.keys())}"
+            logger.error(f"| ❌ {error_msg}")
+            return ToolResponse(success=False, message=error_msg)
+        
         version = tool_info.version
         tool_instance = tool_info.instance
         logger.info(f"| ✅ Using tool {name}@{version}")
