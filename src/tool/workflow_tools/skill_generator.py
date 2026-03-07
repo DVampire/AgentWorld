@@ -107,6 +107,11 @@ _FENCE_PATTERN = re.compile(r"^```[a-zA-Z]*\s*\n?", re.MULTILINE)
 _FENCE_TAIL_PATTERN = re.compile(r"\n?```\s*$")
 
 
+def _prefixed(prefix: str, filename: str) -> str:
+    """Ensure *filename* has exactly one leading *prefix* (e.g. 'scripts/')."""
+    return filename if filename.startswith(prefix) else f"{prefix}{filename}"
+
+
 class _BaseFileGenerator:
     """Shared LLM helper and JSON parser for all generators."""
 
@@ -151,8 +156,8 @@ class SkillMdGenerator(_BaseFileGenerator):
     """Generates SKILL.md with YAML frontmatter and full instructions."""
 
     async def generate(self, spec: SkillSpecification) -> List[SkillFileContent]:
-        scripts_ref = "\n".join(f"  - scripts/{s.filename}: {s.purpose}" for s in spec.scripts) or "  (none)"
-        resources_ref = "\n".join(f"  - resources/{r.filename}: {r.purpose}" for r in spec.resources) or "  (none)"
+        scripts_ref = "\n".join(f"  - {_prefixed('scripts/', s.filename)}: {s.purpose}" for s in spec.scripts) or "  (none)"
+        resources_ref = "\n".join(f"  - {_prefixed('resources/', r.filename)}: {r.purpose}" for r in spec.resources) or "  (none)"
 
         content = await self._call_llm(
             system_prompt=dedent("""You are an expert at writing SKILL.md files for AI agent skills.
@@ -237,7 +242,7 @@ class ScriptsGenerator(_BaseFileGenerator):
             return []
 
         scripts_desc = "\n".join(f"- {s.filename}: {s.purpose}" for s in spec.scripts)
-        resources_ref = "\n".join(f"- resources/{r.filename}: {r.purpose}" for r in spec.resources) or "(none)"
+        resources_ref = "\n".join(f"- {_prefixed('resources/', r.filename)}: {r.purpose}" for r in spec.resources) or "(none)"
 
         raw = await self._call_llm(
             system_prompt=dedent("""You are an expert Python developer. Generate complete, production-ready
@@ -330,8 +335,8 @@ class DocsGenerator(_BaseFileGenerator):
         if not docs_to_gen:
             return []
 
-        scripts_ref = "\n".join(f"- scripts/{s.filename}: {s.purpose}" for s in spec.scripts) or "(none)"
-        resources_ref = "\n".join(f"- resources/{r.filename}: {r.purpose}" for r in spec.resources) or "(none)"
+        scripts_ref = "\n".join(f"- {_prefixed('scripts/', s.filename)}: {s.purpose}" for s in spec.scripts) or "(none)"
+        resources_ref = "\n".join(f"- {_prefixed('resources/', r.filename)}: {r.purpose}" for r in spec.resources) or "(none)"
 
         raw = await self._call_llm(
             system_prompt=dedent("""You are an expert technical writer. Generate documentation files
@@ -643,17 +648,15 @@ class SkillGeneratorTool(Tool):
         ))
 
         for s in spec.scripts:
-            fname = s.filename if s.filename.startswith("scripts/") else f"scripts/{s.filename}"
             files.append(SkillFilePlan(
-                filename=fname,
+                filename=_prefixed("scripts/", s.filename),
                 purpose=s.purpose,
                 generator="ScriptsGenerator",
             ))
 
         for r in spec.resources:
-            fname = r.filename if r.filename.startswith("resources/") else f"resources/{r.filename}"
             files.append(SkillFilePlan(
-                filename=fname,
+                filename=_prefixed("resources/", r.filename),
                 purpose=r.purpose,
                 generator="ResourcesGenerator",
             ))
@@ -854,11 +857,11 @@ class SkillGeneratorTool(Tool):
                     errors.append(f"Invalid JSON in {f.filename}: {e}")
 
         for s in spec.scripts:
-            fname = s.filename if s.filename.startswith("scripts/") else f"scripts/{s.filename}"
+            fname = _prefixed("scripts/", s.filename)
             if fname not in filenames:
                 warnings.append(f"Specified script not generated: {fname}")
         for r in spec.resources:
-            fname = r.filename if r.filename.startswith("resources/") else f"resources/{r.filename}"
+            fname = _prefixed("resources/", r.filename)
             if fname not in filenames:
                 warnings.append(f"Specified resource not generated: {fname}")
 
