@@ -96,7 +96,7 @@ async def main():
     # task = """Where were the Vietnamese specimens described by Kuznetzov in Nedoshivina's 2010 paper eventually deposited? Just give me the city name without abbreviations."""
     # task = "Write a mini game about a cat that can fly and fight enemies, and then push it to github."
     # task = "Generate an add two numbers skill to add 1 and 2 and return the result."
-    task = "开启一个AI能力自博弈讨论，讨论内容为: 覆盖对象为 AI 当前已掌握或在未来1至10年内可预期掌握的能力，在特定任务上已达到或超越人类平均水平，或正在快速逼近该门槛。覆盖范围横跨 AI 在不同行业、不同任务类型中的表现水平与发展趋势，重点追踪 AI 能力的边界变化——既记录 AI 的强势领域，也记录其当前的局限地带。"
+    task = "开启一个AI能力自博弈讨论，讨论主题和行业是：AI在生物医药行业的应用。"
     files = []
     
     logger.info(f"| 📋 Task: {task}")

@@ -44,6 +44,7 @@ class AICapabilityItem(BaseModel):
     boundary_description: str = Field(default="", description="能力边界描述：AI 能做什么、不能做什么的分界线在哪")
     trend: str = Field(description="发展趋势描述")
     external_factors: List[str] = Field(default_factory=list, description="影响发展的外部因素（监管/算力/数据/伦理等）")
+    description: str = Field(default="", description="约200词的详细描述，综合概述该能力的现状、边界、趋势与关键挑战")
     confidence: float = Field(description="共识置信度 0-1")
 
 
@@ -191,6 +192,7 @@ class DebateAgent:
                     "limitations": ["相对人类的局限"],
                     "trend": "发展趋势描述",
                     "external_factors": ["监管/算力/数据/伦理等外部影响因素"],
+                    "description": "约200词的详细描述，综合概述该能力的现状、边界、趋势与关键挑战",
                     "reasoning": "综合分析理由"
                 }}
             ],
@@ -392,6 +394,7 @@ class DebateManager:
                     "boundary_description": "AI能做什么、做不到什么的分界线",
                     "trend": "发展趋势",
                     "external_factors": ["外部影响因素1"],
+                    "description": "约200词的综合描述：该能力的现状、边界、趋势与关键挑战",
                     "confidence": 0.8
                 }}
             ],
