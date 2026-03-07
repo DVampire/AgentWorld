@@ -33,11 +33,8 @@ agent_names = [
     "tool_calling"
 ]
 tool_names = [
-    'bash',
-    'python_interpreter',
     'done',
     'todo',
-    "skill_generator",
     "human_capability_debate",
 ]
 skill_names = [

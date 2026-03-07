@@ -498,8 +498,8 @@ class DebateManager:
                     lines.append(f"    因果链: {item.why_reshaped[:100]}{'...' if len(item.why_reshaped) > 100 else ''}")
                 if item.scarcity_driver:
                     lines.append(f"    稀缺性: {item.scarcity_driver[:80]}{'...' if len(item.scarcity_driver) > 80 else ''}")
-                if item.evidence:
-                    lines.append(f"    证据: {'; '.join(item.evidence[:3])}")
+                if item.real_world_examples:
+                    lines.append(f"    现实案例: {'; '.join(item.real_world_examples[:3])}")
                 lines.append(f"    置信度: {item.confidence}")
 
         if summary.divergence_points:

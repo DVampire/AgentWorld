@@ -35,16 +35,8 @@ agent_names = [
     "tool_calling"
 ]
 tool_names = [
-    'bash',
-    'python_interpreter',
     'done',
     'todo',
-    # 'mdify',
-    # "deep_analyzer",
-    # "deep_researcher",
-    # "browser",
-    # "plotter",
-    "skill_generator",
     "ai_capability_debate",
 ]
 skill_names = [
