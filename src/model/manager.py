@@ -115,6 +115,38 @@ class ModelManager:
                 "reasoning": self.default_reasoning,
                 "max_output_tokens": self.max_tokens,
                 "fallback_model": "openai/gpt-5.1",
+            },
+            {
+                "model_name": "openai/gpt-5.2",
+                "model_type": "responses",
+                "model_id": "gpt-5.1",
+                "reasoning": self.default_reasoning,
+                "max_output_tokens": self.max_tokens,
+                "fallback_model": "openai/gpt-5",
+            },
+            {
+                "model_name": "openai/gpt-5.3",
+                "model_type": "responses",
+                "model_id": "gpt-5.3",
+                "reasoning": self.default_reasoning,
+                "max_output_tokens": self.max_tokens,
+                "fallback_model": "openai/gpt-5",
+            },
+            {
+                "model_name": "openai/gpt-5.4",
+                "model_type": "responses",
+                "model_id": "gpt-5.4",
+                "reasoning": self.default_reasoning,
+                "max_output_tokens": self.max_tokens,
+                "fallback_model": "openai/gpt-5",
+            },
+            {
+                "model_name": "openai/gpt-5.4-pro",
+                "model_type": "responses",
+                "model_id": "gpt-5.4-pro",
+                "reasoning": self.default_reasoning,
+                "max_output_tokens": self.max_tokens,
+                "fallback_model": "openai/gpt-5",
             }
         ]
         
@@ -286,6 +318,45 @@ class ModelManager:
                 "fallback_model": "openrouter/o3",
             },
             {
+                "model_name": "openrouter/gpt-5.3",
+                "model_id": "openai/gpt-5.3",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/gpt-5.4",
+                "model_id": "openai/gpt-5.4",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/gpt-5.4-pro",
+                "model_id": "openai/gpt-5.4-pro",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
                 "model_name": "openrouter/o3",
                 "model_id": "openai/o3",
                 "model_type": "chat/completions",
@@ -377,6 +448,32 @@ class ModelManager:
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/o3",
             },
+            {
+                "model_name": "openrouter/claude-sonnet-4.6",
+                "model_id": "anthropic/claude-sonnet-4.6",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
+            {
+                "model_name": "openrouter/claude-opus-4.6",
+                "model_id": "anthropic/claude-opus-4.6",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/o3",
+            },
             # Gemini models for chat, vision, audio, video, pdf, etc.
             {
                 "model_name": "openrouter/gemini-2.5-flash",
@@ -408,6 +505,19 @@ class ModelManager:
                 "model_name": "openrouter/gemini-3-pro-preview",
                 "model_type": "chat/completions",
                 "model_id": "google/gemini-3-pro-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-2.5-flash",
+            },
+            {
+                "model_name": "openrouter/gemini-3.1-pro-preview",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3.1-pro-preview",
                 "reasoning": {
                     "reasoning": {
                         "enabled": True

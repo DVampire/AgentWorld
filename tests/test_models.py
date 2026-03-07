@@ -41,12 +41,13 @@ async def test_chat():
     logger.info(f"| Testing chat with different models")
     models = [
         # OpenAI models
-        "openrouter/gpt-4o",
+        # "openrouter/gpt-4o",
         # "openrouter/gpt-4.1",
         # "openrouter/gpt-5",
         # "openrouter/gpt-5.1",
         # "openrouter/gpt-5.2",
         # "openrouter/o3",
+        "openrouter/gpt-5.4-pro",
         # "openai/gpt-4o",
         # "openai/gpt-4.1",
         # "openai/gpt-5",
@@ -60,18 +61,25 @@ async def test_chat():
         # "openrouter/claude-opus-4",
         # "openrouter/claude-sonnet-4.5",
         # "openrouter/claude-opus-4.5",
+        "openrouter/claude-sonnet-4.6",
+        "openrouter/claude-opus-4.6",
         # "anthropic/claude-sonnet-3.7",
         # "anthropic/claude-sonnet-4",
         # "anthropic/claude-sonnet-4.5",
+        
         
         # Gemini models
         # "openrouter/gemini-2.5-flash",
         # "openrouter/gemini-2.5-pro",
         # "openrouter/gemini-3-flash-preview",
         # "openrouter/gemini-3-pro-preview",
+        "openrouter/gemini-3.1-pro-preview",
         # "google/gemini-2.5-flash",
         # "google/gemini-2.5-pro",
         # "google/gemini-3-pro-preview",
+        
+        # Grok models
+        "openrouter/grok-4.1-fast",
     ]
     
     image_url = make_file_url(file_path=assemble_project_path("tests/files/pokemon.jpg"))
@@ -371,8 +379,8 @@ async def main():
     await tcp.initialize(tool_names=config.tool_names)
     logger.info(f"| Tools initialized: {await tcp.list()}")
 
-    # await test_chat()
-    await test_response_format()
+    await test_chat()
+    # await test_response_format()
     # await test_tool_calling()
     # await test_transcription()
     # await test_embedding()
