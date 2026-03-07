@@ -10,6 +10,7 @@ with read_base():
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
     from .tools.skill_generator import skill_generator_tool
+    from .tools.ai_capability_debate import ai_capability_debate_tool
     from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
@@ -44,6 +45,7 @@ tool_names = [
     # "browser",
     # "plotter",
     "skill_generator",
+    "ai_capability_debate",
 ]
 skill_names = [
     "hello-world",
@@ -88,6 +90,17 @@ plotter_tool.update(
 skill_generator_tool.update(
     model_name="openrouter/gemini-3-flash-preview",
     base_dir="skill",
+)
+#-----------------AI CAPABILITY DEBATE TOOL CONFIG-----------------
+ai_capability_debate_tool.update(
+    model_name="openrouter/gemini-3-flash-preview",
+    agent_models=[
+        "openrouter/gemini-3-flash-preview",
+        "openrouter/gpt-5.2",
+        "openrouter/claude-sonnet-4.5",
+        "openrouter/grok-4.1-fast",
+    ],
+    base_dir="tool/ai_capability_debate",
 )
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(

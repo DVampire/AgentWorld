@@ -515,7 +515,7 @@ class AICapabilityDebateTool(Tool):
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
 
-    manager_model: str = Field(
+    model_name: str = Field(
         default="openrouter/gpt-5.4-pro",
         description="Manager 使用的模型。",
     )
@@ -523,16 +523,16 @@ class AICapabilityDebateTool(Tool):
         default_factory=lambda: list(_DEFAULT_AGENT_MODELS),
         description="参与讨论的 Agent 模型列表。",
     )
-    output_dir: str = Field(
+    base_dir: str = Field(
         default="workdir/ai_capability_debate",
         description="结果输出目录。",
     )
 
     def __init__(
         self,
-        manager_model: Optional[str] = None,
+        model_name: Optional[str] = None,
         agent_models: Optional[List[str]] = None,
-        output_dir: Optional[str] = None,
+        base_dir: Optional[str] = None,
         require_grad: bool = False,
         **kwargs,
     ):
@@ -540,19 +540,19 @@ class AICapabilityDebateTool(Tool):
 
         from src.utils import assemble_project_path
 
-        if manager_model is not None:
-            self.manager_model = manager_model
+        if model_name is not None:
+            self.model_name = model_name
         if agent_models is not None:
             self.agent_models = agent_models
 
-        if output_dir is not None:
-            self.output_dir = assemble_project_path(output_dir)
-        elif hasattr(self, "output_dir"):
-            self.output_dir = assemble_project_path(self.output_dir)
+        if base_dir is not None:
+            self.base_dir = assemble_project_path(base_dir)
+        elif hasattr(self, "base_dir"):
+            self.base_dir = assemble_project_path(self.base_dir)
         else:
-            self.output_dir = assemble_project_path("workdir/ai_capability_debate")
+            self.base_dir = assemble_project_path("workdir/ai_capability_debate")
 
-        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.base_dir, exist_ok=True)
 
     # ------------------------------------------------------------------
     # 主工作流
@@ -568,7 +568,7 @@ class AICapabilityDebateTool(Tool):
         max_rounds = min(max_rounds, _MAX_ROUNDS_LIMIT)
 
         try:
-            manager = DebateManager(model_name=self.manager_model)
+            manager = DebateManager(model_name=self.model_name)
             agents = [
                 DebateAgent(model_name=m, agent_id=f"agent_{i}")
                 for i, m in enumerate(self.agent_models)
@@ -583,6 +583,7 @@ class AICapabilityDebateTool(Tool):
             discussion_log: List[Dict[str, Any]] = []
             previous_summaries: List[str] = []
             final_capabilities: List[AICapabilityItem] = []
+            output_path = self._get_result_path(proposal.topic)
 
             for round_num in range(1, max_rounds + 1):
                 logger.info(f"\n🔄 === 第 {round_num} 轮讨论 ===")
@@ -637,6 +638,17 @@ class AICapabilityDebateTool(Tool):
                 if summary.consensus_items:
                     final_capabilities = summary.consensus_items
 
+                # 每轮结束后增量写入 JSON
+                self._write_result(DebateResult(
+                    topic=proposal.topic,
+                    total_rounds=round_num,
+                    participating_models=[a.model_name for a in agents],
+                    capabilities=final_capabilities,
+                    discussion_log=discussion_log,
+                    generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ), output_path)
+                logger.info(f"| 💾 第 {round_num} 轮结果已增量写入: {output_path}")
+
                 if not summary.should_continue:
                     logger.info(f"| ✅ 讨论在第 {round_num} 轮收敛，结束。")
                     break
@@ -647,23 +659,6 @@ class AICapabilityDebateTool(Tool):
                         if q not in proposal.capabilities
                     )
 
-            # Step 4 — 输出结果
-            logger.info("\n📝 正在生成最终结果...")
-            result = DebateResult(
-                topic=proposal.topic,
-                total_rounds=len(discussion_log),
-                participating_models=[a.model_name for a in agents],
-                capabilities=final_capabilities,
-                discussion_log=[
-                    {"round": entry["round"], "summary": entry["summary"]}
-                    for entry in discussion_log
-                ],
-                generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            )
-
-            output_path = self._write_result(result)
-            logger.info(f"| ✅ 结果已保存至: {output_path}")
-
             cap_summary = "\n".join(
                 f"  - {c.capability_name} [{c.current_level}] 时间线:{c.maturity_timeline} (置信度:{c.confidence})"
                 for c in final_capabilities
@@ -673,9 +668,9 @@ class AICapabilityDebateTool(Tool):
                 success=True,
                 message=(
                     f"AI 能力讨论完成。\n"
-                    f"主题: {result.topic}\n"
-                    f"总轮数: {result.total_rounds}\n"
-                    f"参与模型: {', '.join(result.participating_models)}\n"
+                    f"主题: {proposal.topic}\n"
+                    f"总轮数: {len(discussion_log)}\n"
+                    f"参与模型: {', '.join(a.model_name for a in agents)}\n"
                     f"输出能力条目数: {len(final_capabilities)}\n"
                     f"\n能力摘要:\n{cap_summary}\n"
                     f"\n结果文件: {output_path}"
@@ -683,8 +678,8 @@ class AICapabilityDebateTool(Tool):
                 extra=ToolExtra(
                     file_path=output_path,
                     data={
-                        "topic": result.topic,
-                        "total_rounds": result.total_rounds,
+                        "topic": proposal.topic,
+                        "total_rounds": len(discussion_log),
                         "capabilities_count": len(final_capabilities),
                         "output_path": output_path,
                     },
@@ -699,15 +694,15 @@ class AICapabilityDebateTool(Tool):
     # 结果输出
     # ------------------------------------------------------------------
 
-    def _write_result(self, result: DebateResult) -> str:
-        """将讨论结果写入 JSON 文件。"""
+    def _get_result_path(self, topic: str) -> str:
+        """生成结果文件路径（整个讨论过程使用同一个文件）。"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_topic = re.sub(r"[^\w\u4e00-\u9fff]+", "_", result.topic)[:50]
+        safe_topic = re.sub(r"[^\w\u4e00-\u9fff]+", "_", topic)[:50]
         filename = f"debate_{safe_topic}_{timestamp}.json"
-        filepath = os.path.join(self.output_dir, filename)
+        return os.path.join(self.base_dir, filename)
 
-        os.makedirs(self.output_dir, exist_ok=True)
+    def _write_result(self, result: DebateResult, filepath: str) -> None:
+        """将讨论结果写入（或覆盖更新）JSON 文件。"""
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(result.model_dump(), f, ensure_ascii=False, indent=2)
-
-        return filepath
