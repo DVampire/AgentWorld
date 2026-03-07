@@ -35,7 +35,6 @@ agent_names = [
 tool_names = [
     'done',
     'todo',
-    'read',
     "future_capability_debate",
 ]
 skill_names = [
