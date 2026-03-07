@@ -19,8 +19,8 @@ log_path = "agent.log"
 
 use_local_proxy = True
 version = "0.1.0"
-# model_name = "openrouter/gemini-3-flash-preview"
-model_name = "openrouter/claude-sonnet-4.5"
+model_name = "openrouter/gemini-3-flash-preview"
+# model_name = "openrouter/claude-sonnet-4.5"
 
 env_names = [
     "file_system"

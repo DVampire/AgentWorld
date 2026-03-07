@@ -39,7 +39,8 @@ class VersionManager(BaseModel):
             "agent": {},
             "prompt": {},
             "memory": {},
-            "benchmark": {}
+            "benchmark": {},
+            "skill": {}
         }
         
         if base_dir is not None:
