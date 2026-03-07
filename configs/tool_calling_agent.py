@@ -9,6 +9,7 @@ with read_base():
     from .tools.plotter import plotter_tool
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
+    from .tools.skill_generator import skill_generator_tool
     from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
@@ -33,8 +34,8 @@ agent_names = [
     "tool_calling"
 ]
 tool_names = [
-    # 'bash',
-    # 'python_interpreter',
+    'bash',
+    'python_interpreter',
     'done',
     'todo',
     # 'mdify',
@@ -42,6 +43,7 @@ tool_names = [
     # "deep_researcher",
     # "browser",
     # "plotter",
+    "skill_generator",
 ]
 skill_names = [
     "hello-world",
@@ -82,7 +84,11 @@ plotter_tool.update(
     model_name="openrouter/o3",
     base_dir="tool/plotter",
 )
-
+#-----------------SKILL GENERATOR TOOL CONFIG-----------------
+skill_generator_tool.update(
+    model_name="openrouter/gemini-3-flash-preview",
+    base_dir="skill",
+)
 #-----------------MEMORY SYSTEM CONFIG-----------------
 general_memory_system.update(
     base_dir="memory/general_memory_system",
