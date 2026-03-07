@@ -564,7 +564,7 @@ class AICapabilityDebateTool(Tool):
     async def __call__(
         self,
         task: str,
-        max_rounds: int = 3,
+        max_rounds: int = 5,
         **kwargs,
     ) -> ToolResponse:
         """执行多轮 AI 能力自博弈讨论。"""
