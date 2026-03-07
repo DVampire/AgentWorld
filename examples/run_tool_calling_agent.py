@@ -95,8 +95,8 @@ async def main():
     # task = """If Eliud Kipchoge could maintain his record-making marathon pace indefinitely, how many thousand hours would it take him to run the distance between the Earth and the Moon its closest approach? Please use the minimum perigee value on the Wikipedia page for the Moon when carrying out your calculation. Round your result to the nearest 1000 hours and do not use any comma separators if necessary."""
     # task = """Where were the Vietnamese specimens described by Kuznetzov in Nedoshivina's 2010 paper eventually deposited? Just give me the city name without abbreviations."""
     # task = "Write a mini game about a cat that can fly and fight enemies, and then push it to github."
-    # task = "Generate an add two numbers skill to add 1 and 2 and return the result."
-    task = "开启一个AI能力自博弈讨论，讨论主题和行业是：AI在生物医药行业的应用。"
+    task = "Generate an add two numbers skill to add 1 and 2 and return the result."
+    # task = "开启一个AI能力自博弈讨论，讨论主题和行业是：AI在生物医药行业的应用。"
     files = []
     
     logger.info(f"| 📋 Task: {task}")
