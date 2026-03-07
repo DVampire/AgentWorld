@@ -9,6 +9,7 @@ import os
 import json
 import ast
 import re
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -28,9 +29,10 @@ from src.registry import TOOL
 _SKILL_GENERATOR_DESCRIPTION = """Skill generator tool that creates complete skill packages and registers them in SCP.
 This tool will:
 1. Analyze task requirements and design a skill specification
-2. Generate all skill files in parallel (SKILL.md, scripts, resources, docs)
-3. Validate the generated skill for structural correctness
-4. Write files to disk, register in SCP, and run test cases
+2. Create a build plan (plan.md) listing all files to generate
+3. Build from plan — generate all files concurrently, updating plan status in real-time
+4. Validate the generated skill for structural correctness
+5. Write files to disk, register in SCP, and run test cases
 
 Args:
 - task (str): Description of what the skill should do.
@@ -77,6 +79,24 @@ class SkillTestCase(BaseModel):
     name: str = Field(description="Short name for the test case")
     input: Dict[str, Any] = Field(description="Input arguments to pass to the skill")
     expected_behavior: str = Field(description="What success looks like")
+
+
+class SkillFilePlan(BaseModel):
+    """Plan entry for a single file to be generated."""
+    filename: str = Field(description="Relative path within the skill directory")
+    purpose: str = Field(description="What this file does")
+    generator: str = Field(description="Generator class responsible for this file")
+    status: str = Field(default="pending", description="pending | generating | completed | failed")
+
+
+class SkillBuildPlan(BaseModel):
+    """Complete build plan for a skill generation session."""
+    skill_name: str
+    description: str
+    implementation_plan: str
+    files: List[SkillFilePlan] = Field(default_factory=list)
+    log: List[str] = Field(default_factory=list)
+    created_at: str = Field(default="")
 
 
 # ======================================================================
@@ -411,16 +431,26 @@ class SkillGeneratorTool(Tool):
             spec = await self._analyze_task(task, skill_name, description)
             logger.info(f"| ✅ Skill specification: {spec.skill_name}")
 
-            # Step 2 — Generate files in parallel
-            logger.info("🔨 Step 2: Generating skill files in parallel...")
-            files = await self._generate_skill_files(spec)
+            # Step 2 — Create build plan
+            logger.info("📝 Step 2: Creating build plan...")
+            plan = self._create_build_plan(spec)
+            skill_dir = os.path.join(self.base_dir, spec.skill_name)
+            plan_path = self._write_plan(plan, skill_dir)
+            logger.info(f"| ✅ Build plan written to {plan_path} ({len(plan.files)} file(s) planned)")
+
+            # Step 3 — Build from plan (concurrent file generation)
+            logger.info("🔨 Step 3: Building from plan (concurrent generation)...")
+            files = await self._build_from_plan(spec, plan, skill_dir)
             logger.info(f"| ✅ Generated {len(files)} file(s)")
 
-            # Step 3 — Validate
-            logger.info("✅ Step 3: Evaluating generated skill...")
+            # Step 4 — Validate
+            logger.info("✅ Step 4: Evaluating generated skill...")
             evaluation = self._evaluate_skill(spec, files)
 
             if not evaluation.is_valid:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                plan.log.append(f"[{now}] ❌ Evaluation failed: {evaluation.reasoning}")
+                self._write_plan(plan, skill_dir)
                 logger.warning(f"| ⚠️ Skill evaluation failed: {evaluation.reasoning}")
                 return ToolResponse(
                     success=False,
@@ -430,6 +460,7 @@ class SkillGeneratorTool(Tool):
                         "action": "evaluation_failed",
                         "evaluation": evaluation.model_dump(),
                         "specification": spec.model_dump(),
+                        "plan": plan.model_dump(),
                     }),
                 )
 
@@ -437,17 +468,26 @@ class SkillGeneratorTool(Tool):
                 for w in evaluation.warnings:
                     logger.warning(f"| ⚠️ {w}")
 
-            # Step 4 — Write to disk
-            logger.info("📝 Step 4: Writing skill directory...")
+            # Step 5 — Write generated files to disk
+            logger.info("📝 Step 5: Writing skill files to disk...")
             skill_dir = self._write_skill_directory(spec, files)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            plan.log.append(f"[{now}] All files written to {skill_dir}")
+            self._write_plan(plan, skill_dir)
             logger.info(f"| ✅ Skill directory created at {skill_dir}")
 
-            # Step 5 — Register in SCP
-            logger.info("📝 Step 5: Registering skill in SCP...")
+            # Step 6 — Register in SCP
+            logger.info("📝 Step 6: Registering skill in SCP...")
             try:
                 skill_config = await self._register_skill(skill_dir)
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                plan.log.append(f"[{now}] Registered in SCP: {skill_config.name} v{skill_config.version}")
+                self._write_plan(plan, skill_dir)
                 logger.info(f"| ✅ Registered skill: {skill_config.name} v{skill_config.version}")
             except Exception as e:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                plan.log.append(f"[{now}] ❌ Registration failed: {e}")
+                self._write_plan(plan, skill_dir)
                 logger.error(f"| ❌ Skill registration failed: {e}")
                 return ToolResponse(
                     success=False,
@@ -459,14 +499,18 @@ class SkillGeneratorTool(Tool):
                         "error": str(e),
                         "specification": spec.model_dump(),
                         "evaluation": evaluation.model_dump(),
+                        "plan": plan.model_dump(),
                     }),
                 )
 
-            # Step 6 — Test using test_cases.json from the generated skill
-            logger.info("🧪 Step 6: Running test cases from resources/test_cases.json...")
+            # Step 7 — Test using test_cases.json from the generated skill
+            logger.info("🧪 Step 7: Running test cases from resources/test_cases.json...")
             test_passed, test_details = await self._test_skill(skill_config.name, skill_dir)
 
             if not test_passed:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                plan.log.append(f"[{now}] ❌ Tests failed, skill unregistered: {test_details}")
+                self._write_plan(plan, skill_dir)
                 logger.warning(f"| ⚠️ Skill testing failed, unregistering: {test_details}")
                 await scp.unregister(skill_config.name)
                 return ToolResponse(
@@ -479,10 +523,15 @@ class SkillGeneratorTool(Tool):
                         "test_details": test_details,
                         "specification": spec.model_dump(),
                         "evaluation": evaluation.model_dump(),
+                        "plan": plan.model_dump(),
                     }),
                 )
 
             logger.info(f"| ✅ Skill '{skill_config.name}' passed all tests")
+
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            plan.log.append(f"[{now}] ✅ All tests passed — skill ready")
+            self._write_plan(plan, skill_dir)
 
             file_list = "\n".join(f"  - {f.filename}" for f in files)
             return ToolResponse(
@@ -492,6 +541,7 @@ class SkillGeneratorTool(Tool):
                     f"(v{skill_config.version}).\n"
                     f"Description: {spec.description}\n"
                     f"Directory: {skill_dir}\n"
+                    f"Plan: {plan_path}\n"
                     f"Files:\n{file_list}"
                 ),
                 extra=ToolExtra(file_path=skill_dir, data={
@@ -501,6 +551,7 @@ class SkillGeneratorTool(Tool):
                     "action": "created_tested_and_registered",
                     "specification": spec.model_dump(),
                     "evaluation": evaluation.model_dump(),
+                    "plan": plan.model_dump(),
                     "test_details": test_details,
                     "files": [f.filename for f in files],
                 }),
@@ -578,38 +629,193 @@ class SkillGeneratorTool(Tool):
         return spec
 
     # ------------------------------------------------------------------
-    # Step 2: Parallel file generation
+    # Step 2: Build plan
     # ------------------------------------------------------------------
 
-    async def _generate_skill_files(self, spec: SkillSpecification) -> List[SkillFileContent]:
-        """Run all generator classes in parallel and merge results."""
+    def _create_build_plan(self, spec: SkillSpecification) -> SkillBuildPlan:
+        """Derive a build plan from the skill specification."""
+        files: List[SkillFilePlan] = []
 
-        generators = [
+        files.append(SkillFilePlan(
+            filename="SKILL.md",
+            purpose="Main skill instruction file with YAML frontmatter and workflow docs",
+            generator="SkillMdGenerator",
+        ))
+
+        for s in spec.scripts:
+            fname = s.filename if s.filename.startswith("scripts/") else f"scripts/{s.filename}"
+            files.append(SkillFilePlan(
+                filename=fname,
+                purpose=s.purpose,
+                generator="ScriptsGenerator",
+            ))
+
+        for r in spec.resources:
+            fname = r.filename if r.filename.startswith("resources/") else f"resources/{r.filename}"
+            files.append(SkillFilePlan(
+                filename=fname,
+                purpose=r.purpose,
+                generator="ResourcesGenerator",
+            ))
+
+        has_test_cases = any(fp.filename == "resources/test_cases.json" for fp in files)
+        if not has_test_cases:
+            files.append(SkillFilePlan(
+                filename="resources/test_cases.json",
+                purpose="Structured test cases for automated skill testing",
+                generator="ResourcesGenerator",
+            ))
+
+        if spec.include_examples:
+            files.append(SkillFilePlan(
+                filename="examples.md",
+                purpose="Concrete usage examples",
+                generator="DocsGenerator",
+            ))
+        if spec.include_reference:
+            files.append(SkillFilePlan(
+                filename="reference.md",
+                purpose="API/CLI reference documentation",
+                generator="DocsGenerator",
+            ))
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        plan = SkillBuildPlan(
+            skill_name=spec.skill_name,
+            description=spec.description,
+            implementation_plan=spec.implementation_plan,
+            files=files,
+            created_at=now,
+        )
+        plan.log.append(f"[{now}] Plan created — {len(files)} file(s) to generate")
+        return plan
+
+    @staticmethod
+    def _render_plan_md(plan: SkillBuildPlan) -> str:
+        """Render the build plan as a human-readable markdown document."""
+        _STATUS_ICON = {
+            "pending": "⏳",
+            "generating": "🔄",
+            "completed": "✅",
+            "failed": "❌",
+        }
+
+        lines = [
+            f"# Build Plan: {plan.skill_name}",
+            "",
+            f"> {plan.description}",
+            "",
+            "## Implementation Plan",
+            "",
+            plan.implementation_plan,
+            "",
+            "## Files",
+            "",
+        ]
+
+        for i, fp in enumerate(plan.files, 1):
+            icon = _STATUS_ICON.get(fp.status, "❓")
+            checkbox = "x" if fp.status == "completed" else " "
+            lines.append(
+                f"- [{checkbox}] {icon} `{fp.filename}` — {fp.purpose}  "
+                f"*({fp.generator})*"
+            )
+
+        lines.extend(["", "## Build Log", ""])
+        for entry in plan.log:
+            lines.append(f"- {entry}")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def _write_plan(self, plan: SkillBuildPlan, skill_dir: str) -> str:
+        """Write (or overwrite) plan.md inside the skill directory."""
+        os.makedirs(skill_dir, exist_ok=True)
+        plan_path = os.path.join(skill_dir, "plan.md")
+        with open(plan_path, "w", encoding="utf-8") as fh:
+            fh.write(self._render_plan_md(plan))
+        return plan_path
+
+    # ------------------------------------------------------------------
+    # Step 3: Build from plan (concurrent file generation)
+    # ------------------------------------------------------------------
+
+    async def _build_from_plan(
+        self,
+        spec: SkillSpecification,
+        plan: SkillBuildPlan,
+        skill_dir: str,
+    ) -> List[SkillFileContent]:
+        """Run all generators concurrently, updating plan.md as each completes."""
+
+        generators: List[_BaseFileGenerator] = [
             SkillMdGenerator(self.model_name),
             ScriptsGenerator(self.model_name),
             ResourcesGenerator(self.model_name),
             DocsGenerator(self.model_name),
         ]
 
+        plan_lock = asyncio.Lock()
+
+        async def _run_gen(gen: _BaseFileGenerator) -> List[SkillFileContent]:
+            gen_name = type(gen).__name__
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            async with plan_lock:
+                for fp in plan.files:
+                    if fp.generator == gen_name and fp.status == "pending":
+                        fp.status = "generating"
+                plan.log.append(f"[{now}] {gen_name} started")
+                self._write_plan(plan, skill_dir)
+
+            try:
+                files = await gen.generate(spec)
+                generated_names = {f.filename for f in files}
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                async with plan_lock:
+                    for fp in plan.files:
+                        if fp.generator == gen_name:
+                            if fp.filename in generated_names:
+                                fp.status = "completed"
+                            elif fp.status == "generating":
+                                fp.status = "failed"
+                    plan.log.append(f"[{now}] {gen_name} completed — {len(files)} file(s)")
+                    self._write_plan(plan, skill_dir)
+
+                logger.info(f"| ✅ {gen_name} produced {len(files)} file(s)")
+                return files
+
+            except Exception as e:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                async with plan_lock:
+                    for fp in plan.files:
+                        if fp.generator == gen_name and fp.status == "generating":
+                            fp.status = "failed"
+                    plan.log.append(f"[{now}] {gen_name} FAILED — {e}")
+                    self._write_plan(plan, skill_dir)
+                logger.error(f"| ❌ {gen_name} failed: {e}")
+                raise
+
         results = await asyncio.gather(
-            *[g.generate(spec) for g in generators],
+            *[_run_gen(g) for g in generators],
             return_exceptions=True,
         )
 
-        files: List[SkillFileContent] = []
-        gen_names = [type(g).__name__ for g in generators]
-
-        for gen_name, result in zip(gen_names, results):
+        all_files: List[SkillFileContent] = []
+        for gen, result in zip(generators, results):
             if isinstance(result, Exception):
-                logger.error(f"| ❌ {gen_name} failed: {result}")
                 continue
-            logger.info(f"| ✅ {gen_name} produced {len(result)} file(s)")
-            files.extend(result)
+            all_files.extend(result)
 
-        return files
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        plan.log.append(f"[{now}] Build finished — {len(all_files)} total file(s)")
+        self._write_plan(plan, skill_dir)
+
+        return all_files
 
     # ------------------------------------------------------------------
-    # Step 3: Validation
+    # Step 4: Validation
     # ------------------------------------------------------------------
 
     def _evaluate_skill(
@@ -671,7 +877,7 @@ class SkillGeneratorTool(Tool):
         )
 
     # ------------------------------------------------------------------
-    # Step 4: Write to disk
+    # Step 5: Write to disk
     # ------------------------------------------------------------------
 
     def _write_skill_directory(
@@ -691,7 +897,7 @@ class SkillGeneratorTool(Tool):
         return skill_dir
 
     # ------------------------------------------------------------------
-    # Step 5: Register in SCP
+    # Step 6: Register in SCP
     # ------------------------------------------------------------------
 
     async def _register_skill(self, skill_dir: str):
@@ -699,7 +905,7 @@ class SkillGeneratorTool(Tool):
         return await scp.register(skill_dir=skill_dir, override=True)
 
     # ------------------------------------------------------------------
-    # Step 6: Test from resources/test_cases.json
+    # Step 7: Test from resources/test_cases.json
     # ------------------------------------------------------------------
 
     @staticmethod
