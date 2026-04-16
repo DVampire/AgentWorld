@@ -1,0 +1,38 @@
+{
+  "styles": {
+    "casual": {
+      "templates": [
+        "Hey there, {name}! 👋 Welcome aboard!",
+        "Hi {name}! Great to see you!",
+        "What's up, {name}! 🙌"
+      ]
+    },
+    "formal": {
+      "templates": [
+        "Good day, {name}. It is a pleasure to make your acquaintance.",
+        "Greetings, {name}. Welcome to our service.",
+        "Dear {name}, it is an honor to meet you."
+      ]
+    },
+    "festive": {
+      "templates": [
+        "🎉 Happy celebrations, {name}! Wishing you all the best! 🎉",
+        "🎂 Happy Birthday, {name}! Have an amazing day! 🎂",
+        "🚀 Congratulations, {name}! Here's to your success! 🚀"
+      ]
+    }
+  },
+  "locales": {
+    "en": "Hello, {name}!",
+    "zh": "你好，{name}！",
+    "ja": "こんにちは、{name}！",
+    "es": "¡Hola, {name}!",
+    "fr": "Bonjour, {name} !",
+    "de": "Hallo, {name}!"
+  },
+  "defaults": {
+    "name": "World",
+    "style": "casual",
+    "locale": "en"
+  }
+}
