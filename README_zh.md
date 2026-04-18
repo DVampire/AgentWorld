@@ -66,8 +66,8 @@ Autogenesis/
 ## （可选）运行 Tool-Calling Agent
 
 前置条件：
-- 先在你的环境里安装好依赖
-- 将 `.env.template` 复制为 `.env`，并配置一个模型提供方的 key（例如 `OPENROUTER_API_KEY=...`）
+- 先在你的环境里安装好依赖，请参考 [INSTALL.md](scripts/INSTALL.md)
+- 将 `.env.template` 复制为 `.env`，并设置环境变量。
 
 示例：
 

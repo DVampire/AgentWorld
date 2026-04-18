@@ -66,19 +66,11 @@ See empirical results and benchmark protocols in `docs/empirical_studies.md`.
 ## Optional: run a Tool-Calling Agent
 
 Prerequisites:
-- Install dependencies in your environment
-- Copy `.env.template` to `.env` and set a model API key (e.g. `OPENROUTER_API_KEY=...`)
+- Install dependencies in your environment, please refer to [INSTALL.md](scripts/INSTALL.md)
+- Copy `.env.template` to `.env` and set environment variables.
 
 Example:
 
 ```bash
 python examples/run_tool_calling_agent.py --config configs/tool_calling_agent.py
-```
-
-Override model/workdir:
-
-```bash
-python examples/run_tool_calling_agent.py \
-  --config configs/tool_calling_agent.py \
-  --cfg-options model_name=openrouter/gpt-4o workdir=workdir/demo tag=demo
 ```
