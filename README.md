@@ -1,5 +1,7 @@
 # Autogenesis
 
+**Note:** The codebase is currently being organized and may contain bugs. At present, `examples/run_tool_calling_agent.py` runs correctly; other agents are still under active debugging.
+
 English | [中文说明](README_zh.md)
 
 Autogenesis is a self-evolution protocol and runtime for LLM-based agent systems.
