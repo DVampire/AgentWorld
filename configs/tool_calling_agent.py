@@ -2,15 +2,13 @@ from mmengine.config import read_base
 with read_base():
     from .base import memory_config, window_size, max_tokens
     from .agents.tool_calling import tool_calling_agent
-    # from .tools.browser import browser_tool
-    from .tools.deep_researcher import deep_researcher_tool
-    from .tools.deep_analyzer import deep_analyzer_tool
+    # from .tools.deep_researcher import deep_researcher_tool
+    # from .tools.deep_analyzer import deep_analyzer_tool
     from .tools.mdify import mdify_tool
-    from .tools.plotter import plotter_tool
+    # from .tools.plotter import plotter_tool
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
     from .tools.skill_generator import skill_generator_tool
-    from .environments.file_system import environment as file_system_environment
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
 
@@ -23,20 +21,18 @@ version = "0.1.0"
 model_name = "openrouter/gemini-3-flash-preview"
 # model_name = "openrouter/claude-sonnet-4.5"
 
-env_names = [
-    "file_system"
-]
 memory_names = [
     "general_memory_system",
     "optimizer_memory_system"
 ]
 agent_names = [
-    "tool_calling"
+    "tool_calling_agent"
 ]
 tool_names = [
     'bash_tool',
     'done_tool',
     'todo_tool',
+    'skill_generator_tool',
 ]
 skill_names = [
     "hello_world_skill",
@@ -50,6 +46,7 @@ bash_tool.update(
 mdify_tool.update(
     base_dir="tool/mdify",
 )
+#-----------------TODO TOOL CONFIG-----------------
 todo_tool.update(
     base_dir="tool/todo",
     require_grad=False,
@@ -60,23 +57,23 @@ todo_tool.update(
 #     base_dir="tool/browser",
 # )
 #-----------------DEEP RESEARCHER TOOL CONFIG-----------------
-deep_researcher_tool.update(
-    model_name="openrouter/o3",
-    base_dir="tool/deep_researcher",
-)
+# deep_researcher_tool.update(
+#     model_name="openai/o3",
+#     base_dir="tool/deep_researcher",
+# )
 
 #-----------------DEEP ANALYZER TOOL CONFIG-----------------
-deep_analyzer_tool.update(
-    model_name="openrouter/o3",
-    base_dir="tool/deep_analyzer",
-    require_grad=False,
-)
+# deep_analyzer_tool.update(
+#     model_name="openai/o3",
+#     base_dir="tool/deep_analyzer",
+#     require_grad=False,
+# )
 
 #-----------------PLOTTER TOOL CONFIG-----------------
-plotter_tool.update(
-    model_name="openrouter/o3",
-    base_dir="tool/plotter",
-)
+# plotter_tool.update(
+#     model_name="openai/o3",
+#     base_dir="tool/plotter",
+# )
 #-----------------SKILL GENERATOR TOOL CONFIG-----------------
 skill_generator_tool.update(
     model_name="openrouter/gemini-3-flash-preview",
@@ -94,12 +91,6 @@ optimizer_memory_system.update(
     base_dir="memory/optimizer_memory_system",
     model_name=model_name,
     max_records_per_session=10,
-    require_grad=False,
-)
-
-#-----------------FILE SYSTEM ENVIRONMENT CONFIG-----------------
-file_system_environment.update(
-    base_dir="environment/file_system",
     require_grad=False,
 )
 

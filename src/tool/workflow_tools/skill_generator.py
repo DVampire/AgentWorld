@@ -39,7 +39,7 @@ Args:
 - skill_name (Optional[str]): Explicit skill name (kebab-case). If not provided, will be generated from task.
 - description (Optional[str]): Explicit skill description. If not provided, will be generated from task.
 
-Example: {"name": "skill_generator", "args": {"task": "Create a skill that translates text between languages", "skill_name": "text-translator", "description": "Translate text between multiple languages using templates and locale data."}}.
+Example: {"name": "skill_generator_tool", "args": {"task": "Create a skill that translates text between languages", "skill_name": "text-translator", "description": "Translate text between multiple languages using templates and locale data."}}.
 """
 
 
@@ -373,7 +373,7 @@ class SkillGeneratorTool(Tool):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = "skill_generator"
+    name: str = "skill_generator_tool"
     description: str = _SKILL_GENERATOR_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
@@ -383,7 +383,7 @@ class SkillGeneratorTool(Tool):
         description="The model to use for skill generation.",
     )
     base_dir: str = Field(
-        default="workdir/skill_generator",
+        default="workdir/skill_generator_tool",
         description="Root directory where generated skill directories are stored.",
     )
 

@@ -28,7 +28,7 @@ Args:
 - tool_name (Optional[str]): Optional explicit tool name. If not provided, will be generated from task.
 - description (Optional[str]): Optional explicit tool description. If not provided, will be generated from task.
 
-Example: {"name": "tool_generator", "args": {"task": "Analyze the given files and provide a summary of the findings.", "tool_name": "deep_analyzer", "description": "Analyze the given files and provide a summary of the findings."}}.
+Example: {"name": "tool_generator_tool", "args": {"task": "Analyze the given files and provide a summary of the findings.", "tool_name": "deep_analyzer", "description": "Analyze the given files and provide a summary of the findings."}}.
 """
 
 class ToolSpecification(BaseModel):
@@ -65,7 +65,7 @@ class ToolGeneratorTool(Tool):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = "tool_generator"
+    name: str = "tool_generator_tool"
     description: str = _TOOL_GENERATOR_DESCRIPTION
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
@@ -76,7 +76,7 @@ class ToolGeneratorTool(Tool):
         description="The model to use for tool generation and evaluation."
     )
     base_dir: str = Field(
-        default="workdir/tool_generator",
+        default="workdir/tool_generator_tool",
         description="The base directory for the tool generator."
     )
     max_retrieval_results: int = Field(

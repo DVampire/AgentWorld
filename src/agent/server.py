@@ -1,4 +1,4 @@
-"""ACP Server
+"""Agent Server
 
 Server implementation for the Agent Context Protocol with lazy loading support.
 """
@@ -18,7 +18,7 @@ from src.agent.context import AgentContextManager
 from src.utils import assemble_project_path
 
 class AgentManagerServer(BaseModel):
-    """ACP Server for managing agent registration and execution with lazy loading."""
+    """Agent Manager Server for managing agent registration and execution with lazy loading."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     base_dir: str = Field(default=None, description="The base directory to use for the agents")
@@ -26,7 +26,7 @@ class AgentManagerServer(BaseModel):
     contract_path: str = Field(default=None, description="The path to save the agent contract")
     
     def __init__(self, base_dir: Optional[str] = None, **kwargs):
-        """Initialize the ACP Server."""
+        """Initialize the Agent Server."""
         super().__init__(**kwargs)
         self._registered_configs: Dict[str, AgentConfig] = {}  # agent_name -> AgentConfig
 
@@ -42,7 +42,7 @@ class AgentManagerServer(BaseModel):
         os.makedirs(self.base_dir, exist_ok=True)
         self.save_path = os.path.join(self.base_dir, "agent.json")
         self.contract_path = os.path.join(self.base_dir, "contract.md")
-        logger.info(f"| 📁 ACP Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
+        logger.info(f"| 📁 agent manager Server base directory: {self.base_dir} with save path: {self.save_path} and contract path: {self.contract_path}")
         
         # Initialize agent context manager
         self.agent_context_manager = AgentContextManager(
@@ -50,7 +50,6 @@ class AgentManagerServer(BaseModel):
             save_path=self.save_path,
             contract_path=self.contract_path,
             model_name="openrouter/gemini-3-flash-preview",
-            embedding_model_name="openrouter/text-embedding-3-large",
         )
         await self.agent_context_manager.initialize(agent_names=agent_names)
         
@@ -62,7 +61,7 @@ class AgentManagerServer(BaseModel):
                 self._registered_configs[agent_name] = agent_config
         
         logger.info("| ✅ Agents initialization completed")
-        
+
     async def set_contract(self, agent_names: Optional[List[str]] = None):
         """Set the contract for all agents by aggregating their class source code.
         
@@ -211,18 +210,6 @@ class AgentManagerServer(BaseModel):
             self._registered_configs[agent_config.name] = agent_config
         return agent_config
     
-    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
-        """Retrieve similar agents using FAISS similarity search.
-        
-        Args:
-            query: Query string to search for
-            k: Number of results to return (default: 4)
-            
-        Returns:
-            List of dictionaries containing agent information with similarity scores
-        """
-        return await self.agent_context_manager.retrieve(query=query, k=k)
-    
     async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from agents, where each agent's class source code is used as the variable value.
         
@@ -283,5 +270,5 @@ class AgentManagerServer(BaseModel):
         return await self.agent_context_manager(name, input, **kwargs)
 
 
-# Global AgentManager server instance
+# Global Agent manager instance
 agent_manager = AgentManagerServer()

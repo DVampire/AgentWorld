@@ -1,4 +1,4 @@
-"""Agent Context Protocol (ACP) Types
+"""Agent Context Protocol (agent manager) Types
 
 Core type definitions for the Agent Context Protocol and common Agent
 abstractions, aligned with the design of `src.tool.types`.
@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.config import config
 from src.dynamic import dynamic_manager
-from src.environment.server import environment_manager
 from src.logger import logger
 from src.memory import EventType, memory_manager
 from src.message.types import HumanMessage, Message, SystemMessage
@@ -34,32 +33,6 @@ from src.session import SessionContext
 class InputArgs(BaseModel):
     task: str = Field(description="The task to complete.")
     files: Optional[List[str]] = Field(default=None, description="The files to attach to the task.")
-
-class ACPErrorCode(Enum):
-    """ACP error codes."""
-    INVALID_REQUEST = -32600
-    METHOD_NOT_FOUND = -32601
-    INVALID_PARAMS = -32602
-    INTERNAL_ERROR = -32603
-    AGENT_NOT_FOUND = -32001
-
-class ACPError(BaseModel):
-    """ACP error structure."""
-    code: ACPErrorCode
-    message: str
-    data: Optional[Dict[str, Any]] = None
-
-class ACPRequest(BaseModel):
-    """ACP request structure."""
-    id: Union[str, int] = Field(default_factory=lambda: str(uuid.uuid4()))
-    method: str
-    params: Optional[Dict[str, Any]] = None
-
-class ACPResponse(BaseModel):
-    """ACP response structure."""
-    id: Union[str, int]
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[ACPError] = None
 
 class AgentConfig(BaseModel):
     """Agent configuration for registration, similar to `ToolConfig`."""
@@ -215,8 +188,8 @@ class ThinkOutput(BaseModel):
         description=(
             'The list of actions (tool or skill calls) to execute in sequence. '
             'Each action has a "type" ("tool" or "skill"), a "name", and "args" (JSON string). '
-            'e.g., [{"type": "tool", "name": "done", "args": "{\"result\": \"D\"}"}, '
-            '{"type": "skill", "name": "hello-world", "args": "{\"name\": \"Alice\"}"}]'
+            'e.g., [{"type": "tool", "name": "done_tool", "args": "{\"result\": \"D\"}"}, '
+            '{"type": "skill", "name": "hello-world_tool", "args": "{\"name\": \"Alice\"}"}]'
         )
     )
 
@@ -301,7 +274,7 @@ class Agent(BaseModel):
 
         # Extract file content
         input_payload = {
-            "name": "mdify",
+            "name": "mdify_tool",
             "input": {
                 "file_path": file,
                 "output_format": "markdown",
@@ -428,7 +401,7 @@ class Agent(BaseModel):
 
         if self.use_todo:
             todo = "<todo>"
-            todo_tool = await tool_manager.get("todo")
+            todo_tool = await tool_manager.get("todo_tool")
             todo_contents = todo_tool.get_todo_content(ctx=ctx)
             todo += todo_contents
             todo += "</todo>"
@@ -448,49 +421,6 @@ class Agent(BaseModel):
             "agent_context": agent_context,
         }
 
-    async def _get_environment_context(self,
-                                       ctx: SessionContext,
-                                       **kwargs) -> Dict[str, Any]:
-        """Get the environment state."""
-        
-        id = ctx.id
-        
-        environment_context = "<environment_context>"
-        # Only iterate over environments specified in config, not all registered environments
-        for env_name in config.env_names:
-            env_info = await environment_manager.get_info(env_name)
-            rule_string = env_info.rules
-            rule_string = dedent(f"""
-                <rules>
-                {rule_string}
-                </rules>
-            """)
-
-            env_state = await environment_manager.get_state(env_name, ctx=ctx)
-            state_string = "<state>"
-            state_string += env_state["state"]
-            extra = env_state["extra"]
-
-            if "screenshots" in extra:
-                for screenshot in extra["screenshots"]:
-                    state_string += (
-                        f"\n<img src={screenshot.screenshot_path} "
-                        f"alt={screenshot.screenshot_description}/>"
-                    )
-            state_string += "</state>"
-
-            environment_context += dedent(f"""
-                <{env_name}>
-                {rule_string}
-                {state_string}
-                </{env_name}>
-            """)
-
-        environment_context += "</environment_context>"
-        return {
-            "environment_context": environment_context,
-        }
-
     async def _get_tool_context(self, ctx: SessionContext, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
         tool_context = "<tool_context>"
@@ -507,7 +437,7 @@ class Agent(BaseModel):
         }
 
     async def _get_skill_context(self, ctx: SessionContext, **kwargs) -> Dict[str, Any]:
-        """Get the skill context from loaded skills via SCP."""
+        """Get the skill context from loaded skills via skill manager."""
         skill_content = await skill_manager.get_context()
         if not skill_content:
             skill_context = "<skill_context>[No skills loaded.]</skill_context>\n"
@@ -528,7 +458,6 @@ class Agent(BaseModel):
         agent_message_modules = dict(task=task)
         
         agent_message_modules.update(await self._get_agent_context(task, ctx=ctx))
-        agent_message_modules.update(await self._get_environment_context(ctx=ctx))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         
@@ -568,10 +497,6 @@ class AgentResponse(BaseModel):
 
 __all__ = [
     "InputArgs",
-    "ACPErrorCode",
-    "ACPError",
-    "ACPRequest",
-    "ACPResponse",
     "AgentConfig",
     "ActionInputArgs",
     "Agent",
