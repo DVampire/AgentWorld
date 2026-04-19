@@ -53,6 +53,9 @@ class EmbeddingOpenAI(BaseModel):
     def provider(self) -> str:
         return 'openai'
 
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
+
     def _get_client_params(self) -> dict[str, Any]:
         """Prepare client parameters dictionary."""
         base_params = {

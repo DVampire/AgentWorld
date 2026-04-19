@@ -3,7 +3,7 @@ Model manager for OpenAI models.
 Provides a unified interface for registering and invoking OpenAI models.
 """
 
-import os
+import asyncio
 from typing import Optional, Dict, List, Any, Union, TYPE_CHECKING
 from pydantic import BaseModel
 
@@ -19,11 +19,62 @@ from src.model.openrouter.chat import ChatOpenRouter
 from src.model.anthropic.chat import ChatAnthropic
 from src.model.google.chat import ChatGoogle
 from src.model.newapi.chat import ChatNewAPI
+from src.model.newapi.response import ResponseNewAPI
 from src.message.types import Message
 from src.logger import logger
+from src.utils import hvac_client
 
 if TYPE_CHECKING:
     from src.tool.types import Tool
+
+
+class ApiKeyPool:
+    """
+    Thread-safe round-robin API key pool.
+
+    Each provider registers its key env-var (which may be a single key or a
+    comma-separated list) and an optional base-URL env-var.  Callers obtain the
+    next key via `next_key(provider)`.
+    """
+
+    def __init__(self):
+        self._keys: Dict[str, List[str]] = {}
+        self._bases: Dict[str, Optional[str]] = {}
+        self._indices: Dict[str, int] = {}
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _parse_keys(env_var: str) -> List[str]:
+        """Read env var and split by comma; works for both single key and CSV list."""
+        raw = hvac_client.get(env_var)
+        return [k.strip() for k in raw.split(",") if k.strip()]
+
+    def register(
+        self,
+        provider: str,
+        key_env: str,
+        base_env: Optional[str] = None,
+        default_base: Optional[str] = None,
+    ) -> "ApiKeyPool":
+        """Register a provider. Returns self for chaining."""
+        self._keys[provider] = self._parse_keys(key_env)
+        self._bases[provider] = (hvac_client.get(base_env) or default_base) if base_env else default_base
+        self._indices[provider] = 0
+        return self
+
+    async def get_base(self, provider: str) -> Optional[str]:
+        return self._bases.get(provider)
+
+    async def get_key(self, provider: str) -> Optional[str]:
+        """Return next key in round-robin order (asyncio-safe)."""
+        async with self._lock:
+            keys = self._keys.get(provider, [])
+            if not keys:
+                return None
+            idx = self._indices.get(provider, 0)
+            key = keys[idx]
+            self._indices[provider] = (idx + 1) % len(keys)
+            return key
 
 
 class ModelManager:
@@ -39,10 +90,13 @@ class ModelManager:
         """Initialize the manager."""
         self.models: Dict[str, ModelConfig] = {}
         self.model_clients: Dict[str, Union[ChatOpenAI, ResponseOpenAI, TranscribeOpenAI, EmbeddingOpenAI, ChatOpenRouter, ChatAnthropic]] = {}
+        # Key pool: provider -> round-robin keys / base URLs
+        self._key_pool = ApiKeyPool()
         
         # Default parameters
         self.max_tokens: int = 32768
         self.default_temperature: float = 0.7
+        self.default_timeout: float = 600.0
         self.default_reasoning: Dict[str, Any] = {
             "reasoning_effort": "high"
         }
@@ -54,17 +108,31 @@ class ModelManager:
                 }
             },
             {
-                "id": "web", "max_results": 10
+                "id": "web", 
+                "max_results": 10,
+                # "engine": "exa"
             },
             { 
                 "id": "response-healing"
             }
         ]
     
+
     async def initialize(self):
         """Initialize the manager and register default models."""
+        # Register all providers into the key pool (single env var, auto-detects CSV list)
+        (
+            self._key_pool
+            .register("openai",      "OPENAI_API_KEY",      "OPENAI_API_BASE",    "")
+            .register("openrouter",  "OPENROUTER_API_KEY",  "OPENROUTER_API_BASE",  "")
+            .register("anthropic",   "ANTHROPIC_API_KEY",   "ANTHROPIC_API_BASE", "")
+            .register("google",      "GOOGLE_API_KEY",     "GOOGLE_API_BASE",    "")
+            .register("newapi",      "NEWAPI_API_KEY",       "NEWAPI_API_BASE",     "")
+            .register("int_openrouter", "INT_OPENROUTER_API_KEY", "INT_OPENROUTER_API_BASE", "")
+        )
         await self._initialize_openai_models()
         await self._initialize_openrouter_models()
+        await self._initialize_internal_openrouter_models()
         await self._initialize_anthropic_models()
         await self._initialize_google_models()
         await self._initialize_newapi_models()
@@ -195,6 +263,9 @@ class ModelManager:
                 "fallback_model": "openai/text-embedding-3-large",
             },
         ]
+
+        api_base=await self._key_pool.get_base("openai")
+        api_key=await self._key_pool.get_key("openai")
         
         # Register chat models
         for model in chat_models:
@@ -203,10 +274,12 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="openai",
-                api_base=os.getenv("OPENAI_API_BASE"),
-                api_key=os.getenv("OPENAI_API_KEY"),
+                key_pool_name="openai",
+                api_base=api_base,
+                api_key=api_key,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
+                timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=True,
                 supports_functions=True,
                 supports_vision=True,
@@ -222,11 +295,13 @@ class ModelManager:
                 model_name=model["model_name"],
                 model_id=model["model_id"],
                 model_type=model["model_type"],
-                provider="openai",  
-                api_base=os.getenv("OPENAI_API_BASE"),
-                api_key=os.getenv("OPENAI_API_KEY"),
+                provider="openai",
+                key_pool_name="openai",
+                api_base=api_base,
+                api_key=api_key,
                 reasoning=model.get("reasoning"),
                 max_output_tokens=model.get("max_output_tokens"),
+                timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=False,  # Responses API may not support streaming
                 supports_functions=False,  # Responses API may not support tools
                 supports_vision=True,
@@ -243,8 +318,10 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="openai",
-                api_base=os.getenv("OPENAI_API_BASE"),
-                api_key=os.getenv("OPENAI_API_KEY"),
+                key_pool_name="openai",
+                api_base=api_base,
+                api_key=api_key,
+                timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=False,
                 supports_functions=False,
                 supports_vision=False,
@@ -253,7 +330,7 @@ class ModelManager:
             )
             self.models[config.model_name] = config
             await self._create_client(config)
-        
+
         # Register embedding models
         for model in embedding_models:
             config = ModelConfig(
@@ -261,8 +338,10 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="openai",
-                api_base=os.getenv("OPENAI_API_BASE"),
-                api_key=os.getenv("OPENAI_API_KEY"),
+                key_pool_name="openai",
+                api_base=api_base,
+                api_key=api_key,
+                timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=False,
                 supports_functions=False,
                 supports_vision=False,
@@ -282,7 +361,7 @@ class ModelManager:
                 "model_type": "chat/completions",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-4.1",
@@ -290,7 +369,7 @@ class ModelManager:
                 "model_type": "chat/completions",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5",
@@ -303,7 +382,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5.1",
@@ -316,7 +395,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5.2",
@@ -329,7 +408,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5.3",
@@ -342,7 +421,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5.4",
@@ -355,7 +434,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5.4-pro",
@@ -368,7 +447,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/o3",
@@ -381,7 +460,7 @@ class ModelManager:
                 },
                 "temperature": 1.0,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/o3-mini",
@@ -394,7 +473,7 @@ class ModelManager:
                 },
                 "temperature": 1.0,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/gpt-5.3-codex",
@@ -421,7 +500,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-sonnet-3.7",
@@ -434,7 +513,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-sonnet-4",
@@ -447,7 +526,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-opus-4",
@@ -460,7 +539,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-sonnet-4.5",
@@ -473,7 +552,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-opus-4.5",
@@ -486,7 +565,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-sonnet-4.6",
@@ -499,7 +578,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/claude-opus-4.6",
@@ -512,7 +591,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             # Gemini models for chat, vision, audio, video, pdf, etc.
             {
@@ -565,7 +644,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
+                "fallback_model": "gemini/gemini-3.1-pro-preview",
             },
             {
                 "model_name": "openrouter/gemini-3-flash-preview",
@@ -578,7 +657,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3-flash-preview",
+                "fallback_model": "gemini/gemini-3-flash-preview",
             },
             {
                 "model_name": "openrouter/gemini-2.5-flash-plugins",
@@ -661,7 +740,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             {
                 "model_name": "openrouter/qwen3-max",
@@ -674,7 +753,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             #deepseek models
             {
@@ -688,7 +767,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             },
             # X-ai models
             {
@@ -702,9 +781,12 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/o3",
+                "fallback_model": "openai/o3",
             }
         ]
+
+        api_base=await self._key_pool.get_base("openrouter")
+        api_key=await self._key_pool.get_key("openrouter")
         
         # Register OpenRouter models
         for model in chat_models:
@@ -713,12 +795,182 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="openrouter",
-                api_base=os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1"),
-                api_key=os.getenv("OPENROUTER_API_KEY"),
+                key_pool_name="openrouter",
+                api_base=api_base,
+                api_key=api_key,
                 reasoning=model.get("reasoning") if model.get("reasoning") else None,
                 plugins=model.get("plugins") if model.get("plugins") else None,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
+                timeout=model.get("timeout", self.default_timeout),
+                supports_streaming=True,
+                supports_functions=True,
+                supports_vision=True,
+                output_version=None,
+                fallback_model=model.get("fallback_model"),
+            )
+            self.models[config.model_name] = config
+            await self._create_client(config)
+
+    async def _initialize_internal_openrouter_models(self):
+        """Initialize OpenRouter models (OpenAI models via OpenRouter)."""
+        chat_models = [
+            # OpenAI models
+            {
+                "model_name": "int_openrouter/gpt-5.4",
+                "model_id": "openai/gpt-5.4",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            {
+                "model_name": "int_openrouter/gpt-5.4-pro",
+                "model_id": "openai/gpt-5.4-pro",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            # Anthropic models
+            {
+                "model_name": "int_openrouter/claude-sonnet-4.6",
+                "model_id": "anthropic/claude-sonnet-4.6",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            {
+                "model_name": "int_openrouter/claude-opus-4.6",
+                "model_id": "anthropic/claude-opus-4.6",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            # Gemini models for chat, vision, audio, video, pdf, etc.
+            {
+                "model_name": "int_openrouter/gemini-3.1-pro-preview",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3.1-pro-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gemini-3.1-pro-preview",
+            },
+            {
+                "model_name": "int_openrouter/gemini-3-flash-preview",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3-flash-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gemini-3-flash-preview",
+            },
+            {
+                "model_name": "int_openrouter/gemini-3.1-flash-lite-preview",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3.1-flash-lite-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gemini-3-flash-preview-plugins",
+            },
+            {
+                "model_name": "int_openrouter/gemini-3.1-flash-lite-preview-plugins",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3.1-flash-lite-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "plugins": self.default_plugins,
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gemini-3-flash-preview-plugins",
+            },
+            {
+                "model_name": "int_openrouter/gemini-3.1-pro-preview-plugins",
+                "model_type": "chat/completions",
+                "model_id": "google/gemini-3.1-pro-preview",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "plugins": self.default_plugins,
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gemini-3-flash-preview-plugins",
+            },
+            # X-ai models
+            {
+                "model_name": "int_openrouter/grok-4.1-fast",
+                "model_id": "x-ai/grok-4.1-fast",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/grok-4.1-fast",
+            }
+        ]
+
+        api_base=await self._key_pool.get_base("int_openrouter")
+        api_key=await self._key_pool.get_key("int_openrouter")
+
+        # Register Internal OpenRouter models
+        for model in chat_models:
+            config = ModelConfig(
+                model_name=model["model_name"],
+                model_id=model["model_id"],
+                model_type=model["model_type"],
+                provider="openrouter",
+                key_pool_name="int_openrouter",
+                api_base=api_base,
+                api_key=api_key,
+                reasoning=model.get("reasoning") if model.get("reasoning") else None,
+                plugins=model.get("plugins") if model.get("plugins") else None,
+                temperature=model.get("temperature"),
+                max_completion_tokens=model.get("max_completion_tokens"),
+                timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=True,
                 supports_functions=True,
                 supports_vision=True,
@@ -781,6 +1033,9 @@ class ModelManager:
             #    "fallback_model": "anthropic/claude-sonnet-4.5",
             # },
         ]
+
+        api_base=await self._key_pool.get_base("anthropic")
+        api_key=await self._key_pool.get_key("anthropic")
         
         # Register Anthropic models
         for model in chat_models:
@@ -789,10 +1044,12 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="anthropic",
-                api_base=os.getenv("ANTHROPIC_API_BASE"),
-                api_key=os.getenv("ANTHROPIC_API_KEY"),
+                key_pool_name="anthropic",
+                api_base=api_base,
+                api_key=api_key,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
+                timeout=model.get("timeout", self.default_timeout),
                 supports_streaming=True,
                 supports_functions=True,
                 supports_vision=True,
@@ -805,27 +1062,50 @@ class ModelManager:
     async def _initialize_newapi_models(self):
         """Initialize New-API models (OpenAI-compatible proxy)."""
         chat_models = [
+            # Gemini models for chat, vision, audio, video, pdf, etc.
             {
                 "model_name": "newapi/gemini-3.1-pro-preview",
                 "model_id": "gemini-3.1-pro-preview",
                 "model_type": "chat/completions",
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.1-pro-preview",
+                "fallback_model": "openrouter/grok-4.1-fast",
+            },
+            {
+                "model_name": "newapi/gemini-3.1-flash-lite-preview",
+                "model_id": "gemini-3.1-flash-lite-preview",
+                "model_type": "chat/completions",
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/grok-4.1-fast",
+            },
+            # OpenAI-compatible models
+            {
+                "model_name": "newapi/gpt-5.4",
+                "model_id": "gpt-5.4",
+                "model_type": "responses",
+                "reasoning": self.default_reasoning,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/grok-4.1-fast",
             },
             {
                 "model_name": "newapi/gpt-5.4-pro",
                 "model_id": "gpt-5.4-pro",
-                "model_type": "chat/completions",
-                "reasoning": {
-                    "reasoning": {
-                        "enabled": True
-                    }
-                },
-                "temperature": self.default_temperature,
+                "model_type": "responses",
+                "timeout": 3600.0,  # 1 hour timeout for long-running tasks
+                "reasoning": self.default_reasoning,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.1-pro-preview",
+                "fallback_model": "openrouter/grok-4.1-fast",
             },
+            {
+                "model_name": "newapi/gpt-5-nano",
+                "model_id": "gpt-5-nano",
+                "model_type": "responses",
+                "reasoning": self.default_reasoning,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/grok-4.1-fast",
+            },
+            # Anthropic-compatible models
             {
                 "model_name": "newapi/claude-opus-4.6",
                 "model_id": "claude-opus-4-6",
@@ -837,9 +1117,26 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
-                "fallback_model": "openrouter/gemini-3.1-pro-preview",
+                "fallback_model": "openrouter/grok-4.1-fast",
             },
+            # X-ai-compatible models could be added here as well if needed
+            {
+                "model_name": "newapi/grok-4.1-fast",
+                "model_id": "grok-4.1-fast",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/grok-4.1-fast",
+            }
         ]
+
+        api_base=await self._key_pool.get_base("newapi")
+        api_key=await self._key_pool.get_key("newapi")
 
         for model in chat_models:
             config = ModelConfig(
@@ -847,10 +1144,12 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="newapi",
-                api_base=os.getenv("NEWAPI_API_BASE", "https://api.miromind.site/v1"),
-                api_key=os.getenv("NEWAPI_API_KEY"),
+                key_pool_name="newapi",
+                api_base=api_base,
+                api_key=api_key,
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
+                reasoning=model.get("reasoning"),
                 supports_streaming=True,
                 supports_functions=True,
                 supports_vision=True,
@@ -874,6 +1173,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
             },
             {
                 "model_name": "google/gemini-2.5-pro",
@@ -886,6 +1186,7 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
             },
             {
                 "model_name": "google/gemini-3-pro-preview",
@@ -898,21 +1199,52 @@ class ModelManager:
                 },
                 "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
             },
             {
-                "model_name": "newapi/o3-mini",
-                "model_id": "o3-mini",
+                "model_name": "google/gemini-3.1-pro-preview",
+                "model_id": "gemini-3.1-pro-preview",
                 "model_type": "chat/completions",
                 "reasoning": {
                     "reasoning": {
                         "enabled": True
                     }
                 },
-                "temperature": 1.0,
+                "temperature": self.default_temperature,
                 "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
             },
+            {
+                "model_name": "google/gemini-3-flash-preview",
+                "model_id": "gemini-3-flash-preview",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
+            },
+            {
+                "model_name": "google/gemini-3.1-flash-lite-preview",
+                "model_id": "gemini-3.1-flash-lite-preview",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "openrouter/gemini-3-flash-preview",
+            }
         ]
         
+        api_base=await self._key_pool.get_base("google")
+        api_key=await self._key_pool.get_key("google")
+
         # Register Google models
         for model in chat_models:
             config = ModelConfig(
@@ -920,8 +1252,9 @@ class ModelManager:
                 model_id=model["model_id"],
                 model_type=model["model_type"],
                 provider="google",
-                api_base=None,  # Google Gemini doesn't use custom API base
-                api_key=os.getenv("GOOGLE_API_KEY"),
+                key_pool_name="google",
+                api_base=api_base,
+                api_key=api_key,
                 reasoning=model.get("reasoning"),
                 temperature=model.get("temperature"),
                 max_completion_tokens=model.get("max_completion_tokens"),
@@ -935,40 +1268,47 @@ class ModelManager:
             await self._create_client(config)
     
     async def _create_client(self, config: ModelConfig) -> None:
-        """Create and cache a client for the given model config."""
+        """Create and cache a single client for the given model config."""
+        self.model_clients[config.model_name] = await self._build_client(config)
+        logger.info(f"| Created client for {config.model_name}")
+
+    async def _build_client(self, config: ModelConfig):
+        """Build a single client instance from a ModelConfig (sync, no side effects)."""
         if config.provider == "newapi":
             if config.model_type == "chat/completions":
-                client = ChatNewAPI(
+                return ChatNewAPI(
                     model=config.model_id,
                     api_key=config.api_key,
                     base_url=config.api_base,
                     temperature=config.temperature or self.default_temperature,
                     max_completion_tokens=config.max_completion_tokens or self.max_tokens,
                 )
-                logger.info(f"| Created ChatNewAPI client for {config.model_name}")
+            elif config.model_type == "responses":
+                return ResponseNewAPI(
+                    model=config.model_id,
+                    api_key=config.api_key,
+                    base_url=config.api_base,
+                    reasoning=config.reasoning if config.reasoning else None,
+                    max_output_tokens=config.max_output_tokens or self.max_tokens,
+                )
             else:
                 raise ValueError(f"Unsupported model type {config.model_type} for New-API provider")
         elif config.provider == "openrouter":
-            # OpenRouter models (only chat/completions supported for now)
             if config.model_type == "chat/completions":
-                client = ChatOpenRouter(
+                return ChatOpenRouter(
                     model=config.model_id,
                     api_key=config.api_key,
                     base_url=config.api_base,
                     reasoning=config.reasoning if config.reasoning else None,
                     plugins=config.plugins if config.plugins else None,
                     temperature=config.temperature or self.default_temperature,
-                    max_completion_tokens=config.max_completion_tokens or self.max_tokens,
-                    http_referer=os.getenv("OPENROUTER_HTTP_REFERER"),
-                    x_title=os.getenv("OPENROUTER_X_TITLE"),
+                    max_completion_tokens=config.max_completion_tokens or self.max_tokens
                 )
-                logger.info(f"| Created ChatOpenRouter client for {config.model_name}")
             else:
                 raise ValueError(f"Unsupported model type {config.model_type} for OpenRouter provider")
         elif config.provider == "anthropic":
-            # Anthropic models (only chat/completions supported for now)
             if config.model_type == "chat/completions":
-                client = ChatAnthropic(
+                return ChatAnthropic(
                     model=config.model_id,
                     api_key=config.api_key,
                     base_url=config.api_base,
@@ -976,51 +1316,41 @@ class ModelManager:
                     temperature=config.temperature or self.default_temperature,
                     max_tokens=config.max_completion_tokens or self.max_tokens,
                 )
-                logger.info(f"| Created ChatAnthropic client for {config.model_name}")
             else:
                 raise ValueError(f"Unsupported model type {config.model_type} for Anthropic provider")
         elif config.provider == "google":
-            # Google Gemini models (only chat/completions supported for now)
             if config.model_type == "chat/completions":
-                client = ChatGoogle(
+                return ChatGoogle(
                     model=config.model_id,
                     api_key=config.api_key,
                     reasoning=config.reasoning if config.reasoning else None,
                     temperature=config.temperature or self.default_temperature,
                     max_output_tokens=config.max_completion_tokens or self.max_tokens,
                 )
-                logger.info(f"| Created ChatGoogle client for {config.model_name}")
             else:
                 raise ValueError(f"Unsupported model type {config.model_type} for Google provider")
         elif config.model_type == "responses":
-            # Create ResponseOpenAI client
-            client = ResponseOpenAI(
+            return ResponseOpenAI(
                 model=config.model_id,
                 api_key=config.api_key,
                 base_url=config.api_base,
                 reasoning=config.reasoning if config.reasoning else None,
                 max_output_tokens=config.max_output_tokens or self.max_tokens,
             )
-            logger.info(f"| Created ResponseOpenAI client for {config.model_name}")
         elif config.model_type == "transcriptions":
-            # Create TranscribeOpenAI client
-            client = TranscribeOpenAI(
+            return TranscribeOpenAI(
                 model=config.model_id,
                 api_key=config.api_key,
                 base_url=config.api_base,
             )
-            logger.info(f"| Created TranscribeOpenAI client for {config.model_name}")
         elif config.model_type == "embeddings":
-            # Create EmbeddingOpenAI client
-            client = EmbeddingOpenAI(
+            return EmbeddingOpenAI(
                 model=config.model_id,
                 api_key=config.api_key,
                 base_url=config.api_base,
             )
-            logger.info(f"| Created EmbeddingOpenAI client for {config.model_name}")
         else:
-            # Create ChatOpenAI client
-            client = ChatOpenAI(
+            return ChatOpenAI(
                 model=config.model_id,
                 api_key=config.api_key,
                 base_url=config.api_base,
@@ -1028,14 +1358,22 @@ class ModelManager:
                 reasoning=config.reasoning if config.reasoning else None,
                 max_completion_tokens=config.max_completion_tokens or self.max_tokens,
             )
-            logger.info(f"| Created ChatOpenAI client for {config.model_name}")
-            
-        self.model_clients[config.model_name] = client
-    
+
+    async def _get_client(self, model: str):
+        """Return the cached client with the next round-robin key already set."""
+        client = self.model_clients.get(model)
+        if client:
+            model_config = self.models.get(model)
+            pool_name = (model_config.key_pool_name or model_config.provider) if model_config else None
+            key = await self._key_pool.get_key(pool_name) if pool_name else None
+            if key:
+                client.set_api_key(key)
+        return client
+
     async def register_model(self, config: ModelConfig) -> None:
         """Register a new model configuration."""
         if config.provider not in ["openai", "openrouter", "anthropic", "google", "newapi"]:
-            raise ValueError(f"Only OpenAI, OpenRouter, Anthropic, and Google models are supported. Got provider: {config.provider}")
+            raise ValueError(f"Only OpenAI, OpenRouter, Anthropic, Google, NewAPI, and Internal OpenRouter models are supported. Got provider: {config.provider}")
         
         self.models[config.model_name] = config
         await self._create_client(config)
@@ -1071,6 +1409,9 @@ class ModelManager:
             parts.append(f"cache_read={cache_read}")
         if cost is not None:
             parts.append(f"cost=${cost:.6f}")
+        caller = getattr(self, '_current_caller', None)
+        if caller:
+            parts.append(f"caller={caller}")
 
         logger.info(f"| 💰 Usage: {', '.join(parts)}")
 
@@ -1114,6 +1455,7 @@ class ModelManager:
         stream: bool = False,
         plugins: Optional[List[Dict[str, Any]]] = None,
         max_retries: int = 3,
+        caller: Optional[str] = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """
@@ -1126,16 +1468,17 @@ class ModelManager:
             response_format: Optional response format (Pydantic model or dict)
             stream: Whether to stream the response
             max_retries: Number of attempts before falling back / giving up (default 3)
+            caller: Optional identifier of who is calling (e.g. 'v2/query_gen', 'analyzer/merge')
             **kwargs: Additional parameters
 
         Returns:
             LLMResponse with formatted message
         """
+        self._current_caller = caller
         if tools and response_format:
             raise ValueError("tools and response_format cannot be used together")
 
-        client = self.model_clients.get(model)
-        if not client:
+        if model not in self.model_clients:
             return LLMResponse(
                 success=False,
                 message=f"Model {model} not found. Available models: {list(self.models.keys())}",
@@ -1144,9 +1487,13 @@ class ModelManager:
         model_config = self.models.get(model)
 
         # --- Primary model with retries ---
+        import time as _t
+        import httpx
         last_exc: Exception = None
         for attempt in range(max_retries):
+            _call_start = _t.time()
             try:
+                client = await self._get_client(model)
                 result = await self._call_client(
                     client, model_config, messages, tools, response_format, stream, plugins, kwargs
                 )
@@ -1157,29 +1504,39 @@ class ModelManager:
                 if is_chat and not result.message:
                     raise Exception("Model returned empty message")
                 return result
+            except (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                last_exc = e
+                _elapsed = _t.time() - _call_start
+                caller_tag = f", caller={self._current_caller}" if getattr(self, '_current_caller', None) else ""
+                logger.error(
+                    f"| ❌ Model {model} timed out ({_elapsed:.0f}s{caller_tag}): {e}"
+                )
+                break  # timeout不重试，直接走fallback
             except Exception as e:
                 last_exc = e
+                _elapsed = _t.time() - _call_start
+                caller_tag = f", caller={self._current_caller}" if getattr(self, '_current_caller', None) else ""
                 if attempt < max_retries - 1:
                     logger.warning(
-                        f"| Model {model} attempt {attempt + 1}/{max_retries} failed: {e}, retrying..."
+                        f"| ⚠️ Model {model} attempt {attempt + 1}/{max_retries} failed ({_elapsed:.0f}s{caller_tag}): {e}, retrying..."
                     )
                 else:
                     logger.error(
-                        f"| Model {model} failed after {max_retries} attempts: {e}"
+                        f"| ❌ Model {model} failed after {max_retries} attempts ({_elapsed:.0f}s{caller_tag}): {e}"
                     )
 
         # --- Fallback model (single attempt) ---
         if model_config and model_config.fallback_model:
             fallback_model = model_config.fallback_model
             logger.warning(f"| Primary model {model} exhausted retries, falling back to {fallback_model}")
-            fallback_client = self.model_clients.get(fallback_model)
-            if not fallback_client:
+            if fallback_model not in self.model_clients:
                 return LLMResponse(
                     success=False,
                     message=f"Primary model {model} failed and fallback {fallback_model} not found. Error: {last_exc}",
                 )
             fallback_config = self.models.get(fallback_model)
             try:
+                fallback_client = await self._get_client(fallback_model)
                 result = await self._call_client(
                     fallback_client, fallback_config, messages, tools, response_format, stream, plugins, kwargs
                 )
@@ -1215,4 +1572,3 @@ class ModelManager:
 
     # Global singleton instance
 model_manager = ModelManager()
-

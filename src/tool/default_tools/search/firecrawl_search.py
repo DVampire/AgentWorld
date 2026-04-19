@@ -1,218 +1,201 @@
+"""Firecrawl search — web search with scraped markdown content via Firecrawl API."""
+
 from __future__ import annotations
-from typing import Any, Optional, Dict, List, Type
+
 import json
 import os
-from pydantic import ConfigDict, Field
-from firecrawl import AsyncFirecrawlApp
-from dotenv import load_dotenv
-load_dotenv()
+from typing import Any, Dict, List, Optional
 
-from src.tool.default_tools.search.types import SearchItem, SearchToolArgs
-from src.tool.types import Tool, ToolResponse, ToolExtra
+import httpx
+from pydantic import ConfigDict, Field
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from src.logger import logger
 from src.registry import TOOL
+from src.tool.default_tools.search.types import SearchItem
+from src.tool.types import Tool, ToolExtra, ToolResponse
+from src.utils import hvac_client
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry on network errors and 5xx only; 4xx are not retryable."""
+    if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return False
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError)),
+    reraise=True,
+)
+async def _make_firecrawl_request(
+    payload: Dict[str, Any], headers: Dict[str, str], api_base: str
+) -> httpx.Response:
+    """Make HTTP request to Firecrawl search API with retry logic."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{api_base}/search",
+            json=payload,
+            headers=headers,
+            timeout=httpx.Timeout(60.0),
+        )
+        response.raise_for_status()
+        return response
+
 
 @TOOL.register_module(force=True)
 class FirecrawlSearch(Tool):
-    """Tool that queries the Firecrawl search engine.
+    """Web search with scraped markdown content via Firecrawl API.
 
-    Example usages:
-    .. code-block:: python
-        # basic usage
-        tool = FirecrawlSearch()
-
-    .. code-block:: python
-        # with custom search kwargs
-        tool = FirecrawlSearch.from_search_kwargs({"limit": 5})
+    Uses the /search endpoint with research and PDF category filtering,
+    and returns full markdown content for each result.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
 
-    name: str = "firecrawl_search"
+    name: str = "firecrawl_search_tool"
     description: str = (
-        "a search engine. "
-        "useful for when you need to answer questions about current events."
-        " input should be a search query."
+        "Search the web via Firecrawl API, prioritising research papers and PDFs. "
+        "Returns results with full scraped markdown content."
     )
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    api_key: Optional[str] = Field(default=None, description="Firecrawl API key")
-    
+    api_key: str = Field(default="", description="Firecrawl API key")
+    api_base: str = Field(default="", description="Firecrawl API base URL")
+
     def __init__(self, **kwargs):
-        """Initialize the FirecrawlSearch tool."""
-        # Set api_key from environment if not provided
         super().__init__(**kwargs)
-        self.api_key = os.getenv("FIRECRAWL_API_KEY")
+        self.api_key = hvac_client.get("FIRECRAWL_API_KEY") or ""
+        self.api_base = hvac_client.get("FIRECRAWL_API_BASE") or "https://api.firecrawl.dev/v2"
 
-    @classmethod
-    def from_search_kwargs(cls, search_kwargs: dict, **kwargs: Any) -> FirecrawlSearch:
-        """Create a tool from search kwargs.
-
-        Args:
-            search_kwargs: Any additional kwargs to pass to the search function.
-            **kwargs: Any additional kwargs to pass to the tool.
-
-        Returns:
-            A tool.
-        """
-        return cls(search_kwargs=search_kwargs, **kwargs)
-
-    async def _search_firecrawl(self, 
-                                query: str, 
-                                num_results: int = 10, 
-                                filter_year: Optional[int] = 2025) -> List[SearchItem]:
-        """
-        Perform a Firecrawl search using the provided parameters.
-        Returns a list of SearchItem objects.
-        """
-        if not self.api_key:
-            raise ValueError("FIRECRAWL_API_KEY environment variable is required")
-        
-        results = []
-        
-        app = AsyncFirecrawlApp(api_key=self.api_key)
-        search_kwargs = {
-            "query": query,
-            "limit": num_results,
-        }
-
-        # Add date filter if year is valid (1900-2100)
-        # Handle None case (when explicitly passed from caller)
-        if filter_year is None:
-            filter_year = 2025  # Use default if None
-        
-        if 1900 <= filter_year <= 2100:
-            search_kwargs["tbs"] = f"cdr:1,cd_min:01/01/{filter_year},cd_max:12/31/{filter_year}"
-        else:
-            logger.warning(f"Invalid filter_year: {filter_year}. Expected 1900-2100. Ignoring date filter.")
-        
-        try:
-            response = await app.search(**search_kwargs)
-        except Exception as e:
-            logger.error(f"Firecrawl API call failed: {e}")
-            return results
-        
-        # Check if response and response.web exist and are not None
-        if response is None:
-            logger.warning("Firecrawl search returned None response")
-            return results
-        
-        # Log response structure for debugging
-        logger.debug(f"Firecrawl response type: {type(response)}")
-        logger.debug(f"Firecrawl response attributes: {dir(response) if hasattr(response, '__dict__') else 'N/A'}")
-        
-        # Check for different possible response formats
-        web_results = None
-        
-        # Try to access web results from response object
-        if hasattr(response, 'web') and response.web is not None:
-            web_results = response.web
-        elif hasattr(response, 'data') and response.data is not None:
-            # Some API versions might use 'data' instead of 'web'
-            web_results = response.data
-        elif hasattr(response, 'results') and response.results is not None:
-            # Try 'results' attribute
-            web_results = response.results
-        elif isinstance(response, dict):
-            # Response might be a dict
-            web_results = response.get('web') or response.get('data') or response.get('results')
-        elif isinstance(response, list):
-            # Response might be a list directly
-            web_results = response
-        else:
-            # Try to convert response to dict if it's a Pydantic model
-            try:
-                if hasattr(response, 'model_dump'):
-                    response_dict = response.model_dump()
-                    web_results = response_dict.get('web') or response_dict.get('data') or response_dict.get('results')
-                elif hasattr(response, 'dict'):
-                    response_dict = response.dict()
-                    web_results = response_dict.get('web') or response_dict.get('data') or response_dict.get('results')
-            except Exception:
-                pass
-        
-        if web_results is None:
-            # Log full response structure for debugging
-            logger.warning(
-                f"Firecrawl search response has no accessible results. "
-                f"Response type: {type(response)}, Response: {str(response)[:200]}"
-            )
-            # Try to log all attributes
-            if hasattr(response, '__dict__'):
-                logger.debug(f"Response attributes: {list(response.__dict__.keys())}")
-            elif hasattr(response, '__fields__'):
-                logger.debug(f"Response fields: {list(response.__fields__.keys())}")
-            return results
-        
-        # Safely iterate over web_results
-        try:
-            for item in web_results:
-                if item is None:
-                    continue
-                
-                # Handle both object and dict formats
-                if isinstance(item, dict):
-                    title = item.get('title', '') or ""
-                    url = item.get('url', '') or ""
-                    description = item.get('description', '') or item.get('snippet', '') or ""
-                else:
-                    title = getattr(item, 'title', None) or ""
-                    url = getattr(item, 'url', None) or ""
-                    description = getattr(item, 'description', None) or getattr(item, 'snippet', None) or ""
-                
-                if url:  # Only add items with valid URLs
-                    results.append(SearchItem(
-                        title=title,
-                        url=url,
-                        description=description
-                    ))
-        except (TypeError, AttributeError) as e:
-            logger.error(f"Error iterating over Firecrawl search results: {e}, web_results type: {type(web_results)}")
-            return results
-
-        return results
-    
     async def __call__(
         self,
         query: str,
-        num_results: Optional[int] = 5,
-        country: Optional[str] = "us",
-        lang: Optional[str] = "en",
-        filter_year: Optional[int] = 2025,
-        **kwargs
+        image: Optional[str] = None,
+        num_results: Optional[int] = 10,
+        filter_year: Optional[int] = None,
+        **kwargs,
     ) -> ToolResponse:
-        """
-        Firecrawl search tool.
-        
+        """Execute a web search via Firecrawl API.
+
         Args:
-            query (str): The query to search for.
-            num_results (Optional[int]): The number of search results to return.
-            country (Optional[str]): The country to search in.
-            lang (Optional[str]): The language to search in.
-            filter_year (int): The year to filter results by. Defaults to 2025.
+            query: The search query string.
+            num_results: Number of results to return (default: 10).
+            filter_year: Filter results by year.
         """
-        
+        if not self.api_key:
+            return ToolResponse(
+                success=False,
+                message="FIRECRAWL_API_KEY not set",
+            )
+
+        if not query or not query.strip():
+            return ToolResponse(
+                success=False,
+                message="Search query cannot be empty",
+            )
+
         try:
-            
-            # Perform search
-            search_items = await self._search_firecrawl(query, num_results=num_results, filter_year=filter_year)
-            
-            # Format results as JSON string
-            results_json = json.dumps([{
-                "title": item.title,
-                "url": item.url,
-                "description": item.description or ""
-            } for item in search_items], ensure_ascii=False, indent=4)
-            
+            payload: Dict[str, Any] = {
+                "query": query.strip(),
+                "limit": num_results or 10,
+                "categories": ["research", "pdf"],
+            }
+
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            response = await _make_firecrawl_request(payload, headers, self.api_base)
+            data = response.json()
+
+            if not data.get("success"):
+                return ToolResponse(
+                    success=False,
+                    message=f"Firecrawl search returned unsuccessful response: {data}",
+                )
+
+            raw_results: List[Dict[str, Any]] = data.get("data", {}).get("web", [])
+
+            search_items: List[SearchItem] = []
+
+            for i, item in enumerate(raw_results):
+                url = item.get("url", "")
+                title = item.get("title", "") or item.get("metadata", {}).get("title", "")
+                description = item.get("description", "") or item.get("metadata", {}).get("description", "")
+
+                search_items.append(
+                    SearchItem(
+                        title=title,
+                        url=url,
+                        description=description,
+                        position=i + 1,
+                        source="firecrawl",
+                    )
+                )
+
+            if not search_items:
+                return ToolResponse(
+                    success=True,
+                    message=f"No search results found for: {query}",
+                    extra=ToolExtra(
+                        data={
+                            "query": query,
+                            "num_results": 0,
+                            "search_items": [],
+                            "engine": "firecrawl",
+                        }
+                    ),
+                )
+
+            results_json = json.dumps(
+                [
+                    {
+                        "title": item.title,
+                        "url": item.url,
+                        "description": item.description or "",
+                        "position": item.position,
+                        "content": item.content or "",
+                    }
+                    for item in search_items
+                ],
+                ensure_ascii=False,
+                indent=4,
+            )
+
             message = f"Firecrawl search results for query: {query}\n\n{results_json}"
-            
-            return ToolResponse(success=True, message=message, extra=ToolExtra(
-                data={
-                    "query": query,
-                    "num_results": len(search_items),
-                    "search_items": search_items,
-                    "engine": "firecrawl"
-                }
-            ))
-            
+
+            return ToolResponse(
+                success=True,
+                message=message,
+                extra=ToolExtra(
+                    data={
+                        "query": query,
+                        "num_results": len(search_items),
+                        "search_items": search_items,
+                        "engine": "firecrawl",
+                    }
+                ),
+            )
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"| Firecrawl search HTTP error: {e.response.status_code} — {e.response.text[:200]}")
+            return ToolResponse(
+                success=False,
+                message=f"Firecrawl search failed: HTTP {e.response.status_code} — {e.response.text[:200]}",
+            )
         except Exception as e:
-            logger.error(f"Error in Firecrawl search: {e}")
-            return ToolResponse(success=False, message=f"Error in Firecrawl search: {str(e)}")
+            logger.error(f"| Firecrawl search error: {e}")
+            return ToolResponse(
+                success=False,
+                message=f"Firecrawl search failed: {str(e)}",
+            )

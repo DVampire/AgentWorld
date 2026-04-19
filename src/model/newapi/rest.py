@@ -25,13 +25,13 @@ class NewAPICompletions:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: Optional[str] = "https://api.miromind.site/v1",
+        base_url: Optional[str] = None,
         default_headers: Optional[Mapping[str, str]] = None,
         timeout: Optional[Union[float, httpx.Timeout]] = 300.0,
         http_client: Optional[httpx.AsyncClient] = None,
     ):
         self.api_key = api_key
-        self.base_url = base_url.rstrip('/') if base_url else "https://api.miromind.site/v1"
+        self.base_url = base_url.rstrip('/') if base_url else None
         self.default_headers = default_headers
         self.timeout = timeout
         self._http_client = http_client
@@ -188,13 +188,93 @@ class NewAPIChatNamespace:
         self.completions = completions
 
 
+class NewAPIResponses:
+    """New-API responses client for the /responses endpoint."""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        default_headers: Optional[Mapping[str, str]] = None,
+        timeout: Optional[Union[float, httpx.Timeout]] = 300.0,
+        http_client: Optional[httpx.AsyncClient] = None,
+    ):
+        self.api_key = api_key
+        self.base_url = base_url.rstrip('/') if base_url else None
+        self.default_headers = default_headers
+        self.timeout = timeout
+        self._http_client = http_client
+        self._endpoint = "/responses"
+
+    def _get_headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.default_headers:
+            headers.update(self.default_headers)
+        return headers
+
+    def _get_api_url(self) -> str:
+        return f"{self.base_url}{self._endpoint}"
+
+    async def create(self, **params: Any) -> Dict[str, Any]:
+        """
+        Create a response via the /responses endpoint.
+
+        Args:
+            **params: API parameters (model, input, reasoning, max_output_tokens, etc.)
+
+        Returns:
+            Response dict from the API
+        """
+        headers = self._get_headers()
+        api_url = self._get_api_url()
+
+        timeout_obj = self.timeout
+        if isinstance(timeout_obj, (int, float)):
+            timeout_obj = httpx.Timeout(timeout_obj)
+
+        try:
+            if self._http_client:
+                client = self._http_client
+                should_close = False
+            else:
+                client = httpx.AsyncClient(timeout=timeout_obj)
+                should_close = True
+
+            try:
+                response = await client.post(
+                    url=api_url,
+                    headers=headers,
+                    json=params,
+                )
+                response.raise_for_status()
+                return response.json()
+            finally:
+                if should_close:
+                    await client.aclose()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"New-API responses HTTP error: {e}")
+            try:
+                error_detail = e.response.json()
+                raise Exception(f"New-API responses request failed: {error_detail}")
+            except Exception:
+                raise Exception(f"New-API responses request failed: {e.response.text}")
+        except httpx.RequestError as e:
+            logger.error(f"New-API responses request error: {e}")
+            raise Exception(f"New-API responses request failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in New-API responses request: {e}")
+            raise
+
+
 class NewAPIClient:
     """New-API client (OpenAI-compatible, similar to AsyncOpenAI)."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        base_url: Optional[str] = "https://api.miromind.site/v1",
+        base_url: Optional[str] = None,
         default_headers: Optional[Mapping[str, str]] = None,
         timeout: Optional[Union[float, httpx.Timeout]] = 300.0,
         http_client: Optional[httpx.AsyncClient] = None,
@@ -213,3 +293,10 @@ class NewAPIClient:
             http_client=http_client,
         )
         self.chat = NewAPIChatNamespace(completions=completions)
+        self.responses = NewAPIResponses(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers=default_headers,
+            timeout=timeout,
+            http_client=http_client,
+        )

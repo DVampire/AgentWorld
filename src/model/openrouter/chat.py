@@ -64,8 +64,8 @@ class ChatOpenRouter(BaseModel):
     # Client initialization parameters
     api_key: Optional[str] = None
     base_url: Optional[Union[str, httpx.URL]] = "https://openrouter.ai/api/v1"
-    timeout: Optional[Union[float, httpx.Timeout]] = None
-    max_retries: int = 5
+    timeout: Optional[Union[float, httpx.Timeout]] = httpx.Timeout(1800.0, connect=30.0)
+    max_retries: int = 0
     default_headers: Optional[Mapping[str, str]] = None
     default_query: Optional[Mapping[str, object]] = None
     http_client: Optional[httpx.AsyncClient] = None
@@ -82,6 +82,9 @@ class ChatOpenRouter(BaseModel):
     @property
     def provider(self) -> str:
         return 'openrouter'
+
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
 
     def _get_client_params(self) -> dict[str, Any]:
         """Prepare client parameters dictionary."""
@@ -295,22 +298,29 @@ class ChatOpenRouter(BaseModel):
         # If plugins are needed, use OpenRouterClient
         # Otherwise, use AsyncOpenAI client
         # Both use the same format: client.chat.completions.create()
-        
-        if plugins:
-            client = self.get_openrouter_client()
-            response = await client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                plugins=plugins,
-                **params,
-            )
-        else:
-            client = self.get_openai_client()
-            response = await client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                **params,
-            )
+        import time as _t
+        _start = _t.time()
+
+        try:
+            if plugins:
+                client = self.get_openrouter_client()
+                response = await client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    plugins=plugins,
+                    **params,
+                )
+            else:
+                client = self.get_openai_client()
+                response = await client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    **params,
+                )
+        except Exception as e:
+            _elapsed = _t.time() - _start
+            logger.error(f"| 🔴 OpenRouter SDK error ({_elapsed:.0f}s, model={self.model}): {type(e).__name__}: {e}")
+            raise
         
         return response
     
@@ -548,6 +558,8 @@ class ChatOpenRouter(BaseModel):
                     data={"error": str(e), "status_code": e.status_code, "model": self.name}
                 )
             )
+        except httpx.TimeoutException:
+            raise
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return LLMResponse(

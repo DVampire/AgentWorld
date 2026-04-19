@@ -63,7 +63,7 @@ class ChatOpenAI(BaseModel):
     project: Optional[str] = None
     base_url: Optional[Union[str, httpx.URL]] = None
     websocket_base_url: Optional[Union[str, httpx.URL]] = None
-    timeout: Optional[Union[float, httpx.Timeout]] = None
+    timeout: Optional[Union[float, httpx.Timeout]] = httpx.Timeout(600.0, connect=30.0)
     max_retries: int = 5
     default_headers: Optional[Mapping[str, str]] = None
     default_query: Optional[Mapping[str, object]] = None
@@ -81,6 +81,9 @@ class ChatOpenAI(BaseModel):
     @property
     def provider(self) -> str:
         return 'openai'
+
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
 
     def _get_client_params(self) -> dict[str, Any]:
         """Prepare client parameters dictionary."""
@@ -347,6 +350,8 @@ class ChatOpenAI(BaseModel):
                     data={"error": str(e), "status_code": e.status_code, "model": self.name}
                 )
             )
+        except httpx.TimeoutException:
+            raise
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return LLMResponse(

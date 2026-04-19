@@ -28,6 +28,8 @@ class ModelConfig(BaseModel):
         default=None,
         description="Optional output schema version when required by provider.",
     )
+    timeout: Optional[float] = Field(default=None, description="Request timeout in seconds.")
+    key_pool_name: Optional[str] = Field(default=None, description="Key pool name for round-robin key lookup. Defaults to provider if not set.")
     fallback_model: Optional[str] = Field(
         default=None,
         description="Fallback model name to use if the primary model fails due to policy/content filter errors.",
