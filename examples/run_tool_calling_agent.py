@@ -96,7 +96,6 @@ async def main():
     # task = """Where were the Vietnamese specimens described by Kuznetzov in Nedoshivina's 2010 paper eventually deposited? Just give me the city name without abbreviations."""
     # task = "Write a mini game about a cat that can fly and fight enemies, and then push it to github."
     task = "Generate an add two numbers skill to add 1 and 2 and return the result."
-    # task = "开启一个AI能力自博弈讨论，讨论主题和行业是：AI在生物医药行业的应用。"
     files = []
     
     logger.info(f"| 📋 Task: {task}")
