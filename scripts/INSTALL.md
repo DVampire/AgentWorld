@@ -120,7 +120,7 @@ vim /mnt/agent-framework/<your user path>/myapp/opencode/opencode.json
       }
     }
   },
-  "model": "newapi/claude-opus-4-6"
+  "model": "openrouter/anthropic/claude-opus-4.6"
 }
 ```
 
