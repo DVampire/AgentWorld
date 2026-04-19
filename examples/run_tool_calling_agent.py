@@ -20,11 +20,8 @@ from src.prompt import prompt_manager
 from src.memory import memory_manager
 from src.tool import tool_manager
 from src.skill import skill_manager
-from src.environment import environment_manager
 from src.agent import agent_manager
-from src.transformation import transformation
 from src.session.types import SessionContext
-from src.utils import generate_unique_id
 
 def parse_args():
     parser = argparse.ArgumentParser(description='main')
@@ -49,6 +46,11 @@ async def main():
     config.initialize(config_path = args.config, args = args)
     logger.initialize(config = config)
     logger.info(f"| Config: {config.pretty_text}")
+
+    # Initialize version manager, must after tool, agent, environment initialized
+    logger.info("| 📁 Initializing version manager...")
+    await version_manager.initialize()
+    logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
     
     # Initialize model manager
     logger.info("| 🧠 Initializing model manager...")
@@ -75,26 +77,13 @@ async def main():
     skill_names = getattr(config, 'skill_names', None)
     await skill_manager.initialize(skill_names=skill_names)
     logger.info(f"| ✅ Skills initialized: {await skill_manager.list()}")
-
-    # Initialize environments
-    logger.info("| 🎮 Initializing environments...")
-    await environment_manager.initialize(config.env_names)
-    logger.info(f"| ✅ Environments initialized: {environment_manager.list()}")
     
     # Initialize agents
     logger.info("| 🤖 Initializing agents...")
     await agent_manager.initialize(agent_names=config.agent_names)
     logger.info(f"| ✅ Agents initialized: {await agent_manager.list()}")
     
-    # Initialize version manager, must after tool, agent, environment initialized
-    logger.info("| 📁 Initializing version manager...")
-    await version_manager.initialize()
-    logger.info(f"| ✅ Version manager initialized: {json.dumps(await version_manager.list(), indent=4)}")
-    
     # Example task
-    # task = """If Eliud Kipchoge could maintain his record-making marathon pace indefinitely, how many thousand hours would it take him to run the distance between the Earth and the Moon its closest approach? Please use the minimum perigee value on the Wikipedia page for the Moon when carrying out your calculation. Round your result to the nearest 1000 hours and do not use any comma separators if necessary."""
-    # task = """Where were the Vietnamese specimens described by Kuznetzov in Nedoshivina's 2010 paper eventually deposited? Just give me the city name without abbreviations."""
-    # task = "Write a mini game about a cat that can fly and fight enemies, and then push it to github."
     task = "Generate an add two numbers skill to add 1 and 2 and return the result."
     files = []
     
@@ -105,7 +94,7 @@ async def main():
     ctx = SessionContext()
     
     input = {
-        "name": "tool_calling",
+        "name": "tool_calling_agent",
         "input": {
             "task": task,
             "files": files

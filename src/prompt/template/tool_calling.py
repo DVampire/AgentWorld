@@ -3,6 +3,15 @@ from src.prompt.types import Prompt
 from typing import Any, Dict, Literal
 from pydantic import Field, ConfigDict
 
+
+# ===========================================================================
+# System Prompt
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Rules
+# ---------------------------------------------------------------------------
+
 AGENT_PROFILE = """
 You are an AI agent that operates in iterative steps and uses registered tools to accomplish the user's task. Your goals are to solve the task accurately, safely, and efficiently.
 """
@@ -25,11 +34,10 @@ LANGUAGE_SETTINGS = """
 </language_settings>
 """
 
-# Input = agent context + environment context + tool context
+# Input = agent context + tool context + skill context + examples
 INPUT = """
 <input>
 - <agent_context>: Describes your current internal state and identity, including your current task, relevant history, memory, and ongoing plans toward achieving your goals. This context represents what you currently know and intend to do.
-- <environment_context>: Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.
 - <tool_context>: Describes the available tools, their purposes, usage conditions, and current operational status.
 - <skill_context>: Describes the available skills with their instructions, workflows, and resources. Skills provide domain-specific knowledge and step-by-step guidance.
 - <examples>: Provides few-shot examples of good or bad reasoning and tool-use patterns. Use them as references for style and structure, but never copy them directly.
@@ -41,7 +49,7 @@ AGENT_CONTEXT_RULES = """
 <agent_context_rules>
 <workdir_rules>
 You are working in the following working directory: {{ workdir }}.
-- When using tools (e.g., `bash` or `python_interpreter`) for file operations, you MUST use absolute paths relative to this workdir (e.g., if workdir is `/path/to/workdir`, use `/path/to/workdir/file.txt` instead of `file.txt`).
+- When using tools (e.g., `bash_tool` or `python_interpreter_tool`) for file operations, you MUST use absolute paths relative to this workdir (e.g., if workdir is `/path/to/workdir`, use `/path/to/workdir/file.txt` instead of `file.txt`).
 </workdir_rules>
 <task_rules>
 TASK: This is your ultimate objective and always remains visible.
@@ -49,7 +57,7 @@ TASK: This is your ultimate objective and always remains visible.
 - If the user task is very specific, then carefully follow each step and dont skip or hallucinate steps.
 - If the task is open ended you can plan yourself how to get it done.
 
-You must call the `done` tool in one of three cases:
+You must call the `done_tool` tool in one of three cases:
 - When you have fully completed the TASK.
 - When you reach the final allowed step (`max_steps`), even if the task is incomplete.
 - If it is ABSOLUTELY IMPOSSIBLE to continue.
@@ -78,13 +86,6 @@ You will be provided with summaries and insights of the agent's memory.
 </agent_context_rules>
 """
 
-# Environment context rules = environments rules
-ENVIRONMENT_CONTEXT_RULES = """
-<environment_context_rules>
-Environments rules will be provided as a list, with each environment rule consisting of three main components: <state>, <vision> (if screenshots of the environment are available), and <interaction>.
-</environment_context_rules>
-"""
-
 # Tool context rules = reasoning rules + tool use rules + tool rules
 TOOL_CONTEXT_RULES = """
 <tool_context_rules>
@@ -99,30 +100,30 @@ You must follow these rules when selecting and executing tools to solve the <tas
 
 **Efficiency Guidelines**
 - Maximize efficiency by combining related tool calls into one step when possible.
-- Use a single tool call only when the next call depends directly on the previous tool’s specific result.
-- Think logically about the tool sequence: “What’s the natural, efficient order to achieve the goal?”
-- Avoid unnecessary micro-calls, redundant executions, or repetitive tool use that doesn’t advance progress.
+- Use a single tool call only when the next call depends directly on the previous tool's specific result.
+- Think logically about the tool sequence: "What's the natural, efficient order to achieve the goal?"
+- Avoid unnecessary micro-calls, redundant executions, or repetitive tool use that doesn't advance progress.
 - Always balance correctness and efficiency — never skip essential reasoning or validation steps for the sake of speed.
 - Keep your tool planning concise, logical, and efficient while strictly following the above rules.
 </tool_use_rules>
 
 <todo_rules>
-You have access to a `todo` tool for task planning. Use it strategically based on task complexity:
+You have access to a `todo_tool` tool for task planning. Use it strategically based on task complexity:
 
-**For Complex/Multi-step Tasks (MUST use `todo` tool):**
+**For Complex/Multi-step Tasks (MUST use `todo_tool` tool):**
 - Tasks requiring multiple distinct steps or phases
 - Tasks involving file processing, data analysis, or research
 - Tasks that need systematic planning and progress tracking
 - Long-running tasks that benefit from structured execution
 
-**For Simple Tasks (may skip `todo` tool):**
+**For Simple Tasks (may skip `todo_tool` tool):**
 - Single-step tasks that can be completed directly
 - Simple queries or calculations
 - Tasks that don't require planning or tracking
 
-**When using the `todo` tool:**
-- The `todo` tool is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first tool call whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
-- If `todo.md` is empty and the task is multi-step, generate a stepwise plan in `todo.md` using `todo` tool.
+**When using the `todo_tool` tool:**
+- The `todo_tool` tool is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace` operation to update markers in `todo.md` as first tool call whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
+- If `todo.md` is empty and the task is multi-step, generate a stepwise plan in `todo.md` using `todo_tool` tool.
 - Analyze `todo.md` to guide and track your progress.
 - If any `todo.md` items are finished, mark them as complete in the file.
 </todo_rules>
@@ -139,7 +140,7 @@ SKILL_CONTEXT_RULES = """
 Skills provide domain-specific knowledge, step-by-step workflows, and utility scripts.
 - <skill_context> only contains a brief summary (name, description, file paths) for each loaded skill.
 - When a task matches a skill's description, read the skill's SKILL.md file to get the full instructions and workflow before proceeding.
-- Skill scripts can be executed via tools (e.g., bash or python_interpreter) using the absolute paths provided.
+- Skill scripts can be executed via tools (e.g., `bash_tool` or `python_interpreter_tool`) using the absolute paths provided.
 - Reference files (examples.md, reference.md, etc.) can be read on demand for additional detail.
 - If no skills are loaded, ignore <skill_context>.
 </skill_context_rules>
@@ -163,7 +164,7 @@ The general reasoning patterns are as follows:
 - Evaluate success/failure/uncertainty of the last step.
 - Detect when you are stuck (repeating similar tool calls) and consider alternatives.
 - Maintain concise, actionable memory for future reasoning.
-- Before finishing, verify results and confirm readiness to call `done`.
+- Before finishing, verify results and confirm readiness to call `done_tool`.
 - Always align reasoning with <task> and user intent.
 </general_reasoning_rules>
 
@@ -178,7 +179,7 @@ Step2: ...
 
 OUTPUT = """
 <output>
-You must ALWAYS respond with a valid JSON in this exact format. 
+You must ALWAYS respond with a valid JSON in this exact format.
 DO NOT add any other text like "```json" or "```" or anything else:
 
 {
@@ -186,7 +187,7 @@ DO NOT add any other text like "```json" or "```" or anything else:
     "evaluation_previous_goal": "One-sentence analysis of your last actions. Clearly state success, failure, or uncertainty.",
     "memory": "1-3 sentences describing specific memory of this step and overall progress. Include everything that will help you track progress in future steps.",
     "next_goal": "State the next immediate goals and actions to achieve them, in one clear sentence.",
-    "actions": The list of actions to execute in sequence. Each action has a "type" ("tool" or "skill"), a "name", and "args" (JSON string). e.g., [{"type": "tool", "name": "done", "args": "{\"result\": \"D\"}"}, {"type": "skill", "name": "hello-world", "args": "{\"name\": \"Alice\"}"}]
+    "actions": The list of actions to execute in sequence. Each action has a "type" ("tool" or "skill"), a "name", and "args" (JSON string). e.g., [{"type": "tool", "name": "done_tool", "args": "{\"result\": \"D\"}"}, {"type": "skill", "name": "hello-world_tool", "args": "{\"name\": \"Alice\"}"}]
 }
 
 Actions list should NEVER be empty. Each action must have a valid "type", "name", and "args".
@@ -196,13 +197,16 @@ Actions list should NEVER be empty. Each action must have a valid "type", "name"
 </output>
 """
 
+# ---------------------------------------------------------------------------
+# Template
+# ---------------------------------------------------------------------------
+
 SYSTEM_PROMPT_TEMPLATE = """
 {{ agent_profile }}
 {{ agent_introduction }}
 {{ language_settings }}
 {{ input }}
 {{ agent_context_rules }}
-{{ environment_context_rules }}
 {{ tool_context_rules }}
 {{ skill_context_rules }}
 {{ example_rules }}
@@ -210,17 +214,12 @@ SYSTEM_PROMPT_TEMPLATE = """
 {{ output }}
 """
 
-# Agent message (dynamic context) - using Jinja2 syntax
-AGENT_MESSAGE_PROMPT_TEMPLATE = """
-{{ agent_context }}
-{{ environment_context }}
-{{ tool_context }}
-{{ skill_context }}
-{{ examples }}
-"""
+# ---------------------------------------------------------------------------
+# Prompt config dict
+# ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = {
-    "name": "tool_calling_system_prompt",
+    "name": "tool_calling_agent_system_prompt",
     "type": "system_prompt",
     "description": "System prompt for tool-calling agents - static constitution and protocol",
     "require_grad": True,
@@ -253,7 +252,7 @@ SYSTEM_PROMPT = {
         "input": {
             "name": "input",
             "type": "system_prompt",
-            "description": "Describes the structure and components of input data including agent context, environment context, and tool context.",
+            "description": "Describes the structure and components of input data including agent context, tool context and skill context.",
             "require_grad": False,
             "template": None,
             "variables": INPUT
@@ -265,14 +264,6 @@ SYSTEM_PROMPT = {
             "require_grad": False,
             "template": None,
             "variables": AGENT_CONTEXT_RULES
-        },
-        "environment_context_rules": {
-            "name": "environment_context_rules",
-            "type": "system_prompt",
-            "description": "Defines how the agent should interact with and respond to different environmental contexts and conditions.",
-            "require_grad": False,
-            "template": None,
-            "variables": ENVIRONMENT_CONTEXT_RULES
         },
         "tool_context_rules": {
             "name": "tool_context_rules",
@@ -317,8 +308,45 @@ SYSTEM_PROMPT = {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Class definition
+# ---------------------------------------------------------------------------
+
+@PROMPT.register_module(force=True)
+class ToolCallingSystemPrompt(Prompt):
+    """System prompt template for tool-calling agents."""
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+
+    type: str = Field(default='system_prompt', description="The type of the prompt")
+    name: str = Field(default="tool_calling_agent", description="The name of the prompt")
+    description: str = Field(default="System prompt for tool-calling agents", description="The description of the prompt")
+    require_grad: bool = Field(default=True, description="Whether the prompt requires gradient")
+    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
+
+    prompt_config: Dict[str, Any] = Field(default=SYSTEM_PROMPT, description="System prompt information")
+
+
+# ===========================================================================
+# Agent Message Prompt
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Template
+# ---------------------------------------------------------------------------
+
+AGENT_MESSAGE_PROMPT_TEMPLATE = """
+{{ agent_context }}
+{{ tool_context }}
+{{ skill_context }}
+{{ examples }}
+"""
+
+# ---------------------------------------------------------------------------
+# Prompt config dict
+# ---------------------------------------------------------------------------
+
 AGENT_MESSAGE_PROMPT = {
-    "name": "tool_calling_agent_message_prompt",
+    "name": "tool_calling_agent_agent_message_prompt",
     "type": "agent_message_prompt",
     "description": "Agent message for tool calling agents (dynamic context)",
     "require_grad": False,
@@ -328,14 +356,6 @@ AGENT_MESSAGE_PROMPT = {
             "name": "agent_context",
             "type": "agent_message_prompt",
             "description": "Describes the agent's current state, including its current task, history, memory, and plans.",
-            "require_grad": False,
-            "template": None,
-            "variables": None
-        },
-        "environment_context": {
-            "name": "environment_context",
-            "type": "agent_message_prompt",
-            "description": "Describes the external environment, situational state, and any external conditions that may influence your reasoning or behavior.",
             "require_grad": False,
             "template": None,
             "variables": None
@@ -367,28 +387,19 @@ AGENT_MESSAGE_PROMPT = {
     },
 }
 
-@PROMPT.register_module(force=True)
-class ToolCallingSystemPrompt(Prompt):
-    """System prompt template for tool-calling agents."""
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
-    type: str = Field(default='system_prompt', description="The type of the prompt")
-    name: str = Field(default="tool_calling", description="The name of the prompt")
-    description: str = Field(default="System prompt for tool-calling agents", description="The description of the prompt")
-    require_grad: bool = Field(default=True, description="Whether the prompt requires gradient")
-    metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
-    
-    prompt_config: Dict[str, Any] = Field(default=SYSTEM_PROMPT, description="System prompt information")
-    
+# ---------------------------------------------------------------------------
+# Class definition
+# ---------------------------------------------------------------------------
+
 @PROMPT.register_module(force=True)
 class ToolCallingAgentMessagePrompt(Prompt):
     """Agent message prompt template for tool-calling agents."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
-    
+
     type: str = Field(default='agent_message_prompt', description="The type of the prompt")
-    name: str = Field(default="tool_calling", description="The name of the prompt")
+    name: str = Field(default="tool_calling_agent", description="The name of the prompt")
     description: str = Field(default="Agent message prompt for tool-calling agents", description="The description of the prompt")
     require_grad: bool = Field(default=False, description="Whether the prompt requires gradient")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the prompt")
-    
+
     prompt_config: Dict[str, Any] = Field(default=AGENT_MESSAGE_PROMPT, description="Agent message prompt information")

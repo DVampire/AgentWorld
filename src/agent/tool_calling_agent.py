@@ -3,17 +3,16 @@
 import asyncio
 import os
 from typing import List, Optional, Dict, Any
-from langchain_core.messages import BaseMessage
 from datetime import datetime
 from pydantic import Field, ConfigDict
 
+from src.message import Message
+from src.message.types import HumanMessage, SystemMessage
 from src.agent.types import Agent, AgentResponse, AgentExtra, ThinkOutput
-from src.config import config
 from src.logger import logger
 from src.utils import dedent, parse_tool_args
 from src.tool.server import tool_manager
 from src.skill.server import skill_manager
-from src.environment.server import environment_manager
 from src.memory import memory_manager, EventType
 from src.tracer import Tracer, Record
 from src.model import model_manager
@@ -25,8 +24,9 @@ class ToolCallingAgent(Agent):
     """Tool calling agent implementation with manual agent logic."""
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
     
-    name: str = Field(default="tool_calling", description="The name of the tool calling agent.")
-    description: str = Field(default="A tool calling agent that can call tools to complete tasks.", description="The description of the tool calling agent.")
+    name: str = Field(default="tool_calling_agent", description="The name of the tool calling agent.")
+    description: str = Field(default="A tool-calling agent equipped with wiki_search_skill for looking up encyclopedic definitions and explanations of specialised terminology in biology, physics, and mathematics.", 
+                             description="The description of the tool calling agent.")
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool calling agent.")
     require_grad: bool = Field(default=False, description="Whether the agent requires gradients")
     
@@ -80,49 +80,28 @@ class ToolCallingAgent(Agent):
                 record = last_record
         
         return tracer, record
-    
-    async def _get_environment_context(self, ctx: SessionContext, record: Record = None, **kwargs) -> Dict[str, Any]:
-        """Get the environment state."""
         
-        environment_context = "<environment_context>"
-        record_observation = {}
-        
-        # Only iterate over environments specified in config, not all registered environments
-        for env_name in config.env_names:
-            env_info = await environment_manager.get_info(env_name)
-            rule_string = env_info.rules
-            rule_string = dedent(f"""
-                <rules>
-                {rule_string}
-                </rules>
-            """)
-            
-            env_state = await environment_manager.get_state(env_name, ctx=ctx)
-            state_string = "<state>"
-            state_string += env_state["state"]
-            extra = env_state["extra"]
-            record_observation[env_name] = extra
-            
-            if "screenshots" in extra:
-                for screenshot in extra["screenshots"]:
-                    state_string += f"\n<img src={screenshot.screenshot_path} alt={screenshot.screenshot_description}/>"
-            state_string += "</state>"
-            
-            environment_context += dedent(f"""
-                <{env_name}>
-                {rule_string}
-                {state_string}
-                </{env_name}>
-            """)
-        
-        if record is not None:
-            record.observation = record_observation
-        
-        environment_context += "</environment_context>"
-        return {
-            "environment_context": environment_context,
-        }
-        
+    async def _summarize(self, text: str, source: str) -> str:
+        """If text exceeds 1024 tokens (~4096 chars), summarize it with LLM."""
+        if len(text) <= 4096:
+            return text
+        logger.info(f"| 📝 Response from '{source}' is long ({len(text)} chars), summarizing...")
+        messages = [
+            SystemMessage(content="You are a concise summarizer. Summarize the following content, preserving all key facts, definitions, and specific details that are relevant for answering domain questions."),
+            HumanMessage(content=f"Summarize this content:\n\n{text}"),
+        ]
+        try:
+            response = await model_manager(
+                model=self.model_name,
+                messages=messages,
+            )
+            summary = response.message
+            logger.info(f"| ✅ Summarized from {len(text)} to {len(summary)} chars")
+            return summary
+        except Exception as e:
+            logger.warning(f"| ⚠️ Summarization failed: {e}, returning truncated original")
+            return text[:4096]
+
     async def _get_tool_context(self, ctx: SessionContext, record: Record = None, **kwargs) -> Dict[str, Any]:
         """Get the tool context."""
         
@@ -139,8 +118,8 @@ class ToolCallingAgent(Agent):
             "tool_context": tool_context,
         }
         
-    async def _think_and_tool(self, 
-                              messages: List[BaseMessage], 
+    async def _think_and_action(self, 
+                              messages: List[Message], 
                               task_id: str,
                               step_number: int,
                               record: Record = None, 
@@ -196,13 +175,13 @@ class ToolCallingAgent(Agent):
                 logger.info(f"| 📝 Args: {action_args}")
 
                 if action_type == "skill":
-                    # Route to SCP
+                    # Route to skill manager
                     response = await skill_manager(
                         name=action_name,
                         input=action_args,
                         ctx=ctx,
                     )
-                    action_result = response.message
+                    action_result = await self._summarize(response.message, action_name)
                     action_extra = response.extra if hasattr(response, 'extra') else None
 
                     logger.info(f"| ✅ Skill '{action_name}' completed (success={response.success})")
@@ -216,16 +195,16 @@ class ToolCallingAgent(Agent):
                     record_extra.update(action_dict)
                     if action_extra is not None:
                         record_extra['extra'] = action_extra.model_dump()
-                    record_data["actions"].append(record_extra)
+                    record_data["actions"].append({"tool_name": action_name, **record_extra})
 
                 else:
-                    # Route to TCP (default: type == "tool")
+                    # Route to tool manager (default: type == "tool")
                     tool_response = await tool_manager(
                         name=action_name,
                         input=action_args,
                         ctx=ctx,
                     )
-                    action_result = tool_response.message
+                    action_result = await self._summarize(tool_response.message, action_name)
                     action_extra = tool_response.extra if hasattr(tool_response, 'extra') else None
 
                     logger.info(f"| ✅ Tool '{action_name}' completed")
@@ -239,9 +218,9 @@ class ToolCallingAgent(Agent):
                     record_extra.update(action_dict)
                     if action_extra is not None:
                         record_extra['extra'] = action_extra.model_dump()
-                    record_data["actions"].append(record_extra)
+                    record_data["actions"].append({"tool_name": action_name, **record_extra})
 
-                    if action_name == "done":
+                    if action_name == "done_tool":
                         done = True
                         result = action_result
                         reasoning = action_extra.data.get('reasoning', None) if action_extra and action_extra.data else None
@@ -256,7 +235,7 @@ class ToolCallingAgent(Agent):
             }
             
             if record is not None:
-                record.tool = record_data
+                record.action = record_data
             
             # Get memory system name
             memory_name = self.memory_name
@@ -348,12 +327,12 @@ class ToolCallingAgent(Agent):
             logger.info(f"| 🔄 Step {step_number+1}/{self.max_steps}")
             
             # Execute one step
-            response = await self._think_and_tool(messages, task_id, step_number, ctx=ctx, record=record)
+            response = await self._think_and_action(messages, task_id, step_number, ctx=ctx, record=record)
             step_number += 1
             
             # Update tracer and save to json
-            await tracer.add_record(observation=record.observation, 
-                                        tool=record.tool,
+            await tracer.add_record(observation=record.observation,
+                                        action=record.action,
                                         task_id=task_id,
                                         ctx=ctx)
             await tracer.save_to_json(self.tracer_save_path)
