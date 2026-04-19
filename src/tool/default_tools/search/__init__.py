@@ -5,6 +5,7 @@ from .bing_search import BingSearch
 from .google_search import GoogleSearch
 from .ddgs_search import DDGSSearch
 from .jina_search import JinaSearch
+from .google_lens_search import GoogleLensSearch
 
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "GoogleSearch",
     "DDGSSearch",
     "JinaSearch",
+    "GoogleLensSearch",
 ]

@@ -34,14 +34,12 @@ agent_names = [
     "tool_calling"
 ]
 tool_names = [
-    'bash',
-    'python_interpreter',
-    'done',
-    'todo',
-    'web_searcher'
+    'bash_tool',
+    'done_tool',
+    'todo_tool',
 ]
 skill_names = [
-    "hello-world",
+    "hello_world_skill",
 ]
 
 #-----------------BASH TOOL CONFIG-----------------
