@@ -1,6 +1,6 @@
 # Autogenesis
 
-**Note:** The codebase is currently being organized and may contain bugs. At present, `examples/run_tool_calling_agent.py` runs correctly; other agents are still under active debugging.
+**Note:** The codebase is currently undergoing active refactoring and optimization. `examples/run_tool_calling_agent.py` is functional; other agents are being progressively stabilized as part of this effort.
 
 English | [中文说明](README_zh.md)
 
