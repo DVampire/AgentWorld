@@ -185,66 +185,7 @@ python examples/run_hle.py
 | `--end` | int | `None` | End index (exclusive) of the HLE dataset subset |
 | `--cfg-options` | list | - | Override config entries in `key=value` format |
 
-
-# 4. SkillsBench
-
-SkillsBench is a multi-turn interactive benchmark containing 87 tasks running inside Docker containers. The agent sends shell commands, receives stdout/stderr feedback, and is evaluated by `test.sh` (reward: 0.0–1.0).
-
-## Prerequisites
-
-1. Install Docker and ensure the current user has Docker permissions.
-2. Initialize the SkillsBench submodule and install dependencies:
-
-```bash
-git submodule update --init -- src/benchmark/skillsbench-sandbox/skillsbench
-
-pip install gymnasium pyyaml
-```
-
-## Start the Sandbox Server
-
-```bash
-python src/benchmark/skillsbench-sandbox/start_sandbox_server.py --config src/benchmark/skillsbench-sandbox/sandbox_config.yaml
-```
-
-Health check:
-
-```bash
-curl -s http://127.0.0.1:8080/health
-```
-
-## Run
-
-```bash
-# Direct LLM inference (multi-turn shell interaction)
-python examples/run_skillsbench.py --model-name openrouter/gemini-3.1-pro-preview
-
-# Bus mode (AgentOS full agent pipeline)
-python examples/run_skillsbench.py --use-bus
-```
-
-## SkillsBench Parameter Reference
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `--config` | str | `configs/bus.py` | Path to the configuration file |
-| `--model-name` | str | `openrouter/gemini-3.1-pro-preview` | Model name used for direct inference mode |
-| `--use-bus` | flag | `False` | Enable the AgentBus full agent pipeline |
-| `--server-url` | str | `http://127.0.0.1:8080` | Sandbox server address |
-| `--dataset` | str | `tasks` | Dataset name (tasks, tasks-no-skills, etc.) |
-| `--task-id` | str | `None` | Run a single task (e.g., xlsx-recover-data) |
-| `--max-concurrency` | int | `4` | Maximum number of concurrent tasks |
-| `--max-steps` | int | `None` | Override max steps per task (default inferred from difficulty) |
-| `--max-rounds` | int | `20` | Maximum planning rounds per task in Bus mode |
-| `--step-timeout` | int | `None` | Override per-step execution timeout (seconds) |
-| `--start` | int | `None` | Start index (inclusive) of the task subset |
-| `--end` | int | `None` | End index (exclusive) of the task subset |
-| `--resume` | flag | `False` | Resume from the latest result file |
-| `--filter` | str | `None` | Used with --resume: `wrong` reruns failed tasks, `null` reruns tasks with no result |
-| `--disable-skill-injection` | flag | `False` | Disable skill metadata injection into the agent prompt |
-| `--cfg-options` | list | - | Override config entries in `key=value` format |
-
-# 5. Miscellaneous
+# 4. Miscellaneous (Optional)
 
 ```bash
 # 1. Test model API calls
