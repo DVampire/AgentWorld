@@ -133,7 +133,7 @@ ${SUDO} tee "${OPENCODE_CONFIG}" > /dev/null <<EOF
       }
     }
   },
-  "model": "newapi/claude-opus-4-6"
+  "model": "openrouter/anthropic/claude-opus-4.6"
 }
 EOF
 
