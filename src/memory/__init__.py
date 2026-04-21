@@ -7,6 +7,7 @@ from .general_memory_system import GeneralMemorySystem
 from .online_trading_memory_system import OnlineTradingMemorySystem
 from .offline_trading_memory_system import OfflineTradingMemorySystem
 from .optimizer_memory_system import OptimizerMemorySystem
+from .heartbeat_memory_system import HeartbeatMemorySystem
 
 __all__ = [
     "MemoryManager",
@@ -18,6 +19,7 @@ __all__ = [
     "OnlineTradingMemorySystem",
     "OfflineTradingMemorySystem",
     "OptimizerMemorySystem",
+    "HeartbeatMemorySystem",
     "ChatEvent",
     "EventType",
 ]
