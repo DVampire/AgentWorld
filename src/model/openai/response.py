@@ -61,6 +61,9 @@ class ResponseOpenAI(BaseModel):
     def provider(self) -> str:
         return 'openai'
 
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
+
     def _get_client_params(self) -> dict[str, Any]:
         """Prepare client parameters dictionary."""
         base_params = {
@@ -492,6 +495,8 @@ class ResponseOpenAI(BaseModel):
                 message=f"API status error: {e.message}",
                 extra=LLMExtra(data={"error": str(e), "status_code": e.status_code, "model": self.name})
             )
+        except httpx.TimeoutException:
+            raise
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
             return LLMResponse(

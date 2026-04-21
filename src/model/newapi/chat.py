@@ -45,8 +45,8 @@ class ChatNewAPI(BaseModel):
 
     # Client initialization parameters
     api_key: Optional[str] = None
-    base_url: Optional[Union[str, httpx.URL]] = "https://api.miromind.site/v1"
-    timeout: Optional[Union[float, httpx.Timeout]] = None
+    base_url: Optional[Union[str, httpx.URL]] = None
+    timeout: Optional[Union[float, httpx.Timeout]] = httpx.Timeout(600.0, connect=30.0)
     default_headers: Optional[Mapping[str, str]] = None
     http_client: Optional[httpx.AsyncClient] = None
 
@@ -57,6 +57,9 @@ class ChatNewAPI(BaseModel):
     @property
     def provider(self) -> str:
         return 'newapi'
+
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
 
     @property
     def name(self) -> str:
@@ -344,6 +347,8 @@ class ChatNewAPI(BaseModel):
                 response_format=response_format,
             )
 
+        except httpx.TimeoutException:
+            raise
         except Exception as e:
             logger.error(f"Unexpected error in ChatNewAPI: {e}")
             return LLMResponse(

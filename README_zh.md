@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文
 
+**注意：** 代码正在整理中，可能存在 bug。目前 `examples/run_tool_calling_agent.py` 可以正常运行，其他 agent 还在调试中。
+
 Autogenesis 是一个面向 LLM 智能体系统的**自进化协议**与工程化运行时。
 
 现有不少 agent 协议（例如 A2A、MCP）对跨实体的 **生命周期/上下文管理**、**版本追踪**、以及**演化过程中的安全更新接口**规定不足，容易导致系统走向“大一统”的单体组合与脆弱的胶水代码。Autogenesis 的核心思路是将 **“演化什么（what evolves）”** 与 **“如何演化（how evolution occurs）”** 解耦：

@@ -13,13 +13,10 @@ if TYPE_CHECKING:
 
 from src.logger import logger
 from src.config import config
-from src.environment.faiss.service import FaissService
-from src.environment.faiss.types import FaissAddRequest
 from src.utils import (
     assemble_project_path,
     gather_with_concurrency,
-    file_lock,
-    generate_unique_id
+    file_lock
 )
 from src.agent.types import Agent, AgentConfig
 from src.session import SessionContext
@@ -43,7 +40,6 @@ class AgentContextManager(BaseModel):
         save_path: Optional[str] = None,
         contract_path: Optional[str] = None,
         model_name: str = "openrouter/gemini-3-flash-preview",
-        embedding_model_name: str = "openrouter/text-embedding-3-large",
         **kwargs: Any,
     ):
         """Initialize the agent context manager.
@@ -52,8 +48,7 @@ class AgentContextManager(BaseModel):
             base_dir: Base directory for storing agent data
             save_path: Path to save agent configurations
             contract_path: Path to save agent contract
-            model_name: The model name used for embedding text (via FaissService)
-            embedding_model_name: The embedding model name (kept for parity with tools)
+            model_name: The model name used for the agents
         """
         super().__init__(**kwargs)
 
@@ -80,10 +75,8 @@ class AgentContextManager(BaseModel):
         self._agent_history_versions: Dict[str, Dict[str, AgentConfig]] = {}
 
         self.model_name = model_name
-        self.embedding_model_name = embedding_model_name
 
         self._cleanup_registered = False
-        self._faiss_service: Optional[FaissService] = None
         self._variables_lock = asyncio.Lock()  # Lock for get/set trainable variables
 
     async def initialize(self, agent_names: Optional[List[str]] = None) -> None:
@@ -103,12 +96,6 @@ class AgentContextManager(BaseModel):
             }
 
         dynamic_manager.register_context_provider("agent", agent_context_provider)
-
-        # Initialize Faiss service for agent embedding
-        self._faiss_service = FaissService(
-            base_dir=self.base_dir,
-            model_name=self.model_name,
-        )
 
         # Load agents from AGENT registry
         agent_configs: Dict[str, AgentConfig] = {}
@@ -364,33 +351,6 @@ class AgentContextManager(BaseModel):
         logger.info(f"| 📂 Loaded {len(agent_configs)} agents from {self.save_path}")
         return agent_configs
 
-    async def _store(self, agent_config: AgentConfig):
-        """Add agent information to the embedding index.
-        
-        Args:
-            agent_config: Agent configuration
-        """
-        if self._faiss_service is None:
-            return
-            
-        try:
-            # Create comprehensive text representation
-            agent_text = f"Agent: {agent_config.name}\nDescription: {agent_config.description}"
-            
-            # Add to FAISS index
-            request = FaissAddRequest(
-                texts=[agent_text],
-                metadatas=[{
-                    "name": agent_config.name,
-                    "description": agent_config.description
-                }]
-            )
-            
-            await self._faiss_service.add_documents(request)
-            
-        except Exception as e:
-            logger.warning(f"| ⚠️ Failed to add agent {agent_config.name} to FAISS index: {e}")
-
     async def build(self, agent_config: AgentConfig) -> AgentConfig:
         """Create an agent instance and store it.
         
@@ -507,9 +467,6 @@ class AgentContextManager(BaseModel):
             
             # Register version in version manager
             await version_manager.register_version("agent", agent_name, agent_config.version)
-            
-            # Add to FAISS index
-            await self._store(agent_config)
             
             # Persist to JSON
             await self.save_to_json()
@@ -653,9 +610,6 @@ class AgentContextManager(BaseModel):
                 description=description or f"Updated from {original_config.version}"
             )
             
-            # Update embedding index
-            await self._store(updated_config)
-            
             # Persist to JSON
             await self.save_to_json()
             # Save contract to file
@@ -770,9 +724,6 @@ class AgentContextManager(BaseModel):
                 new_version,
                 description=f"Copied from {agent_name}@{original_config.version}"
             )
-            
-            # Register to embedding index
-            await self._store(new_agent_config)
             
             # Persist to JSON
             await self.save_to_json()
@@ -1053,65 +1004,6 @@ class AgentContextManager(BaseModel):
             contract_text = f.read()
         return contract_text
     
-    async def retrieve(self, query: str, k: int = 4) -> List[Dict[str, Any]]:
-        """Retrieve similar agents using FAISS similarity search.
-        
-        Args:
-            query: Query string to search for
-            k: Number of results to return (default: 4)
-            
-        Returns:
-            List of dictionaries containing agent information with similarity scores
-        """
-        if self._faiss_service is None:
-            logger.warning("| ⚠️ FAISS service not initialized, cannot retrieve agents")
-            return []
-        
-        try:
-            from src.environment.faiss.types import FaissSearchRequest
-            
-            request = FaissSearchRequest(
-                query=query,
-                k=k,
-                fetch_k=k * 5  # Fetch more candidates before filtering
-            )
-            
-            result = await self._faiss_service.search_similar(request)
-            
-            if not result.success:
-                logger.warning(f"| ⚠️ FAISS search failed: {result.message}")
-                return []
-            
-            # Extract documents and scores from result
-            documents = []
-            if result.extra and "documents" in result.extra:
-                docs = result.extra["documents"]
-                scores = result.extra.get("scores", [])
-                
-                for doc, score in zip(docs, scores):
-                    # Extract agent name from metadata
-                    metadata = doc.get("metadata", {}) if isinstance(doc, dict) else {}
-                    agent_name = metadata.get("name", "")
-                    
-                    # Get agent config if available
-                    agent_config = None
-                    if agent_name and agent_name in self._agent_configs:
-                        agent_config = self._agent_configs[agent_name]
-                    
-                    documents.append({
-                        "name": agent_name,
-                        "description": metadata.get("description", ""),
-                        "score": float(score),
-                        "content": doc.get("page_content", "") if isinstance(doc, dict) else str(doc),
-                        "config": agent_config.model_dump() if agent_config else None
-                    })
-            
-            return documents
-            
-        except Exception as e:
-            logger.error(f"| ❌ Error retrieving agents: {e}")
-            return []
-    
     async def get_variables(self, agent_name: Optional[str] = None) -> Dict[str, 'Variable']:
         """Get variables from agents, where each agent's class source code is used as the variable value.
         
@@ -1241,9 +1133,6 @@ class AgentContextManager(BaseModel):
             self._agent_configs.clear()
             self._agent_history_versions.clear()
                 
-            # Clean up Faiss service (async)
-            if self._faiss_service is not None:
-                await self._faiss_service.cleanup()
             logger.info("| 🧹 Agent context manager cleaned up")
             
         except Exception as e:

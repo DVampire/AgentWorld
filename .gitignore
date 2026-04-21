@@ -212,6 +212,6 @@ others/
 other/
 workdir/
 logs/
-opencode.jsonc
 .claude/
 .idea/
+.bashrc.template

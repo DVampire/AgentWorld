@@ -1,10 +1,10 @@
 tool_calling_agent = dict(
     workdir = "workdir/tool_calling",
-    name = "tool_calling",
+    name = "tool_calling_agent",
     type = "Agent",
     description = "A tool calling agent that can call tools to complete tasks.",
-    model_name = "openrouter/o3",
-    prompt_name = "tool_calling",
+    model_name = "openai/o3",
+    prompt_name = "tool_calling_agent",
     memory_name = "general_memory_system",
     max_tools = 10,
     max_steps = 50,

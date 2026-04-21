@@ -22,6 +22,7 @@ from .download_utils import (get_jsonparsed_data,
                              generate_intervals)
 from .hub_utils import push_to_hub_folder
 from .args_utils import parse_tool_args
+from .hvac_utils import hvac_client
 
 
 __all__ = [
@@ -61,4 +62,5 @@ __all__ = [
     "generate_unique_id",
     "parse_tool_args",
     "is_same",
+    "hvac_client",
 ]

@@ -47,12 +47,15 @@ class ChatGoogle(BaseModel):
     
     # Client initialization parameters
     api_key: Optional[str] = None
-    timeout: Optional[Union[float, httpx.Timeout]] = None
+    timeout: Optional[Union[float, httpx.Timeout]] = httpx.Timeout(600.0, connect=30.0)
     max_retries: int = 5
 
     @property
     def provider(self) -> str:
         return 'google'
+
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key
 
     def _get_client_params(self) -> Dict[str, Any]:
         """Prepare client parameters dictionary."""
@@ -287,10 +290,12 @@ class ChatGoogle(BaseModel):
                 response_format=response_format,
             )
 
+        except httpx.TimeoutException:
+            raise
         except Exception as e:
             error_msg = str(e)
             status_code = None
-            
+
             # Try to extract status code from Google API exceptions
             if google_exceptions and isinstance(e, google_exceptions.GoogleAPIError):
                 status_code = getattr(e, 'status_code', None)

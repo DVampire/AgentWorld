@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any, Optional, Dict, List
 import json
-import os
 import aiohttp
 from urllib.parse import quote
 from pydantic import ConfigDict, Field
@@ -12,6 +11,7 @@ from src.tool.default_tools.search.types import SearchItem
 from src.tool.types import Tool, ToolResponse, ToolExtra
 from src.logger import logger
 from src.registry import TOOL
+from src.utils import hvac_client
 
 
 @TOOL.register_module(force=True)
@@ -32,11 +32,11 @@ class JinaSearch(Tool):
         " input should be a search query."
     )
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
-    api_key: Optional[str] = Field(default=None, description="Jina AI API key")
+    api_key: str = Field(default="", description="Jina AI API key")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.api_key = os.getenv("JINA_API_KEY")
+        self.api_key = hvac_client.get("JINA_API_KEY") or ""
 
     async def _search_jina(
         self,
@@ -118,6 +118,7 @@ class JinaSearch(Tool):
     async def __call__(
         self,
         query: str,
+        image: Optional[str] = None,
         num_results: Optional[int] = 5,
         country: Optional[str] = "us",
         lang: Optional[str] = "en",
