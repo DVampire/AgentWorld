@@ -85,3 +85,15 @@ python examples/run_tool_calling_agent.py \
   --cfg-options model_name=openrouter/gpt-4o workdir=workdir/demo tag=demo
 ```
 
+## 引用
+```
+@misc{zhang2026autogenesisselfevolvingagentprotocol,
+      title={Autogenesis: A Self-Evolving Agent Protocol}, 
+      author={Wentao Zhang and Zhe Zhao and Haibin Wen and Yingcheng Wu and Ming Yin and Bo An and Mengdi Wang},
+      year={2026},
+      eprint={2604.15034},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2604.15034}, 
+}
+```
