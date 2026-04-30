@@ -1,4 +1,5 @@
 from .path_utils import get_project_root, assemble_project_path
+from .plan_utils import PlanFile, TodoStep, FlowChartStep, make_plan_path
 from .singleton import Singleton
 from .utils import (
     _is_package_available,
@@ -63,4 +64,8 @@ __all__ = [
     "parse_tool_args",
     "is_same",
     "hvac_client",
+    "PlanFile",
+    "TodoStep",
+    "FlowChartStep",
+    "make_plan_path",
 ]
