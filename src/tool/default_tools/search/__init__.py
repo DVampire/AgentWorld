@@ -1,20 +1,14 @@
 from .types import SearchItem
-from .firecrawl_search import FirecrawlSearch
-from .brave_search import BraveSearch
-from .bing_search import BingSearch
-from .google_search import GoogleSearch
-from .ddgs_search import DDGSSearch
 from .jina_search import JinaSearch
+from .serper_search import SerperSearch
+from .firecrawl_search import FirecrawlSearch
 from .google_lens_search import GoogleLensSearch
 
 
 __all__ = [
     "SearchItem",
-    "FirecrawlSearch",
-    "BraveSearch",
-    "BingSearch",
-    "GoogleSearch",
-    "DDGSSearch",
     "JinaSearch",
+    "SerperSearch",
+    "FirecrawlSearch",
     "GoogleLensSearch",
 ]

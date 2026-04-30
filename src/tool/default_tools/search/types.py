@@ -10,6 +10,7 @@ class SearchItem(BaseModel):
     position: Optional[int] = Field(default=None, description="The position of the search result in the list")
     source: Optional[str] = Field(default=None, description="The source of the search result")
     description: Optional[str] = Field(default=None, description="A description or snippet of the search result")
+    content: Optional[str] = Field(default=None, description="Full scraped content of the search result in markdown")
 
     def __str__(self) -> str:
         """String representation of a search result item."""

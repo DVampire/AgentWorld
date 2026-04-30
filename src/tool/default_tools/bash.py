@@ -1,5 +1,7 @@
 """Bash tool for executing shell commands."""
 import asyncio
+import os
+import signal
 from pydantic import Field
 from typing import Dict, Any
 
@@ -28,7 +30,7 @@ class BashTool(Tool):
     metadata: Dict[str, Any] = Field(default={}, description="The metadata of the tool")
     require_grad: bool = Field(default=False, description="Whether the tool requires gradients")
     
-    timeout: int = Field(description="Timeout in seconds for command execution", default=30)
+    timeout: int = Field(description="Timeout in seconds for command execution", default=600)
     
     def __init__(self, require_grad: bool = False, **kwargs):
         """A tool for executing bash commands asynchronously."""
@@ -45,20 +47,24 @@ class BashTool(Tool):
             if not command.strip():
                 return ToolResponse(success=False, message="Error: Empty command provided")
             
-            # Use shell=True to handle complex commands properly
+            # Use start_new_session=True so the whole process group can be killed on timeout
             process = await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
-            
+
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(),
                     timeout=self.timeout
                 )
             except asyncio.TimeoutError:
-                process.kill()
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 await process.wait()
                 return ToolResponse(success=False, message=f"Error: Command timed out after {self.timeout} seconds")
             

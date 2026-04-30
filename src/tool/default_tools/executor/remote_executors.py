@@ -329,7 +329,7 @@ class DockerExecutor(RemotePythonExecutor):
             # Ensure required port mapping and background running
             if not isinstance(container_kwargs.get("ports"), dict):
                 container_kwargs["ports"] = {}
-            container_kwargs["ports"]["8888/tool_manager"] = (host, port)
+            container_kwargs["ports"]["8888/tcp"] = (host, port)
             container_kwargs["detach"] = True
 
             self.container = self.client.containers.run(self.image_name, **container_kwargs)

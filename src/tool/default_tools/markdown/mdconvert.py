@@ -10,7 +10,6 @@ import camelot
 import tempfile
 import asyncio  
 import threading
-import concurrent.futures
 from markitdown.converters import PdfConverter
 from markitdown.converters import AudioConverter
 from markitdown.converters._pdf_converter import _dependency_exc_info
