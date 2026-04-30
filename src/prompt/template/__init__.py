@@ -28,6 +28,10 @@ from .operator_browser import (
     OperatorBrowserSystemPrompt,
     OperatorBrowserAgentMessagePrompt,
 )
+from .browser_use import (
+    BrowserUseSystemPrompt,
+    BrowserUseAgentMessagePrompt,
+)
 from .mobile import (
     MobileSystemPrompt,
     MobileAgentMessagePrompt,
@@ -74,10 +78,10 @@ from .trading_eval import (
 )
 
 from .planning import (
-    PlanningEvaluateSystemPrompt,
-    PlanningCompleteSystemPrompt,
-    PlanningContinueSystemPrompt,
-    PlanningAgentMessagePrompt,
+    PlanningPlanSystemPrompt,
+    PlanningPlanAgentMessagePrompt,
+    PlanningVerifySystemPrompt,
+    PlanningVerifyAgentMessagePrompt,
 )
 from .deep_researcher import (
     DeepResearcherQuerySystemPrompt,
@@ -117,6 +121,8 @@ __all__ = [
     "IntradayMinuteTradingAgentMessagePrompt",
     "OperatorBrowserSystemPrompt",
     "OperatorBrowserAgentMessagePrompt",
+    "BrowserUseSystemPrompt",
+    "BrowserUseAgentMessagePrompt",
     "MobileSystemPrompt",
     "MobileAgentMessagePrompt",
     "OnlineTradingSystemPrompt",
@@ -141,10 +147,10 @@ __all__ = [
     "TradingStrategyAgentMessagePrompt",
     "TradingEvalSystemPrompt",
     "TradingEvalAgentMessagePrompt",
-    "PlanningEvaluateSystemPrompt",
-    "PlanningCompleteSystemPrompt",
-    "PlanningContinueSystemPrompt",
-    "PlanningAgentMessagePrompt",
+    "PlanningPlanSystemPrompt",
+    "PlanningPlanAgentMessagePrompt",
+    "PlanningVerifySystemPrompt",
+    "PlanningVerifyAgentMessagePrompt",
     "DeepResearcherQuerySystemPrompt",
     "DeepResearcherQueryAgentMessagePrompt",
     "DeepResearcherEvalSystemPrompt",

@@ -12,8 +12,12 @@ from .workflow_tools import (BrowserTool,
                             SkillGeneratorTool,
                             TodoTool)
 from .mcp_tools import MCPImportTool
-from .esg_tools import (RetrieverTool,
-                        PlotterTool)
+try:
+    from .esg_tools import (RetrieverTool,
+                            PlotterTool)
+except ImportError:
+    RetrieverTool = None
+    PlotterTool = None
 from .other_tools import (
     ReformulatorTool
 )
