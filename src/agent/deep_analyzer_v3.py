@@ -826,7 +826,7 @@ class DeepAnalyzerV3Agent(Agent):
             logger.info(f"| 📋 {f}: {_infer_file_type(f)}")
 
         plan_path = make_plan_path(
-            workdir=os.path.join(self.workdir, "agent", self.name),
+            workdir=self.workdir,
             session_id=ctx.id,
             suffix="analysis",
         )

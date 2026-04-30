@@ -923,7 +923,7 @@ class DeepResearcherV3Agent(Agent):
             slog = SearchLogger(base_dir=self.workdir, session_id=session_id)
 
         plan_path = make_plan_path(
-            workdir=os.path.join(self.workdir, "agent", self.name),
+            workdir=self.workdir,
             session_id=ctx.id,
             suffix="research",
         )

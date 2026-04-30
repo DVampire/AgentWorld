@@ -457,7 +457,7 @@ class Agent(BaseModel):
         system_modules = dict(max_tools=self.max_tools,workdir=self.workdir)
         agent_message_modules = dict(task=task)
         
-        agent_message_modules.update(await self._get_agent_context(task, ctx=ctx))
+        agent_message_modules.update(await self._get_agent_context(task, ctx=ctx, **kwargs))
         agent_message_modules.update(await self._get_tool_context(ctx=ctx))
         agent_message_modules.update(await self._get_skill_context(ctx=ctx))
         

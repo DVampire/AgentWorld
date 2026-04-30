@@ -445,8 +445,8 @@ class ChatOpenAI(BaseModel):
                     )
                 
                 # Parse JSON content
+                import json
                 try:
-                    import json
                     data = json.loads(content)
                     parsed_model = response_format.model_validate(data)
                     
@@ -522,3 +522,4 @@ class ChatOpenAI(BaseModel):
                     data={"error": str(e)}
                 )
             )
+

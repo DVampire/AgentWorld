@@ -5,7 +5,6 @@ with read_base():
     from .agents.deep_researcher_v3 import deep_researcher_v3_agent
     from .agents.deep_analyzer_v3 import deep_analyzer_v3_agent
     from .agents.opencode import opencode_agent
-    from .agents.sop import sop_agent
 
     from .tools.bash import bash_tool
     from .tools.todo import todo_tool
@@ -36,8 +35,7 @@ agent_names = [
     "planning_agent",
     "deep_researcher_v3_agent",
     "deep_analyzer_v3_agent",
-    "opencode_agent",
-    "sop_agent",
+    "opencode_agent"
 ]
 skill_names = [
     "hello_world_skill",
@@ -78,34 +76,33 @@ deep_researcher_v3_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
-    max_rounds=3,
-    max_steps=20,
+    max_rounds = 3,
+    max_steps = 20,
     num_results=10,
     summary_model_name="int_openrouter/grok-4.1-fast",
     llm_search_models=[
-        "int_openrouter/gemini-3.1-pro-preview-plugins",
+        "int_openrouter/gemini-3.1-pro-preview-plugins", # official search model with plugins support
     ],
-    fetch_timeout=20.0,
-    use_memory=True,
+    fetch_timeout=20.0
 )
 deep_analyzer_v3_agent.update(
     workdir=f"{workdir}/agent/deep_analyzer_v3_agent",
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
-    max_rounds=3,
-    max_steps=20,
+    max_rounds = 3,
+    max_steps = 20,
     summary_model_name="int_openrouter/grok-4.1-fast",
-    general_analyze_models=[
-        "int_openrouter/gemini-3.1-pro-preview-plugins",
+    general_analyze_models = [
+        "int_openrouter/gemini-3.1-pro-preview-plugins", # can analyze audio, video, image, pdf, etc.
     ],
-    llm_analyze_models=[
-        "int_openrouter/gpt-5.4",
+    llm_analyze_models = [
+        "int_openrouter/gpt-5.4", # can analyze complex text with image
     ],
-    advanced_analyze_models=[
-        "int_openrouter/gpt-5.4-pro",
+    advanced_analyze_models = [
+        "int_openrouter/gpt-5.4-pro", # expensive but powerful model for deep analysis
     ],
-    use_memory=True,
+    use_memory=True
 )
 opencode_agent.update(
     workdir=f"{workdir}/agent/opencode_agent",
@@ -113,18 +110,4 @@ opencode_agent.update(
     summary_model_name="int_openrouter/grok-4.1-fast",
     memory_name=memory_names[0],
     require_grad=False,
-)
-sop_agent.update(
-    workdir=f"{workdir}/agent/sop_agent",
-    description=(
-        "Runs a phase-by-phase SOP skill for algebra, topology, theoretical "
-        "physics, differential equations, algorithms, materials, biology, "
-        "medicine, grounded image reasoning, and related expert domains. "
-        "Prefer over a generic analyzer when the task has clear domain structure."
-    ),
-    model_name="int_openrouter/gpt-5.3-codex",
-    memory_name=memory_names[0],
-    require_grad=False,
-    use_memory=True,
-    max_steps=50,
 )

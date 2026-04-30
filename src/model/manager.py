@@ -354,7 +354,6 @@ class ModelManager:
     async def _initialize_openrouter_models(self):
         """Initialize OpenRouter models (OpenAI models via OpenRouter)."""
         chat_models = [
-            # OpenAI models
             {
                 "model_name": "openrouter/gpt-4o",
                 "model_id": "openai/gpt-4o",
@@ -817,6 +816,32 @@ class ModelManager:
         chat_models = [
             # OpenAI models
             {
+                "model_name": "int_openrouter/o3-mini",
+                "model_id": "openai/o3-mini",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": 1.0,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            {
+                "model_name": "int_openrouter/gpt-5.3-codex",
+                "model_id": "openai/gpt-5.3-codex",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": self.default_temperature,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "int_openrouter/gpt-5.4",
+            },
+            {
                 "model_name": "int_openrouter/gpt-5.4",
                 "model_id": "openai/gpt-5.4",
                 "model_type": "chat/completions",
@@ -1104,6 +1129,19 @@ class ModelManager:
                 "reasoning": self.default_reasoning,
                 "max_completion_tokens": self.max_tokens,
                 "fallback_model": "openrouter/grok-4.1-fast",
+            },
+            {
+                "model_name": "newapi/o3-mini",
+                "model_id": "o3-mini",
+                "model_type": "chat/completions",
+                "reasoning": {
+                    "reasoning": {
+                        "enabled": True
+                    }
+                },
+                "temperature": 1.0,
+                "max_completion_tokens": self.max_tokens,
+                "fallback_model": "newapi/gpt-5.4",
             },
             # Anthropic-compatible models
             {
