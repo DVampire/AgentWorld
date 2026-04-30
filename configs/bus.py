@@ -13,6 +13,7 @@ with read_base():
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
     from .benchmarks.hle import hle_benchmark
+    from .benchmarks.gaia import gaia_benchmark
 
 tag = "bus"
 workdir = f"workdir/{tag}"

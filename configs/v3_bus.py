@@ -11,15 +11,16 @@ with read_base():
     from .tools.todo import todo_tool
     from .memory.general_memory_system import memory_system as general_memory_system
     from .memory.optimizer_memory_system import memory_system as optimizer_memory_system
+    from .benchmarks.gaia import gaia_benchmark
 
 tag = "v3_bus"
 workdir = f"workdir/{tag}"
 log_path = "v3_bus.log"
-max_tokens = 8192
+max_tokens = 32768
 
 use_local_proxy = True
 version = "0.1.0"
-model_name = "newapi/gemini-3.1-pro-preview"
+model_name = "int_openrouter/gemini-3.1-pro-preview"
 
 tool_names = [
     "bash_tool",
@@ -52,14 +53,14 @@ todo_tool.update(
 # -----------------MEMORY CONFIG-----------------
 general_memory_system.update(
     base_dir="memory/general_memory_system",
-    model_name=model_name,
+    model_name="int_openrouter/gemini-3-flash-preview",
     max_summaries=10,
     max_insights=10,
     require_grad=False,
 )
 optimizer_memory_system.update(
     base_dir="memory/optimizer_memory_system",
-    model_name=model_name,
+    model_name="int_openrouter/gemini-3-flash-preview",
     max_records_per_session=10,
     require_grad=False,
 )
@@ -77,31 +78,53 @@ deep_researcher_v3_agent.update(
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
+    max_rounds=3,
+    max_steps=20,
+    num_results=10,
+    summary_model_name="int_openrouter/grok-4.1-fast",
     llm_search_models=[
-        "openrouter/gemini-3.1-pro-preview-plugins",
+        "int_openrouter/gemini-3.1-pro-preview-plugins",
     ],
+    fetch_timeout=20.0,
+    use_memory=True,
 )
 deep_analyzer_v3_agent.update(
     workdir=f"{workdir}/agent/deep_analyzer_v3_agent",
     model_name=model_name,
     memory_name=memory_names[0],
     require_grad=False,
+    max_rounds=3,
+    max_steps=20,
+    summary_model_name="int_openrouter/grok-4.1-fast",
     general_analyze_models=[
-        "newapi/gemini-3.1-pro-preview",
+        "int_openrouter/gemini-3.1-pro-preview-plugins",
     ],
     llm_analyze_models=[
-        "newapi/gemini-3.1-pro-preview",
+        "int_openrouter/gpt-5.4",
     ],
+    advanced_analyze_models=[
+        "int_openrouter/gpt-5.4-pro",
+    ],
+    use_memory=True,
 )
 opencode_agent.update(
     workdir=f"{workdir}/agent/opencode_agent",
-    model_name="newapi/claude-opus-4.6",
+    model_name="int_openrouter/claude-opus-4.6",
+    summary_model_name="int_openrouter/grok-4.1-fast",
     memory_name=memory_names[0],
     require_grad=False,
 )
 sop_agent.update(
     workdir=f"{workdir}/agent/sop_agent",
-    model_name=model_name,
+    description=(
+        "Runs a phase-by-phase SOP skill for algebra, topology, theoretical "
+        "physics, differential equations, algorithms, materials, biology, "
+        "medicine, grounded image reasoning, and related expert domains. "
+        "Prefer over a generic analyzer when the task has clear domain structure."
+    ),
+    model_name="int_openrouter/gpt-5.3-codex",
     memory_name=memory_names[0],
     require_grad=False,
+    use_memory=True,
+    max_steps=50,
 )

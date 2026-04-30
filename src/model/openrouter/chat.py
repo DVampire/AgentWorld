@@ -569,4 +569,3 @@ class ChatOpenRouter(BaseModel):
                     data={"error": str(e), "model": self.name}
                 )
             )
-

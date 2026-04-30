@@ -103,6 +103,52 @@ from .deep_analyzer import (
     DeepAnalyzerDirectSystemPrompt,
     DeepAnalyzerDirectAgentMessagePrompt,
 )
+from .deep_researcher_v3 import (
+    DeepResearcherV3SystemPrompt,
+    DeepResearcherV3AgentMessagePrompt,
+    DeepResearcherV3QuerySystemPrompt,
+    DeepResearcherV3QueryAgentMessagePrompt,
+    DeepResearcherV3LLMSearchSystemPrompt,
+    DeepResearcherV3LLMSearchAgentMessagePrompt,
+    DeepResearcherV3PageSummarySystemPrompt,
+    DeepResearcherV3PageSummaryAgentMessagePrompt,
+    DeepResearcherV3SynthesisSystemPrompt,
+    DeepResearcherV3SynthesisAgentMessagePrompt,
+    DeepResearcherV3EvalSystemPrompt,
+    DeepResearcherV3EvalAgentMessagePrompt,
+)
+from .deep_analyzer_v3 import (
+    DeepAnalyzerV3SystemPrompt,
+    DeepAnalyzerV3AgentMessagePrompt,
+    DeepAnalyzerV3AnalyzeSystemPrompt,
+    DeepAnalyzerV3AnalyzeAgentMessagePrompt,
+    DeepAnalyzerV3SynthSystemPrompt,
+    DeepAnalyzerV3SynthAgentMessagePrompt,
+    DeepAnalyzerV3EvalSystemPrompt,
+    DeepAnalyzerV3EvalAgentMessagePrompt,
+    DeepAnalyzerV3VerifySystemPrompt,
+    DeepAnalyzerV3VerifyAgentMessagePrompt,
+)
+from .opencode import (
+    OpencodeEvaluateSystemPrompt,
+    OpencodeEvaluateAgentMessagePrompt,
+)
+from .sop import (
+    SopSystemPrompt,
+    SopAgentMessagePrompt,
+)
+from .trading_signal import (
+    TradingSignalSystemPrompt,
+    TradingSignalAgentMessagePrompt,
+)
+from .trading_signal_evaluation import (
+    TradingSignalEvaluationSystemPrompt,
+    TradingSignalEvaluationAgentMessagePrompt,
+)
+from .trading_strategy_evaluation import (
+    TradingStrategyEvaluationSystemPrompt,
+    TradingStrategyEvaluationAgentMessagePrompt,
+)
 
 __all__ = [
     "AnthropicMobileSystemPrompt",
@@ -167,4 +213,30 @@ __all__ = [
     "DeepAnalyzerSummarizeAgentMessagePrompt",
     "DeepAnalyzerDirectSystemPrompt",
     "DeepAnalyzerDirectAgentMessagePrompt",
+    "DeepResearcherV3SystemPrompt",
+    "DeepResearcherV3AgentMessagePrompt",
+    "DeepResearcherV3QuerySystemPrompt",
+    "DeepResearcherV3QueryAgentMessagePrompt",
+    "DeepResearcherV3LLMSearchSystemPrompt",
+    "DeepResearcherV3LLMSearchAgentMessagePrompt",
+    "DeepResearcherV3PageSummarySystemPrompt",
+    "DeepResearcherV3PageSummaryAgentMessagePrompt",
+    "DeepResearcherV3SynthesisSystemPrompt",
+    "DeepResearcherV3SynthesisAgentMessagePrompt",
+    "DeepResearcherV3EvalSystemPrompt",
+    "DeepResearcherV3EvalAgentMessagePrompt",
+    "DeepAnalyzerV3SystemPrompt",
+    "DeepAnalyzerV3AgentMessagePrompt",
+    "DeepAnalyzerV3AnalyzeSystemPrompt",
+    "DeepAnalyzerV3AnalyzeAgentMessagePrompt",
+    "DeepAnalyzerV3SynthSystemPrompt",
+    "DeepAnalyzerV3SynthAgentMessagePrompt",
+    "DeepAnalyzerV3EvalSystemPrompt",
+    "DeepAnalyzerV3EvalAgentMessagePrompt",
+    "DeepAnalyzerV3VerifySystemPrompt",
+    "DeepAnalyzerV3VerifyAgentMessagePrompt",
+    "OpencodeEvaluateSystemPrompt",
+    "OpencodeEvaluateAgentMessagePrompt",
+    "SopSystemPrompt",
+    "SopAgentMessagePrompt",
 ]

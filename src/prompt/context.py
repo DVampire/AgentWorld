@@ -956,6 +956,11 @@ class PromptContextManager(BaseModel):
         """
         prompt_name = f"{prompt_name}_system_prompt"
         prompt_info = await self.get_info(prompt_name)
+        if prompt_info is None:
+            raise ValueError(
+                f"Prompt '{prompt_name}' is not registered. "
+                "Check src/prompt/template/__init__.py and prompt manager initialization."
+            )
         
         version = prompt_info.version
         prompt_instance = prompt_info.instance
@@ -980,6 +985,11 @@ class PromptContextManager(BaseModel):
         prompt_name = f"{prompt_name}_agent_message_prompt"
         
         prompt_info = await self.get_info(prompt_name)
+        if prompt_info is None:
+            raise ValueError(
+                f"Prompt '{prompt_name}' is not registered. "
+                "Check src/prompt/template/__init__.py and prompt manager initialization."
+            )
         version = prompt_info.version
         
         prompt_instance = prompt_info.instance
